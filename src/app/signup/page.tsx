@@ -10,7 +10,7 @@ export default function SignupPage() {
       bullets={["Your phone number must be on the approved list.", "Enter your details to create your account."]}
     >
       <div className="w-full max-w-md">
-        <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+        <div className="animate-rise flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
           <AlertTriangle size={16} className="mt-0.5 shrink-0" />
           <span>This phone number is not on the access list. Please contact your admin.</span>
         </div>
@@ -69,7 +69,7 @@ export default function SignupPage() {
             </div>
           </div>
 
-          <button className="flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-accent to-primary py-3 text-sm font-bold text-white">
+          <button className="flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-accent to-primary py-3 text-sm font-bold text-white shadow-glow transition-transform duration-300 hover:scale-[1.02] active:scale-[0.98]">
             Create My Account
             <ArrowRight size={16} />
           </button>
@@ -84,7 +84,7 @@ export default function SignupPage() {
           <span className="text-sm text-muted">Already registered?</span>
           <Link
             href="/login"
-            className="rounded-full border border-accent px-4 py-1.5 text-sm font-bold text-accent"
+            className="rounded-full border border-accent px-4 py-1.5 text-sm font-bold text-accent transition-all duration-300 hover:bg-accent/5 hover:shadow-card"
           >
             Login
           </Link>

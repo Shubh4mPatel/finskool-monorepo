@@ -5,9 +5,9 @@ export default function StockTrackerPage() {
     <div className="flex flex-col gap-6">
       <h1 className="font-display text-2xl font-bold text-primary">Stock Tracker</h1>
 
-      <div className="flex flex-col items-center justify-center gap-3 rounded-2xl bg-white p-16 text-center shadow-sm">
-        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-divider text-primary">
-          <BarChart3 size={24} />
+      <div className="animate-rise flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-divider bg-white p-16 text-center shadow-card">
+        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-lime/50 to-accent/10 text-primary shadow-glow">
+          <BarChart3 size={26} />
         </div>
         <p className="font-display text-lg font-bold text-primary">No stocks tracked yet</p>
         <p className="max-w-sm text-sm text-muted">
