@@ -1,0 +1,159 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  admin
+  member
+}
+
+enum CommunityRole {
+  moderator
+  member
+}
+
+enum PostStatus {
+  draft
+  published
+}
+
+model User {
+  id           String    @id @default(uuid()) @db.Uuid
+  name         String    @map("full_name") @db.VarChar(100)
+  phone        String    @unique @db.VarChar(20)
+  email        String    @unique @db.VarChar(255)
+  passwordHash String    @map("password_hash") @db.VarChar(255)
+  role         UserRole  @default(member)
+  avatarUrl    String?   @map("avatar_url") @db.VarChar(500)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  deletedAt    DateTime? @map("deleted_at") @db.Timestamptz
+
+  createdCommunities CommunityMember[]
+  posts              Post[]            @relation("PostAuthor")
+  pinnedPosts        Post[]            @relation("PostPinnedBy")
+  comments           Comment[]
+  likes              PostLike[]
+  communities        Community[]
+
+  @@index([phone], name: "idx_users_phone")
+  @@index([email], name: "idx_users_email")
+  @@index([role], name: "idx_users_role")
+  @@map("users")
+}
+
+model ApprovedPhone {
+  id        String   @id @default(uuid()) @db.Uuid
+  phone     String   @unique @db.VarChar(20)
+  addedBy   String?  @map("added_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([phone], name: "idx_approved_phones_phone")
+  @@map("approved_phones")
+}
+
+model Community {
+  id           String    @id @default(uuid()) @db.Uuid
+  createdBy    String    @map("created_by") @db.Uuid
+  name         String    @db.VarChar(150)
+  slug         String    @unique @db.VarChar(150)
+  description  String?
+  coverImageUrl String?  @map("cover_image_url") @db.VarChar(500)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  deletedAt    DateTime? @map("deleted_at") @db.Timestamptz
+
+  creator User              @relation(fields: [createdBy], references: [id])
+  members CommunityMember[]
+  posts   Post[]
+
+  @@index([slug], name: "idx_communities_slug")
+  @@index([createdBy], name: "idx_communities_created_by")
+  @@map("communities")
+}
+
+model CommunityMember {
+  id          String        @id @default(uuid()) @db.Uuid
+  communityId String        @map("community_id") @db.Uuid
+  userId      String        @map("user_id") @db.Uuid
+  role        CommunityRole @default(member)
+  joinedAt    DateTime      @default(now()) @map("joined_at") @db.Timestamptz
+
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([communityId, userId], name: "uq_community_member")
+  @@index([communityId], name: "idx_members_community")
+  @@index([userId], name: "idx_members_user")
+  @@map("community_members")
+}
+
+model Post {
+  id          String     @id @default(uuid()) @db.Uuid
+  communityId String     @map("community_id") @db.Uuid
+  authorId    String     @map("author_id") @db.Uuid
+  contentMd   String     @map("content_md")
+  imageUrls   String[]   @map("image_urls")
+  tags        String[]
+  status      PostStatus @default(draft)
+  pinOrder    Int?       @map("pin_order") @db.SmallInt
+  pinnedAt    DateTime?  @map("pinned_at") @db.Timestamptz
+  pinnedBy    String?    @map("pinned_by") @db.Uuid
+  publishedAt DateTime?  @map("published_at") @db.Timestamptz
+  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt   DateTime?  @map("deleted_at") @db.Timestamptz
+
+  community    Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  author       User      @relation("PostAuthor", fields: [authorId], references: [id])
+  pinnedByUser User?     @relation("PostPinnedBy", fields: [pinnedBy], references: [id])
+  comments     Comment[]
+  likes        PostLike[]
+
+  @@unique([communityId, pinOrder], name: "uq_community_pin_order")
+  @@index([communityId, status, publishedAt(sort: Desc)], name: "idx_posts_community_feed")
+  @@index([communityId, pinOrder], name: "idx_posts_pinned")
+  @@index([authorId], name: "idx_posts_author")
+  @@map("posts")
+}
+
+model Comment {
+  id        String    @id @default(uuid()) @db.Uuid
+  postId    String    @map("post_id") @db.Uuid
+  authorId  String    @map("author_id") @db.Uuid
+  parentId  String?   @map("parent_id") @db.Uuid
+  content   String
+  depth     Int       @default(0) @db.SmallInt
+  path      String
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+
+  post    Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author  User      @relation(fields: [authorId], references: [id])
+  parent  Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies Comment[] @relation("CommentReplies")
+
+  @@index([postId, createdAt], name: "idx_comments_post")
+  @@index([path], name: "idx_comments_path")
+  @@index([parentId], name: "idx_comments_parent")
+  @@map("comments")
+}
+
+model PostLike {
+  id        String   @id @default(uuid()) @db.Uuid
+  postId    String   @map("post_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId], name: "uq_post_like")
+  @@index([postId], name: "idx_likes_post")
+  @@index([userId], name: "idx_likes_user")
+  @@map("post_likes")
+}

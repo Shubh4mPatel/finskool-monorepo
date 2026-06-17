@@ -1,0 +1,40 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: finskool-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: finskool
+      POSTGRES_USER: finskool
+      POSTGRES_PASSWORD: finskool_pass
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+    volumes:
+      - finskool-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U finskool -d finskool"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: finskool-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --requirepass finskool_redis_pass
+    volumes:
+      - finskool-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "finskool_redis_pass", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  finskool-postgres-data:
+    name: finskool-postgres-data
+  finskool-redis-data:
+    name: finskool-redis-data
