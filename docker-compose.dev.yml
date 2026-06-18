@@ -34,8 +34,29 @@ services:
       timeout: 5s
       retries: 5
 
+  minio:
+    image: minio/minio:latest
+    container_name: finskool-minio
+    restart: unless-stopped
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # web console
+    environment:
+      MINIO_ROOT_USER: finskool_minio
+      MINIO_ROOT_PASSWORD: finskool_minio_pass
+    command: server /data --console-address ":9001"
+    volumes:
+      - finskool-minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   finskool-postgres-data:
     name: finskool-postgres-data
   finskool-redis-data:
     name: finskool-redis-data
+  finskool-minio-data:
+    name: finskool-minio-data
