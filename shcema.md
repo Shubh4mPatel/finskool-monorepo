@@ -246,3 +246,24 @@ CREATE INDEX idx_likes_user ON post_likes(user_id);
 
 -- I) Soft delete a comment (children still visible via path)
 -- UPDATE comments SET deleted_at = NOW(), content = '[deleted]' WHERE id = $1;co
+
+
+
+
+when to use what check and learn
+
+Confirmed — no migrations folder exists. This matches how the project was already set up (no migrations existed before either).
+
+db push vs migrate dev — what's the difference:
+
+prisma db push	prisma migrate dev
+Creates migration files	No	Yes (in prisma/migrations/)
+Safe for production	No	Yes
+Good for	Dev/prototyping	Staging + production
+Since there are no migration files at all in this project (even from before), db push is what you've been using throughout and it's fine for now.
+
+If you want to switch to proper migrations going forward, run:
+
+
+npx prisma migrate dev --name init
+This will create a baseline migration from the current schema. But that's a separate decision — the database is already in sync either way.
