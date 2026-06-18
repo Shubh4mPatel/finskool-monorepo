@@ -5,10 +5,12 @@ import { useState } from "react";
 
 export default function PasswordInput({
   placeholder,
-  defaultValue,
+  value,
+  onChange,
 }: {
   placeholder?: string;
-  defaultValue?: string;
+  value?: string;
+  onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
 }) {
   const [visible, setVisible] = useState(false);
 
@@ -17,7 +19,8 @@ export default function PasswordInput({
       <input
         type={visible ? "text" : "password"}
         placeholder={placeholder}
-        defaultValue={defaultValue}
+        value={value}
+        onChange={onChange}
         className="w-full rounded-xl border border-divider bg-white px-4 py-3 pr-10 text-sm text-primary placeholder:text-subtle transition-colors focus:outline-none focus:ring-2 focus:ring-accent/40"
       />
       <button
