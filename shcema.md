@@ -267,3 +267,68 @@ If you want to switch to proper migrations going forward, run:
 
 npx prisma migrate dev --name init
 This will create a baseline migration from the current schema. But that's a separate decision — the database is already in sync either way.
+
+
+how dows frontend now is it exp or not so we can log the user out
+The user is asking: how does the frontend (Next.js middleware) know if the access token is expired or not, so it can decide to refresh or log the user out?
+
+Let me trace through the middleware logic I wrote:
+
+In src/middleware.ts:
+
+
+function decodeJwtPayload(token: string): { exp?: number; role?: string } | null {
+  try {
+    const part = token.split('.')[1]
+    if (!part) return null
+    const json = atob(part.replace(/-/g, '+').replace(/_/g, '/'))
+    return JSON.parse(json)
+I'm decoding the JWT by extracting the payload segment and converting it from base64 to JSON, then checking if the expiration timestamp has passed with a 5-second buffer to handle edge cases. The middleware reads the access token from cookies, decodes it to get the exp claim, and compares it against the current time to determine whether to refresh or log out.
+
+The access token includes an exp claim because it's signed with a 15-minute expiration, while the refresh token has no exp claim and relies entirely on Redis for validation. When the access token expires, the frontend calls the refresh endpoint to get a new one, and if that fails, it redirects to login. The browser also automatically clears the access token cookie after 15 minutes based on its maxAge setting.
+
+Good question. Let me show exactly what happens in the middleware step by step.
+
+The access token JWT is signed with expiresIn: '15m' on the backend, which embeds an exp (Unix timestamp) claim inside the token payload. In src/middleware.ts:
+
+
+access_token cookie value:
+eyJhbGciOiJIUzI1NiJ9  .  eyJzdWIiOiJ1c2VyLWlkIiwicm9sZSI6Im1lbWJlciIsImV4cCI6MTc1MDI1MDAwMH0  .  <signature>
+      header                                    payload (base64)                                        signature
+The middleware decodes only the middle part (no secret needed — it's just base64):
+
+
+function decodeJwtPayload(token: string): { exp?: number; role?: string } | null {
+  const part = token.split('.')[1]           // grab middle segment
+  const json = atob(part)                    // base64 decode → JSON string
+  return JSON.parse(json)                    // { sub, role, type, exp: 1750250000 }
+}
+
+function isExpired(payload: { exp?: number }): boolean {
+  if (!payload.exp) return true              // no exp → treat as expired
+  return Date.now() / 1000 > payload.exp - 5 // 5-sec buffer for clock skew
+}
+So the full flow in middleware is:
+
+
+Request arrives
+    │
+    ▼
+Read access_token cookie
+    │
+    ├── Cookie missing? (browser deleted it after 15 min maxAge)
+    │       │
+    │       ▼
+    ├── Cookie present but JWT exp < now?
+    │
+    ▼
+Either case → try GET /api/v1/auth/refresh
+    │
+    ├── Backend finds refresh_token cookie in Redis → issues new access_token cookie → user continues ✓
+    │
+    └── Backend finds NO entry in Redis (logged out / suspended) → 401 → middleware redirects to /login ✗
+Two ways the middleware detects expiry:
+
+Cookie is gone — browser automatically deletes the access_token cookie after 15 min (maxAge: 15 * 60 * 1000) since that's what we set on the backend
+Cookie exists but exp is past — the isExpired() check catches this edge case (e.g. user kept the tab open, cookie still present, but JWT is stale)
+The refresh token cookie has maxAge: 400 days and its JWT has no exp claim — so the only thing that can kill it is redis.del() on logout or suspension.

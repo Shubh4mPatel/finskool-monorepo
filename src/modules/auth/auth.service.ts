@@ -112,9 +112,10 @@ export class AuthService {
   async refresh(refreshToken: string): Promise<{ accessToken: string }> {
     let payload: JwtPayload
     try {
+      // Refresh token has no exp — verify only checks signature
       payload = jwt.verify(refreshToken, env.jwt.secret) as JwtPayload
     } catch {
-      throw new UnauthorizedError('Invalid or expired refresh token')
+      throw new UnauthorizedError('Invalid refresh token')
     }
 
     if (payload.type !== 'refresh') {
@@ -152,7 +153,11 @@ export class AuthService {
   private async issueTokens(user: DbUser): Promise<AuthTokensInternal> {
     const role = user.role as 'admin' | 'member'
     const accessToken = this.signToken({ sub: user.id, role, type: 'access' }, env.jwt.accessExpiresIn)
-    const refreshToken = this.signToken({ sub: user.id, role, type: 'refresh' }, env.jwt.refreshExpiresIn)
+    // Refresh token has no expiry in the JWT — Redis presence is the sole validity gate
+    const refreshToken = jwt.sign(
+      { sub: user.id, role, type: 'refresh' } as object,
+      env.jwt.secret,
+    )
 
     const tokenHash = hashToken(refreshToken)
     // No TTL — refresh token is permanent until logout or admin suspension

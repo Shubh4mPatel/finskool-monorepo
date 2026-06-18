@@ -27,7 +27,6 @@ export const env = {
   jwt: {
     secret: process.env['JWT_SECRET'] ?? '',
     accessExpiresIn: process.env['JWT_ACCESS_EXPIRES_IN'] ?? '15m',
-    refreshExpiresIn: process.env['JWT_REFRESH_EXPIRES_IN'] ?? '7d',
   },
 
   minio: {
@@ -44,6 +43,6 @@ export const env = {
   cors: { origin: string | string[]; credentials: boolean }
   database: { url: string }
   redis: { host: string; port: number; password: string; db: number }
-  jwt: { secret: string; accessExpiresIn: string; refreshExpiresIn: string }
+  jwt: { secret: string; accessExpiresIn: string }
   minio: { endPoint: string; port: number; useSSL: boolean; accessKey: string; secretKey: string; bucket: string }
 }
