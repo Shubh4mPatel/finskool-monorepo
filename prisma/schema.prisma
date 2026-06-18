@@ -137,11 +137,12 @@ model Post {
   updatedAt   DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
   deletedAt   DateTime?  @map("deleted_at") @db.Timestamptz
 
-  community    Community  @relation(fields: [communityId], references: [id], onDelete: Cascade)
-  author       User       @relation("PostAuthor", fields: [authorId], references: [id])
-  pinnedByUser User?      @relation("PostPinnedBy", fields: [pinnedBy], references: [id])
-  comments     Comment[]
-  likes        PostLike[]
+  community             Community             @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  author                User                  @relation("PostAuthor", fields: [authorId], references: [id])
+  pinnedByUser          User?                 @relation("PostPinnedBy", fields: [pinnedBy], references: [id])
+  comments              Comment[]
+  likes                 PostLike[]
+  commentNotifications  CommentNotification[]
 
   @@unique([communityId, pinOrder], name: "uq_community_pin_order")
   @@index([communityId, status, publishedAt(sort: Desc)], name: "idx_posts_community_feed")
@@ -162,15 +163,32 @@ model Comment {
   updatedAt DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
   deletedAt DateTime? @map("deleted_at") @db.Timestamptz
 
-  post    Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
-  author  User      @relation(fields: [authorId], references: [id])
-  parent  Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
-  replies Comment[] @relation("CommentReplies")
+  post         Post                  @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author       User                  @relation(fields: [authorId], references: [id])
+  parent       Comment?              @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies      Comment[]             @relation("CommentReplies")
+  notification CommentNotification?
 
   @@index([postId, createdAt], name: "idx_comments_post")
   @@index([path], name: "idx_comments_path")
   @@index([parentId], name: "idx_comments_parent")
   @@map("comments")
+}
+
+model CommentNotification {
+  id        String    @id @default(uuid()) @db.Uuid
+  commentId String    @unique @map("comment_id") @db.Uuid
+  postId    String    @map("post_id") @db.Uuid
+  isReplied Boolean   @default(false) @map("is_replied")
+  repliedAt DateTime? @map("replied_at") @db.Timestamptz
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  comment Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  post    Post    @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([isReplied, createdAt(sort: Desc)], name: "idx_comment_notifications_pending")
+  @@index([postId], name: "idx_comment_notifications_post")
+  @@map("comment_notifications")
 }
 
 model PostLike {

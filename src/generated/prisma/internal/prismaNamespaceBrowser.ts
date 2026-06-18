@@ -58,6 +58,7 @@ export const ModelName = {
   CommunityMember: 'CommunityMember',
   Post: 'Post',
   Comment: 'Comment',
+  CommentNotification: 'CommentNotification',
   PostLike: 'PostLike'
 } as const
 
@@ -183,6 +184,18 @@ export const CommentScalarFieldEnum = {
 } as const
 
 export type CommentScalarFieldEnum = (typeof CommentScalarFieldEnum)[keyof typeof CommentScalarFieldEnum]
+
+
+export const CommentNotificationScalarFieldEnum = {
+  id: 'id',
+  commentId: 'commentId',
+  postId: 'postId',
+  isReplied: 'isReplied',
+  repliedAt: 'repliedAt',
+  createdAt: 'createdAt'
+} as const
+
+export type CommentNotificationScalarFieldEnum = (typeof CommentNotificationScalarFieldEnum)[keyof typeof CommentNotificationScalarFieldEnum]
 
 
 export const PostLikeScalarFieldEnum = {

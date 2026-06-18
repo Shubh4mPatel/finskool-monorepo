@@ -33,4 +33,13 @@ router.post(
   controller.importCsv,
 )
 
+router.get('/comment-notifications', authenticate, requireRole('admin'), controller.listCommentNotifications)
+
+router.patch(
+  '/comment-notifications/:id/mark-replied',
+  authenticate,
+  requireRole('admin'),
+  controller.markNotificationReplied,
+)
+
 export default router

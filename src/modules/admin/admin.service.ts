@@ -1,8 +1,13 @@
 import { createRequire } from 'module'
 import type { PrismaClient } from '../../generated/prisma/client.js'
-import { BadRequestError } from '../../shared/errors/index.js'
+import { BadRequestError, NotFoundError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
-import type { DuplicateStrategy, ImportSummaryDTO } from './admin.dto.js'
+import type {
+  DuplicateStrategy,
+  ImportSummaryDTO,
+  CommentNotificationItemDTO,
+  CommentNotificationListDTO,
+} from './admin.dto.js'
 
 const _require = createRequire(import.meta.url)
 const XLSX = _require('xlsx') as {
@@ -156,5 +161,99 @@ export class AdminService {
 
     logger.info(summary, 'admin.importUsers: complete')
     return summary
+  }
+
+  async listCommentNotifications(
+    isReplied: boolean | undefined,
+    cursor: string | undefined,
+    limit: number,
+  ): Promise<CommentNotificationListDTO> {
+    const where = isReplied !== undefined ? { isReplied } : {}
+
+    const rows = await this.db.commentNotification.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: limit + 1,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+      select: {
+        id: true,
+        isReplied: true,
+        repliedAt: true,
+        createdAt: true,
+        comment: {
+          select: {
+            id: true,
+            content: true,
+            createdAt: true,
+            author: { select: { id: true, name: true, avatarUrl: true } },
+          },
+        },
+        post: { select: { id: true, title: true } },
+      },
+    })
+
+    const hasMore = rows.length > limit
+    const page = hasMore ? rows.slice(0, limit) : rows
+
+    const notifications: CommentNotificationItemDTO[] = page.map(r => ({
+      id: r.id,
+      isReplied: r.isReplied,
+      repliedAt: r.repliedAt,
+      createdAt: r.createdAt,
+      comment: {
+        id: r.comment.id,
+        content: r.comment.content,
+        createdAt: r.comment.createdAt,
+        author: r.comment.author,
+      },
+      post: r.post,
+    }))
+
+    const last = page.at(-1)
+    return { notifications, nextCursor: hasMore && last ? last.id : null, hasMore }
+  }
+
+  async markNotificationReplied(notificationId: string): Promise<CommentNotificationItemDTO> {
+    const existing = await this.db.commentNotification.findUnique({
+      where: { id: notificationId },
+      select: { id: true, isReplied: true },
+    })
+    if (!existing) throw new NotFoundError('Notification not found')
+    if (existing.isReplied) throw new BadRequestError('Notification already marked as replied')
+
+    const updated = await this.db.commentNotification.update({
+      where: { id: notificationId },
+      data: { isReplied: true, repliedAt: new Date() },
+      select: {
+        id: true,
+        isReplied: true,
+        repliedAt: true,
+        createdAt: true,
+        comment: {
+          select: {
+            id: true,
+            content: true,
+            createdAt: true,
+            author: { select: { id: true, name: true, avatarUrl: true } },
+          },
+        },
+        post: { select: { id: true, title: true } },
+      },
+    })
+
+    logger.info({ notificationId }, 'admin.markNotificationReplied')
+    return {
+      id: updated.id,
+      isReplied: updated.isReplied,
+      repliedAt: updated.repliedAt,
+      createdAt: updated.createdAt,
+      comment: {
+        id: updated.comment.id,
+        content: updated.comment.content,
+        createdAt: updated.comment.createdAt,
+        author: updated.comment.author,
+      },
+      post: updated.post,
+    }
   }
 }

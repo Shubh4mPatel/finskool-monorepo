@@ -28,11 +28,12 @@ export class CommentsService {
     let depth = 0
     let parentPath: string | null = null
     let parentId: string | null = null
+    let parentAuthorRole: string | null = null
 
     if (data.parentCommentId) {
       const parent = await this.db.comment.findUnique({
         where: { id: data.parentCommentId, deletedAt: null },
-        select: { id: true, postId: true, depth: true, path: true },
+        select: { id: true, postId: true, depth: true, path: true, author: { select: { role: true } } },
       })
       if (!parent) throw new NotFoundError('Parent comment not found')
       if (parent.postId !== postId) {
@@ -41,7 +42,11 @@ export class CommentsService {
       depth = parent.depth + 1
       parentPath = parent.path
       parentId = parent.id
+      parentAuthorRole = parent.author.role
     }
+
+    // Notify admin when: commenter is not admin AND (top-level comment OR reply to admin's comment)
+    const shouldNotify = userRole !== 'admin' && (depth === 0 || parentAuthorRole === 'admin')
 
     // create with temp path, then update with real path (needs the new id)
     const comment = await this.db.$transaction(async tx => {
@@ -50,6 +55,19 @@ export class CommentsService {
         select: { id: true, createdAt: true },
       })
       const path = parentPath ? `${parentPath}/${created.id}` : created.id
+
+      if (shouldNotify) {
+        await tx.commentNotification.create({ data: { commentId: created.id, postId } })
+      }
+
+      // When admin replies to a notified comment, auto-mark that notification as replied
+      if (userRole === 'admin' && parentId) {
+        await tx.commentNotification.updateMany({
+          where: { commentId: parentId, isReplied: false },
+          data: { isReplied: true, repliedAt: new Date() },
+        })
+      }
+
       return tx.comment.update({
         where: { id: created.id },
         data: { path },

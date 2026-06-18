@@ -77,6 +77,11 @@ export type Post = Prisma.PostModel
  */
 export type Comment = Prisma.CommentModel
 /**
+ * Model CommentNotification
+ * 
+ */
+export type CommentNotification = Prisma.CommentNotificationModel
+/**
  * Model PostLike
  * 
  */

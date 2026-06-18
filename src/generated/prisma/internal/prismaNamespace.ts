@@ -391,6 +391,7 @@ export const ModelName = {
   CommunityMember: 'CommunityMember',
   Post: 'Post',
   Comment: 'Comment',
+  CommentNotification: 'CommentNotification',
   PostLike: 'PostLike'
 } as const
 
@@ -407,7 +408,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "user" | "approvedPhone" | "subscription" | "community" | "communityMember" | "post" | "comment" | "postLike"
+    modelProps: "user" | "approvedPhone" | "subscription" | "community" | "communityMember" | "post" | "comment" | "commentNotification" | "postLike"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -929,6 +930,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    CommentNotification: {
+      payload: Prisma.$CommentNotificationPayload<ExtArgs>
+      fields: Prisma.CommentNotificationFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.CommentNotificationFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CommentNotificationPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.CommentNotificationFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CommentNotificationPayload>
+        }
+        findFirst: {
+          args: Prisma.CommentNotificationFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CommentNotificationPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.CommentNotificationFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CommentNotificationPayload>
+        }
+        findMany: {
+          args: Prisma.CommentNotificationFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CommentNotificationPayload>[]
+        }
+        create: {
+          args: Prisma.CommentNotificationCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CommentNotificationPayload>
+        }
+        createMany: {
+          args: Prisma.CommentNotificationCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.CommentNotificationCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CommentNotificationPayload>[]
+        }
+        delete: {
+          args: Prisma.CommentNotificationDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CommentNotificationPayload>
+        }
+        update: {
+          args: Prisma.CommentNotificationUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CommentNotificationPayload>
+        }
+        deleteMany: {
+          args: Prisma.CommentNotificationDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.CommentNotificationUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.CommentNotificationUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CommentNotificationPayload>[]
+        }
+        upsert: {
+          args: Prisma.CommentNotificationUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CommentNotificationPayload>
+        }
+        aggregate: {
+          args: Prisma.CommentNotificationAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateCommentNotification>
+        }
+        groupBy: {
+          args: Prisma.CommentNotificationGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.CommentNotificationGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.CommentNotificationCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.CommentNotificationCountAggregateOutputType> | number
+        }
+      }
+    }
     PostLike: {
       payload: Prisma.$PostLikePayload<ExtArgs>
       fields: Prisma.PostLikeFieldRefs
@@ -1148,6 +1223,18 @@ export const CommentScalarFieldEnum = {
 } as const
 
 export type CommentScalarFieldEnum = (typeof CommentScalarFieldEnum)[keyof typeof CommentScalarFieldEnum]
+
+
+export const CommentNotificationScalarFieldEnum = {
+  id: 'id',
+  commentId: 'commentId',
+  postId: 'postId',
+  isReplied: 'isReplied',
+  repliedAt: 'repliedAt',
+  createdAt: 'createdAt'
+} as const
+
+export type CommentNotificationScalarFieldEnum = (typeof CommentNotificationScalarFieldEnum)[keyof typeof CommentNotificationScalarFieldEnum]
 
 
 export const PostLikeScalarFieldEnum = {
@@ -1425,6 +1512,7 @@ export type GlobalOmitConfig = {
   communityMember?: Prisma.CommunityMemberOmit
   post?: Prisma.PostOmit
   comment?: Prisma.CommentOmit
+  commentNotification?: Prisma.CommentNotificationOmit
   postLike?: Prisma.PostLikeOmit
 }
 
