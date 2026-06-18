@@ -6,9 +6,9 @@ export interface CreatePostDTO {
 }
 
 export interface UpdatePostDTO {
-  title?: string
-  content?: string
-  tags?: string[]
+  title?: string | undefined
+  content?: string | undefined
+  tags?: string[] | undefined
 }
 
 export interface PinPostDTO {
