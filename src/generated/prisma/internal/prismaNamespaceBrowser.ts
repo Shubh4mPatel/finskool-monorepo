@@ -53,6 +53,7 @@ export const AnyNull = runtime.AnyNull
 export const ModelName = {
   User: 'User',
   ApprovedPhone: 'ApprovedPhone',
+  Subscription: 'Subscription',
   Community: 'Community',
   CommunityMember: 'CommunityMember',
   Post: 'Post',
@@ -83,6 +84,7 @@ export const UserScalarFieldEnum = {
   email: 'email',
   passwordHash: 'passwordHash',
   role: 'role',
+  isActive: 'isActive',
   avatarUrl: 'avatarUrl',
   createdAt: 'createdAt',
   deletedAt: 'deletedAt'
@@ -94,11 +96,31 @@ export type UserScalarFieldEnum = (typeof UserScalarFieldEnum)[keyof typeof User
 export const ApprovedPhoneScalarFieldEnum = {
   id: 'id',
   phone: 'phone',
+  name: 'name',
+  email: 'email',
+  isActive: 'isActive',
+  isRegistered: 'isRegistered',
   addedBy: 'addedBy',
-  createdAt: 'createdAt'
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
 } as const
 
 export type ApprovedPhoneScalarFieldEnum = (typeof ApprovedPhoneScalarFieldEnum)[keyof typeof ApprovedPhoneScalarFieldEnum]
+
+
+export const SubscriptionScalarFieldEnum = {
+  id: 'id',
+  approvedPhoneId: 'approvedPhoneId',
+  communityId: 'communityId',
+  payment: 'payment',
+  paidOn: 'paidOn',
+  validUntil: 'validUntil',
+  isActive: 'isActive',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type SubscriptionScalarFieldEnum = (typeof SubscriptionScalarFieldEnum)[keyof typeof SubscriptionScalarFieldEnum]
 
 
 export const CommunityScalarFieldEnum = {

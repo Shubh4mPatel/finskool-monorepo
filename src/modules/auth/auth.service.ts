@@ -59,18 +59,30 @@ export class AuthService {
         'PHONE_NOT_APPROVED',
       )
     }
+    if (!approved.isActive) {
+      throw new ForbiddenError(
+        'Your access has been revoked. Please contact your admin.',
+        'PHONE_INACTIVE',
+      )
+    }
+    if (approved.isRegistered) {
+      throw new ConflictError(
+        'This phone number has already been registered. Please log in.',
+        'ALREADY_REGISTERED',
+      )
+    }
 
-    const [existingPhone, existingEmail] = await Promise.all([
-      this.db.user.findUnique({ where: { phone: data.phone } }),
-      this.db.user.findUnique({ where: { email: data.email } }),
-    ])
-
-    if (existingPhone) throw new ConflictError('This phone number is already registered')
+    const existingEmail = await this.db.user.findUnique({ where: { email: data.email } })
     if (existingEmail) throw new ConflictError('This email address is already registered')
 
     const passwordHash = await bcrypt.hash(data.password, BCRYPT_ROUNDS)
     const user = await this.db.user.create({
       data: { name: data.fullName, phone: data.phone, email: data.email, passwordHash },
+    })
+
+    await this.db.approvedPhone.update({
+      where: { phone: data.phone },
+      data: { isRegistered: true },
     })
 
     logger.info({ userId: user.id }, 'auth.register: success')
@@ -83,6 +95,9 @@ export class AuthService {
     const user = await this.db.user.findUnique({ where: { phone: data.phone } })
     if (!user || user.deletedAt) {
       throw new UnauthorizedError('Invalid phone number or password')
+    }
+    if (!user.isActive) {
+      throw new UnauthorizedError('Your account has been deactivated. Please contact your admin.')
     }
 
     const valid = await bcrypt.compare(data.password, user.passwordHash)

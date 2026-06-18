@@ -29,6 +29,7 @@ model User {
   email        String    @unique @db.VarChar(255)
   passwordHash String    @map("password_hash") @db.VarChar(255)
   role         UserRole  @default(member)
+  isActive     Boolean   @default(true) @map("is_active")
   avatarUrl    String?   @map("avatar_url") @db.VarChar(500)
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
   deletedAt    DateTime? @map("deleted_at") @db.Timestamptz
@@ -47,28 +48,56 @@ model User {
 }
 
 model ApprovedPhone {
-  id        String   @id @default(uuid()) @db.Uuid
-  phone     String   @unique @db.VarChar(20)
-  addedBy   String?  @map("added_by") @db.Uuid
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  id           String   @id @default(uuid()) @db.Uuid
+  phone        String   @unique @db.VarChar(20)
+  name         String?  @db.VarChar(100)
+  email        String?  @db.VarChar(255)
+  isActive     Boolean  @default(true) @map("is_active")
+  isRegistered Boolean  @default(false) @map("is_registered")
+  addedBy      String?  @map("added_by") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  subscriptions Subscription[]
 
   @@index([phone], name: "idx_approved_phones_phone")
   @@map("approved_phones")
 }
 
-model Community {
-  id           String    @id @default(uuid()) @db.Uuid
-  createdBy    String    @map("created_by") @db.Uuid
-  name         String    @db.VarChar(150)
-  slug         String    @unique @db.VarChar(150)
-  description  String?
-  coverImageUrl String?  @map("cover_image_url") @db.VarChar(500)
-  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  deletedAt    DateTime? @map("deleted_at") @db.Timestamptz
+model Subscription {
+  id              String    @id @default(uuid()) @db.Uuid
+  approvedPhoneId String    @map("approved_phone_id") @db.Uuid
+  communityId     String    @map("community_id") @db.Uuid
+  payment         Decimal   @db.Decimal(10, 2)
+  paidOn          DateTime? @map("paid_on") @db.Date
+  validUntil      DateTime  @map("valid_until") @db.Date
+  isActive        Boolean   @default(true) @map("is_active")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  creator User              @relation(fields: [createdBy], references: [id])
-  members CommunityMember[]
-  posts   Post[]
+  approvedPhone ApprovedPhone @relation(fields: [approvedPhoneId], references: [id], onDelete: Cascade)
+  community     Community     @relation(fields: [communityId], references: [id], onDelete: Cascade)
+
+  @@unique([approvedPhoneId, communityId], name: "uq_subscription_phone_community")
+  @@index([approvedPhoneId], name: "idx_subscriptions_approved_phone")
+  @@index([communityId], name: "idx_subscriptions_community")
+  @@map("subscriptions")
+}
+
+model Community {
+  id            String    @id @default(uuid()) @db.Uuid
+  createdBy     String    @map("created_by") @db.Uuid
+  name          String    @db.VarChar(150)
+  slug          String    @unique @db.VarChar(150)
+  description   String?
+  coverImageUrl String?   @map("cover_image_url") @db.VarChar(500)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz
+
+  creator       User              @relation(fields: [createdBy], references: [id])
+  members       CommunityMember[]
+  posts         Post[]
+  subscriptions Subscription[]
 
   @@index([slug], name: "idx_communities_slug")
   @@index([createdBy], name: "idx_communities_created_by")
@@ -107,9 +136,9 @@ model Post {
   updatedAt   DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
   deletedAt   DateTime?  @map("deleted_at") @db.Timestamptz
 
-  community    Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
-  author       User      @relation("PostAuthor", fields: [authorId], references: [id])
-  pinnedByUser User?     @relation("PostPinnedBy", fields: [pinnedBy], references: [id])
+  community    Community  @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  author       User       @relation("PostAuthor", fields: [authorId], references: [id])
+  pinnedByUser User?      @relation("PostPinnedBy", fields: [pinnedBy], references: [id])
   comments     Comment[]
   likes        PostLike[]
 

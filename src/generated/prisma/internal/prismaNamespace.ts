@@ -386,6 +386,7 @@ type FieldRefInputType<Model, FieldType> = Model extends never ? never : FieldRe
 export const ModelName = {
   User: 'User',
   ApprovedPhone: 'ApprovedPhone',
+  Subscription: 'Subscription',
   Community: 'Community',
   CommunityMember: 'CommunityMember',
   Post: 'Post',
@@ -406,7 +407,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "user" | "approvedPhone" | "community" | "communityMember" | "post" | "comment" | "postLike"
+    modelProps: "user" | "approvedPhone" | "subscription" | "community" | "communityMember" | "post" | "comment" | "postLike"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -555,6 +556,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         count: {
           args: Prisma.ApprovedPhoneCountArgs<ExtArgs>
           result: runtime.Types.Utils.Optional<Prisma.ApprovedPhoneCountAggregateOutputType> | number
+        }
+      }
+    }
+    Subscription: {
+      payload: Prisma.$SubscriptionPayload<ExtArgs>
+      fields: Prisma.SubscriptionFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.SubscriptionFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SubscriptionPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.SubscriptionFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SubscriptionPayload>
+        }
+        findFirst: {
+          args: Prisma.SubscriptionFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SubscriptionPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.SubscriptionFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SubscriptionPayload>
+        }
+        findMany: {
+          args: Prisma.SubscriptionFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SubscriptionPayload>[]
+        }
+        create: {
+          args: Prisma.SubscriptionCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SubscriptionPayload>
+        }
+        createMany: {
+          args: Prisma.SubscriptionCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.SubscriptionCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SubscriptionPayload>[]
+        }
+        delete: {
+          args: Prisma.SubscriptionDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SubscriptionPayload>
+        }
+        update: {
+          args: Prisma.SubscriptionUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SubscriptionPayload>
+        }
+        deleteMany: {
+          args: Prisma.SubscriptionDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.SubscriptionUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.SubscriptionUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SubscriptionPayload>[]
+        }
+        upsert: {
+          args: Prisma.SubscriptionUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SubscriptionPayload>
+        }
+        aggregate: {
+          args: Prisma.SubscriptionAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateSubscription>
+        }
+        groupBy: {
+          args: Prisma.SubscriptionGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.SubscriptionGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.SubscriptionCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.SubscriptionCountAggregateOutputType> | number
         }
       }
     }
@@ -974,6 +1049,7 @@ export const UserScalarFieldEnum = {
   email: 'email',
   passwordHash: 'passwordHash',
   role: 'role',
+  isActive: 'isActive',
   avatarUrl: 'avatarUrl',
   createdAt: 'createdAt',
   deletedAt: 'deletedAt'
@@ -985,11 +1061,31 @@ export type UserScalarFieldEnum = (typeof UserScalarFieldEnum)[keyof typeof User
 export const ApprovedPhoneScalarFieldEnum = {
   id: 'id',
   phone: 'phone',
+  name: 'name',
+  email: 'email',
+  isActive: 'isActive',
+  isRegistered: 'isRegistered',
   addedBy: 'addedBy',
-  createdAt: 'createdAt'
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
 } as const
 
 export type ApprovedPhoneScalarFieldEnum = (typeof ApprovedPhoneScalarFieldEnum)[keyof typeof ApprovedPhoneScalarFieldEnum]
+
+
+export const SubscriptionScalarFieldEnum = {
+  id: 'id',
+  approvedPhoneId: 'approvedPhoneId',
+  communityId: 'communityId',
+  payment: 'payment',
+  paidOn: 'paidOn',
+  validUntil: 'validUntil',
+  isActive: 'isActive',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type SubscriptionScalarFieldEnum = (typeof SubscriptionScalarFieldEnum)[keyof typeof SubscriptionScalarFieldEnum]
 
 
 export const CommunityScalarFieldEnum = {
@@ -1122,6 +1218,13 @@ export type ListEnumUserRoleFieldRefInput<$PrismaModel> = FieldRefInputType<$Pri
 
 
 /**
+ * Reference to a field of type 'Boolean'
+ */
+export type BooleanFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Boolean'>
+    
+
+
+/**
  * Reference to a field of type 'DateTime'
  */
 export type DateTimeFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'DateTime'>
@@ -1132,6 +1235,20 @@ export type DateTimeFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel
  * Reference to a field of type 'DateTime[]'
  */
 export type ListDateTimeFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'DateTime[]'>
+    
+
+
+/**
+ * Reference to a field of type 'Decimal'
+ */
+export type DecimalFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Decimal'>
+    
+
+
+/**
+ * Reference to a field of type 'Decimal[]'
+ */
+export type ListDecimalFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Decimal[]'>
     
 
 
@@ -1302,6 +1419,7 @@ export type PrismaClientOptions = ({
 export type GlobalOmitConfig = {
   user?: Prisma.UserOmit
   approvedPhone?: Prisma.ApprovedPhoneOmit
+  subscription?: Prisma.SubscriptionOmit
   community?: Prisma.CommunityOmit
   communityMember?: Prisma.CommunityMemberOmit
   post?: Prisma.PostOmit

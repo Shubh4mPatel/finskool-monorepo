@@ -27,22 +27,37 @@ export type AggregateApprovedPhone = {
 export type ApprovedPhoneMinAggregateOutputType = {
   id: string | null
   phone: string | null
+  name: string | null
+  email: string | null
+  isActive: boolean | null
+  isRegistered: boolean | null
   addedBy: string | null
   createdAt: Date | null
+  updatedAt: Date | null
 }
 
 export type ApprovedPhoneMaxAggregateOutputType = {
   id: string | null
   phone: string | null
+  name: string | null
+  email: string | null
+  isActive: boolean | null
+  isRegistered: boolean | null
   addedBy: string | null
   createdAt: Date | null
+  updatedAt: Date | null
 }
 
 export type ApprovedPhoneCountAggregateOutputType = {
   id: number
   phone: number
+  name: number
+  email: number
+  isActive: number
+  isRegistered: number
   addedBy: number
   createdAt: number
+  updatedAt: number
   _all: number
 }
 
@@ -50,22 +65,37 @@ export type ApprovedPhoneCountAggregateOutputType = {
 export type ApprovedPhoneMinAggregateInputType = {
   id?: true
   phone?: true
+  name?: true
+  email?: true
+  isActive?: true
+  isRegistered?: true
   addedBy?: true
   createdAt?: true
+  updatedAt?: true
 }
 
 export type ApprovedPhoneMaxAggregateInputType = {
   id?: true
   phone?: true
+  name?: true
+  email?: true
+  isActive?: true
+  isRegistered?: true
   addedBy?: true
   createdAt?: true
+  updatedAt?: true
 }
 
 export type ApprovedPhoneCountAggregateInputType = {
   id?: true
   phone?: true
+  name?: true
+  email?: true
+  isActive?: true
+  isRegistered?: true
   addedBy?: true
   createdAt?: true
+  updatedAt?: true
   _all?: true
 }
 
@@ -144,8 +174,13 @@ export type ApprovedPhoneGroupByArgs<ExtArgs extends runtime.Types.Extensions.In
 export type ApprovedPhoneGroupByOutputType = {
   id: string
   phone: string
+  name: string | null
+  email: string | null
+  isActive: boolean
+  isRegistered: boolean
   addedBy: string | null
   createdAt: Date
+  updatedAt: Date
   _count: ApprovedPhoneCountAggregateOutputType | null
   _min: ApprovedPhoneMinAggregateOutputType | null
   _max: ApprovedPhoneMaxAggregateOutputType | null
@@ -172,15 +207,27 @@ export type ApprovedPhoneWhereInput = {
   NOT?: Prisma.ApprovedPhoneWhereInput | Prisma.ApprovedPhoneWhereInput[]
   id?: Prisma.UuidFilter<"ApprovedPhone"> | string
   phone?: Prisma.StringFilter<"ApprovedPhone"> | string
+  name?: Prisma.StringNullableFilter<"ApprovedPhone"> | string | null
+  email?: Prisma.StringNullableFilter<"ApprovedPhone"> | string | null
+  isActive?: Prisma.BoolFilter<"ApprovedPhone"> | boolean
+  isRegistered?: Prisma.BoolFilter<"ApprovedPhone"> | boolean
   addedBy?: Prisma.UuidNullableFilter<"ApprovedPhone"> | string | null
   createdAt?: Prisma.DateTimeFilter<"ApprovedPhone"> | Date | string
+  updatedAt?: Prisma.DateTimeFilter<"ApprovedPhone"> | Date | string
+  subscriptions?: Prisma.SubscriptionListRelationFilter
 }
 
 export type ApprovedPhoneOrderByWithRelationInput = {
   id?: Prisma.SortOrder
   phone?: Prisma.SortOrder
+  name?: Prisma.SortOrderInput | Prisma.SortOrder
+  email?: Prisma.SortOrderInput | Prisma.SortOrder
+  isActive?: Prisma.SortOrder
+  isRegistered?: Prisma.SortOrder
   addedBy?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
+  updatedAt?: Prisma.SortOrder
+  subscriptions?: Prisma.SubscriptionOrderByRelationAggregateInput
 }
 
 export type ApprovedPhoneWhereUniqueInput = Prisma.AtLeast<{
@@ -189,15 +236,26 @@ export type ApprovedPhoneWhereUniqueInput = Prisma.AtLeast<{
   AND?: Prisma.ApprovedPhoneWhereInput | Prisma.ApprovedPhoneWhereInput[]
   OR?: Prisma.ApprovedPhoneWhereInput[]
   NOT?: Prisma.ApprovedPhoneWhereInput | Prisma.ApprovedPhoneWhereInput[]
+  name?: Prisma.StringNullableFilter<"ApprovedPhone"> | string | null
+  email?: Prisma.StringNullableFilter<"ApprovedPhone"> | string | null
+  isActive?: Prisma.BoolFilter<"ApprovedPhone"> | boolean
+  isRegistered?: Prisma.BoolFilter<"ApprovedPhone"> | boolean
   addedBy?: Prisma.UuidNullableFilter<"ApprovedPhone"> | string | null
   createdAt?: Prisma.DateTimeFilter<"ApprovedPhone"> | Date | string
+  updatedAt?: Prisma.DateTimeFilter<"ApprovedPhone"> | Date | string
+  subscriptions?: Prisma.SubscriptionListRelationFilter
 }, "id" | "phone">
 
 export type ApprovedPhoneOrderByWithAggregationInput = {
   id?: Prisma.SortOrder
   phone?: Prisma.SortOrder
+  name?: Prisma.SortOrderInput | Prisma.SortOrder
+  email?: Prisma.SortOrderInput | Prisma.SortOrder
+  isActive?: Prisma.SortOrder
+  isRegistered?: Prisma.SortOrder
   addedBy?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
+  updatedAt?: Prisma.SortOrder
   _count?: Prisma.ApprovedPhoneCountOrderByAggregateInput
   _max?: Prisma.ApprovedPhoneMaxOrderByAggregateInput
   _min?: Prisma.ApprovedPhoneMinOrderByAggregateInput
@@ -209,120 +267,326 @@ export type ApprovedPhoneScalarWhereWithAggregatesInput = {
   NOT?: Prisma.ApprovedPhoneScalarWhereWithAggregatesInput | Prisma.ApprovedPhoneScalarWhereWithAggregatesInput[]
   id?: Prisma.UuidWithAggregatesFilter<"ApprovedPhone"> | string
   phone?: Prisma.StringWithAggregatesFilter<"ApprovedPhone"> | string
+  name?: Prisma.StringNullableWithAggregatesFilter<"ApprovedPhone"> | string | null
+  email?: Prisma.StringNullableWithAggregatesFilter<"ApprovedPhone"> | string | null
+  isActive?: Prisma.BoolWithAggregatesFilter<"ApprovedPhone"> | boolean
+  isRegistered?: Prisma.BoolWithAggregatesFilter<"ApprovedPhone"> | boolean
   addedBy?: Prisma.UuidNullableWithAggregatesFilter<"ApprovedPhone"> | string | null
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"ApprovedPhone"> | Date | string
+  updatedAt?: Prisma.DateTimeWithAggregatesFilter<"ApprovedPhone"> | Date | string
 }
 
 export type ApprovedPhoneCreateInput = {
   id?: string
   phone: string
+  name?: string | null
+  email?: string | null
+  isActive?: boolean
+  isRegistered?: boolean
   addedBy?: string | null
   createdAt?: Date | string
+  updatedAt?: Date | string
+  subscriptions?: Prisma.SubscriptionCreateNestedManyWithoutApprovedPhoneInput
 }
 
 export type ApprovedPhoneUncheckedCreateInput = {
   id?: string
   phone: string
+  name?: string | null
+  email?: string | null
+  isActive?: boolean
+  isRegistered?: boolean
   addedBy?: string | null
   createdAt?: Date | string
+  updatedAt?: Date | string
+  subscriptions?: Prisma.SubscriptionUncheckedCreateNestedManyWithoutApprovedPhoneInput
 }
 
 export type ApprovedPhoneUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   phone?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  email?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  isActive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  isRegistered?: Prisma.BoolFieldUpdateOperationsInput | boolean
   addedBy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  subscriptions?: Prisma.SubscriptionUpdateManyWithoutApprovedPhoneNestedInput
 }
 
 export type ApprovedPhoneUncheckedUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   phone?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  email?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  isActive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  isRegistered?: Prisma.BoolFieldUpdateOperationsInput | boolean
   addedBy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  subscriptions?: Prisma.SubscriptionUncheckedUpdateManyWithoutApprovedPhoneNestedInput
 }
 
 export type ApprovedPhoneCreateManyInput = {
   id?: string
   phone: string
+  name?: string | null
+  email?: string | null
+  isActive?: boolean
+  isRegistered?: boolean
   addedBy?: string | null
   createdAt?: Date | string
+  updatedAt?: Date | string
 }
 
 export type ApprovedPhoneUpdateManyMutationInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   phone?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  email?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  isActive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  isRegistered?: Prisma.BoolFieldUpdateOperationsInput | boolean
   addedBy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
 export type ApprovedPhoneUncheckedUpdateManyInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   phone?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  email?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  isActive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  isRegistered?: Prisma.BoolFieldUpdateOperationsInput | boolean
   addedBy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
 export type ApprovedPhoneCountOrderByAggregateInput = {
   id?: Prisma.SortOrder
   phone?: Prisma.SortOrder
+  name?: Prisma.SortOrder
+  email?: Prisma.SortOrder
+  isActive?: Prisma.SortOrder
+  isRegistered?: Prisma.SortOrder
   addedBy?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
+  updatedAt?: Prisma.SortOrder
 }
 
 export type ApprovedPhoneMaxOrderByAggregateInput = {
   id?: Prisma.SortOrder
   phone?: Prisma.SortOrder
+  name?: Prisma.SortOrder
+  email?: Prisma.SortOrder
+  isActive?: Prisma.SortOrder
+  isRegistered?: Prisma.SortOrder
   addedBy?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
+  updatedAt?: Prisma.SortOrder
 }
 
 export type ApprovedPhoneMinOrderByAggregateInput = {
   id?: Prisma.SortOrder
   phone?: Prisma.SortOrder
+  name?: Prisma.SortOrder
+  email?: Prisma.SortOrder
+  isActive?: Prisma.SortOrder
+  isRegistered?: Prisma.SortOrder
   addedBy?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
+  updatedAt?: Prisma.SortOrder
 }
 
+export type ApprovedPhoneScalarRelationFilter = {
+  is?: Prisma.ApprovedPhoneWhereInput
+  isNot?: Prisma.ApprovedPhoneWhereInput
+}
+
+export type ApprovedPhoneCreateNestedOneWithoutSubscriptionsInput = {
+  create?: Prisma.XOR<Prisma.ApprovedPhoneCreateWithoutSubscriptionsInput, Prisma.ApprovedPhoneUncheckedCreateWithoutSubscriptionsInput>
+  connectOrCreate?: Prisma.ApprovedPhoneCreateOrConnectWithoutSubscriptionsInput
+  connect?: Prisma.ApprovedPhoneWhereUniqueInput
+}
+
+export type ApprovedPhoneUpdateOneRequiredWithoutSubscriptionsNestedInput = {
+  create?: Prisma.XOR<Prisma.ApprovedPhoneCreateWithoutSubscriptionsInput, Prisma.ApprovedPhoneUncheckedCreateWithoutSubscriptionsInput>
+  connectOrCreate?: Prisma.ApprovedPhoneCreateOrConnectWithoutSubscriptionsInput
+  upsert?: Prisma.ApprovedPhoneUpsertWithoutSubscriptionsInput
+  connect?: Prisma.ApprovedPhoneWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.ApprovedPhoneUpdateToOneWithWhereWithoutSubscriptionsInput, Prisma.ApprovedPhoneUpdateWithoutSubscriptionsInput>, Prisma.ApprovedPhoneUncheckedUpdateWithoutSubscriptionsInput>
+}
+
+export type ApprovedPhoneCreateWithoutSubscriptionsInput = {
+  id?: string
+  phone: string
+  name?: string | null
+  email?: string | null
+  isActive?: boolean
+  isRegistered?: boolean
+  addedBy?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+}
+
+export type ApprovedPhoneUncheckedCreateWithoutSubscriptionsInput = {
+  id?: string
+  phone: string
+  name?: string | null
+  email?: string | null
+  isActive?: boolean
+  isRegistered?: boolean
+  addedBy?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+}
+
+export type ApprovedPhoneCreateOrConnectWithoutSubscriptionsInput = {
+  where: Prisma.ApprovedPhoneWhereUniqueInput
+  create: Prisma.XOR<Prisma.ApprovedPhoneCreateWithoutSubscriptionsInput, Prisma.ApprovedPhoneUncheckedCreateWithoutSubscriptionsInput>
+}
+
+export type ApprovedPhoneUpsertWithoutSubscriptionsInput = {
+  update: Prisma.XOR<Prisma.ApprovedPhoneUpdateWithoutSubscriptionsInput, Prisma.ApprovedPhoneUncheckedUpdateWithoutSubscriptionsInput>
+  create: Prisma.XOR<Prisma.ApprovedPhoneCreateWithoutSubscriptionsInput, Prisma.ApprovedPhoneUncheckedCreateWithoutSubscriptionsInput>
+  where?: Prisma.ApprovedPhoneWhereInput
+}
+
+export type ApprovedPhoneUpdateToOneWithWhereWithoutSubscriptionsInput = {
+  where?: Prisma.ApprovedPhoneWhereInput
+  data: Prisma.XOR<Prisma.ApprovedPhoneUpdateWithoutSubscriptionsInput, Prisma.ApprovedPhoneUncheckedUpdateWithoutSubscriptionsInput>
+}
+
+export type ApprovedPhoneUpdateWithoutSubscriptionsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  phone?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  email?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  isActive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  isRegistered?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  addedBy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+}
+
+export type ApprovedPhoneUncheckedUpdateWithoutSubscriptionsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  phone?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  email?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  isActive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  isRegistered?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  addedBy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+}
+
+
+/**
+ * Count Type ApprovedPhoneCountOutputType
+ */
+
+export type ApprovedPhoneCountOutputType = {
+  subscriptions: number
+}
+
+export type ApprovedPhoneCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  subscriptions?: boolean | ApprovedPhoneCountOutputTypeCountSubscriptionsArgs
+}
+
+/**
+ * ApprovedPhoneCountOutputType without action
+ */
+export type ApprovedPhoneCountOutputTypeDefaultArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the ApprovedPhoneCountOutputType
+   */
+  select?: Prisma.ApprovedPhoneCountOutputTypeSelect<ExtArgs> | null
+}
+
+/**
+ * ApprovedPhoneCountOutputType without action
+ */
+export type ApprovedPhoneCountOutputTypeCountSubscriptionsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.SubscriptionWhereInput
+}
 
 
 export type ApprovedPhoneSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
   phone?: boolean
+  name?: boolean
+  email?: boolean
+  isActive?: boolean
+  isRegistered?: boolean
   addedBy?: boolean
   createdAt?: boolean
+  updatedAt?: boolean
+  subscriptions?: boolean | Prisma.ApprovedPhone$subscriptionsArgs<ExtArgs>
+  _count?: boolean | Prisma.ApprovedPhoneCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["approvedPhone"]>
 
 export type ApprovedPhoneSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
   phone?: boolean
+  name?: boolean
+  email?: boolean
+  isActive?: boolean
+  isRegistered?: boolean
   addedBy?: boolean
   createdAt?: boolean
+  updatedAt?: boolean
 }, ExtArgs["result"]["approvedPhone"]>
 
 export type ApprovedPhoneSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
   phone?: boolean
+  name?: boolean
+  email?: boolean
+  isActive?: boolean
+  isRegistered?: boolean
   addedBy?: boolean
   createdAt?: boolean
+  updatedAt?: boolean
 }, ExtArgs["result"]["approvedPhone"]>
 
 export type ApprovedPhoneSelectScalar = {
   id?: boolean
   phone?: boolean
+  name?: boolean
+  email?: boolean
+  isActive?: boolean
+  isRegistered?: boolean
   addedBy?: boolean
   createdAt?: boolean
+  updatedAt?: boolean
 }
 
-export type ApprovedPhoneOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "phone" | "addedBy" | "createdAt", ExtArgs["result"]["approvedPhone"]>
+export type ApprovedPhoneOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "phone" | "name" | "email" | "isActive" | "isRegistered" | "addedBy" | "createdAt" | "updatedAt", ExtArgs["result"]["approvedPhone"]>
+export type ApprovedPhoneInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  subscriptions?: boolean | Prisma.ApprovedPhone$subscriptionsArgs<ExtArgs>
+  _count?: boolean | Prisma.ApprovedPhoneCountOutputTypeDefaultArgs<ExtArgs>
+}
+export type ApprovedPhoneIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {}
+export type ApprovedPhoneIncludeUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {}
 
 export type $ApprovedPhonePayload<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   name: "ApprovedPhone"
-  objects: {}
+  objects: {
+    subscriptions: Prisma.$SubscriptionPayload<ExtArgs>[]
+  }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
     phone: string
+    name: string | null
+    email: string | null
+    isActive: boolean
+    isRegistered: boolean
     addedBy: string | null
     createdAt: Date
+    updatedAt: Date
   }, ExtArgs["result"]["approvedPhone"]>
   composites: {}
 }
@@ -717,6 +981,7 @@ readonly fields: ApprovedPhoneFieldRefs;
  */
 export interface Prisma__ApprovedPhoneClient<T, Null = never, ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
   readonly [Symbol.toStringTag]: "PrismaPromise"
+  subscriptions<T extends Prisma.ApprovedPhone$subscriptionsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ApprovedPhone$subscriptionsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$SubscriptionPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -748,8 +1013,13 @@ export interface Prisma__ApprovedPhoneClient<T, Null = never, ExtArgs extends ru
 export interface ApprovedPhoneFieldRefs {
   readonly id: Prisma.FieldRef<"ApprovedPhone", 'String'>
   readonly phone: Prisma.FieldRef<"ApprovedPhone", 'String'>
+  readonly name: Prisma.FieldRef<"ApprovedPhone", 'String'>
+  readonly email: Prisma.FieldRef<"ApprovedPhone", 'String'>
+  readonly isActive: Prisma.FieldRef<"ApprovedPhone", 'Boolean'>
+  readonly isRegistered: Prisma.FieldRef<"ApprovedPhone", 'Boolean'>
   readonly addedBy: Prisma.FieldRef<"ApprovedPhone", 'String'>
   readonly createdAt: Prisma.FieldRef<"ApprovedPhone", 'DateTime'>
+  readonly updatedAt: Prisma.FieldRef<"ApprovedPhone", 'DateTime'>
 }
     
 
@@ -766,6 +1036,10 @@ export type ApprovedPhoneFindUniqueArgs<ExtArgs extends runtime.Types.Extensions
    * Omit specific fields from the ApprovedPhone
    */
   omit?: Prisma.ApprovedPhoneOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ApprovedPhoneInclude<ExtArgs> | null
   /**
    * Filter, which ApprovedPhone to fetch.
    */
@@ -785,6 +1059,10 @@ export type ApprovedPhoneFindUniqueOrThrowArgs<ExtArgs extends runtime.Types.Ext
    */
   omit?: Prisma.ApprovedPhoneOmit<ExtArgs> | null
   /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ApprovedPhoneInclude<ExtArgs> | null
+  /**
    * Filter, which ApprovedPhone to fetch.
    */
   where: Prisma.ApprovedPhoneWhereUniqueInput
@@ -802,6 +1080,10 @@ export type ApprovedPhoneFindFirstArgs<ExtArgs extends runtime.Types.Extensions.
    * Omit specific fields from the ApprovedPhone
    */
   omit?: Prisma.ApprovedPhoneOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ApprovedPhoneInclude<ExtArgs> | null
   /**
    * Filter, which ApprovedPhone to fetch.
    */
@@ -851,6 +1133,10 @@ export type ApprovedPhoneFindFirstOrThrowArgs<ExtArgs extends runtime.Types.Exte
    */
   omit?: Prisma.ApprovedPhoneOmit<ExtArgs> | null
   /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ApprovedPhoneInclude<ExtArgs> | null
+  /**
    * Filter, which ApprovedPhone to fetch.
    */
   where?: Prisma.ApprovedPhoneWhereInput
@@ -898,6 +1184,10 @@ export type ApprovedPhoneFindManyArgs<ExtArgs extends runtime.Types.Extensions.I
    * Omit specific fields from the ApprovedPhone
    */
   omit?: Prisma.ApprovedPhoneOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ApprovedPhoneInclude<ExtArgs> | null
   /**
    * Filter, which ApprovedPhones to fetch.
    */
@@ -947,6 +1237,10 @@ export type ApprovedPhoneCreateArgs<ExtArgs extends runtime.Types.Extensions.Int
    */
   omit?: Prisma.ApprovedPhoneOmit<ExtArgs> | null
   /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ApprovedPhoneInclude<ExtArgs> | null
+  /**
    * The data needed to create a ApprovedPhone.
    */
   data: Prisma.XOR<Prisma.ApprovedPhoneCreateInput, Prisma.ApprovedPhoneUncheckedCreateInput>
@@ -994,6 +1288,10 @@ export type ApprovedPhoneUpdateArgs<ExtArgs extends runtime.Types.Extensions.Int
    * Omit specific fields from the ApprovedPhone
    */
   omit?: Prisma.ApprovedPhoneOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ApprovedPhoneInclude<ExtArgs> | null
   /**
    * The data needed to update a ApprovedPhone.
    */
@@ -1061,6 +1359,10 @@ export type ApprovedPhoneUpsertArgs<ExtArgs extends runtime.Types.Extensions.Int
    */
   omit?: Prisma.ApprovedPhoneOmit<ExtArgs> | null
   /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ApprovedPhoneInclude<ExtArgs> | null
+  /**
    * The filter to search for the ApprovedPhone to update in case it exists.
    */
   where: Prisma.ApprovedPhoneWhereUniqueInput
@@ -1087,6 +1389,10 @@ export type ApprovedPhoneDeleteArgs<ExtArgs extends runtime.Types.Extensions.Int
    */
   omit?: Prisma.ApprovedPhoneOmit<ExtArgs> | null
   /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ApprovedPhoneInclude<ExtArgs> | null
+  /**
    * Filter which ApprovedPhone to delete.
    */
   where: Prisma.ApprovedPhoneWhereUniqueInput
@@ -1107,6 +1413,30 @@ export type ApprovedPhoneDeleteManyArgs<ExtArgs extends runtime.Types.Extensions
 }
 
 /**
+ * ApprovedPhone.subscriptions
+ */
+export type ApprovedPhone$subscriptionsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the Subscription
+   */
+  select?: Prisma.SubscriptionSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the Subscription
+   */
+  omit?: Prisma.SubscriptionOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.SubscriptionInclude<ExtArgs> | null
+  where?: Prisma.SubscriptionWhereInput
+  orderBy?: Prisma.SubscriptionOrderByWithRelationInput | Prisma.SubscriptionOrderByWithRelationInput[]
+  cursor?: Prisma.SubscriptionWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.SubscriptionScalarFieldEnum | Prisma.SubscriptionScalarFieldEnum[]
+}
+
+/**
  * ApprovedPhone without action
  */
 export type ApprovedPhoneDefaultArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -1118,4 +1448,8 @@ export type ApprovedPhoneDefaultArgs<ExtArgs extends runtime.Types.Extensions.In
    * Omit specific fields from the ApprovedPhone
    */
   omit?: Prisma.ApprovedPhoneOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ApprovedPhoneInclude<ExtArgs> | null
 }

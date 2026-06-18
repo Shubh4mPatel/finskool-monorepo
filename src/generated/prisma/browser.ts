@@ -28,6 +28,11 @@ export type User = Prisma.UserModel
  */
 export type ApprovedPhone = Prisma.ApprovedPhoneModel
 /**
+ * Model Subscription
+ * 
+ */
+export type Subscription = Prisma.SubscriptionModel
+/**
  * Model Community
  * 
  */

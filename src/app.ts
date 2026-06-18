@@ -6,6 +6,7 @@ import { env } from './config/env.js'
 import { errorMiddleware } from './middlewares/error.middleware.js'
 import { NotFoundError } from './shared/errors/index.js'
 import authRoutes from './modules/auth/auth.routes.js'
+import adminRoutes from './modules/admin/admin.routes.js'
 
 function buildCorsOptions(): CorsOptions {
   const { origin, credentials } = env.cors
@@ -32,6 +33,7 @@ export function createApp() {
   })
 
   app.use('/api/v1/auth', authRoutes)
+  app.use('/api/v1/admin', adminRoutes)
 
   app.use((_req, _res, next) => next(new NotFoundError('Route not found')))
   app.use(errorMiddleware)
