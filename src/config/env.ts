@@ -29,6 +29,15 @@ export const env = {
     accessExpiresIn: process.env['JWT_ACCESS_EXPIRES_IN'] ?? '15m',
     refreshExpiresIn: process.env['JWT_REFRESH_EXPIRES_IN'] ?? '7d',
   },
+
+  minio: {
+    endPoint: process.env['MINIO_ENDPOINT'] ?? 'localhost',
+    port: Number(process.env['MINIO_PORT'] ?? 9000),
+    useSSL: process.env['MINIO_USE_SSL'] === 'true',
+    accessKey: process.env['MINIO_ACCESS_KEY'] ?? '',
+    secretKey: process.env['MINIO_SECRET_KEY'] ?? '',
+    bucket: process.env['MINIO_BUCKET'] ?? 'finskool',
+  },
 } as const satisfies {
   nodeEnv: 'development' | 'production' | 'test'
   port: number
@@ -36,4 +45,5 @@ export const env = {
   database: { url: string }
   redis: { host: string; port: number; password: string; db: number }
   jwt: { secret: string; accessExpiresIn: string; refreshExpiresIn: string }
+  minio: { endPoint: string; port: number; useSSL: boolean; accessKey: string; secretKey: string; bucket: string }
 }

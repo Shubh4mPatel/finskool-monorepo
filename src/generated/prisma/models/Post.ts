@@ -38,6 +38,7 @@ export type PostMinAggregateOutputType = {
   id: string | null
   communityId: string | null
   authorId: string | null
+  title: string | null
   contentMd: string | null
   status: $Enums.PostStatus | null
   pinOrder: number | null
@@ -53,6 +54,7 @@ export type PostMaxAggregateOutputType = {
   id: string | null
   communityId: string | null
   authorId: string | null
+  title: string | null
   contentMd: string | null
   status: $Enums.PostStatus | null
   pinOrder: number | null
@@ -68,6 +70,7 @@ export type PostCountAggregateOutputType = {
   id: number
   communityId: number
   authorId: number
+  title: number
   contentMd: number
   imageUrls: number
   tags: number
@@ -95,6 +98,7 @@ export type PostMinAggregateInputType = {
   id?: true
   communityId?: true
   authorId?: true
+  title?: true
   contentMd?: true
   status?: true
   pinOrder?: true
@@ -110,6 +114,7 @@ export type PostMaxAggregateInputType = {
   id?: true
   communityId?: true
   authorId?: true
+  title?: true
   contentMd?: true
   status?: true
   pinOrder?: true
@@ -125,6 +130,7 @@ export type PostCountAggregateInputType = {
   id?: true
   communityId?: true
   authorId?: true
+  title?: true
   contentMd?: true
   imageUrls?: true
   tags?: true
@@ -229,6 +235,7 @@ export type PostGroupByOutputType = {
   id: string
   communityId: string
   authorId: string
+  title: string
   contentMd: string
   imageUrls: string[]
   tags: string[]
@@ -269,6 +276,7 @@ export type PostWhereInput = {
   id?: Prisma.UuidFilter<"Post"> | string
   communityId?: Prisma.UuidFilter<"Post"> | string
   authorId?: Prisma.UuidFilter<"Post"> | string
+  title?: Prisma.StringFilter<"Post"> | string
   contentMd?: Prisma.StringFilter<"Post"> | string
   imageUrls?: Prisma.StringNullableListFilter<"Post">
   tags?: Prisma.StringNullableListFilter<"Post">
@@ -291,6 +299,7 @@ export type PostOrderByWithRelationInput = {
   id?: Prisma.SortOrder
   communityId?: Prisma.SortOrder
   authorId?: Prisma.SortOrder
+  title?: Prisma.SortOrder
   contentMd?: Prisma.SortOrder
   imageUrls?: Prisma.SortOrder
   tags?: Prisma.SortOrder
@@ -317,6 +326,7 @@ export type PostWhereUniqueInput = Prisma.AtLeast<{
   NOT?: Prisma.PostWhereInput | Prisma.PostWhereInput[]
   communityId?: Prisma.UuidFilter<"Post"> | string
   authorId?: Prisma.UuidFilter<"Post"> | string
+  title?: Prisma.StringFilter<"Post"> | string
   contentMd?: Prisma.StringFilter<"Post"> | string
   imageUrls?: Prisma.StringNullableListFilter<"Post">
   tags?: Prisma.StringNullableListFilter<"Post">
@@ -339,6 +349,7 @@ export type PostOrderByWithAggregationInput = {
   id?: Prisma.SortOrder
   communityId?: Prisma.SortOrder
   authorId?: Prisma.SortOrder
+  title?: Prisma.SortOrder
   contentMd?: Prisma.SortOrder
   imageUrls?: Prisma.SortOrder
   tags?: Prisma.SortOrder
@@ -364,6 +375,7 @@ export type PostScalarWhereWithAggregatesInput = {
   id?: Prisma.UuidWithAggregatesFilter<"Post"> | string
   communityId?: Prisma.UuidWithAggregatesFilter<"Post"> | string
   authorId?: Prisma.UuidWithAggregatesFilter<"Post"> | string
+  title?: Prisma.StringWithAggregatesFilter<"Post"> | string
   contentMd?: Prisma.StringWithAggregatesFilter<"Post"> | string
   imageUrls?: Prisma.StringNullableListFilter<"Post">
   tags?: Prisma.StringNullableListFilter<"Post">
@@ -379,6 +391,7 @@ export type PostScalarWhereWithAggregatesInput = {
 
 export type PostCreateInput = {
   id?: string
+  title: string
   contentMd: string
   imageUrls?: Prisma.PostCreateimageUrlsInput | string[]
   tags?: Prisma.PostCreatetagsInput | string[]
@@ -400,6 +413,7 @@ export type PostUncheckedCreateInput = {
   id?: string
   communityId: string
   authorId: string
+  title: string
   contentMd: string
   imageUrls?: Prisma.PostCreateimageUrlsInput | string[]
   tags?: Prisma.PostCreatetagsInput | string[]
@@ -417,6 +431,7 @@ export type PostUncheckedCreateInput = {
 
 export type PostUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
+  title?: Prisma.StringFieldUpdateOperationsInput | string
   contentMd?: Prisma.StringFieldUpdateOperationsInput | string
   imageUrls?: Prisma.PostUpdateimageUrlsInput | string[]
   tags?: Prisma.PostUpdatetagsInput | string[]
@@ -438,6 +453,7 @@ export type PostUncheckedUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   communityId?: Prisma.StringFieldUpdateOperationsInput | string
   authorId?: Prisma.StringFieldUpdateOperationsInput | string
+  title?: Prisma.StringFieldUpdateOperationsInput | string
   contentMd?: Prisma.StringFieldUpdateOperationsInput | string
   imageUrls?: Prisma.PostUpdateimageUrlsInput | string[]
   tags?: Prisma.PostUpdatetagsInput | string[]
@@ -457,6 +473,7 @@ export type PostCreateManyInput = {
   id?: string
   communityId: string
   authorId: string
+  title: string
   contentMd: string
   imageUrls?: Prisma.PostCreateimageUrlsInput | string[]
   tags?: Prisma.PostCreatetagsInput | string[]
@@ -472,6 +489,7 @@ export type PostCreateManyInput = {
 
 export type PostUpdateManyMutationInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
+  title?: Prisma.StringFieldUpdateOperationsInput | string
   contentMd?: Prisma.StringFieldUpdateOperationsInput | string
   imageUrls?: Prisma.PostUpdateimageUrlsInput | string[]
   tags?: Prisma.PostUpdatetagsInput | string[]
@@ -488,6 +506,7 @@ export type PostUncheckedUpdateManyInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   communityId?: Prisma.StringFieldUpdateOperationsInput | string
   authorId?: Prisma.StringFieldUpdateOperationsInput | string
+  title?: Prisma.StringFieldUpdateOperationsInput | string
   contentMd?: Prisma.StringFieldUpdateOperationsInput | string
   imageUrls?: Prisma.PostUpdateimageUrlsInput | string[]
   tags?: Prisma.PostUpdatetagsInput | string[]
@@ -528,6 +547,7 @@ export type PostCountOrderByAggregateInput = {
   id?: Prisma.SortOrder
   communityId?: Prisma.SortOrder
   authorId?: Prisma.SortOrder
+  title?: Prisma.SortOrder
   contentMd?: Prisma.SortOrder
   imageUrls?: Prisma.SortOrder
   tags?: Prisma.SortOrder
@@ -549,6 +569,7 @@ export type PostMaxOrderByAggregateInput = {
   id?: Prisma.SortOrder
   communityId?: Prisma.SortOrder
   authorId?: Prisma.SortOrder
+  title?: Prisma.SortOrder
   contentMd?: Prisma.SortOrder
   status?: Prisma.SortOrder
   pinOrder?: Prisma.SortOrder
@@ -564,6 +585,7 @@ export type PostMinOrderByAggregateInput = {
   id?: Prisma.SortOrder
   communityId?: Prisma.SortOrder
   authorId?: Prisma.SortOrder
+  title?: Prisma.SortOrder
   contentMd?: Prisma.SortOrder
   status?: Prisma.SortOrder
   pinOrder?: Prisma.SortOrder
@@ -770,6 +792,7 @@ export type PostUpdateOneRequiredWithoutLikesNestedInput = {
 
 export type PostCreateWithoutAuthorInput = {
   id?: string
+  title: string
   contentMd: string
   imageUrls?: Prisma.PostCreateimageUrlsInput | string[]
   tags?: Prisma.PostCreatetagsInput | string[]
@@ -789,6 +812,7 @@ export type PostCreateWithoutAuthorInput = {
 export type PostUncheckedCreateWithoutAuthorInput = {
   id?: string
   communityId: string
+  title: string
   contentMd: string
   imageUrls?: Prisma.PostCreateimageUrlsInput | string[]
   tags?: Prisma.PostCreatetagsInput | string[]
@@ -816,6 +840,7 @@ export type PostCreateManyAuthorInputEnvelope = {
 
 export type PostCreateWithoutPinnedByUserInput = {
   id?: string
+  title: string
   contentMd: string
   imageUrls?: Prisma.PostCreateimageUrlsInput | string[]
   tags?: Prisma.PostCreatetagsInput | string[]
@@ -836,6 +861,7 @@ export type PostUncheckedCreateWithoutPinnedByUserInput = {
   id?: string
   communityId: string
   authorId: string
+  title: string
   contentMd: string
   imageUrls?: Prisma.PostCreateimageUrlsInput | string[]
   tags?: Prisma.PostCreatetagsInput | string[]
@@ -883,6 +909,7 @@ export type PostScalarWhereInput = {
   id?: Prisma.UuidFilter<"Post"> | string
   communityId?: Prisma.UuidFilter<"Post"> | string
   authorId?: Prisma.UuidFilter<"Post"> | string
+  title?: Prisma.StringFilter<"Post"> | string
   contentMd?: Prisma.StringFilter<"Post"> | string
   imageUrls?: Prisma.StringNullableListFilter<"Post">
   tags?: Prisma.StringNullableListFilter<"Post">
@@ -914,6 +941,7 @@ export type PostUpdateManyWithWhereWithoutPinnedByUserInput = {
 
 export type PostCreateWithoutCommunityInput = {
   id?: string
+  title: string
   contentMd: string
   imageUrls?: Prisma.PostCreateimageUrlsInput | string[]
   tags?: Prisma.PostCreatetagsInput | string[]
@@ -933,6 +961,7 @@ export type PostCreateWithoutCommunityInput = {
 export type PostUncheckedCreateWithoutCommunityInput = {
   id?: string
   authorId: string
+  title: string
   contentMd: string
   imageUrls?: Prisma.PostCreateimageUrlsInput | string[]
   tags?: Prisma.PostCreatetagsInput | string[]
@@ -976,6 +1005,7 @@ export type PostUpdateManyWithWhereWithoutCommunityInput = {
 
 export type PostCreateWithoutCommentsInput = {
   id?: string
+  title: string
   contentMd: string
   imageUrls?: Prisma.PostCreateimageUrlsInput | string[]
   tags?: Prisma.PostCreatetagsInput | string[]
@@ -996,6 +1026,7 @@ export type PostUncheckedCreateWithoutCommentsInput = {
   id?: string
   communityId: string
   authorId: string
+  title: string
   contentMd: string
   imageUrls?: Prisma.PostCreateimageUrlsInput | string[]
   tags?: Prisma.PostCreatetagsInput | string[]
@@ -1028,6 +1059,7 @@ export type PostUpdateToOneWithWhereWithoutCommentsInput = {
 
 export type PostUpdateWithoutCommentsInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
+  title?: Prisma.StringFieldUpdateOperationsInput | string
   contentMd?: Prisma.StringFieldUpdateOperationsInput | string
   imageUrls?: Prisma.PostUpdateimageUrlsInput | string[]
   tags?: Prisma.PostUpdatetagsInput | string[]
@@ -1048,6 +1080,7 @@ export type PostUncheckedUpdateWithoutCommentsInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   communityId?: Prisma.StringFieldUpdateOperationsInput | string
   authorId?: Prisma.StringFieldUpdateOperationsInput | string
+  title?: Prisma.StringFieldUpdateOperationsInput | string
   contentMd?: Prisma.StringFieldUpdateOperationsInput | string
   imageUrls?: Prisma.PostUpdateimageUrlsInput | string[]
   tags?: Prisma.PostUpdatetagsInput | string[]
@@ -1064,6 +1097,7 @@ export type PostUncheckedUpdateWithoutCommentsInput = {
 
 export type PostCreateWithoutLikesInput = {
   id?: string
+  title: string
   contentMd: string
   imageUrls?: Prisma.PostCreateimageUrlsInput | string[]
   tags?: Prisma.PostCreatetagsInput | string[]
@@ -1084,6 +1118,7 @@ export type PostUncheckedCreateWithoutLikesInput = {
   id?: string
   communityId: string
   authorId: string
+  title: string
   contentMd: string
   imageUrls?: Prisma.PostCreateimageUrlsInput | string[]
   tags?: Prisma.PostCreatetagsInput | string[]
@@ -1116,6 +1151,7 @@ export type PostUpdateToOneWithWhereWithoutLikesInput = {
 
 export type PostUpdateWithoutLikesInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
+  title?: Prisma.StringFieldUpdateOperationsInput | string
   contentMd?: Prisma.StringFieldUpdateOperationsInput | string
   imageUrls?: Prisma.PostUpdateimageUrlsInput | string[]
   tags?: Prisma.PostUpdatetagsInput | string[]
@@ -1136,6 +1172,7 @@ export type PostUncheckedUpdateWithoutLikesInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   communityId?: Prisma.StringFieldUpdateOperationsInput | string
   authorId?: Prisma.StringFieldUpdateOperationsInput | string
+  title?: Prisma.StringFieldUpdateOperationsInput | string
   contentMd?: Prisma.StringFieldUpdateOperationsInput | string
   imageUrls?: Prisma.PostUpdateimageUrlsInput | string[]
   tags?: Prisma.PostUpdatetagsInput | string[]
@@ -1153,6 +1190,7 @@ export type PostUncheckedUpdateWithoutLikesInput = {
 export type PostCreateManyAuthorInput = {
   id?: string
   communityId: string
+  title: string
   contentMd: string
   imageUrls?: Prisma.PostCreateimageUrlsInput | string[]
   tags?: Prisma.PostCreatetagsInput | string[]
@@ -1170,6 +1208,7 @@ export type PostCreateManyPinnedByUserInput = {
   id?: string
   communityId: string
   authorId: string
+  title: string
   contentMd: string
   imageUrls?: Prisma.PostCreateimageUrlsInput | string[]
   tags?: Prisma.PostCreatetagsInput | string[]
@@ -1184,6 +1223,7 @@ export type PostCreateManyPinnedByUserInput = {
 
 export type PostUpdateWithoutAuthorInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
+  title?: Prisma.StringFieldUpdateOperationsInput | string
   contentMd?: Prisma.StringFieldUpdateOperationsInput | string
   imageUrls?: Prisma.PostUpdateimageUrlsInput | string[]
   tags?: Prisma.PostUpdatetagsInput | string[]
@@ -1203,6 +1243,7 @@ export type PostUpdateWithoutAuthorInput = {
 export type PostUncheckedUpdateWithoutAuthorInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   communityId?: Prisma.StringFieldUpdateOperationsInput | string
+  title?: Prisma.StringFieldUpdateOperationsInput | string
   contentMd?: Prisma.StringFieldUpdateOperationsInput | string
   imageUrls?: Prisma.PostUpdateimageUrlsInput | string[]
   tags?: Prisma.PostUpdatetagsInput | string[]
@@ -1221,6 +1262,7 @@ export type PostUncheckedUpdateWithoutAuthorInput = {
 export type PostUncheckedUpdateManyWithoutAuthorInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   communityId?: Prisma.StringFieldUpdateOperationsInput | string
+  title?: Prisma.StringFieldUpdateOperationsInput | string
   contentMd?: Prisma.StringFieldUpdateOperationsInput | string
   imageUrls?: Prisma.PostUpdateimageUrlsInput | string[]
   tags?: Prisma.PostUpdatetagsInput | string[]
@@ -1236,6 +1278,7 @@ export type PostUncheckedUpdateManyWithoutAuthorInput = {
 
 export type PostUpdateWithoutPinnedByUserInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
+  title?: Prisma.StringFieldUpdateOperationsInput | string
   contentMd?: Prisma.StringFieldUpdateOperationsInput | string
   imageUrls?: Prisma.PostUpdateimageUrlsInput | string[]
   tags?: Prisma.PostUpdatetagsInput | string[]
@@ -1256,6 +1299,7 @@ export type PostUncheckedUpdateWithoutPinnedByUserInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   communityId?: Prisma.StringFieldUpdateOperationsInput | string
   authorId?: Prisma.StringFieldUpdateOperationsInput | string
+  title?: Prisma.StringFieldUpdateOperationsInput | string
   contentMd?: Prisma.StringFieldUpdateOperationsInput | string
   imageUrls?: Prisma.PostUpdateimageUrlsInput | string[]
   tags?: Prisma.PostUpdatetagsInput | string[]
@@ -1274,6 +1318,7 @@ export type PostUncheckedUpdateManyWithoutPinnedByUserInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   communityId?: Prisma.StringFieldUpdateOperationsInput | string
   authorId?: Prisma.StringFieldUpdateOperationsInput | string
+  title?: Prisma.StringFieldUpdateOperationsInput | string
   contentMd?: Prisma.StringFieldUpdateOperationsInput | string
   imageUrls?: Prisma.PostUpdateimageUrlsInput | string[]
   tags?: Prisma.PostUpdatetagsInput | string[]
@@ -1289,6 +1334,7 @@ export type PostUncheckedUpdateManyWithoutPinnedByUserInput = {
 export type PostCreateManyCommunityInput = {
   id?: string
   authorId: string
+  title: string
   contentMd: string
   imageUrls?: Prisma.PostCreateimageUrlsInput | string[]
   tags?: Prisma.PostCreatetagsInput | string[]
@@ -1304,6 +1350,7 @@ export type PostCreateManyCommunityInput = {
 
 export type PostUpdateWithoutCommunityInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
+  title?: Prisma.StringFieldUpdateOperationsInput | string
   contentMd?: Prisma.StringFieldUpdateOperationsInput | string
   imageUrls?: Prisma.PostUpdateimageUrlsInput | string[]
   tags?: Prisma.PostUpdatetagsInput | string[]
@@ -1323,6 +1370,7 @@ export type PostUpdateWithoutCommunityInput = {
 export type PostUncheckedUpdateWithoutCommunityInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   authorId?: Prisma.StringFieldUpdateOperationsInput | string
+  title?: Prisma.StringFieldUpdateOperationsInput | string
   contentMd?: Prisma.StringFieldUpdateOperationsInput | string
   imageUrls?: Prisma.PostUpdateimageUrlsInput | string[]
   tags?: Prisma.PostUpdatetagsInput | string[]
@@ -1341,6 +1389,7 @@ export type PostUncheckedUpdateWithoutCommunityInput = {
 export type PostUncheckedUpdateManyWithoutCommunityInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   authorId?: Prisma.StringFieldUpdateOperationsInput | string
+  title?: Prisma.StringFieldUpdateOperationsInput | string
   contentMd?: Prisma.StringFieldUpdateOperationsInput | string
   imageUrls?: Prisma.PostUpdateimageUrlsInput | string[]
   tags?: Prisma.PostUpdatetagsInput | string[]
@@ -1398,6 +1447,7 @@ export type PostSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
   id?: boolean
   communityId?: boolean
   authorId?: boolean
+  title?: boolean
   contentMd?: boolean
   imageUrls?: boolean
   tags?: boolean
@@ -1421,6 +1471,7 @@ export type PostSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   id?: boolean
   communityId?: boolean
   authorId?: boolean
+  title?: boolean
   contentMd?: boolean
   imageUrls?: boolean
   tags?: boolean
@@ -1441,6 +1492,7 @@ export type PostSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   id?: boolean
   communityId?: boolean
   authorId?: boolean
+  title?: boolean
   contentMd?: boolean
   imageUrls?: boolean
   tags?: boolean
@@ -1461,6 +1513,7 @@ export type PostSelectScalar = {
   id?: boolean
   communityId?: boolean
   authorId?: boolean
+  title?: boolean
   contentMd?: boolean
   imageUrls?: boolean
   tags?: boolean
@@ -1474,7 +1527,7 @@ export type PostSelectScalar = {
   deletedAt?: boolean
 }
 
-export type PostOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "communityId" | "authorId" | "contentMd" | "imageUrls" | "tags" | "status" | "pinOrder" | "pinnedAt" | "pinnedBy" | "publishedAt" | "createdAt" | "updatedAt" | "deletedAt", ExtArgs["result"]["post"]>
+export type PostOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "communityId" | "authorId" | "title" | "contentMd" | "imageUrls" | "tags" | "status" | "pinOrder" | "pinnedAt" | "pinnedBy" | "publishedAt" | "createdAt" | "updatedAt" | "deletedAt", ExtArgs["result"]["post"]>
 export type PostInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   community?: boolean | Prisma.CommunityDefaultArgs<ExtArgs>
   author?: boolean | Prisma.UserDefaultArgs<ExtArgs>
@@ -1507,6 +1560,7 @@ export type $PostPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
     id: string
     communityId: string
     authorId: string
+    title: string
     contentMd: string
     imageUrls: string[]
     tags: string[]
@@ -1949,6 +2003,7 @@ export interface PostFieldRefs {
   readonly id: Prisma.FieldRef<"Post", 'String'>
   readonly communityId: Prisma.FieldRef<"Post", 'String'>
   readonly authorId: Prisma.FieldRef<"Post", 'String'>
+  readonly title: Prisma.FieldRef<"Post", 'String'>
   readonly contentMd: Prisma.FieldRef<"Post", 'String'>
   readonly imageUrls: Prisma.FieldRef<"Post", 'String[]'>
   readonly tags: Prisma.FieldRef<"Post", 'String[]'>

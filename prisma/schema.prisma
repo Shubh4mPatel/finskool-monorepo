@@ -124,6 +124,7 @@ model Post {
   id          String     @id @default(uuid()) @db.Uuid
   communityId String     @map("community_id") @db.Uuid
   authorId    String     @map("author_id") @db.Uuid
+  title       String     @db.VarChar(300)
   contentMd   String     @map("content_md")
   imageUrls   String[]   @map("image_urls")
   tags        String[]
