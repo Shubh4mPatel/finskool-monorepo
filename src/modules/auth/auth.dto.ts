@@ -11,12 +11,6 @@ export interface LoginDTO {
   password: string
 }
 
-export interface AuthTokensDTO {
-  accessToken: string
-  refreshToken: string
-  user: PublicUserDTO
-}
-
 export interface PublicUserDTO {
   id: string
   name: string
@@ -24,4 +18,24 @@ export interface PublicUserDTO {
   email: string
   role: string
   avatarUrl: string | null
+}
+
+export interface CommunityInfoDTO {
+  id: string
+  name: string
+  slug: string
+}
+
+// Returned in response body — tokens are in httpOnly cookies, not here
+export interface AuthResponseDTO {
+  user: PublicUserDTO
+  communities: CommunityInfoDTO[]
+}
+
+// Internal only — used between service and controller to pass tokens for cookie-setting
+export interface AuthTokensInternal {
+  accessToken: string
+  refreshToken: string
+  user: PublicUserDTO
+  communities: CommunityInfoDTO[]
 }

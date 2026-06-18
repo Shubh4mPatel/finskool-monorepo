@@ -19,12 +19,16 @@ declare global {
 }
 
 export function authenticate(req: Request, _res: Response, next: NextFunction): void {
+  // Primary: read from httpOnly cookie set by login/register
+  // Fallback: Authorization: Bearer header (for tooling / server-to-server)
+  const cookieToken = req.cookies?.['access_token'] as string | undefined
   const header = req.headers.authorization
-  if (!header?.startsWith('Bearer ')) {
-    return next(new UnauthorizedError('Missing or invalid authorization header'))
+  const token = cookieToken ?? (header?.startsWith('Bearer ') ? header.slice(7) : undefined)
+
+  if (!token) {
+    return next(new UnauthorizedError('Not authenticated'))
   }
 
-  const token = header.slice(7)
   try {
     const payload = jwt.verify(token, env.jwt.secret) as JwtPayload
     if (payload.type !== 'access') {

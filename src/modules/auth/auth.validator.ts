@@ -21,7 +21,3 @@ export const loginSchema = z.object({
   phone: phoneSchema,
   password: z.string().min(1, 'Password is required'),
 })
-
-export const refreshSchema = z.object({
-  refreshToken: z.string().min(1),
-})

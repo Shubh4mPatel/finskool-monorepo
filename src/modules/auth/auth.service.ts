@@ -12,7 +12,14 @@ import {
   ForbiddenError,
   BadRequestError,
 } from '../../shared/errors/index.js'
-import type { AuthTokensDTO, LoginDTO, PublicUserDTO, RegisterDTO } from './auth.dto.js'
+import type {
+  AuthTokensInternal,
+  AuthResponseDTO,
+  LoginDTO,
+  PublicUserDTO,
+  CommunityInfoDTO,
+  RegisterDTO,
+} from './auth.dto.js'
 import type { JwtPayload } from '../../middlewares/auth.middleware.js'
 
 const BCRYPT_ROUNDS = 12
@@ -21,14 +28,6 @@ function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex')
 }
 
-function refreshTtlSeconds(): number {
-  const raw = env.jwt.refreshExpiresIn
-  const match = /^(\d+)([smhd])$/.exec(raw)
-  if (!match) throw new Error('Invalid JWT_REFRESH_EXPIRES_IN format')
-  const value = Number(match[1])
-  const unit = match[2] as 's' | 'm' | 'h' | 'd'
-  return value * { s: 1, m: 60, h: 3600, d: 86400 }[unit]
-}
 
 type DbUser = {
   id: string
@@ -45,7 +44,7 @@ export class AuthService {
     private readonly redis: Redis,
   ) {}
 
-  async register(data: RegisterDTO): Promise<AuthTokensDTO> {
+  async register(data: RegisterDTO): Promise<AuthTokensInternal> {
     logger.info({ phone: data.phone }, 'auth.register: attempt')
 
     if (data.password !== data.confirmPassword) {
@@ -89,7 +88,7 @@ export class AuthService {
     return this.issueTokens(user)
   }
 
-  async login(data: LoginDTO): Promise<AuthTokensDTO> {
+  async login(data: LoginDTO): Promise<AuthTokensInternal> {
     logger.info({ phone: data.phone }, 'auth.login: attempt')
 
     const user = await this.db.user.findUnique({ where: { phone: data.phone } })
@@ -143,21 +142,32 @@ export class AuthService {
     await this.redis.del(refreshTokenKey(tokenHash))
   }
 
-  async getMe(userId: string): Promise<PublicUserDTO> {
+  async getMe(userId: string): Promise<AuthResponseDTO> {
     const user = await this.db.user.findUnique({ where: { id: userId } })
     if (!user || user.deletedAt) throw new UnauthorizedError('User not found')
-    return this.toPublicUser(user)
+    const communities = await this.fetchUserCommunities(user.id)
+    return { user: this.toPublicUser(user), communities }
   }
 
-  private async issueTokens(user: DbUser): Promise<AuthTokensDTO> {
+  private async issueTokens(user: DbUser): Promise<AuthTokensInternal> {
     const role = user.role as 'admin' | 'member'
     const accessToken = this.signToken({ sub: user.id, role, type: 'access' }, env.jwt.accessExpiresIn)
     const refreshToken = this.signToken({ sub: user.id, role, type: 'refresh' }, env.jwt.refreshExpiresIn)
 
     const tokenHash = hashToken(refreshToken)
-    await this.redis.setex(refreshTokenKey(tokenHash), refreshTtlSeconds(), user.id)
+    // No TTL — refresh token is permanent until logout or admin suspension
+    await this.redis.set(refreshTokenKey(tokenHash), user.id)
 
-    return { accessToken, refreshToken, user: this.toPublicUser(user) }
+    const communities = await this.fetchUserCommunities(user.id)
+    return { accessToken, refreshToken, user: this.toPublicUser(user), communities }
+  }
+
+  private async fetchUserCommunities(userId: string): Promise<CommunityInfoDTO[]> {
+    const memberships = await this.db.communityMember.findMany({
+      where: { userId },
+      select: { community: { select: { id: true, name: true, slug: true } } },
+    })
+    return memberships.map(m => m.community)
   }
 
   private signToken(payload: JwtPayload, expiresIn: string): string {
