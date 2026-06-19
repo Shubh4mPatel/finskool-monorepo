@@ -7,25 +7,65 @@ import Link from "next/link";
 import AuthLayout from "@/components/auth/AuthLayout";
 import PasswordInput from "@/components/auth/PasswordInput";
 import { api, ApiError } from "@/lib/api";
+import { useToast } from "@/components/ui/Toast";
 
 interface AuthResponse {
   user: { id: string; name: string; role: string };
   communities: { id: string; name: string; slug: string }[];
 }
 
+type FieldErrors = { phone?: string; password?: string };
+
+function validatePhone(raw: string): string | undefined {
+  const digits = raw.replace(/[\s\-]/g, "");
+  if (!digits) return "Phone number is required";
+  if (!/^\d{10}$/.test(digits) && !/^\+[1-9]\d{6,14}$/.test(digits))
+    return "Enter a valid 10-digit phone number";
+}
+
+function validatePassword(value: string): string | undefined {
+  if (!value) return "Password is required";
+}
+
 export default function LoginPage() {
   const router = useRouter();
+  const toast = useToast();
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [errors, setErrors] = useState<FieldErrors>({});
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
+
+  function blurField(field: keyof FieldErrors, value: string) {
+    setTouched((t) => ({ ...t, [field]: true }));
+    const msg =
+      field === "phone" ? validatePhone(value) : validatePassword(value);
+    setErrors((e) => ({ ...e, [field]: msg }));
+  }
+
+  function changePhone(value: string) {
+    setPhone(value);
+    if (touched.phone)
+      setErrors((e) => ({ ...e, phone: validatePhone(value) }));
+  }
+
+  function changePassword(value: string) {
+    setPassword(value);
+    if (touched.password)
+      setErrors((e) => ({ ...e, password: validatePassword(value) }));
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError(null);
-    setLoading(true);
 
-    // Normalise phone: strip spaces/dashes, prepend +91 if 10-digit
+    // Validate all fields on submit
+    const phoneErr = validatePhone(phone);
+    const passwordErr = validatePassword(password);
+    setTouched({ phone: true, password: true });
+    setErrors({ phone: phoneErr, password: passwordErr });
+    if (phoneErr || passwordErr) return;
+
+    setLoading(true);
     const raw = phone.replace(/[\s\-]/g, "");
     const normalised = /^\d{10}$/.test(raw) ? `+91${raw}` : raw;
 
@@ -38,15 +78,13 @@ export default function LoginPage() {
       if (data.user.role === "admin") {
         router.push("/admin/dashboard");
       } else if (data.communities.length === 1) {
-        // Single community — set it and go straight to feed
         document.cookie = `community_id=${data.communities[0]!.id}; path=/; samesite=strict`;
         router.push("/dashboard/feed");
       } else {
-        // Multiple communities — go to selector
         router.push("/");
       }
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Something went wrong. Please try again.");
+      toast.error(err instanceof ApiError ? err.message : "Something went wrong. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -70,7 +108,11 @@ export default function LoginPage() {
         <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-5">
           <div>
             <label className="text-sm font-semibold text-primary">Phone Number</label>
-            <div className="mt-2 flex overflow-hidden rounded-xl border border-divider transition-colors focus-within:border-accent">
+            <div
+              className={`mt-2 flex overflow-hidden rounded-xl border transition-colors focus-within:border-accent ${
+                errors.phone ? "border-red-400" : "border-divider"
+              }`}
+            >
               <span className="flex items-center bg-primary px-4 text-sm font-semibold text-white">
                 +91
               </span>
@@ -78,11 +120,14 @@ export default function LoginPage() {
                 type="tel"
                 placeholder="Enter your phone number"
                 value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                required
+                onChange={(e) => changePhone(e.target.value)}
+                onBlur={() => blurField("phone", phone)}
                 className="w-full border-0 bg-white px-4 py-3 text-sm text-primary placeholder:text-subtle focus:outline-none focus:ring-0"
               />
             </div>
+            {errors.phone && (
+              <p className="mt-1.5 text-xs text-red-500">{errors.phone}</p>
+            )}
           </div>
 
           <div>
@@ -91,21 +136,21 @@ export default function LoginPage() {
               <PasswordInput
                 placeholder="Enter your password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => changePassword(e.target.value)}
+                onBlur={() => blurField("password", password)}
+                hasError={!!errors.password}
               />
             </div>
-            <div className="mt-2 text-right">
-              <a href="#" className="text-sm font-semibold text-accent transition-colors hover:text-primary">
-                Forgot Password?
-              </a>
-            </div>
+            {errors.password ? (
+              <p className="mt-1.5 text-xs text-red-500">{errors.password}</p>
+            ) : (
+              <div className="mt-2 text-right">
+                <a href="#" className="text-sm font-semibold text-accent transition-colors hover:text-primary">
+                  Forgot Password?
+                </a>
+              </div>
+            )}
           </div>
-
-          {error && (
-            <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-              {error}
-            </p>
-          )}
 
           <button
             type="submit"

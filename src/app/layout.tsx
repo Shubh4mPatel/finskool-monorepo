@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Nunito, Fraunces } from "next/font/google";
 import "./globals.css";
+import { ToastProvider } from "@/components/ui/Toast";
 
 const nunito = Nunito({
   variable: "--font-nunito",
@@ -31,7 +32,9 @@ export default function RootLayout({
       lang="en"
       className={`${nunito.variable} ${fraunces.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-background text-foreground">{children}</body>
+      <body className="min-h-full flex flex-col bg-background text-foreground">
+        <ToastProvider>{children}</ToastProvider>
+      </body>
     </html>
   );
 }

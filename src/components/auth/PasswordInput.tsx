@@ -7,10 +7,14 @@ export default function PasswordInput({
   placeholder,
   value,
   onChange,
+  onBlur,
+  hasError,
 }: {
   placeholder?: string;
   value?: string;
   onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onBlur?: () => void;
+  hasError?: boolean;
 }) {
   const [visible, setVisible] = useState(false);
 
@@ -21,7 +25,12 @@ export default function PasswordInput({
         placeholder={placeholder}
         value={value}
         onChange={onChange}
-        className="w-full rounded-xl border border-divider bg-white px-4 py-3 pr-10 text-sm text-primary placeholder:text-subtle transition-colors focus:outline-none focus:ring-2 focus:ring-accent/40"
+        onBlur={onBlur}
+        className={`w-full rounded-xl border bg-white px-4 py-3 pr-10 text-sm text-primary placeholder:text-subtle transition-colors focus:outline-none focus:ring-2 ${
+          hasError
+            ? "border-red-400 focus:ring-red-200"
+            : "border-divider focus:ring-accent/40"
+        }`}
       />
       <button
         type="button"
