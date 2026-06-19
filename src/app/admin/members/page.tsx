@@ -1,39 +1,249 @@
 "use client";
 
-import { useState } from "react";
-import { Ban, ChevronDown, Download, Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Ban, Download, Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import { api, ApiError } from "@/lib/api";
+import { useToast } from "@/components/ui/Toast";
 
-const stats = [
-  { value: "560", label: "Total Members" },
-  { value: "498", label: "Registered" },
-  { value: "62", label: "Pending Registration" },
-  { value: "14", label: "Expiring This Week", highlight: true },
-];
+interface MemberSubscription {
+  id: string;
+  communityId: string;
+  communityName: string;
+  payment: number;
+  paidOn: string | null;
+  validUntil: string;
+  isActive: boolean;
+}
 
-const statusStyles: Record<string, string> = {
-  Registered: "bg-accent/10 text-accent",
-  "Pending Sign": "bg-amber-100 text-amber-600",
-  Expired: "bg-red-100 text-red-500",
+interface MemberItem {
+  id: string;
+  name: string;
+  phone: string;
+  email: string;
+  isActive: boolean;
+  isRegistered: boolean;
+  status: "registered" | "pending" | "expired" | "suspended";
+  createdAt: string;
+  subscription: MemberSubscription | null;
+}
+
+interface MemberList {
+  members: MemberItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+const STATUS_STYLES: Record<string, string> = {
+  registered: "bg-accent/10 text-accent",
+  pending: "bg-amber-100 text-amber-600",
+  expired: "bg-red-100 text-red-500",
+  suspended: "bg-gray-100 text-gray-500",
 };
 
-const members = [
-  { id: 1, name: "Sandeep", initials: "S", phone: "9898060907", payment: "₹4,000", paidOn: "15 Aug 2026", valid: "15 Aug 2026", registered: "2 May 2026", community: "Swing Alpha", communityColor: "bg-lime/40 text-primary", email: "ayushman@example.com", status: "Registered" },
-  { id: 2, name: "Raj", initials: "R", phone: "9898060907", payment: "₹50,000", paidOn: "20 Jun 2026", valid: "20 Jun 2026", registered: "19 Apr 2026", community: "Investor", communityColor: "bg-accent/10 text-accent", email: "ayushman@example.com", status: "Registered" },
-  { id: 3, name: "Priya", initials: "P", phone: "9898069907", payment: "₹50,000", paidOn: "14 Jun 2026", valid: "14 Jun 2026", registered: "1 Mar 2026", community: "Investor", communityColor: "bg-accent/10 text-accent", email: "ayushman@example.com", status: "Pending Sign" },
-  { id: 4, name: "Neha Verma", initials: "NV", phone: "9898069907", payment: "₹90,000", paidOn: "10 Jun 2026", valid: "20 Jun 2026", registered: "10 Feb 2026", community: "Investor", communityColor: "bg-accent/10 text-accent", email: "ayushman@example.com", status: "Expired" },
-  { id: 5, name: "Deepak Sharma", initials: "DS", phone: "9898069907", payment: "₹70,000", paidOn: "30 Sep 2026", valid: "30 Sep 2026", registered: "20 May 2026", community: "Swing Alpha", communityColor: "bg-lime/40 text-primary", email: "ayushman@example.com", status: "Pending Sign" },
-  { id: 6, name: "Jai Sharma", initials: "JS", phone: "9898069907", payment: "₹80,000", paidOn: "1 Dec 2026", valid: "1 Dec 2026", registered: "20 May 2026", community: "Investor", communityColor: "bg-accent/10 text-accent", email: "ayushman@example.com", status: "Registered" },
-  { id: 7, name: "Hari Singh", initials: "HS", phone: "9898969907", payment: "₹1,00,000", paidOn: "16 Jun 2026", valid: "16 Jun 2026", registered: "5 Apr 2026", community: "Swing Alpha", communityColor: "bg-lime/40 text-primary", email: "ayushman@example.com", status: "Pending Sign" },
-];
+const STATUS_LABELS: Record<string, string> = {
+  registered: "Registered",
+  pending: "Pending Sign",
+  expired: "Expired",
+  suspended: "Suspended",
+};
+
+function getInitials(name: string): string {
+  return name.split(" ").map(w => w[0] ?? "").join("").toUpperCase().slice(0, 2) || "?";
+}
+
+function formatCurrency(amount: number): string {
+  return `₹${amount.toLocaleString("en-IN")}`;
+}
+
+function formatDate(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function communityBadge(name: string): string {
+  const colors = ["bg-lime/40 text-primary", "bg-accent/10 text-accent", "bg-amber-100 text-amber-600"];
+  return colors[name.charCodeAt(0) % colors.length] ?? "bg-divider text-muted";
+}
+
+function getPaginationPages(current: number, total: number): (number | null)[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  if (current <= 4) return [1, 2, 3, 4, 5, null, total];
+  if (current >= total - 3) return [1, null, total - 4, total - 3, total - 2, total - 1, total];
+  return [1, null, current - 1, current, current + 1, null, total];
+}
 
 type ModalType = "add" | "extend" | "delete" | "suspend" | "revoke" | null;
 
+interface Community { id: string; name: string; slug: string }
+
+const EMPTY_MEMBER = { name: "", phone: "", email: "", communityId: "", payment: "", validUntil: "" };
+type MemberField = keyof typeof EMPTY_MEMBER;
+type MemberErrors = Partial<Record<MemberField, string>>;
+
+function validateMember(m: typeof EMPTY_MEMBER): MemberErrors {
+  const e: MemberErrors = {};
+  if (m.name.trim().length < 2) e.name = "Name must be at least 2 characters";
+  const digits = m.phone.replace(/\D/g, "");
+  if (!digits) e.phone = "Phone is required";
+  else if (digits.length !== 10 && !(digits.length === 12 && digits.startsWith("91")))
+    e.phone = "Enter a valid 10-digit phone number";
+  if (!m.email) e.email = "Email is required";
+  else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(m.email)) e.email = "Invalid email address";
+  if (!m.communityId) e.communityId = "Select a community";
+  const amt = parseFloat(m.payment);
+  if (!m.payment || isNaN(amt) || amt <= 0) e.payment = "Enter a valid payment amount";
+  if (!m.validUntil) e.validUntil = "Valid till date is required";
+  return e;
+}
+
 export default function MembersPage() {
+  const toast = useToast();
   const [modal, setModal] = useState<ModalType>(null);
   const [suspendReason, setSuspendReason] = useState("");
   const [extendDate, setExtendDate] = useState("");
-  const [newMember, setNewMember] = useState({ name: "", phone: "", email: "", community: "", payment: "", valid: "" });
-  const close = () => setModal(null);
+
+  // Communities
+  const [communities, setCommunities] = useState<Community[]>([]);
+
+  // Members list
+  const [members, setMembers] = useState<MemberItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [fetchTrigger, setFetchTrigger] = useState(0);
+
+  // Stats (independent of filters)
+  const [statsData, setStatsData] = useState({ total: 0, registered: 0, pending: 0 });
+
+  // Filters
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [filterCommunity, setFilterCommunity] = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
+  const [validDate, setValidDate] = useState("");
+  const [paidDate, setPaidDate] = useState("");
+
+  // Add member form
+  const [newMember, setNewMember] = useState(EMPTY_MEMBER);
+  const [memberErrors, setMemberErrors] = useState<MemberErrors>({});
+  const [memberTouched, setMemberTouched] = useState<Partial<Record<MemberField, boolean>>>({});
+  const [addingMember, setAddingMember] = useState(false);
+
+  useEffect(() => {
+    api.get<Community[]>("/api/v1/admin/communities")
+      .then(setCommunities)
+      .catch(() => {});
+  }, []);
+
+  // Debounce search
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 400);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // Reset to page 1 when any filter changes
+  useEffect(() => {
+    setPage(1);
+  }, [filterCommunity, filterStatus, validDate, paidDate, debouncedSearch]);
+
+  // Fetch members list
+  useEffect(() => {
+    const params = new URLSearchParams({ page: String(page), pageSize: "8" });
+    if (debouncedSearch) params.set("search", debouncedSearch);
+    if (filterCommunity) params.set("communityId", filterCommunity);
+    if (filterStatus) params.set("status", filterStatus);
+    if (validDate) params.set("validTo", validDate);
+    if (paidDate) { params.set("paidFrom", paidDate); params.set("paidTo", paidDate); }
+
+    setLoading(true);
+    api.get<MemberList>(`/api/v1/admin/members?${params.toString()}`)
+      .then(data => {
+        setMembers(data.members);
+        setTotalPages(data.totalPages);
+        setTotal(data.total);
+      })
+      .catch(err => toast.error(err instanceof ApiError ? err.message : "Failed to load members"))
+      .finally(() => setLoading(false));
+  // toast is a stable context ref
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, debouncedSearch, filterCommunity, filterStatus, validDate, paidDate, fetchTrigger]);
+
+  // Fetch summary stats (unfiltered)
+  useEffect(() => {
+    Promise.all([
+      api.get<MemberList>("/api/v1/admin/members?page=1&pageSize=1"),
+      api.get<MemberList>("/api/v1/admin/members?page=1&pageSize=1&status=registered"),
+      api.get<MemberList>("/api/v1/admin/members?page=1&pageSize=1&status=pending"),
+    ]).then(([all, reg, pend]) => {
+      setStatsData({ total: all.total, registered: reg.total, pending: pend.total });
+    }).catch(() => {});
+  }, [fetchTrigger]);
+
+  const refresh = () => setFetchTrigger(t => t + 1);
+
+  const close = () => {
+    setModal(null);
+    setNewMember(EMPTY_MEMBER);
+    setMemberErrors({});
+    setMemberTouched({});
+  };
+
+  function blurMemberField(field: MemberField) {
+    setMemberTouched(t => ({ ...t, [field]: true }));
+    setMemberErrors(e => ({ ...e, [field]: validateMember({ ...newMember })[field] }));
+  }
+
+  function changeMemberField(field: MemberField, value: string) {
+    const updated = { ...newMember, [field]: value };
+    setNewMember(updated);
+    if (memberTouched[field])
+      setMemberErrors(e => ({ ...e, [field]: validateMember(updated)[field] }));
+  }
+
+  async function handleAddMember() {
+    const errs = validateMember(newMember);
+    setMemberTouched({ name: true, phone: true, email: true, communityId: true, payment: true, validUntil: true });
+    setMemberErrors(errs);
+    if (Object.values(errs).some(Boolean)) return;
+
+    setAddingMember(true);
+    try {
+      await api.post("/api/v1/admin/members", {
+        phone: newMember.phone,
+        name: newMember.name,
+        email: newMember.email,
+        communityId: newMember.communityId,
+        payment: parseFloat(newMember.payment),
+        validUntil: newMember.validUntil,
+      });
+      toast.success({ title: "Member added", message: `${newMember.name} can now sign up at /signup` });
+      close();
+      refresh();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to add member");
+    } finally {
+      setAddingMember(false);
+    }
+  }
+
+  const fieldCls = (err?: string) =>
+    `mt-2 w-full rounded-xl border bg-white px-4 py-2.5 text-sm placeholder:text-subtle transition-colors focus:outline-none focus:ring-2 ${
+      err ? "border-red-400 focus:ring-red-200" : "border-divider focus:ring-accent/40"
+    }`;
+
+  const dateCls = "rounded-lg border border-divider px-2 py-1.5 text-xs text-primary focus:outline-none focus:ring-1 focus:ring-accent/40 bg-white";
+  const selectCls = "rounded-full border border-divider px-3 py-2 text-xs font-semibold text-muted focus:outline-none focus:ring-1 focus:ring-accent/40 bg-white cursor-pointer";
+
+  const summaryStats = [
+    { value: String(statsData.total), label: "Total Members" },
+    { value: String(statsData.registered), label: "Registered" },
+    { value: String(statsData.pending), label: "Pending Registration" },
+  ];
+
+  const pages = getPaginationPages(page, totalPages);
 
   return (
     <div className="flex flex-col gap-6">
@@ -50,7 +260,7 @@ export default function MembersPage() {
           </button>
           <button
             onClick={() => setModal("add")}
-            className="flex items-center gap-2 rounded-full bg-gradient-to-r from-accent to-primary px-4 py-2 text-sm font-bold text-white shadow-glow transition-transform duration-300 hover:scale-105 active:scale-95"
+            className="flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-bold text-white shadow-glow transition-transform duration-300 hover:scale-105 active:scale-95"
           >
             <Plus size={14} />
             Add Member
@@ -59,142 +269,220 @@ export default function MembersPage() {
       </div>
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        {stats.map((s) => (
-          <div key={s.label} className={`rounded-2xl p-5 text-center shadow-card ${s.highlight ? "border border-amber-200 bg-amber-50" : "bg-white"}`}>
-            <p className={`font-display text-2xl font-bold ${s.highlight ? "text-amber-500" : "text-primary"}`}>{s.value}</p>
+        {summaryStats.map((s) => (
+          <div key={s.label} className="rounded-2xl bg-white p-5 text-center shadow-card">
+            <p className="font-display text-2xl font-bold text-primary">{s.value}</p>
             <p className="mt-1 text-xs text-muted">{s.label}</p>
           </div>
         ))}
       </div>
 
       <div className="rounded-2xl bg-white p-4 shadow-card sm:p-6">
+        {/* Filter bar */}
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex flex-1 items-center gap-2 rounded-full border border-divider px-4 py-2 transition-colors focus-within:border-accent">
+          <div className="flex min-w-48 flex-1 items-center gap-2 rounded-full border border-divider px-4 py-2 transition-colors focus-within:border-accent">
             <Search size={15} className="shrink-0 text-subtle" />
-            <input type="text" placeholder="Search by name, phone or email..." className="w-full bg-transparent text-sm text-primary placeholder:text-subtle focus:outline-none" />
+            <input
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search by name or email..."
+              className="w-full bg-transparent text-sm text-primary placeholder:text-subtle focus:outline-none"
+            />
           </div>
-          {["All Communities", "Paid On", "Valid Till", "All Status"].map((f) => (
-            <button key={f} className="flex items-center gap-1.5 rounded-full border border-divider px-3 py-2 text-xs font-semibold text-muted transition-colors hover:border-accent hover:text-primary">
-              {f} <ChevronDown size={12} />
-            </button>
-          ))}
+
+          <select value={filterCommunity} onChange={e => setFilterCommunity(e.target.value)} className={selectCls}>
+            <option value="">All Communities</option>
+            {communities.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+
+          <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className={selectCls}>
+            <option value="">All Status</option>
+            <option value="registered">Registered</option>
+            <option value="pending">Pending Sign</option>
+            <option value="expired">Expired</option>
+            <option value="suspended">Suspended</option>
+          </select>
+
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-semibold text-muted">Valid Till</span>
+            <input type="date" value={validDate} onChange={e => setValidDate(e.target.value)} className={dateCls} />
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-semibold text-muted">Paid On</span>
+            <input type="date" value={paidDate} onChange={e => setPaidDate(e.target.value)} className={dateCls} />
+          </div>
+
           <button className="flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-xs font-bold text-white transition-transform hover:scale-105 active:scale-95">
             <Download size={13} />
             Export CSV
           </button>
         </div>
 
+        {/* Loading */}
+        {loading && (
+          <div className="mt-8 flex items-center justify-center py-12">
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-divider border-t-accent" />
+          </div>
+        )}
+
+        {/* Empty state */}
+        {!loading && members.length === 0 && (
+          <div className="mt-8 flex flex-col items-center justify-center py-12 text-center">
+            <p className="font-semibold text-primary">No members found</p>
+            <p className="mt-1 text-sm text-muted">Try adjusting your filters or add a new member.</p>
+          </div>
+        )}
+
         {/* Mobile card list */}
-        <div className="mt-4 flex flex-col gap-3 lg:hidden">
-          {members.map((m) => (
-            <div key={m.id} className="rounded-xl border border-divider p-4 transition-shadow hover:shadow-card">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-accent to-primary text-xs font-bold text-lime">
-                    {m.initials}
+        {!loading && members.length > 0 && (
+          <div className="mt-4 flex flex-col gap-3 lg:hidden">
+            {members.map((m) => (
+              <div key={m.id} className="rounded-xl border border-divider p-4 transition-shadow hover:shadow-card">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-white">
+                      {getInitials(m.name)}
+                    </div>
+                    <div>
+                      <p className="font-semibold text-primary">{m.name}</p>
+                      <p className="text-xs text-subtle">{m.phone}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-semibold text-primary">{m.name}</p>
-                    <p className="text-xs text-subtle">{m.phone}</p>
-                  </div>
+                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${STATUS_STYLES[m.status] ?? ""}`}>
+                    {STATUS_LABELS[m.status] ?? m.status}
+                  </span>
                 </div>
-                <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${statusStyles[m.status] ?? ""}`}>{m.status}</span>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                  <div><p className="text-xs text-subtle">Payment</p><p className="font-semibold text-primary">{m.subscription ? formatCurrency(m.subscription.payment) : "—"}</p></div>
+                  <div><p className="text-xs text-subtle">Valid Till</p><p className="font-semibold text-primary">{formatDate(m.subscription?.validUntil)}</p></div>
+                  <div>
+                    <p className="text-xs text-subtle">Community</p>
+                    {m.subscription
+                      ? <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${communityBadge(m.subscription.communityName)}`}>{m.subscription.communityName}</span>
+                      : <span className="text-xs text-muted">—</span>}
+                  </div>
+                  <div><p className="text-xs text-subtle">Added</p><p className="text-primary">{formatDate(m.createdAt)}</p></div>
+                </div>
+                <div className="mt-3 flex items-center gap-2 border-t border-divider pt-3">
+                  <button onClick={() => setModal("extend")} className="flex items-center gap-1 rounded-full border border-accent px-3 py-1 text-xs font-semibold text-accent transition-colors hover:bg-accent/5">
+                    <Plus size={10} /> Extend
+                  </button>
+                  <button onClick={() => setModal(null)} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-divider/60 hover:text-accent"><Pencil size={13} /></button>
+                  <button onClick={() => setModal(m.status === "pending" ? "revoke" : "suspend")} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-amber-50 hover:text-amber-500"><Ban size={13} /></button>
+                  <button onClick={() => setModal("delete")} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-red-50 hover:text-red-500"><Trash2 size={13} /></button>
+                </div>
               </div>
-              <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-                <div><p className="text-xs text-subtle">Payment</p><p className="font-semibold text-primary">{m.payment}</p></div>
-                <div><p className="text-xs text-subtle">Valid Till</p><p className="font-semibold text-primary">{m.valid}</p></div>
-                <div><p className="text-xs text-subtle">Community</p><span className={`rounded-full px-2 py-0.5 text-xs font-bold ${m.communityColor}`}>{m.community}</span></div>
-                <div><p className="text-xs text-subtle">Registered</p><p className="text-primary">{m.registered}</p></div>
-              </div>
-              <div className="mt-3 flex items-center gap-2 border-t border-divider pt-3">
-                <button onClick={() => setModal("extend")} className="flex items-center gap-1 rounded-full border border-accent px-3 py-1 text-xs font-semibold text-accent transition-colors hover:bg-accent/5">
-                  <Plus size={10} /> Extend
-                </button>
-                <button onClick={() => setModal(null)} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-divider/60 hover:text-accent"><Pencil size={13} /></button>
-                <button onClick={() => setModal(m.status === "Pending Sign" ? "revoke" : "suspend")} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-amber-50 hover:text-amber-500"><Ban size={13} /></button>
-                <button onClick={() => setModal("delete")} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-red-50 hover:text-red-500"><Trash2 size={13} /></button>
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
 
         {/* Desktop table */}
-        <div className="mt-4 hidden overflow-x-auto lg:block">
-          <table className="w-full min-w-[900px] text-left text-sm">
-            <thead>
-              <tr className="text-xs font-semibold uppercase text-subtle">
-                <th className="py-3 pl-2 pr-3">#</th>
-                <th className="px-3 py-3">Name</th>
-                <th className="px-3 py-3">Phone Number</th>
-                <th className="px-3 py-3">Payment</th>
-                <th className="px-3 py-3">Paid On</th>
-                <th className="px-3 py-3">Valid</th>
-                <th className="px-3 py-3">Registered</th>
-                <th className="px-3 py-3">Community</th>
-                <th className="px-3 py-3">Email</th>
-                <th className="px-3 py-3">Status</th>
-                <th className="px-3 py-3">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {members.map((m, i) => (
-                <tr key={m.id} className="border-t border-divider transition-colors hover:bg-background">
-                  <td className="py-3 pl-2 pr-3 text-xs text-subtle">{i + 1}</td>
-                  <td className="px-3 py-3">
-                    <div className="flex items-center gap-2">
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-accent to-primary text-xs font-bold text-lime">
-                        {m.initials}
-                      </div>
-                      <span className="font-semibold text-primary">{m.name}</span>
-                    </div>
-                  </td>
-                  <td className="px-3 py-3 text-muted">{m.phone}</td>
-                  <td className="px-3 py-3 font-semibold text-primary">{m.payment}</td>
-                  <td className="px-3 py-3 text-muted">{m.paidOn}</td>
-                  <td className="px-3 py-3 text-muted">{m.valid}</td>
-                  <td className="px-3 py-3 text-muted">{m.registered}</td>
-                  <td className="px-3 py-3">
-                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${m.communityColor}`}>{m.community}</span>
-                  </td>
-                  <td className="px-3 py-3 text-muted">{m.email}</td>
-                  <td className="px-3 py-3">
-                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusStyles[m.status] ?? ""}`}>{m.status}</span>
-                  </td>
-                  <td className="px-3 py-3">
-                    <div className="flex items-center gap-1">
-                      <button onClick={() => setModal("extend")} className="flex items-center gap-1 rounded-full border border-accent px-2.5 py-1 text-xs font-semibold text-accent transition-colors hover:bg-accent/5">
-                        <Plus size={10} /> Extend
-                      </button>
-                      <button onClick={() => setModal(null)} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-divider/60 hover:text-accent">
-                        <Pencil size={13} />
-                      </button>
-                      <button onClick={() => setModal(m.status === "Pending Sign" ? "revoke" : "suspend")} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-amber-50 hover:text-amber-500">
-                        <Ban size={13} />
-                      </button>
-                      <button onClick={() => setModal("delete")} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-red-50 hover:text-red-500">
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  </td>
+        {!loading && members.length > 0 && (
+          <div className="mt-4 hidden overflow-x-auto lg:block">
+            <table className="w-full min-w-[900px] text-left text-sm">
+              <thead>
+                <tr className="text-xs font-semibold uppercase text-subtle">
+                  <th className="py-3 pl-2 pr-3">#</th>
+                  <th className="px-3 py-3">Name</th>
+                  <th className="px-3 py-3">Phone</th>
+                  <th className="px-3 py-3">Payment</th>
+                  <th className="px-3 py-3">Paid On</th>
+                  <th className="px-3 py-3">Valid Till</th>
+                  <th className="px-3 py-3">Added</th>
+                  <th className="px-3 py-3">Community</th>
+                  <th className="px-3 py-3">Email</th>
+                  <th className="px-3 py-3">Status</th>
+                  <th className="px-3 py-3">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="mt-5 flex flex-wrap items-center justify-between gap-4">
-          <p className="text-sm text-subtle">Showing 7 of 560 members</p>
-          <div className="flex items-center gap-2">
-            <button className="rounded-full border border-divider px-4 py-1.5 text-sm font-semibold text-muted transition-colors hover:border-accent hover:text-primary">Previous</button>
-            <button className="h-8 w-8 rounded-full bg-primary text-sm font-semibold text-white shadow-glow">1</button>
-            {[2, 3, 18].map((n) => (
-              <button key={n} className="h-8 w-8 rounded-full text-sm font-semibold text-muted transition-colors hover:bg-divider/60">
-                {n === 18 ? "..." : n}
-              </button>
-            ))}
-            <button className="rounded-full border border-divider px-4 py-1.5 text-sm font-semibold text-muted transition-colors hover:border-accent hover:text-primary">Next</button>
+              </thead>
+              <tbody>
+                {members.map((m, i) => (
+                  <tr key={m.id} className="border-t border-divider transition-colors hover:bg-background">
+                    <td className="py-3 pl-2 pr-3 text-xs text-subtle">{(page - 1) * 8 + i + 1}</td>
+                    <td className="px-3 py-3">
+                      <div className="flex items-center gap-2">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-white">
+                          {getInitials(m.name)}
+                        </div>
+                        <span className="font-semibold text-primary">{m.name}</span>
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 text-muted">{m.phone}</td>
+                    <td className="px-3 py-3 font-semibold text-primary">{m.subscription ? formatCurrency(m.subscription.payment) : "—"}</td>
+                    <td className="px-3 py-3 text-muted">{formatDate(m.subscription?.paidOn)}</td>
+                    <td className="px-3 py-3 text-muted">{formatDate(m.subscription?.validUntil)}</td>
+                    <td className="px-3 py-3 text-muted">{formatDate(m.createdAt)}</td>
+                    <td className="px-3 py-3">
+                      {m.subscription
+                        ? <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${communityBadge(m.subscription.communityName)}`}>{m.subscription.communityName}</span>
+                        : <span className="text-xs text-muted">—</span>}
+                    </td>
+                    <td className="px-3 py-3 text-muted">{m.email}</td>
+                    <td className="px-3 py-3">
+                      <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${STATUS_STYLES[m.status] ?? ""}`}>
+                        {STATUS_LABELS[m.status] ?? m.status}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => setModal("extend")} className="flex items-center gap-1 rounded-full border border-accent px-2.5 py-1 text-xs font-semibold text-accent transition-colors hover:bg-accent/5">
+                          <Plus size={10} /> Extend
+                        </button>
+                        <button onClick={() => setModal(null)} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-divider/60 hover:text-accent">
+                          <Pencil size={13} />
+                        </button>
+                        <button onClick={() => setModal(m.status === "pending" ? "revoke" : "suspend")} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-amber-50 hover:text-amber-500">
+                          <Ban size={13} />
+                        </button>
+                        <button onClick={() => setModal("delete")} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-red-50 hover:text-red-500">
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        </div>
+        )}
+
+        {/* Pagination */}
+        {totalPages > 0 && (
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-4">
+            <p className="text-sm text-subtle">Showing {members.length} of {total} members</p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="rounded-full border border-divider px-4 py-1.5 text-sm font-semibold text-muted transition-colors hover:border-accent hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Previous
+              </button>
+              {pages.map((n, idx) =>
+                n === null ? (
+                  <span key={`e-${idx}`} className="text-sm text-subtle">…</span>
+                ) : (
+                  <button
+                    key={n}
+                    onClick={() => setPage(n)}
+                    className={`h-8 w-8 rounded-full text-sm font-semibold transition-colors ${n === page ? "bg-primary text-white shadow-glow" : "text-muted hover:bg-divider/60"}`}
+                  >
+                    {n}
+                  </button>
+                )
+              )}
+              <button
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                className="rounded-full border border-divider px-4 py-1.5 text-sm font-semibold text-muted transition-colors hover:border-accent hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Add Member Modal */}
@@ -206,39 +494,72 @@ export default function MembersPage() {
               <button onClick={close} className="rounded-full p-1 text-subtle transition-colors hover:bg-divider/60 hover:text-primary"><X size={18} /></button>
             </div>
             <div className="mt-5 flex flex-col gap-4">
-              {[
-                { label: "Name", key: "name", type: "text", placeholder: "Enter name" },
-                { label: "Phone Number", key: "phone", type: "tel", placeholder: "Enter Number" },
-                { label: "Email", key: "email", type: "email", placeholder: "Enter email" },
-              ].map(({ label, key, type, placeholder }) => (
-                <div key={key}>
-                  <label className="text-sm font-semibold text-primary">{label}</label>
-                  <input type={type} placeholder={placeholder} value={newMember[key as keyof typeof newMember]} onChange={(e) => setNewMember((m) => ({ ...m, [key]: e.target.value }))}
-                    className="mt-2 w-full rounded-xl border border-divider bg-white px-4 py-3 text-sm placeholder:text-subtle transition-colors focus:outline-none focus:ring-2 focus:ring-accent/40" />
-                </div>
-              ))}
+              <div>
+                <label className="text-sm font-semibold text-primary">Name</label>
+                <input type="text" placeholder="Enter name" value={newMember.name}
+                  onChange={e => changeMemberField("name", e.target.value)}
+                  onBlur={() => blurMemberField("name")}
+                  className={fieldCls(memberErrors.name)} />
+                {memberErrors.name && <p className="mt-1 text-xs text-red-500">{memberErrors.name}</p>}
+              </div>
+              <div>
+                <label className="text-sm font-semibold text-primary">Phone Number</label>
+                <input type="tel" placeholder="10-digit number" value={newMember.phone}
+                  onChange={e => changeMemberField("phone", e.target.value)}
+                  onBlur={() => blurMemberField("phone")}
+                  className={fieldCls(memberErrors.phone)} />
+                {memberErrors.phone && <p className="mt-1 text-xs text-red-500">{memberErrors.phone}</p>}
+              </div>
+              <div>
+                <label className="text-sm font-semibold text-primary">Email</label>
+                <input type="email" placeholder="Enter email" value={newMember.email}
+                  onChange={e => changeMemberField("email", e.target.value)}
+                  onBlur={() => blurMemberField("email")}
+                  className={fieldCls(memberErrors.email)} />
+                {memberErrors.email && <p className="mt-1 text-xs text-red-500">{memberErrors.email}</p>}
+              </div>
               <div>
                 <label className="text-sm font-semibold text-primary">Community</label>
-                <select className="mt-2 w-full rounded-xl border border-divider bg-white px-4 py-3 text-sm text-primary transition-colors focus:outline-none focus:ring-2 focus:ring-accent/40">
-                  <option value="">Select Community</option>
-                  <option>Swing Alpha</option>
-                  <option>Investor Community</option>
+                <select value={newMember.communityId}
+                  onChange={e => changeMemberField("communityId", e.target.value)}
+                  onBlur={() => blurMemberField("communityId")}
+                  className={fieldCls(memberErrors.communityId)}>
+                  <option value="">Select community</option>
+                  {communities.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
+                {memberErrors.communityId && <p className="mt-1 text-xs text-red-500">{memberErrors.communityId}</p>}
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="text-sm font-semibold text-primary">Payment</label>
-                  <input type="number" placeholder="₹ 4000" className="mt-2 w-full rounded-xl border border-divider bg-white px-4 py-3 text-sm placeholder:text-subtle transition-colors focus:outline-none focus:ring-2 focus:ring-accent/40" />
+                  <label className="text-sm font-semibold text-primary">Payment (₹)</label>
+                  <input type="number" placeholder="4000" value={newMember.payment}
+                    onChange={e => changeMemberField("payment", e.target.value)}
+                    onBlur={() => blurMemberField("payment")}
+                    className={fieldCls(memberErrors.payment)} />
+                  {memberErrors.payment && <p className="mt-1 text-xs text-red-500">{memberErrors.payment}</p>}
                 </div>
                 <div>
                   <label className="text-sm font-semibold text-primary">Valid Till</label>
-                  <input type="date" className="mt-2 w-full rounded-xl border border-divider bg-white px-4 py-3 text-sm text-muted transition-colors focus:outline-none focus:ring-2 focus:ring-accent/40" />
+                  <input type="date" value={newMember.validUntil}
+                    onChange={e => changeMemberField("validUntil", e.target.value)}
+                    onBlur={() => blurMemberField("validUntil")}
+                    className={fieldCls(memberErrors.validUntil)} />
+                  {memberErrors.validUntil && <p className="mt-1 text-xs text-red-500">{memberErrors.validUntil}</p>}
                 </div>
               </div>
             </div>
-            <div className="mt-6 flex items-center gap-3">
-              <button onClick={close} className="flex-1 rounded-full border border-divider px-5 py-2.5 text-sm font-bold text-muted transition-colors hover:border-subtle hover:text-primary">Cancel</button>
-              <button onClick={close} className="flex-1 rounded-full bg-gradient-to-r from-accent to-primary px-5 py-2.5 text-sm font-bold text-white shadow-glow transition-transform hover:scale-105 active:scale-95">Add Member</button>
+            <p className="mt-4 text-xs text-subtle">
+              The member will be whitelisted. They can then sign up at <span className="font-semibold text-accent">/signup</span> and set their own password.
+            </p>
+            <div className="mt-4 flex items-center gap-3">
+              <button onClick={close} disabled={addingMember}
+                className="flex-1 rounded-full border border-divider px-5 py-2.5 text-sm font-bold text-muted transition-colors hover:border-subtle hover:text-primary disabled:opacity-50">
+                Cancel
+              </button>
+              <button onClick={handleAddMember} disabled={addingMember}
+                className="flex-1 rounded-full bg-primary px-5 py-2.5 text-sm font-bold text-white transition-transform hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60">
+                {addingMember ? "Adding…" : "Add Member"}
+              </button>
             </div>
           </div>
         </div>
@@ -255,7 +576,8 @@ export default function MembersPage() {
             <div className="mt-5 flex flex-col gap-4">
               <div>
                 <label className="text-sm font-semibold text-primary">Current Date</label>
-                <input type="text" value="12 Jun 2026" disabled className="mt-2 w-full rounded-xl border border-divider bg-divider/40 px-4 py-3 text-sm text-muted" />
+                <input type="text" value={new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })} disabled
+                  className="mt-2 w-full rounded-xl border border-divider bg-divider/40 px-4 py-3 text-sm text-muted" />
               </div>
               <div>
                 <label className="text-sm font-semibold text-primary">Extend Date</label>
@@ -265,7 +587,7 @@ export default function MembersPage() {
             </div>
             <div className="mt-6 flex items-center gap-3">
               <button onClick={close} className="flex-1 rounded-full border border-divider px-5 py-2.5 text-sm font-bold text-muted transition-colors hover:border-subtle hover:text-primary">Cancel</button>
-              <button onClick={close} className="flex-1 rounded-full bg-gradient-to-r from-accent to-primary px-5 py-2.5 text-sm font-bold text-white shadow-glow transition-transform hover:scale-105 active:scale-95">Extend Subscription</button>
+              <button onClick={close} className="flex-1 rounded-full bg-primary px-5 py-2.5 text-sm font-bold text-white transition-transform hover:scale-105 active:scale-95">Extend Subscription</button>
             </div>
           </div>
         </div>
@@ -318,7 +640,7 @@ export default function MembersPage() {
             <p className="mt-2 text-sm text-muted">This action will revoke the suspension, are you sure you want to continue?</p>
             <div className="mt-6 flex items-center gap-3">
               <button onClick={close} className="flex-1 rounded-full border border-divider px-5 py-2.5 text-sm font-bold text-muted transition-colors hover:border-subtle hover:text-primary">Cancel</button>
-              <button onClick={close} className="flex-1 rounded-full bg-gradient-to-r from-accent to-primary px-5 py-2.5 text-sm font-bold text-white shadow-glow transition-transform hover:scale-105 active:scale-95">Yes, Revoke</button>
+              <button onClick={close} className="flex-1 rounded-full bg-primary px-5 py-2.5 text-sm font-bold text-white transition-transform hover:scale-105 active:scale-95">Yes, Revoke</button>
             </div>
           </div>
         </div>
