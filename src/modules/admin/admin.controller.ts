@@ -3,6 +3,15 @@ import { z } from 'zod'
 import type { AdminService } from './admin.service.js'
 import { BadRequestError } from '../../shared/errors/index.js'
 
+const addMemberSchema = z.object({
+  phone: z.string().min(10, 'Phone is required'),
+  name: z.string().min(2, 'Name must be at least 2 characters'),
+  email: z.string().email('Invalid email address'),
+  communityId: z.string().uuid('Invalid community'),
+  payment: z.number().positive('Payment must be a positive number'),
+  validUntil: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Valid until must be YYYY-MM-DD'),
+})
+
 const importQuerySchema = z.object({
   duplicateStrategy: z.enum(['skip', 'overwrite']).default('skip'),
 })
@@ -47,6 +56,48 @@ export class AdminController {
       const id = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
       const result = await this.service.markNotificationReplied(id)
       res.json({ success: true, data: result })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  listMembers = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const schema = z.object({
+        communityId: z.string().uuid().optional(),
+        status: z.enum(['registered', 'pending', 'expired', 'suspended']).optional(),
+        validFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        validTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        paidFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        paidTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        search: z.string().max(100).optional(),
+        page: z.coerce.number().int().min(1).default(1),
+        pageSize: z.coerce.number().int().min(1).max(100).default(8),
+      })
+      const parsed = schema.safeParse(req.query)
+      if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Invalid query')
+      const result = await this.service.listMembers(parsed.data)
+      res.json({ success: true, data: result })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  listCommunities = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const result = await this.service.listCommunities()
+      res.json({ success: true, data: result })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  addMember = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const parsed = addMemberSchema.safeParse(req.body)
+      if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
+      const result = await this.service.addMember(parsed.data, req.user!.id)
+      res.status(201).json({ success: true, data: result })
     } catch (err) {
       next(err)
     }

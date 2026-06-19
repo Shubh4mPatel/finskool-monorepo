@@ -33,6 +33,10 @@ router.post(
   controller.importCsv,
 )
 
+router.get('/communities', authenticate, requireRole('admin'), controller.listCommunities)
+router.get('/members', authenticate, requireRole('admin'), controller.listMembers)
+router.post('/members', authenticate, requireRole('admin'), controller.addMember)
+
 router.get('/comment-notifications', authenticate, requireRole('admin'), controller.listCommentNotifications)
 
 router.patch(

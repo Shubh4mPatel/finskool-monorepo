@@ -9,6 +9,7 @@ import authRoutes from './modules/auth/auth.routes.js'
 import adminRoutes from './modules/admin/admin.routes.js'
 import postsRoutes from './modules/posts/posts.routes.js'
 import commentsRoutes from './modules/comments/comments.routes.js'
+import prisma from './lib/prisma.js'
 
 function buildCorsOptions(): CorsOptions {
   const { origin, credentials } = env.cors
@@ -38,6 +39,19 @@ export function createApp() {
   app.use('/api/v1/admin', adminRoutes)
   app.use('/api/v1/posts', postsRoutes)
   app.use('/api/v1', commentsRoutes)
+
+  app.get('/api/v1/communities', async (_req, res, next) => {
+    try {
+      const communities = await prisma.community.findMany({
+        where: { deletedAt: null },
+        select: { id: true, name: true, slug: true, description: true, coverImageUrl: true },
+        orderBy: { name: 'asc' },
+      })
+      res.json({ success: true, data: communities })
+    } catch (err) {
+      next(err)
+    }
+  })
 
   app.use((_req, _res, next) => next(new NotFoundError('Route not found')))
   app.use(errorMiddleware)

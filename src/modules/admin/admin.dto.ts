@@ -1,5 +1,72 @@
 export type DuplicateStrategy = 'skip' | 'overwrite'
 
+export interface AddMemberDTO {
+  phone: string
+  name: string
+  email: string
+  communityId: string
+  payment: number
+  validUntil: string   // ISO date string YYYY-MM-DD
+}
+
+export interface AddMemberResultDTO {
+  approvedPhoneId: string
+  phone: string
+  name: string
+  email: string
+  communityId: string
+  validUntil: string
+}
+
+export interface CommunityDTO {
+  id: string
+  name: string
+  slug: string
+}
+
+// Status is derived, not stored
+export type MemberStatus = 'registered' | 'pending' | 'expired' | 'suspended'
+
+export interface MemberListFilters {
+  communityId?: string | undefined
+  status?: MemberStatus | undefined
+  validFrom?: string | undefined
+  validTo?: string | undefined
+  paidFrom?: string | undefined
+  paidTo?: string | undefined
+  search?: string | undefined
+  page: number
+  pageSize: number
+}
+
+export interface MemberItemDTO {
+  id: string            // approvedPhone.id
+  name: string
+  phone: string
+  email: string
+  isActive: boolean
+  isRegistered: boolean
+  status: MemberStatus
+  createdAt: string
+  subscription: {
+    id: string
+    communityId: string
+    communityName: string
+    payment: number
+    paidOn: string | null
+    validUntil: string
+    isActive: boolean
+  } | null
+}
+
+export interface MemberListDTO {
+  members: MemberItemDTO[]
+  total: number
+  page: number
+  pageSize: number
+  totalPages: number
+}
+
 export interface ImportErrorDTO {
   row: number
   phone: string

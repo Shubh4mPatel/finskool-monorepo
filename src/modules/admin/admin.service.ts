@@ -1,12 +1,19 @@
 import { createRequire } from 'module'
 import type { PrismaClient } from '../../generated/prisma/client.js'
-import { BadRequestError, NotFoundError } from '../../shared/errors/index.js'
+import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
 import type {
   DuplicateStrategy,
   ImportSummaryDTO,
   CommentNotificationItemDTO,
   CommentNotificationListDTO,
+  AddMemberDTO,
+  AddMemberResultDTO,
+  CommunityDTO,
+  MemberListFilters,
+  MemberListDTO,
+  MemberItemDTO,
+  MemberStatus,
 } from './admin.dto.js'
 
 const _require = createRequire(import.meta.url)
@@ -255,5 +262,170 @@ export class AdminService {
       },
       post: updated.post,
     }
+  }
+
+  async listCommunities(): Promise<CommunityDTO[]> {
+    const communities = await this.db.community.findMany({
+      where: { deletedAt: null },
+      select: { id: true, name: true, slug: true },
+      orderBy: { name: 'asc' },
+    })
+    return communities
+  }
+
+  async addMember(data: AddMemberDTO, adminId: string): Promise<AddMemberResultDTO> {
+    const digits = data.phone.replace(/\D/g, '')
+    const phone =
+      digits.length === 10 ? `+91${digits}`
+      : digits.length === 12 && digits.startsWith('91') ? `+${digits}`
+      : data.phone
+
+    const community = await this.db.community.findUnique({ where: { id: data.communityId } })
+    if (!community) throw new NotFoundError('Community not found')
+
+    const existing = await this.db.approvedPhone.findUnique({ where: { phone } })
+    if (existing) throw new ConflictError('This phone number is already whitelisted', 'PHONE_EXISTS')
+
+    const result = await this.db.$transaction(async tx => {
+      const ap = await tx.approvedPhone.create({
+        data: { phone, name: data.name, email: data.email, addedBy: adminId },
+      })
+      await tx.subscription.create({
+        data: {
+          approvedPhoneId: ap.id,
+          communityId: data.communityId,
+          payment: data.payment,
+          paidOn: new Date(),
+          validUntil: new Date(data.validUntil),
+        },
+      })
+      return ap
+    })
+
+    logger.info({ phone, adminId }, 'admin.addMember: created')
+    return {
+      approvedPhoneId: result.id,
+      phone: result.phone,
+      name: result.name ?? data.name,
+      email: result.email ?? data.email,
+      communityId: data.communityId,
+      validUntil: data.validUntil,
+    }
+  }
+
+  async listMembers(filters: MemberListFilters): Promise<MemberListDTO> {
+    const { communityId, status, validFrom, validTo, paidFrom, paidTo, search, page, pageSize } = filters
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    // Build subscription sub-filter
+    const subWhere: Record<string, unknown> = {}
+    if (communityId) subWhere['communityId'] = communityId
+    if (validFrom || validTo) {
+      subWhere['validUntil'] = {
+        ...(validFrom ? { gte: new Date(validFrom) } : {}),
+        ...(validTo ? { lte: new Date(validTo) } : {}),
+      }
+    }
+    if (paidFrom || paidTo) {
+      subWhere['paidOn'] = {
+        ...(paidFrom ? { gte: new Date(paidFrom) } : {}),
+        ...(paidTo ? { lte: new Date(paidTo) } : {}),
+      }
+    }
+
+    // Exclude admin accounts (User.role = 'admin') — linked by phone
+    const adminUsers = await this.db.user.findMany({
+      where: { role: 'admin' },
+      select: { phone: true },
+    })
+    const adminPhones = adminUsers.map(u => u.phone)
+
+    // Build ApprovedPhone-level filter
+    const apWhere: Record<string, unknown> = {}
+    if (adminPhones.length > 0) {
+      apWhere['phone'] = { notIn: adminPhones }
+    }
+    if (search) {
+      apWhere['OR'] = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { email: { contains: search, mode: 'insensitive' } },
+      ]
+    }
+
+    // Status maps to DB fields
+    if (status === 'suspended') {
+      apWhere['isActive'] = false
+    } else if (status === 'pending') {
+      apWhere['isRegistered'] = false
+      apWhere['isActive'] = true
+    } else if (status === 'registered') {
+      apWhere['isRegistered'] = true
+      apWhere['isActive'] = true
+      subWhere['validUntil'] = { ...((subWhere['validUntil'] as object) ?? {}), gte: today }
+    } else if (status === 'expired') {
+      apWhere['isActive'] = true
+      subWhere['validUntil'] = { lt: today }
+    }
+
+    if (Object.keys(subWhere).length > 0) {
+      apWhere['subscriptions'] = { some: subWhere }
+    }
+
+    const [total, rows] = await Promise.all([
+      this.db.approvedPhone.count({ where: apWhere }),
+      this.db.approvedPhone.findMany({
+        where: apWhere,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        include: {
+          subscriptions: {
+            include: { community: { select: { id: true, name: true } } },
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+          },
+        },
+      }),
+    ])
+
+    const members: MemberItemDTO[] = rows.map(ap => {
+      const sub = ap.subscriptions[0] ?? null
+
+      let derivedStatus: MemberStatus
+      if (!ap.isActive) {
+        derivedStatus = 'suspended'
+      } else if (!ap.isRegistered) {
+        derivedStatus = 'pending'
+      } else if (sub && new Date(sub.validUntil) < today) {
+        derivedStatus = 'expired'
+      } else {
+        derivedStatus = 'registered'
+      }
+
+      return {
+        id: ap.id,
+        name: ap.name ?? '',
+        phone: ap.phone,
+        email: ap.email ?? '',
+        isActive: ap.isActive,
+        isRegistered: ap.isRegistered,
+        status: derivedStatus,
+        createdAt: ap.createdAt.toISOString(),
+        subscription: sub
+          ? {
+              id: sub.id,
+              communityId: sub.communityId,
+              communityName: sub.community.name,
+              payment: Number(sub.payment),
+              paidOn: sub.paidOn ? sub.paidOn.toISOString().split('T')[0]! : null,
+              validUntil: sub.validUntil.toISOString().split('T')[0]!,
+              isActive: sub.isActive,
+            }
+          : null,
+      }
+    })
+
+    return { members, total, page, pageSize, totalPages: Math.ceil(total / pageSize) }
   }
 }
