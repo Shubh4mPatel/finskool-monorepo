@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'
 
 // Routes that require authentication
-const PROTECTED = ['/dashboard', '/admin']
+const PROTECTED = ['/feed', '/announcements', '/profile', '/recommendations', '/replies', '/stock-tracker', '/admin']
 // Routes only for unauthenticated users (redirect away if already logged in)
 const AUTH_ONLY = ['/login', '/signup']
 
@@ -41,7 +41,7 @@ export async function middleware(request: NextRequest) {
   if (isAuthOnly && tokenValid) {
     const role = payload?.role
     return NextResponse.redirect(
-      new URL(role === 'admin' ? '/admin/dashboard' : '/', request.url),
+      new URL(role === 'admin' ? '/admin/dashboard' : '/feed', request.url),
     )
   }
 
@@ -50,7 +50,7 @@ export async function middleware(request: NextRequest) {
   // --- Protected route: token is valid, just check role ---
   if (tokenValid) {
     const role = payload?.role
-    if (pathname.startsWith('/admin') && role !== 'admin') {
+    if (pathname.startsWith('/admin') && role !== 'admin') {  // admin-only check
       return NextResponse.redirect(new URL('/', request.url))
     }
     return NextResponse.next()
@@ -97,7 +97,12 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/dashboard/:path*',
+    '/feed/:path*',
+    '/announcements/:path*',
+    '/profile/:path*',
+    '/recommendations/:path*',
+    '/replies/:path*',
+    '/stock-tracker/:path*',
     '/admin/:path*',
     '/login',
     '/signup',

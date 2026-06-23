@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
+import { api } from "@/lib/api";
 import {
   LayoutGrid,
   Megaphone,
@@ -24,7 +25,13 @@ const navItems = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
+
+  async function handleLogout() {
+    try { await api.post("/api/v1/auth/logout", {}) } catch { /* ignore */ }
+    router.push("/login");
+  }
 
   return (
     <aside className="flex w-full flex-col gap-4 rounded-2xl bg-white p-4 shadow-card lg:h-fit lg:w-[269px] lg:gap-0 lg:p-6">
@@ -89,14 +96,13 @@ export default function Sidebar() {
 
       <div className={`${open ? "block" : "hidden"} h-px w-full bg-divider lg:block`} />
 
-      <Link
-        href="/login"
-        onClick={() => setOpen(false)}
+      <button
+        onClick={() => { setOpen(false); handleLogout(); }}
         className={`${open ? "flex" : "hidden"} items-center gap-2 self-start rounded-full px-3.5 py-1.5 text-sm font-semibold text-subtle transition-colors hover:bg-divider/60 hover:text-primary lg:flex lg:mt-4`}
       >
         <LogOut size={14} />
         Logout
-      </Link>
+      </button>
     </aside>
   );
 }

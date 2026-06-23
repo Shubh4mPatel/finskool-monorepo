@@ -147,8 +147,7 @@ export default function SignupPage() {
       if (data.user.role === "admin") {
         router.push("/admin/dashboard");
       } else if (data.communities.length === 1) {
-        document.cookie = `community_id=${data.communities[0]!.id}; path=/; samesite=strict`;
-        router.push("/dashboard/feed");
+        router.push("/feed");
       } else {
         router.push("/");
       }

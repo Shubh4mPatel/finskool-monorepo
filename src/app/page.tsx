@@ -74,9 +74,13 @@ export default function CommunitySelectorPage() {
       });
   }, [router]);
 
-  function handleSelect(communityId: string) {
-    document.cookie = `community_id=${communityId}; path=/; samesite=strict`;
-    router.push("/dashboard/feed");
+  async function handleSelect(communityId: string) {
+    try {
+      await api.post("/api/v1/auth/select-community", { communityId });
+      router.push("/feed");
+    } catch {
+      setError("Failed to select community. Please try again.");
+    }
   }
 
   const initials = meData?.user.name

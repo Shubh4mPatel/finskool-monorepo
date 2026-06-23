@@ -4,32 +4,40 @@ import PriceChart from "./PriceChart";
 
 type FeedPostCardProps = {
   badge?: { label: string; icon?: "pin" | "idea" };
+  communityName?: string;
   timestamp: string;
   title: string;
   body: string;
+  bodyHtml?: string;
+  imageUrls?: string[];
   tags: string[];
-  viewThreadCount: number;
+  viewThreadCount?: number;
   showChart?: boolean;
   reactions?: number;
   children?: ReactNode;
+  actions?: ReactNode;
 };
 
 export default function FeedPostCard({
   badge,
+  communityName,
   timestamp,
   title,
   body,
+  bodyHtml,
+  imageUrls,
   tags,
   viewThreadCount,
   showChart,
   reactions,
   children,
+  actions,
 }: FeedPostCardProps) {
   return (
     <div className="group rounded-2xl bg-white p-6 shadow-card transition-all duration-300 hover:shadow-card-hover">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary to-accent text-sm font-bold text-lime ring-2 ring-lime/40 ring-offset-2 ring-offset-white">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-white ring-2 ring-primary/20 ring-offset-2 ring-offset-white">
             A
           </div>
           <div>
@@ -38,8 +46,13 @@ export default function FeedPostCard({
               <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">
                 ADMIN
               </span>
+              {communityName && (
+                <span className="rounded-full bg-lime px-2 py-0.5 text-[10px] font-bold text-primary">
+                  {communityName}
+                </span>
+              )}
               {badge && (
-                <span className="flex items-center gap-1 rounded-full bg-lime px-2 py-0.5 text-[10px] font-bold text-primary">
+                <span className="flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-bold text-accent">
                   {badge.icon === "pin" && <Pin size={10} />}
                   {badge.icon === "idea" && <Lightbulb size={10} />}
                   {badge.label}
@@ -49,19 +62,41 @@ export default function FeedPostCard({
             <span className="text-xs text-subtle">{timestamp}</span>
           </div>
         </div>
-        {reactions != null && (
-          <span className="rounded-full bg-divider px-3 py-1 text-xs font-semibold text-muted transition-colors group-hover:bg-lime/40 group-hover:text-primary">
-            {reactions}
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {reactions != null && (
+            <span className="rounded-full bg-divider px-3 py-1 text-xs font-semibold text-muted transition-colors group-hover:bg-lime/40 group-hover:text-primary">
+              {reactions}
+            </span>
+          )}
+          {actions}
+        </div>
       </div>
 
       <h3 className="mt-4 font-display text-lg font-bold text-primary">{title}</h3>
-      <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-muted">{body}</p>
+
+      {bodyHtml ? (
+        <div
+          className="mt-2 text-sm leading-relaxed text-muted prose prose-sm max-w-none [&_p]:my-1 [&_strong]:text-primary [&_code]:bg-divider [&_code]:px-1 [&_code]:rounded"
+          dangerouslySetInnerHTML={{ __html: bodyHtml }}
+        />
+      ) : (
+        <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-muted">{body}</p>
+      )}
 
       {showChart && (
         <div className="mt-4">
           <PriceChart />
+        </div>
+      )}
+
+      {imageUrls && imageUrls.length > 0 && (
+        <div className="mt-4 overflow-hidden rounded-xl border border-divider">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={imageUrls[0]}
+            alt="Post image"
+            className="max-h-64 w-full object-cover"
+          />
         </div>
       )}
 
@@ -78,13 +113,15 @@ export default function FeedPostCard({
 
       {children}
 
-      <a
-        href="#"
-        className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-accent"
-      >
-        View Thread ({viewThreadCount})
-        <ArrowRight size={14} className="transition-transform duration-300 group-hover:translate-x-1" />
-      </a>
+      {viewThreadCount !== undefined && (
+        <a
+          href="#"
+          className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-accent"
+        >
+          View Thread ({viewThreadCount})
+          <ArrowRight size={14} className="transition-transform duration-300 group-hover:translate-x-1" />
+        </a>
+      )}
     </div>
   );
 }

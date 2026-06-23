@@ -1,17 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
-import { ArrowRight, Bold, Check, ChevronLeft, Code, Image, Italic, Link, Plus, Underline, Users, X } from "lucide-react";
+import { ArrowRight, Bold, Check, ChevronLeft, Code, Image, Italic, Link, Underline, X } from "lucide-react";
+
+import { api, ApiError } from "@/lib/api";
+import { useToast } from "@/components/ui/Toast";
 
 type Step = 1 | 2 | 3;
 
-const communities = [
-  { id: "swing", name: "Swing Alpha", members: 312, color: "from-primary to-accent" },
-  { id: "investor", name: "Investor Community", members: 248, color: "from-accent to-primary" },
-];
+interface Community { id: string; name: string; slug: string }
+
+const COMMUNITY_COLORS = ["bg-primary/10", "bg-accent/10", "bg-lime/30", "bg-amber-100"];
+function communityBg(index: number): string {
+  return COMMUNITY_COLORS[index % COMMUNITY_COLORS.length] ?? "bg-divider";
+}
 
 const steps = [
   { n: 1, label: "Community & type" },
@@ -51,7 +56,15 @@ function StepIndicator({ current }: { current: Step }) {
   );
 }
 
-function TipTapToolbar({ editor }: { editor: ReturnType<typeof useEditor> }) {
+function TipTapToolbar({
+  editor,
+  onImageClick,
+  uploadingImage,
+}: {
+  editor: ReturnType<typeof useEditor>;
+  onImageClick: () => void;
+  uploadingImage: boolean;
+}) {
   if (!editor) return null;
   return (
     <div className="flex flex-wrap items-center gap-1 border-b border-divider pb-3">
@@ -77,10 +90,12 @@ function TipTapToolbar({ editor }: { editor: ReturnType<typeof useEditor> }) {
       <div className="ml-auto">
         <button
           type="button"
-          className="flex items-center gap-1.5 rounded-lg border border-divider px-3 py-1.5 text-xs font-semibold text-muted transition-colors hover:border-accent hover:text-primary"
+          onClick={onImageClick}
+          disabled={uploadingImage}
+          className="flex items-center gap-1.5 rounded-lg border border-divider px-3 py-1.5 text-xs font-semibold text-muted transition-colors hover:border-accent hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Image size={13} />
-          Add Image
+          {uploadingImage ? "Uploading…" : "Add Image"}
         </button>
       </div>
     </div>
@@ -88,11 +103,24 @@ function TipTapToolbar({ editor }: { editor: ReturnType<typeof useEditor> }) {
 }
 
 export default function CreatePostPage() {
+  const toast = useToast();
   const [step, setStep] = useState<Step>(1);
   const [selectedCommunity, setSelectedCommunity] = useState<string | null>(null);
   const [headline, setHeadline] = useState("");
   const [tags, setTags] = useState<string[]>(defaultTags);
   const [tagInput, setTagInput] = useState("");
+  const [publishing, setPublishing] = useState(false);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+
+  const [communities, setCommunities] = useState<Community[]>([]);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    api.get<Community[]>("/api/v1/admin/communities")
+      .then(setCommunities)
+      .catch(() => {});
+  }, []);
 
   const editor = useEditor({
     extensions: [
@@ -102,6 +130,59 @@ export default function CreatePostPage() {
   });
 
   const previewContent = editor?.getText() || "Strong breakout above ₹1,400 resistance with high delivery volumes. Swing setup with defined risk. Enter...";
+
+  async function handleImageFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!imageInputRef.current) return;
+    imageInputRef.current.value = "";
+    if (!file) return;
+
+    setUploadingImage(true);
+    try {
+      const { uploadUrl, publicUrl } = await api.get<{ uploadUrl: string; publicUrl: string }>(
+        `/api/v1/posts/upload-url?filename=${encodeURIComponent(file.name)}`
+      );
+      await fetch(uploadUrl, {
+        method: "PUT",
+        body: file,
+        headers: { "Content-Type": file.type },
+      });
+      setImageUrl(publicUrl);
+    } catch {
+      toast.error("Failed to upload image. Please try again.");
+    } finally {
+      setUploadingImage(false);
+    }
+  }
+
+  async function handlePublish() {
+    if (!selectedCommunity || !headline.trim() || !editor?.getText().trim()) {
+      toast.error("Please fill in community, headline and content before publishing.");
+      return;
+    }
+    setPublishing(true);
+    try {
+      const post = await api.post<{ id: string }>("/api/v1/posts", {
+        communityId: selectedCommunity,
+        title: headline.trim(),
+        content: editor.getHTML(),
+        tags,
+        imageUrls: imageUrl ? [imageUrl] : [],
+      });
+      await api.patch(`/api/v1/posts/${post.id}/publish`, {});
+      toast.success({ title: "Post published", message: "Your post is now live in the community." });
+      setStep(1);
+      setSelectedCommunity(null);
+      setHeadline("");
+      setTags(defaultTags);
+      setImageUrl(null);
+      editor.commands.clearContent();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to publish post");
+    } finally {
+      setPublishing(false);
+    }
+  }
 
   const addTag = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && tagInput.trim()) {
@@ -113,6 +194,14 @@ export default function CreatePostPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      <input
+        ref={imageInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/gif"
+        className="hidden"
+        onChange={handleImageFileChange}
+      />
+
       <div>
         <p className="text-xs font-semibold text-accent">Dashboard &rsaquo; Create Post</p>
         <h1 className="font-display text-2xl font-bold text-primary">Create New Post</h1>
@@ -126,8 +215,11 @@ export default function CreatePostPage() {
           <div className="mt-8 flex flex-col gap-4">
             <h2 className="text-base font-semibold text-primary">Which community is this post for?</h2>
             <p className="text-sm text-muted">Members of the other community will not see this post.</p>
+            {communities.length === 0 && (
+              <p className="text-sm text-muted">Loading communities…</p>
+            )}
             <div className="mt-2 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {communities.map((c) => (
+              {communities.map((c, idx) => (
                 <button
                   key={c.id}
                   type="button"
@@ -136,26 +228,18 @@ export default function CreatePostPage() {
                     selectedCommunity === c.id ? "border-primary shadow-glow" : "border-transparent hover:border-divider"
                   }`}
                 >
-                  <div className={`h-36 bg-gradient-to-br ${c.color} relative`}>
-                    <div
-                      className="absolute inset-0 opacity-20"
-                      style={{
-                        backgroundImage: "radial-gradient(circle, rgba(193,242,110,0.9) 1.5px, transparent 1.5px)",
-                        backgroundSize: "18px 18px",
-                      }}
-                    />
+                  <div className={`relative flex h-36 items-center justify-center ${communityBg(idx)}`}>
                     {selectedCommunity === c.id && (
-                      <div className="absolute right-3 top-3 flex h-6 w-6 items-center justify-center rounded-full bg-lime">
-                        <Check size={12} className="text-primary" />
+                      <div className="absolute right-3 top-3 flex h-6 w-6 items-center justify-center rounded-full bg-primary">
+                        <Check size={12} className="text-white" />
                       </div>
                     )}
+                    <span className="font-display text-3xl font-bold text-primary/20">
+                      {c.name.slice(0, 2).toUpperCase()}
+                    </span>
                   </div>
                   <div className="p-4">
                     <p className="font-display font-bold text-primary">{c.name}</p>
-                    <div className="mt-1 flex items-center gap-1.5 text-xs text-muted">
-                      <Users size={12} />
-                      {c.members} members
-                    </div>
                   </div>
                 </button>
               ))}
@@ -164,7 +248,7 @@ export default function CreatePostPage() {
               <button
                 onClick={() => selectedCommunity && setStep(2)}
                 disabled={!selectedCommunity}
-                className="flex items-center gap-2 rounded-full bg-gradient-to-r from-accent to-primary px-6 py-2.5 text-sm font-bold text-white shadow-glow transition-all duration-300 hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+                className="flex items-center gap-2 rounded-full bg-primary px-6 py-2.5 text-sm font-bold text-white shadow-glow transition-all duration-300 hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 Continue
                 <ArrowRight size={15} />
@@ -176,7 +260,7 @@ export default function CreatePostPage() {
         {step === 2 && (
           <div className="mt-8 flex flex-col gap-5">
             <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-accent to-primary text-sm font-bold text-lime">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-white">
                 A
               </div>
               <div>
@@ -196,12 +280,30 @@ export default function CreatePostPage() {
             />
 
             <div className="min-h-[120px]">
-              <TipTapToolbar editor={editor} />
+              <TipTapToolbar
+                editor={editor}
+                onImageClick={() => imageInputRef.current?.click()}
+                uploadingImage={uploadingImage}
+              />
               <EditorContent
                 editor={editor}
                 className="mt-3 min-h-[80px] text-sm text-primary [&_.ProseMirror]:outline-none [&_.ProseMirror_p.is-editor-empty:first-child::before]:text-subtle [&_.ProseMirror_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)]"
               />
             </div>
+
+            {imageUrl && (
+              <div className="relative overflow-hidden rounded-xl border border-divider">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={imageUrl} alt="Post image" className="max-h-48 w-full object-cover" />
+                <button
+                  type="button"
+                  onClick={() => setImageUrl(null)}
+                  className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-white/80 text-primary shadow transition-colors hover:bg-white"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            )}
 
             <div>
               <p className="text-sm font-semibold text-primary">Add tags</p>
@@ -236,7 +338,7 @@ export default function CreatePostPage() {
                 </button>
                 <button
                   onClick={() => setStep(3)}
-                  className="flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-accent to-primary px-5 py-2.5 text-sm font-bold text-white shadow-glow transition-transform duration-300 hover:scale-105 active:scale-95"
+                  className="flex items-center justify-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-bold text-white shadow-glow transition-transform duration-300 hover:scale-105 active:scale-95"
                 >
                   Continue to review
                   <ArrowRight size={15} />
@@ -252,7 +354,7 @@ export default function CreatePostPage() {
               <span className="rounded-full bg-lime/40 px-3 py-1 text-xs font-bold text-primary">Post preview</span>
               <div className="mt-4 rounded-2xl border border-divider p-5">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-accent to-primary text-sm font-bold text-lime">A</div>
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-white">A</div>
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="font-display font-semibold text-primary">Ritesh Kumar</span>
@@ -269,9 +371,12 @@ export default function CreatePostPage() {
                 </h3>
                 <p className="mt-2 text-sm leading-relaxed text-muted">{previewContent}</p>
 
-                <div className="mt-4 h-40 overflow-hidden rounded-xl bg-gradient-to-br from-primary/80 to-accent/60">
-                  <div className="flex h-full items-center justify-center text-sm text-white/40">Post Image</div>
-                </div>
+                {imageUrl && (
+                  <div className="mt-4 overflow-hidden rounded-xl border border-divider">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={imageUrl} alt="Post image" className="max-h-48 w-full object-cover" />
+                  </div>
+                )}
 
                 <div className="mt-4 flex flex-wrap gap-2">
                   {tags.map((tag) => (
@@ -290,9 +395,13 @@ export default function CreatePostPage() {
                 <button onClick={() => setStep(1)} className="rounded-full border border-divider px-5 py-2.5 text-sm font-semibold text-muted transition-colors hover:border-subtle hover:text-primary">
                   Cancel
                 </button>
-                <button className="flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-accent to-primary px-6 py-2.5 text-sm font-bold text-white shadow-glow transition-transform duration-300 hover:scale-105 active:scale-95">
+                <button
+                  onClick={handlePublish}
+                  disabled={publishing}
+                  className="flex items-center justify-center gap-2 rounded-full bg-primary px-6 py-2.5 text-sm font-bold text-white shadow-glow transition-transform duration-300 hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+                >
                   <Check size={15} />
-                  Publish
+                  {publishing ? "Publishing…" : "Publish"}
                 </button>
               </div>
             </div>

@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
+import { api } from "@/lib/api";
 import {
   LayoutDashboard,
   Pencil,
@@ -32,6 +33,12 @@ const navItems = [
 
 function SidebarContent({ onNav }: { onNav?: () => void }) {
   const pathname = usePathname();
+  const router = useRouter();
+
+  async function handleLogout() {
+    try { await api.post("/api/v1/auth/logout", {}) } catch { /* ignore */ }
+    router.push("/login");
+  }
 
   return (
     <div className="flex h-full flex-col">
@@ -82,14 +89,13 @@ function SidebarContent({ onNav }: { onNav?: () => void }) {
 
       {/* Logout */}
       <div className="border-t border-divider px-3 py-3">
-        <Link
-          href="/login"
-          onClick={onNav}
-          className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-semibold text-subtle transition-colors hover:bg-divider hover:text-primary"
+        <button
+          onClick={() => { onNav?.(); handleLogout(); }}
+          className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-semibold text-subtle transition-colors hover:bg-divider hover:text-primary"
         >
           <LogOut size={15} />
           Logout
-        </Link>
+        </button>
       </div>
     </div>
   );
