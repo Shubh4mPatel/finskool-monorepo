@@ -1,8 +1,13 @@
 import type { Request, Response, NextFunction, CookieOptions } from 'express'
+import { z } from 'zod'
 import type { AuthService } from './auth.service.js'
 import { registerSchema, loginSchema } from './auth.validator.js'
 import { env } from '../../config/env.js'
 import { UnauthorizedError } from '../../shared/errors/index.js'
+
+const selectCommunitySchema = z.object({
+  communityId: z.string().uuid('Invalid community ID'),
+})
 
 const isProduction = env.nodeEnv === 'production'
 
@@ -73,6 +78,18 @@ export class AuthController {
       }
       clearAuthCookies(res)
       res.json({ success: true, message: 'Logged out' })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  selectCommunity = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { communityId } = selectCommunitySchema.parse(req.body)
+      const user = req.user!
+      const accessToken = await this.service.selectCommunity(user.id, communityId, user.communityIds)
+      res.cookie('access_token', accessToken, { ...COOKIE_BASE, maxAge: ACCESS_MAX_AGE })
+      res.json({ success: true })
     } catch (err) {
       next(err)
     }

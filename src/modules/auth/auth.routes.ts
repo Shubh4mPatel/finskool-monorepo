@@ -14,6 +14,7 @@ router.post('/register', controller.register)
 router.post('/login', controller.login)
 router.get('/refresh', controller.refresh)
 router.post('/logout', controller.logout)
+router.post('/select-community', authenticate, controller.selectCommunity)
 router.get('/me', authenticate, controller.me)
 
 export default router

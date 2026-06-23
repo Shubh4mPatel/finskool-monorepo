@@ -19,6 +19,10 @@ export function refreshTokenKey(tokenHash: string): string {
   return `${REFRESH_TOKEN_PREFIX}${tokenHash}`
 }
 
+export function selectedCommunityKey(userId: string): string {
+  return `selected_comm:${userId}`
+}
+
 export function feedCacheKey(communityId: string, page: number): string {
   return `feed:${communityId}:page:${page}`
 }

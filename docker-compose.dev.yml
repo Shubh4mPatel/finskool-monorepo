@@ -23,6 +23,7 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       MINIO_ENDPOINT: minio
+      MINIO_PUBLIC_ENDPOINT: localhost
       MINIO_PORT: "9000"
     command: sh -c "npx prisma generate && npx prisma migrate deploy && npm run dev"
     ports:

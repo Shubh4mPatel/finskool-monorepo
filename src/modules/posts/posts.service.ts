@@ -2,24 +2,65 @@ import type { PrismaClient } from '../../generated/prisma/client.js'
 import { uploadFile, deleteFile } from '../../lib/minio.js'
 import { NotFoundError, ConflictError, BadRequestError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
-import type { CreatePostDTO, UpdatePostDTO, PostResponseDTO } from './posts.dto.js'
+import type { CreatePostDTO, UpdatePostDTO, PostResponseDTO, PostFeedItemDTO, ListPostsResponseDTO } from './posts.dto.js'
 
 export class PostsService {
   constructor(private readonly db: PrismaClient) {}
 
-  async createPost(
-    adminId: string,
-    data: CreatePostDTO,
-    imageFiles: Express.Multer.File[],
-  ): Promise<PostResponseDTO> {
+  async listPosts(params: {
+    page: number
+    pageSize: number
+    communityId?: string
+    communityIds?: string[]
+  }): Promise<ListPostsResponseDTO> {
+    const { page, pageSize, communityId, communityIds } = params
+    const where = {
+      status: 'published' as const,
+      deletedAt: null,
+      ...(communityId !== undefined
+        ? { communityId }
+        : communityIds !== undefined
+          ? { communityId: { in: communityIds } }
+          : {}),
+    }
+
+    const [posts, total] = await Promise.all([
+      this.db.post.findMany({
+        where,
+        include: { community: { select: { name: true, slug: true } } },
+        orderBy: [{ pinOrder: 'asc' }, { publishedAt: 'desc' }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.db.post.count({ where }),
+    ])
+
+    return {
+      posts: posts.map(p => ({
+        id: p.id,
+        communityId: p.communityId,
+        communityName: p.community.name,
+        communitySlug: p.community.slug,
+        title: p.title,
+        content: p.contentMd,
+        imageUrls: p.imageUrls,
+        tags: p.tags,
+        pinOrder: p.pinOrder,
+        publishedAt: p.publishedAt,
+        createdAt: p.createdAt,
+      })),
+      total,
+      page,
+      pageSize,
+      totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    }
+  }
+
+  async createPost(adminId: string, data: CreatePostDTO): Promise<PostResponseDTO> {
     const community = await this.db.community.findUnique({
       where: { id: data.communityId, deletedAt: null },
     })
     if (!community) throw new NotFoundError('Community not found')
-
-    const imageUrls = await Promise.all(
-      imageFiles.map(f => uploadFile(f.buffer, f.originalname, f.mimetype)),
-    )
 
     const post = await this.db.post.create({
       data: {
@@ -27,7 +68,7 @@ export class PostsService {
         authorId: adminId,
         title: data.title,
         contentMd: data.content,
-        imageUrls,
+        imageUrls: data.imageUrls,
         tags: data.tags,
       },
     })
@@ -36,22 +77,19 @@ export class PostsService {
     return this.toResponse(post)
   }
 
-  async updatePost(
-    postId: string,
-    data: UpdatePostDTO,
-    imageFiles: Express.Multer.File[],
-  ): Promise<PostResponseDTO> {
+  async updatePost(postId: string, data: UpdatePostDTO): Promise<PostResponseDTO> {
     const post = await this.db.post.findUnique({ where: { id: postId, deletedAt: null } })
     if (!post) throw new NotFoundError('Post not found')
 
     let imageUrls = post.imageUrls
 
-    if (imageFiles.length > 0) {
-      // delete old images from MinIO then replace
-      await Promise.all(post.imageUrls.map(url => deleteFile(url)))
-      imageUrls = await Promise.all(
-        imageFiles.map(f => uploadFile(f.buffer, f.originalname, f.mimetype)),
-      )
+    if (data.imageUrls !== undefined) {
+      // delete any old images that are no longer in the new list
+      const removed = post.imageUrls.filter(url => !data.imageUrls!.includes(url))
+      if (removed.length > 0) {
+        await Promise.all(removed.map(url => deleteFile(url)))
+      }
+      imageUrls = data.imageUrls
     }
 
     const updated = await this.db.post.update({

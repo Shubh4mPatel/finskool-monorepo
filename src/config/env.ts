@@ -31,6 +31,8 @@ export const env = {
 
   minio: {
     endPoint: process.env['MINIO_ENDPOINT'] ?? 'localhost',
+    // publicEndPoint is the hostname browsers use to reach MinIO (always the host machine)
+    publicEndPoint: process.env['MINIO_PUBLIC_ENDPOINT'] ?? process.env['MINIO_ENDPOINT'] ?? 'localhost',
     port: Number(process.env['MINIO_PORT'] ?? 9000),
     useSSL: process.env['MINIO_USE_SSL'] === 'true',
     accessKey: process.env['MINIO_ACCESS_KEY'] ?? '',
@@ -44,5 +46,5 @@ export const env = {
   database: { url: string }
   redis: { host: string; port: number; password: string; db: number }
   jwt: { secret: string; accessExpiresIn: string }
-  minio: { endPoint: string; port: number; useSSL: boolean; accessKey: string; secretKey: string; bucket: string }
+  minio: { endPoint: string; publicEndPoint: string; port: number; useSSL: boolean; accessKey: string; secretKey: string; bucket: string }
 }

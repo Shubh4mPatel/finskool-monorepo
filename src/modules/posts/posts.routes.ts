@@ -1,30 +1,26 @@
 import { Router } from 'express'
-import multer from 'multer'
 import { PostsService } from './posts.service.js'
 import { PostsController } from './posts.controller.js'
 import { authenticate, requireRole } from '../../middlewares/auth.middleware.js'
 import prisma from '../../lib/prisma.js'
-
-const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
-
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB per image
-  fileFilter: (_req, file, cb) => {
-    cb(null, ALLOWED_IMAGE_TYPES.has(file.mimetype))
-  },
-})
 
 const service = new PostsService(prisma)
 const controller = new PostsController(service)
 
 const router = Router()
 
-// all post management is admin-only
-router.use(authenticate, requireRole('admin'))
+// All routes require authentication
+router.use(authenticate)
 
-router.post('/', upload.array('images', 10), controller.create)
-router.patch('/:id', upload.array('images', 10), controller.update)
+// Accessible to any authenticated user
+router.get('/', controller.list)
+
+// Admin-only below
+router.use(requireRole('admin'))
+
+router.get('/upload-url', controller.getUploadUrl)
+router.post('/', controller.create)
+router.patch('/:id', controller.update)
 router.delete('/:id', controller.delete)
 router.patch('/:id/publish', controller.publish)
 router.patch('/:id/pin', controller.pin)

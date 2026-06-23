@@ -8,19 +8,19 @@ export interface JwtPayload {
   sub: string
   role: UserRole
   type: 'access' | 'refresh'
+  communityIds: string[]
+  selectedCommunityId: string | null
 }
 
 declare global {
   namespace Express {
     interface Request {
-      user?: { id: string; role: UserRole }
+      user?: { id: string; role: UserRole; communityIds: string[]; selectedCommunityId: string | null }
     }
   }
 }
 
 export function authenticate(req: Request, _res: Response, next: NextFunction): void {
-  // Primary: read from httpOnly cookie set by login/register
-  // Fallback: Authorization: Bearer header (for tooling / server-to-server)
   const cookieToken = req.cookies?.['access_token'] as string | undefined
   const header = req.headers.authorization
   const token = cookieToken ?? (header?.startsWith('Bearer ') ? header.slice(7) : undefined)
@@ -34,7 +34,12 @@ export function authenticate(req: Request, _res: Response, next: NextFunction): 
     if (payload.type !== 'access') {
       return next(new UnauthorizedError('Invalid token type'))
     }
-    req.user = { id: payload.sub, role: payload.role }
+    req.user = {
+      id: payload.sub,
+      role: payload.role,
+      communityIds: payload.communityIds ?? [],
+      selectedCommunityId: payload.selectedCommunityId ?? null,
+    }
     next()
   } catch {
     next(new UnauthorizedError('Invalid or expired token'))

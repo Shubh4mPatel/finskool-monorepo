@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import type { PrismaClient } from '../../generated/prisma/client.js'
 import type { Redis } from 'ioredis'
-import { refreshTokenKey } from '../../lib/redis.js'
+import { refreshTokenKey, selectedCommunityKey } from '../../lib/redis.js'
 import { env } from '../../config/env.js'
 import { logger } from '../../shared/logger.js'
 import {
@@ -131,8 +131,15 @@ export class AuthService {
     const user = await this.db.user.findUnique({ where: { id: payload.sub } })
     if (!user || user.deletedAt) throw new UnauthorizedError('User not found')
 
+    const communities = await this.fetchUserCommunities(user.id)
+    const communityIds = communities.map(c => c.id)
+
+    // Restore previously selected community (validate it's still a valid subscription)
+    const savedComm = await this.redis.get(selectedCommunityKey(user.id))
+    const selectedCommunityId = savedComm && communityIds.includes(savedComm) ? savedComm : (communityIds.length === 1 ? (communityIds[0] ?? null) : null)
+
     const accessToken = this.signToken(
-      { sub: user.id, role: user.role as 'admin' | 'member', type: 'access' },
+      { sub: user.id, role: user.role as 'admin' | 'member', type: 'access', communityIds, selectedCommunityId },
       env.jwt.accessExpiresIn,
     )
     return { accessToken }
@@ -150,9 +157,39 @@ export class AuthService {
     return { user: this.toPublicUser(user), communities }
   }
 
+  async selectCommunity(userId: string, communityId: string, currentCommunityIds: string[]): Promise<string> {
+    if (!currentCommunityIds.includes(communityId)) {
+      throw new ForbiddenError('You do not have access to this community', 'COMMUNITY_ACCESS_DENIED')
+    }
+    // Persist selection so token refresh can restore it
+    await this.redis.set(selectedCommunityKey(userId), communityId)
+
+    const communities = await this.fetchUserCommunities(userId)
+    const communityIds = communities.map(c => c.id)
+    const user = await this.db.user.findUnique({ where: { id: userId } })
+    if (!user) throw new UnauthorizedError('User not found')
+
+    return this.signToken(
+      { sub: userId, role: user.role as 'admin' | 'member', type: 'access', communityIds, selectedCommunityId: communityId },
+      env.jwt.accessExpiresIn,
+    )
+  }
+
   private async issueTokens(user: DbUser): Promise<AuthTokensInternal> {
     const role = user.role as 'admin' | 'member'
-    const accessToken = this.signToken({ sub: user.id, role, type: 'access' }, env.jwt.accessExpiresIn)
+    const communities = await this.fetchUserCommunities(user.id)
+    const communityIds = communities.map(c => c.id)
+
+    // Auto-select the only community; for multiple communities user must select manually
+    const selectedCommunityId = communityIds.length === 1 ? (communityIds[0] ?? null) : null
+    if (selectedCommunityId) {
+      await this.redis.set(selectedCommunityKey(user.id), selectedCommunityId)
+    }
+
+    const accessToken = this.signToken(
+      { sub: user.id, role, type: 'access', communityIds, selectedCommunityId },
+      env.jwt.accessExpiresIn,
+    )
     // Refresh token has no expiry in the JWT — Redis presence is the sole validity gate
     const refreshToken = jwt.sign(
       { sub: user.id, role, type: 'refresh' } as object,
@@ -163,16 +200,27 @@ export class AuthService {
     // No TTL — refresh token is permanent until logout or admin suspension
     await this.redis.set(refreshTokenKey(tokenHash), user.id)
 
-    const communities = await this.fetchUserCommunities(user.id)
     return { accessToken, refreshToken, user: this.toPublicUser(user), communities }
   }
 
   private async fetchUserCommunities(userId: string): Promise<CommunityInfoDTO[]> {
-    const memberships = await this.db.communityMember.findMany({
-      where: { userId },
-      select: { community: { select: { id: true, name: true, slug: true } } },
+    const user = await this.db.user.findUnique({
+      where: { id: userId },
+      select: { phone: true },
     })
-    return memberships.map(m => m.community)
+    if (!user) return []
+
+    const approvedPhone = await this.db.approvedPhone.findUnique({
+      where: { phone: user.phone },
+      select: {
+        subscriptions: {
+          where: { isActive: true },
+          select: { community: { select: { id: true, name: true, slug: true } } },
+        },
+      },
+    })
+
+    return approvedPhone?.subscriptions.map(s => s.community) ?? []
   }
 
   private signToken(payload: JwtPayload, expiresIn: string): string {

@@ -3,12 +3,14 @@ export interface CreatePostDTO {
   title: string
   content: string
   tags: string[]
+  imageUrls: string[]
 }
 
 export interface UpdatePostDTO {
   title?: string | undefined
   content?: string | undefined
   tags?: string[] | undefined
+  imageUrls?: string[] | undefined
 }
 
 export interface PinPostDTO {
@@ -28,4 +30,26 @@ export interface PostResponseDTO {
   publishedAt: Date | null
   createdAt: Date
   updatedAt: Date
+}
+
+export interface PostFeedItemDTO {
+  id: string
+  communityId: string
+  communityName: string
+  communitySlug: string
+  title: string
+  content: string
+  imageUrls: string[]
+  tags: string[]
+  pinOrder: number | null
+  publishedAt: Date | null
+  createdAt: Date
+}
+
+export interface ListPostsResponseDTO {
+  posts: PostFeedItemDTO[]
+  total: number
+  page: number
+  pageSize: number
+  totalPages: number
 }
