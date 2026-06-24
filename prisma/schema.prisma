@@ -27,7 +27,7 @@ model User {
   name         String    @map("full_name") @db.VarChar(100)
   phone        String    @unique @db.VarChar(20)
   email        String    @unique @db.VarChar(255)
-  passwordHash String    @map("password_hash") @db.VarChar(255)
+  passwordHash String?   @map("password_hash") @db.VarChar(255)
   role         UserRole  @default(member)
   isActive     Boolean   @default(true) @map("is_active")
   avatarUrl    String?   @map("avatar_url") @db.VarChar(500)
@@ -40,6 +40,7 @@ model User {
   comments           Comment[]
   likes              PostLike[]
   communities        Community[]
+  subscriptions      Subscription[]
 
   @@index([phone], name: "idx_users_phone")
   @@index([email], name: "idx_users_email")
@@ -66,6 +67,7 @@ model ApprovedPhone {
 
 model Subscription {
   id              String    @id @default(uuid()) @db.Uuid
+  userId          String    @map("user_id") @db.Uuid
   approvedPhoneId String    @map("approved_phone_id") @db.Uuid
   communityId     String    @map("community_id") @db.Uuid
   payment         Decimal   @db.Decimal(10, 2)
@@ -75,10 +77,12 @@ model Subscription {
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   approvedPhone ApprovedPhone @relation(fields: [approvedPhoneId], references: [id], onDelete: Cascade)
   community     Community     @relation(fields: [communityId], references: [id], onDelete: Cascade)
 
-  @@unique([approvedPhoneId, communityId], name: "uq_subscription_phone_community")
+  @@unique([userId, communityId], name: "uq_subscription_user_community")
+  @@index([userId], name: "idx_subscriptions_user")
   @@index([approvedPhoneId], name: "idx_subscriptions_approved_phone")
   @@index([communityId], name: "idx_subscriptions_community")
   @@map("subscriptions")

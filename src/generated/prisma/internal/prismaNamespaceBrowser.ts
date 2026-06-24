@@ -111,6 +111,7 @@ export type ApprovedPhoneScalarFieldEnum = (typeof ApprovedPhoneScalarFieldEnum)
 
 export const SubscriptionScalarFieldEnum = {
   id: 'id',
+  userId: 'userId',
   approvedPhoneId: 'approvedPhoneId',
   communityId: 'communityId',
   payment: 'payment',

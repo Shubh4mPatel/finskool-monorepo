@@ -34,6 +34,7 @@ type DbUser = {
   name: string
   phone: string
   email: string
+  passwordHash: string | null
   role: string
   avatarUrl: string | null
 }
@@ -51,41 +52,49 @@ export class AuthService {
       throw new BadRequestError('Passwords do not match')
     }
 
-    const approved = await this.db.approvedPhone.findUnique({ where: { phone: data.phone } })
-    if (!approved) {
+    // User must already exist (pre-created by admin)
+    const user = await this.db.user.findUnique({ where: { phone: data.phone } })
+    if (!user) {
       throw new ForbiddenError(
         'This phone number is not in the list. Please contact your admin.',
         'PHONE_NOT_APPROVED',
       )
     }
-    if (!approved.isActive) {
-      throw new ForbiddenError(
-        'Your access has been revoked. Please contact your admin.',
-        'PHONE_INACTIVE',
-      )
-    }
-    if (approved.isRegistered) {
+    if (user.passwordHash) {
       throw new ConflictError(
         'This phone number has already been registered. Please log in.',
         'ALREADY_REGISTERED',
       )
     }
+    if (!user.isActive) {
+      throw new ForbiddenError(
+        'Your access has been revoked. Please contact your admin.',
+        'PHONE_INACTIVE',
+      )
+    }
 
-    const existingEmail = await this.db.user.findUnique({ where: { email: data.email } })
-    if (existingEmail) throw new ConflictError('This email address is already registered')
+    // Check if the new email conflicts with another user (admin may have used a different email)
+    if (data.email !== user.email) {
+      const emailTaken = await this.db.user.findFirst({
+        where: { email: data.email, id: { not: user.id } },
+      })
+      if (emailTaken) throw new ConflictError('This email address is already registered')
+    }
 
     const passwordHash = await bcrypt.hash(data.password, BCRYPT_ROUNDS)
-    const user = await this.db.user.create({
-      data: { name: data.fullName, phone: data.phone, email: data.email, passwordHash },
+    const updated = await this.db.user.update({
+      where: { id: user.id },
+      data: { name: data.fullName, email: data.email, passwordHash },
     })
 
+    // Mark phone as registered
     await this.db.approvedPhone.update({
       where: { phone: data.phone },
       data: { isRegistered: true },
     })
 
-    logger.info({ userId: user.id }, 'auth.register: success')
-    return this.issueTokens(user)
+    logger.info({ userId: updated.id }, 'auth.register: success')
+    return this.issueTokens(updated)
   }
 
   async login(data: LoginDTO): Promise<AuthTokensInternal> {
@@ -97,6 +106,10 @@ export class AuthService {
     }
     if (!user.isActive) {
       throw new UnauthorizedError('Your account has been deactivated. Please contact your admin.')
+    }
+
+    if (!user.passwordHash) {
+      throw new UnauthorizedError('Account not yet activated. Please complete registration first.')
     }
 
     const valid = await bcrypt.compare(data.password, user.passwordHash)
@@ -204,23 +217,11 @@ export class AuthService {
   }
 
   private async fetchUserCommunities(userId: string): Promise<CommunityInfoDTO[]> {
-    const user = await this.db.user.findUnique({
-      where: { id: userId },
-      select: { phone: true },
+    const subscriptions = await this.db.subscription.findMany({
+      where: { userId, isActive: true },
+      select: { community: { select: { id: true, name: true, slug: true } } },
     })
-    if (!user) return []
-
-    const approvedPhone = await this.db.approvedPhone.findUnique({
-      where: { phone: user.phone },
-      select: {
-        subscriptions: {
-          where: { isActive: true },
-          select: { community: { select: { id: true, name: true, slug: true } } },
-        },
-      },
-    })
-
-    return approvedPhone?.subscriptions.map(s => s.community) ?? []
+    return subscriptions.map(s => s.community)
   }
 
   private signToken(payload: JwtPayload, expiresIn: string): string {

@@ -114,30 +114,34 @@ export class AdminService {
       const name = row['Name'] ?? ''
       const email = (row['Email'] ?? '').toLowerCase()
 
-      const existing = await this.db.approvedPhone.findUnique({ where: { phone } })
+      const existingUser = await this.db.user.findUnique({ where: { phone } })
+      const existingAp = await this.db.approvedPhone.findUnique({ where: { phone } })
 
-      if (existing) {
+      if (existingUser && existingAp) {
         if (strategy === 'skip') {
           summary.skipped++
           continue
         }
 
-        // overwrite — update everything except isRegistered (never touched by import)
+        // overwrite — update name/email only if user hasn't registered yet (no password)
         await this.db.$transaction(async tx => {
+          if (!existingUser.passwordHash) {
+            await tx.user.update({ where: { id: existingUser.id }, data: { name, email } })
+          }
           await tx.approvedPhone.update({
             where: { phone },
             data: { name, email, addedBy: adminId },
           })
-          // isActive on subscription intentionally not touched — admin controls it separately
           await tx.subscription.upsert({
             where: {
-              uq_subscription_phone_community: {
-                approvedPhoneId: existing.id,
+              uq_subscription_user_community: {
+                userId: existingUser.id,
                 communityId: community.id,
               },
             },
             create: {
-              approvedPhoneId: existing.id,
+              userId: existingUser.id,
+              approvedPhoneId: existingAp.id,
               communityId: community.id,
               payment,
               paidOn,
@@ -149,11 +153,15 @@ export class AdminService {
         summary.updated++
       } else {
         await this.db.$transaction(async tx => {
+          const user = await tx.user.create({
+            data: { phone, name, email },
+          })
           const ap = await tx.approvedPhone.create({
             data: { phone, name, email, addedBy: adminId },
           })
           await tx.subscription.create({
             data: {
+              userId: user.id,
               approvedPhoneId: ap.id,
               communityId: community.id,
               payment,
@@ -283,15 +291,24 @@ export class AdminService {
     const community = await this.db.community.findUnique({ where: { id: data.communityId } })
     if (!community) throw new NotFoundError('Community not found')
 
-    const existing = await this.db.approvedPhone.findUnique({ where: { phone } })
-    if (existing) throw new ConflictError('This phone number is already whitelisted', 'PHONE_EXISTS')
+    if (await this.db.user.findUnique({ where: { phone } })) {
+      throw new ConflictError('This phone number is already registered', 'PHONE_EXISTS')
+    }
+    if (await this.db.user.findUnique({ where: { email: data.email } })) {
+      throw new ConflictError('This email address is already registered', 'EMAIL_EXISTS')
+    }
 
     const result = await this.db.$transaction(async tx => {
+      // Create User without password — user will set it when they register
+      const user = await tx.user.create({
+        data: { phone, name: data.name, email: data.email },
+      })
       const ap = await tx.approvedPhone.create({
         data: { phone, name: data.name, email: data.email, addedBy: adminId },
       })
       await tx.subscription.create({
         data: {
+          userId: user.id,
           approvedPhoneId: ap.id,
           communityId: data.communityId,
           payment: data.payment,
@@ -299,15 +316,15 @@ export class AdminService {
           validUntil: new Date(data.validUntil),
         },
       })
-      return ap
+      return { user, ap }
     })
 
     logger.info({ phone, adminId }, 'admin.addMember: created')
     return {
-      approvedPhoneId: result.id,
-      phone: result.phone,
-      name: result.name ?? data.name,
-      email: result.email ?? data.email,
+      approvedPhoneId: result.ap.id,
+      phone: result.user.phone,
+      name: result.user.name,
+      email: result.user.email,
       communityId: data.communityId,
       validUntil: data.validUntil,
     }
