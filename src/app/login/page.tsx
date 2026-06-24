@@ -68,6 +68,7 @@ export default function LoginPage() {
       });
 
       if (data.user.role === "admin") {
+        saveSession({ userId: data.user.id, userName: data.user.name, userInitials: initials(data.user.name), communityName: "", communityId: "" });
         router.push("/admin/dashboard");
       } else if (data.communities.length === 1) {
         const comm = data.communities[0]!;
