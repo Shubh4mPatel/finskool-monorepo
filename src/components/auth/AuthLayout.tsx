@@ -1,4 +1,4 @@
-import { BarChart3, Check, LineChart, Lock, Send } from "lucide-react";
+import { BarChart3, Check, Lock, Send } from "lucide-react";
 import type { ReactNode } from "react";
 
 type AuthLayoutProps = {
@@ -28,9 +28,8 @@ export default function AuthLayout({ heading, bullets, children }: AuthLayoutPro
         <Send className="absolute right-16 top-16 h-8 w-8 -rotate-45 text-white/10" />
         <BarChart3 className="absolute bottom-24 right-12 h-10 w-10 text-white/10" />
 
-        <div className="animate-rise relative flex h-12 w-12 items-center justify-center rounded-full bg-white shadow-glow">
-          <LineChart className="text-accent" size={22} />
-        </div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo.svg" alt="Finskool" className="animate-rise relative h-16 w-16 rounded-full bg-white shadow-glow" />
 
         <div className="relative">
           <h1 className="animate-rise font-display text-3xl font-bold leading-tight sm:text-4xl lg:text-5xl [animation-delay:100ms]">

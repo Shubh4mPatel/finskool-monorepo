@@ -103,7 +103,8 @@ export default function CommunitySelectorPage() {
 
       <div className="relative mx-auto flex w-full max-w-[1512px] flex-1 flex-col px-4 py-6 sm:px-8 sm:py-8">
         <div className="flex items-center justify-between">
-          <div className="font-display text-xl font-bold tracking-tight text-primary">Finskool</div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.svg" alt="Finskool" className="h-9 w-9" />
 
           <div className="flex items-center gap-3">
             {meData && (

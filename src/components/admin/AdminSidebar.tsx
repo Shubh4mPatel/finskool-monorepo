@@ -116,7 +116,8 @@ export default function AdminSidebar() {
       {/* Mobile top bar */}
       <div className="lg:hidden">
         <div className="fixed inset-x-0 top-0 z-40 flex h-12 items-center justify-between border-b border-divider bg-white px-4">
-          <span className="text-sm font-bold text-primary">Finskool</span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.svg" alt="Finskool" className="h-7 w-7" />
           <button
             type="button"
             onClick={() => setMobileOpen((v) => !v)}

@@ -4,10 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
-import { ArrowRight, Bold, Check, ChevronLeft, Code, Image, Italic, Link, Underline, X } from "lucide-react";
+import { ArrowRight, Bold, Check, ChevronLeft, Code, Image, Italic, Link, List, AlignLeft, X } from "lucide-react";
 
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
+import { getSession } from "@/lib/session";
 
 type Step = 1 | 2 | 3;
 
@@ -19,12 +20,12 @@ function communityBg(index: number): string {
 }
 
 const steps = [
-  { n: 1, label: "Community & type" },
-  { n: 2, label: "Style Content" },
+  { n: 1, label: "Community & Type" },
+  { n: 2, label: "Write Content" },
   { n: 3, label: "Review & Publish" },
 ];
 
-const defaultTags = ["#RELIANCE", "#BUY", "#SWING"];
+const defaultTags: string[] = [];
 
 function StepIndicator({ current }: { current: Step }) {
   return (
@@ -48,7 +49,7 @@ function StepIndicator({ current }: { current: Step }) {
             </span>
           </div>
           {i < steps.length - 1 && (
-            <div className={`mx-3 h-px w-16 sm:w-24 transition-colors duration-300 ${current > s.n + 1 ? "bg-primary" : "bg-divider"}`} />
+            <div className={`mx-3 h-px w-16 sm:w-24 transition-colors duration-300 ${current > s.n ? "bg-primary" : "bg-divider"}`} />
           )}
         </div>
       ))}
@@ -56,48 +57,24 @@ function StepIndicator({ current }: { current: Step }) {
   );
 }
 
-function TipTapToolbar({
-  editor,
-  onImageClick,
-  uploadingImage,
-}: {
-  editor: ReturnType<typeof useEditor>;
-  onImageClick: () => void;
-  uploadingImage: boolean;
-}) {
+function TipTapToolbar({ editor }: { editor: ReturnType<typeof useEditor> }) {
   if (!editor) return null;
+  const tools = [
+    { icon: Bold,     action: () => editor.chain().focus().toggleBold().run(),         active: editor.isActive("bold"),         label: "Bold" },
+    { icon: Italic,   action: () => editor.chain().focus().toggleItalic().run(),       active: editor.isActive("italic"),       label: "Italic" },
+    { icon: List,     action: () => editor.chain().focus().toggleBulletList().run(),   active: editor.isActive("bulletList"),   label: "Bullet List" },
+    { icon: AlignLeft,action: () => {},                                                active: false,                           label: "Align" },
+    { icon: Link,     action: () => {},                                                active: false,                           label: "Link" },
+    { icon: Code,     action: () => editor.chain().focus().toggleCode().run(),         active: editor.isActive("code"),         label: "Code" },
+  ];
   return (
-    <div className="flex flex-wrap items-center gap-1 border-b border-divider pb-3">
-      {[
-        { icon: Bold, action: () => editor.chain().focus().toggleBold().run(), active: editor.isActive("bold"), label: "Bold" },
-        { icon: Italic, action: () => editor.chain().focus().toggleItalic().run(), active: editor.isActive("italic"), label: "Italic" },
-        { icon: Underline, action: () => editor.chain().focus().toggleStrike().run(), active: editor.isActive("strike"), label: "Underline" },
-        { icon: Link, action: () => {}, active: false, label: "Link" },
-        { icon: Code, action: () => editor.chain().focus().toggleCode().run(), active: editor.isActive("code"), label: "Code" },
-      ].map(({ icon: Icon, action, active, label }) => (
-        <button
-          key={label}
-          type="button"
-          onClick={action}
-          className={`flex h-8 w-8 items-center justify-center rounded-lg text-sm transition-colors ${
-            active ? "bg-primary text-white" : "text-muted hover:bg-divider/60 hover:text-primary"
-          }`}
-          title={label}
-        >
+    <div className="flex items-center gap-0.5 border-b border-divider pb-2.5">
+      {tools.map(({ icon: Icon, action, active, label }) => (
+        <button key={label} type="button" onClick={action} title={label}
+          className={`flex h-8 w-8 items-center justify-center rounded-lg text-sm transition-colors ${active ? "bg-primary/10 text-primary" : "text-muted hover:bg-divider/60 hover:text-primary"}`}>
           <Icon size={15} />
         </button>
       ))}
-      <div className="ml-auto">
-        <button
-          type="button"
-          onClick={onImageClick}
-          disabled={uploadingImage}
-          className="flex items-center gap-1.5 rounded-lg border border-divider px-3 py-1.5 text-xs font-semibold text-muted transition-colors hover:border-accent hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <Image size={13} />
-          {uploadingImage ? "Uploading…" : "Add Image"}
-        </button>
-      </div>
     </div>
   );
 }
@@ -127,7 +104,16 @@ export default function CreatePostPage() {
       StarterKit,
       Placeholder.configure({ placeholder: "Add Description e.g. Tip: Include entry price, target, stop loss and reasoning for stock calls." }),
     ],
+    editorProps: {
+      attributes: { class: "outline-none" },
+    },
   });
+
+  useEffect(() => {
+    if (step === 2 && editor) {
+      setTimeout(() => editor.commands.focus("start"), 50);
+    }
+  }, [step, editor]);
 
   const previewContent = editor?.getText() || "Strong breakout above ₹1,400 resistance with high delivery volumes. Swing setup with defined risk. Enter...";
 
@@ -258,61 +244,73 @@ export default function CreatePostPage() {
         )}
 
         {step === 2 && (
-          <div className="mt-8 flex flex-col gap-5">
-            <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-white">
-                A
-              </div>
-              <div>
-                <p className="font-display font-semibold text-primary">Ritesh Kumar</p>
-                <span className="rounded-full bg-lime px-2.5 py-0.5 text-[10px] font-bold text-primary">
-                  {communities.find((c) => c.id === selectedCommunity)?.name ?? "Community"}
-                </span>
-              </div>
-            </div>
+          <div className="mt-6 flex flex-col gap-4">
+            {/* Admin profile row */}
+            {(() => {
+              const session = getSession();
+              return (
+                <div className="flex items-center gap-3">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-white">
+                    {session?.userInitials ?? "A"}
+                  </div>
+                  <div>
+                    <p className="font-display text-sm font-bold text-primary leading-tight">
+                      {session?.userName ?? "Admin"}
+                    </p>
+                    <p className="text-xs text-muted">Super Admin</p>
+                  </div>
+                  <span className="flex items-center gap-1.5 rounded-full border border-accent/50 px-3 py-1 text-xs font-semibold text-accent">
+                    ⚡ {communities.find((c) => c.id === selectedCommunity)?.name ?? "Community"}
+                  </span>
+                </div>
+              );
+            })()}
 
+            {/* Headline */}
             <input
               type="text"
-              placeholder="Add a headline e.g. TATASTEEL: Breakout Confirmed. Target ₹175"
+              placeholder="Add a headline e.g. TATASTEEL breakout confirmed, target ₹175"
               value={headline}
               onChange={(e) => setHeadline(e.target.value)}
-              className="w-full border-0 border-b border-divider bg-transparent py-2 text-sm text-primary placeholder:text-subtle focus:outline-none focus:border-accent transition-colors"
+              className="w-full rounded-xl border border-divider bg-background px-4 py-3 text-sm text-primary placeholder:text-subtle focus:border-accent focus:outline-none transition-colors"
             />
 
-            <div className="min-h-[120px]">
-              <TipTapToolbar
-                editor={editor}
-                onImageClick={() => imageInputRef.current?.click()}
-                uploadingImage={uploadingImage}
-              />
+            {/* Editor */}
+            <div className="rounded-xl border border-divider bg-background px-4 pt-3 pb-2">
+              <TipTapToolbar editor={editor} />
               <EditorContent
                 editor={editor}
-                className="mt-3 min-h-[80px] text-sm text-primary [&_.ProseMirror]:outline-none [&_.ProseMirror_p.is-editor-empty:first-child::before]:text-subtle [&_.ProseMirror_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)]"
+                className="mt-3 min-h-24 text-sm text-primary [&_.ProseMirror]:outline-none [&_.ProseMirror]:min-h-24 [&_.ProseMirror_p.is-editor-empty:first-child::before]:text-subtle [&_.ProseMirror_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.ProseMirror_p.is-editor-empty:first-child::before]:float-none [&_.ProseMirror_p.is-editor-empty:first-child::before]:pointer-events-none"
               />
             </div>
 
-            {imageUrl && (
+            {/* Add Image */}
+            {imageUrl ? (
               <div className="relative overflow-hidden rounded-xl border border-divider">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={imageUrl} alt="Post image" className="max-h-48 w-full object-cover" />
-                <button
-                  type="button"
-                  onClick={() => setImageUrl(null)}
-                  className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-white/80 text-primary shadow transition-colors hover:bg-white"
-                >
+                <button type="button" onClick={() => setImageUrl(null)}
+                  className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-white/80 text-primary shadow hover:bg-white">
                   <X size={12} />
                 </button>
               </div>
+            ) : (
+              <button type="button" onClick={() => imageInputRef.current?.click()} disabled={uploadingImage}
+                className="flex w-fit items-center gap-2 rounded-xl border border-divider bg-background px-4 py-2 text-sm font-semibold text-muted transition-colors hover:border-accent hover:text-primary disabled:opacity-50">
+                <Image size={15} />
+                {uploadingImage ? "Uploading…" : "Add Image"}
+              </button>
             )}
 
+            {/* Tags */}
             <div>
-              <p className="text-sm font-semibold text-primary">Add tags</p>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
+              <p className="mb-2 text-sm font-semibold text-primary">Add tags</p>
+              <div className="flex flex-wrap items-center gap-2 rounded-xl border border-divider bg-background px-3 py-2.5 focus-within:border-accent transition-colors">
                 {tags.map((tag) => (
-                  <span key={tag} className="flex items-center gap-1 rounded-full border border-divider bg-background px-3 py-1 text-xs font-medium text-primary">
+                  <span key={tag} className="flex items-center gap-1 rounded-full bg-divider/60 px-2.5 py-0.5 text-xs font-semibold text-primary">
                     {tag}
                     <button type="button" onClick={() => setTags((t) => t.filter((x) => x !== tag))} className="text-subtle hover:text-primary">
-                      <X size={10} />
+                      <X size={9} />
                     </button>
                   </span>
                 ))}
@@ -321,30 +319,27 @@ export default function CreatePostPage() {
                   value={tagInput}
                   onChange={(e) => setTagInput(e.target.value)}
                   onKeyDown={addTag}
-                  placeholder="Add tag..."
-                  className="rounded-full border border-dashed border-divider px-3 py-1 text-xs text-subtle focus:outline-none focus:border-accent"
+                  placeholder="#RELIANCE, #BUY, #SWING..."
+                  className="min-w-24 flex-1 bg-transparent text-xs text-subtle focus:outline-none"
                 />
               </div>
             </div>
 
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <button onClick={() => setStep(1)} className="flex items-center gap-1.5 text-sm font-semibold text-muted transition-colors hover:text-primary">
-                <ChevronLeft size={15} />
-                Back to Step 1
+            {/* Footer */}
+            <div className="flex items-center justify-between pt-2">
+              <button onClick={() => setStep(1)}
+                className="rounded-full border border-divider px-6 py-2.5 text-sm font-semibold text-muted transition-colors hover:border-subtle hover:text-primary">
+                Cancel
               </button>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-                <button onClick={() => setStep(1)} className="rounded-full border border-divider px-5 py-2.5 text-sm font-semibold text-muted transition-colors hover:border-subtle hover:text-primary">
-                  Cancel
-                </button>
-                <button
-                  onClick={() => setStep(3)}
-                  className="flex items-center justify-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-bold text-white shadow-glow transition-transform duration-300 hover:scale-105 active:scale-95"
-                >
-                  Continue to review
-                  <ArrowRight size={15} />
-                </button>
-              </div>
+              <button onClick={() => setStep(3)}
+                className="flex items-center gap-2 rounded-full bg-primary px-6 py-2.5 text-sm font-bold text-white shadow-glow transition-transform hover:scale-105 active:scale-95">
+                Continue to review →
+              </button>
             </div>
+
+            <button onClick={() => setStep(1)} className="flex items-center gap-1 self-start text-xs font-semibold text-muted transition-colors hover:text-primary">
+              <ChevronLeft size={13} /> Back to Step 1
+            </button>
           </div>
         )}
 

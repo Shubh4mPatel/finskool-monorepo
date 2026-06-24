@@ -20,6 +20,7 @@ const fraunces = Fraunces({
 export const metadata: Metadata = {
   title: "Finskool CRM",
   description: "Finskool member dashboard",
+  icons: { icon: "/logo.svg", apple: "/logo.svg" },
 };
 
 export default function RootLayout({
