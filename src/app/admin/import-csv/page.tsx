@@ -134,15 +134,22 @@ export default function ImportCSVPage() {
   }
 
   async function handleConfirmImport() {
-    if (!file) return;
+    if (validRows.length === 0) return;
     setImporting(true);
     try {
-      const form = new FormData();
-      form.append("file", file);
-      const data = await api.postForm<ImportResult>(
-        `/api/v1/admin/import-csv?duplicateStrategy=${strategy}`,
-        form,
-      );
+      const payload = {
+        strategy,
+        rows: validRows.map(r => ({
+          name: r.name,
+          phone: r.phone,
+          email: r.email,
+          service: r.service,
+          payment: parseFloat(r.payment),
+          valid: r.valid,
+          ...(r.paidOn ? { paidOn: r.paidOn } : {}),
+        })),
+      };
+      const data = await api.post<ImportResult>("/api/v1/admin/import-json", payload);
       setResult(data);
       setStep(3);
     } catch (err) {
