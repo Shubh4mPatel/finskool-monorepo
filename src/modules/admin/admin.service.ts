@@ -14,6 +14,7 @@ import type {
   MemberListDTO,
   MemberItemDTO,
   MemberStatus,
+  DashboardDTO,
 } from './admin.dto.js'
 
 const _require = createRequire(import.meta.url)
@@ -269,6 +270,128 @@ export class AdminService {
         author: updated.comment.author,
       },
       post: updated.post,
+    }
+  }
+
+  async getDashboard(): Promise<DashboardDTO> {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const sevenDaysLater = new Date(today)
+    sevenDaysLater.setDate(today.getDate() + 7)
+
+    const [
+      totalMembers,
+      activeSubscriptions,
+      pendingRegistration,
+      expiringThisWeek,
+      unresolvedThreads,
+      communities,
+      breakdownRaw,
+      registeredRaw,
+      expiringSoonRaw,
+    ] = await Promise.all([
+      // Total users with member role (excludes admins)
+      this.db.user.count({ where: { role: 'member', deletedAt: null } }),
+
+      // Registered users with active subscription
+      this.db.subscription.count({
+        where: {
+          isActive: true,
+          user: { passwordHash: { not: null }, isActive: true },
+        },
+      }),
+
+      // Added by admin but haven't registered yet
+      this.db.user.count({
+        where: { role: 'member', passwordHash: null },
+      }),
+
+      // Subscriptions expiring within 7 days
+      this.db.subscription.count({
+        where: {
+          isActive: true,
+          validUntil: { gte: today, lte: sevenDaysLater },
+        },
+      }),
+
+      // Unresolved comment notifications
+      this.db.commentNotification.count({ where: { isReplied: false } }),
+
+      // All communities for breakdown
+      this.db.community.findMany({
+        where: { deletedAt: null },
+        select: { id: true, name: true },
+      }),
+
+      // Per-community total subscriptions (all members regardless of registration)
+      this.db.subscription.groupBy({
+        by: ['communityId'],
+        where: { isActive: true },
+        _count: { userId: true },
+      }),
+
+      // Per-community registered count (has password set)
+      this.db.subscription.groupBy({
+        by: ['communityId'],
+        where: {
+          isActive: true,
+          user: { passwordHash: { not: null }, isActive: true },
+        },
+        _count: { userId: true },
+      }),
+
+      // Expiring soon — next 7 days, top 5
+      this.db.subscription.findMany({
+        where: {
+          isActive: true,
+          validUntil: { gte: today, lte: sevenDaysLater },
+        },
+        select: {
+          communityId: true,
+          validUntil: true,
+          user: { select: { id: true, name: true } },
+          community: { select: { name: true } },
+        },
+        orderBy: { validUntil: 'asc' },
+        take: 5,
+      }),
+    ])
+
+    const communityBreakdown = communities.map(c => {
+      const total = breakdownRaw.find(r => r.communityId === c.id)?._count.userId ?? 0
+      const registered = registeredRaw.find(r => r.communityId === c.id)?._count.userId ?? 0
+      return {
+        communityId: c.id,
+        communityName: c.name,
+        memberCount: total,
+        registeredCount: registered,
+        registrationPercentage: total > 0 ? Math.round((registered / total) * 100) : 0,
+      }
+    }).filter(c => c.memberCount > 0)
+
+    function mkInitials(name: string) {
+      return name.split(' ').slice(0, 2).map(w => w[0] ?? '').join('').toUpperCase()
+    }
+
+    const expiringSoon = expiringSoonRaw.map(s => {
+      const daysLeft = Math.ceil(
+        (new Date(s.validUntil).getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
+      )
+      return {
+        userId: s.user.id,
+        name: s.user.name,
+        initials: mkInitials(s.user.name),
+        communityId: s.communityId,
+        communityName: s.community.name,
+        validUntil: s.validUntil.toISOString().slice(0, 10),
+        daysLeft,
+      }
+    })
+
+    return {
+      stats: { totalMembers, activeSubscriptions, pendingRegistration, expiringThisWeek, unresolvedThreads },
+      communityBreakdown,
+      expiringSoon,
     }
   }
 

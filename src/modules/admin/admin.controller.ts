@@ -28,6 +28,15 @@ const listNotificationsSchema = z.object({
 export class AdminController {
   constructor(private readonly service: AdminService) {}
 
+  getDashboard = async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const data = await this.service.getDashboard()
+      res.json({ success: true, data })
+    } catch (err) {
+      next(err)
+    }
+  }
+
   importCsv = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       if (!req.file) throw new BadRequestError('No file uploaded. Send a CSV or Excel file in the "file" field.')

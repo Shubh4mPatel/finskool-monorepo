@@ -106,6 +106,36 @@ export interface CommentNotificationItemDTO {
   post: CommentNotificationPostDTO
 }
 
+export interface DashboardCommunityBreakdownItem {
+  communityId: string
+  communityName: string
+  memberCount: number
+  registeredCount: number
+  registrationPercentage: number
+}
+
+export interface DashboardExpiringSoonItem {
+  userId: string
+  name: string
+  initials: string
+  communityId: string
+  communityName: string
+  validUntil: string
+  daysLeft: number
+}
+
+export interface DashboardDTO {
+  stats: {
+    totalMembers: number
+    activeSubscriptions: number
+    pendingRegistration: number
+    expiringThisWeek: number
+    unresolvedThreads: number
+  }
+  communityBreakdown: DashboardCommunityBreakdownItem[]
+  expiringSoon: DashboardExpiringSoonItem[]
+}
+
 export interface CommentNotificationListDTO {
   notifications: CommentNotificationItemDTO[]
   nextCursor: string | null
