@@ -26,6 +26,7 @@ const controller = new AdminController(service)
 const router = Router()
 
 router.get('/dashboard', authenticate, requireRole('admin'), controller.getDashboard)
+router.post('/import-json', authenticate, requireRole('admin'), controller.importJSON)
 
 router.post(
   '/import-csv',

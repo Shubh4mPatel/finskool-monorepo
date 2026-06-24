@@ -16,6 +16,21 @@ const importQuerySchema = z.object({
   duplicateStrategy: z.enum(['skip', 'overwrite']).default('skip'),
 })
 
+const importRowSchema = z.object({
+  name: z.string().min(1),
+  phone: z.string().min(1),
+  email: z.string().email(),
+  service: z.string().min(1),
+  payment: z.coerce.number().positive(),
+  valid: z.string().min(1),
+  paidOn: z.string().optional(),
+})
+
+const importJSONSchema = z.object({
+  strategy: z.enum(['skip', 'overwrite']).default('skip'),
+  rows: z.array(importRowSchema).min(1, 'At least one row required'),
+})
+
 const listNotificationsSchema = z.object({
   isReplied: z
     .enum(['true', 'false'])
@@ -27,6 +42,16 @@ const listNotificationsSchema = z.object({
 
 export class AdminController {
   constructor(private readonly service: AdminService) {}
+
+  importJSON = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { strategy, rows } = importJSONSchema.parse(req.body)
+      const result = await this.service.importUsersFromJSON(rows, req.user!.id, strategy)
+      res.json({ success: true, data: result })
+    } catch (err) {
+      next(err)
+    }
+  }
 
   getDashboard = async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {

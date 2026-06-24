@@ -5,6 +5,7 @@ import { logger } from '../../shared/logger.js'
 import type {
   DuplicateStrategy,
   ImportSummaryDTO,
+  ImportRowDTO,
   CommentNotificationItemDTO,
   CommentNotificationListDTO,
   AddMemberDTO,
@@ -118,57 +119,53 @@ export class AdminService {
       const existingUser = await this.db.user.findUnique({ where: { phone } })
       const existingAp = await this.db.approvedPhone.findUnique({ where: { phone } })
 
-      if (existingUser && existingAp) {
+      // Uniqueness is on (user, community) — check if this specific subscription already exists
+      const existingSub = existingUser
+        ? await this.db.subscription.findUnique({
+            where: { uq_subscription_user_community: { userId: existingUser.id, communityId: community.id } },
+          })
+        : null
+
+      if (existingSub) {
+        // This (user + community) combo exists — skip or overwrite based on strategy
         if (strategy === 'skip') {
           summary.skipped++
           continue
         }
-
-        // overwrite — update name/email only if user hasn't registered yet (no password)
+        // overwrite: update subscription dates; update user info only if not yet registered
         await this.db.$transaction(async tx => {
-          if (!existingUser.passwordHash) {
+          await tx.subscription.update({
+            where: { id: existingSub.id },
+            data: { payment, paidOn, validUntil },
+          })
+          if (existingUser && !existingUser.passwordHash) {
             await tx.user.update({ where: { id: existingUser.id }, data: { name, email } })
           }
-          await tx.approvedPhone.update({
-            where: { phone },
-            data: { name, email, addedBy: adminId },
-          })
-          await tx.subscription.upsert({
-            where: {
-              uq_subscription_user_community: {
-                userId: existingUser.id,
-                communityId: community.id,
-              },
-            },
-            create: {
-              userId: existingUser.id,
-              approvedPhoneId: existingAp.id,
-              communityId: community.id,
-              payment,
-              paidOn,
-              validUntil,
-            },
-            update: { payment, paidOn, validUntil },
-          })
+          if (existingAp) {
+            await tx.approvedPhone.update({ where: { phone }, data: { name, email, addedBy: adminId } })
+          }
         })
         summary.updated++
+      } else if (existingUser && existingAp) {
+        // User exists but NOT subscribed to this community yet — add subscription only
+        await this.db.subscription.create({
+          data: {
+            userId: existingUser.id,
+            approvedPhoneId: existingAp.id,
+            communityId: community.id,
+            payment,
+            paidOn,
+            validUntil,
+          },
+        })
+        summary.created++
       } else {
+        // Brand new user — create User + ApprovedPhone + Subscription in one transaction
         await this.db.$transaction(async tx => {
-          const user = await tx.user.create({
-            data: { phone, name, email },
-          })
-          const ap = await tx.approvedPhone.create({
-            data: { phone, name, email, addedBy: adminId },
-          })
+          const user = await tx.user.create({ data: { phone, name, email } })
+          const ap = await tx.approvedPhone.create({ data: { phone, name, email, addedBy: adminId } })
           await tx.subscription.create({
-            data: {
-              userId: user.id,
-              approvedPhoneId: ap.id,
-              communityId: community.id,
-              payment,
-              paidOn,
-              validUntil,
-            },
+            data: { userId: user.id, approvedPhoneId: ap.id, communityId: community.id, payment, paidOn, validUntil },
           })
         })
         summary.created++
@@ -176,6 +173,78 @@ export class AdminService {
     }
 
     logger.info(summary, 'admin.importUsers: complete')
+    return summary
+  }
+
+  async importUsersFromJSON(
+    rows: ImportRowDTO[],
+    adminId: string,
+    strategy: DuplicateStrategy,
+  ): Promise<ImportSummaryDTO> {
+    const summary: ImportSummaryDTO = { total: rows.length, created: 0, updated: 0, skipped: 0, errors: [] }
+
+    const communities = await this.db.community.findMany({ select: { id: true, name: true } })
+
+    for (const [i, row] of rows.entries()) {
+      const rowNum = i + 1
+      const phone = normalizePhone(row.phone)
+      const community = communities.find(c => c.name.toLowerCase() === row.service.toLowerCase())
+      if (!community) {
+        summary.errors.push({ row: rowNum, phone, reason: `Community "${row.service}" not found` })
+        continue
+      }
+      const payment = row.payment
+      const validUntil = new Date(row.valid)
+      const paidOn = row.paidOn ? new Date(row.paidOn) : null
+
+      if (isNaN(validUntil.getTime())) {
+        summary.errors.push({ row: rowNum, phone, reason: 'Invalid valid-until date' })
+        continue
+      }
+
+      try {
+        const existingUser = await this.db.user.findUnique({ where: { phone } })
+        const existingAp = await this.db.approvedPhone.findUnique({ where: { phone } })
+        const existingSub = existingUser
+          ? await this.db.subscription.findUnique({
+              where: { uq_subscription_user_community: { userId: existingUser.id, communityId: community.id } },
+            })
+          : null
+
+        if (existingSub) {
+          if (strategy === 'skip') { summary.skipped++; continue }
+          await this.db.$transaction(async tx => {
+            await tx.subscription.update({ where: { id: existingSub.id }, data: { payment, paidOn, validUntil } })
+            if (existingUser && !existingUser.passwordHash) {
+              await tx.user.update({ where: { id: existingUser.id }, data: { name: row.name, email: row.email } })
+            }
+            if (existingAp) {
+              await tx.approvedPhone.update({ where: { phone }, data: { name: row.name, email: row.email, addedBy: adminId } })
+            }
+          })
+          summary.updated++
+        } else if (existingUser && existingAp) {
+          await this.db.subscription.create({
+            data: { userId: existingUser.id, approvedPhoneId: existingAp.id, communityId: community.id, payment, paidOn, validUntil },
+          })
+          summary.created++
+        } else {
+          await this.db.$transaction(async tx => {
+            const user = await tx.user.create({ data: { phone, name: row.name, email: row.email } })
+            const ap = await tx.approvedPhone.create({ data: { phone, name: row.name, email: row.email, addedBy: adminId } })
+            await tx.subscription.create({
+              data: { userId: user.id, approvedPhoneId: ap.id, communityId: community.id, payment, paidOn, validUntil },
+            })
+          })
+          summary.created++
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unknown error'
+        summary.errors.push({ row: rowNum, phone, reason: msg })
+      }
+    }
+
+    logger.info(summary, 'admin.importUsersFromJSON: complete')
     return summary
   }
 

@@ -67,6 +67,16 @@ export interface MemberListDTO {
   totalPages: number
 }
 
+export interface ImportRowDTO {
+  name: string
+  phone: string
+  email: string
+  service: string
+  payment: number
+  valid: string           // YYYY-MM-DD
+  paidOn?: string | undefined  // YYYY-MM-DD
+}
+
 export interface ImportErrorDTO {
   row: number
   phone: string
