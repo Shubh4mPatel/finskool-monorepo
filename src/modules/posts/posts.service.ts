@@ -1,6 +1,6 @@
 import type { PrismaClient } from '../../generated/prisma/client.js'
 import { uploadFile, deleteFile } from '../../lib/minio.js'
-import { NotFoundError, ConflictError, BadRequestError } from '../../shared/errors/index.js'
+import { NotFoundError, BadRequestError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
 import type { CreatePostDTO, UpdatePostDTO, PostResponseDTO, PostFeedItemDTO, ListPostsResponseDTO } from './posts.dto.js'
 
@@ -27,8 +27,11 @@ export class PostsService {
     const [posts, total] = await Promise.all([
       this.db.post.findMany({
         where,
-        include: { community: { select: { name: true, slug: true } } },
-        orderBy: [{ pinOrder: 'asc' }, { publishedAt: 'desc' }],
+        include: {
+          community: { select: { name: true, slug: true } },
+          _count: { select: { comments: { where: { deletedAt: null } } } },
+        },
+        orderBy: [{ pinOrder: { sort: 'asc', nulls: 'last' } }, { publishedAt: 'desc' }],
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
@@ -48,6 +51,7 @@ export class PostsService {
         pinOrder: p.pinOrder,
         publishedAt: p.publishedAt,
         createdAt: p.createdAt,
+        commentCount: p._count.comments,
       })),
       total,
       page,
@@ -135,30 +139,27 @@ export class PostsService {
     const post = await this.db.post.findUnique({ where: { id: postId, deletedAt: null } })
     if (!post) throw new NotFoundError('Post not found')
 
-    if (pinOrder !== null) {
-      // check if slot is already taken by another post in the same community
-      const conflict = await this.db.post.findFirst({
-        where: {
-          communityId: post.communityId,
+    const updated = await this.db.$transaction(async tx => {
+      // If pinning, auto-unpin any existing pinned post in the same community
+      if (pinOrder !== null) {
+        await tx.post.updateMany({
+          where: {
+            communityId: post.communityId,
+            pinOrder,
+            deletedAt: null,
+            id: { not: postId },
+          },
+          data: { pinOrder: null, pinnedAt: null },
+        })
+      }
+
+      return tx.post.update({
+        where: { id: postId },
+        data: {
           pinOrder,
-          deletedAt: null,
-          id: { not: postId },
+          pinnedAt: pinOrder !== null ? new Date() : null,
         },
       })
-      if (conflict) {
-        throw new ConflictError(
-          `Pin slot ${pinOrder} is already taken. Unpin that post first.`,
-          'PIN_SLOT_TAKEN',
-        )
-      }
-    }
-
-    const updated = await this.db.post.update({
-      where: { id: postId },
-      data: {
-        pinOrder,
-        pinnedAt: pinOrder !== null ? new Date() : null,
-      },
     })
 
     logger.info({ postId, pinOrder }, 'posts.pin: success')

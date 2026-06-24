@@ -9,20 +9,21 @@ const controller = new PostsController(service)
 
 const router = Router()
 
+const admin = requireRole('admin')
+
 // All routes require authentication
 router.use(authenticate)
 
-// Accessible to any authenticated user
+// Any authenticated user
 router.get('/', controller.list)
 
-// Admin-only below
-router.use(requireRole('admin'))
-
-router.get('/upload-url', controller.getUploadUrl)
-router.post('/', controller.create)
-router.patch('/:id', controller.update)
-router.delete('/:id', controller.delete)
-router.patch('/:id/publish', controller.publish)
-router.patch('/:id/pin', controller.pin)
+// Admin-only — requireRole applied inline so it doesn't bleed into comment routes
+// that share the /api/v1/posts prefix (e.g. POST /api/v1/posts/:id/comments)
+router.get('/upload-url', admin, controller.getUploadUrl)
+router.post('/', admin, controller.create)
+router.patch('/:id', admin, controller.update)
+router.delete('/:id', admin, controller.delete)
+router.patch('/:id/publish', admin, controller.publish)
+router.patch('/:id/pin', admin, controller.pin)
 
 export default router

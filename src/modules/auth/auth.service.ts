@@ -98,24 +98,26 @@ export class AuthService {
   }
 
   async login(data: LoginDTO): Promise<AuthTokensInternal> {
-    logger.info({ phone: data.phone }, 'auth.login: attempt')
+    logger.info({ email: data.email }, 'auth.login: attempt')
 
-    const user = await this.db.user.findUnique({ where: { phone: data.phone } })
+    const user = await this.db.user.findUnique({ where: { email: data.email } })
     if (!user || user.deletedAt) {
-      throw new UnauthorizedError('Invalid phone number or password')
+      throw new UnauthorizedError('Invalid email or password')
     }
     if (!user.isActive) {
       throw new UnauthorizedError('Your account has been deactivated. Please contact your admin.')
     }
-
     if (!user.passwordHash) {
-      throw new UnauthorizedError('Account not yet activated. Please complete registration first.')
+      throw new UnauthorizedError(
+        'You have not registered yet. Please sign up first to set your password.',
+        'NOT_REGISTERED',
+      )
     }
 
     const valid = await bcrypt.compare(data.password, user.passwordHash)
     if (!valid) {
-      logger.warn({ phone: data.phone }, 'auth.login: invalid password')
-      throw new UnauthorizedError('Invalid phone number or password')
+      logger.warn({ email: data.email }, 'auth.login: invalid password')
+      throw new UnauthorizedError('Invalid email or password')
     }
 
     logger.info({ userId: user.id }, 'auth.login: success')

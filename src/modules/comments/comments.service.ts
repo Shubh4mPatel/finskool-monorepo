@@ -19,10 +19,10 @@ export class CommentsService {
     if (!post) throw new NotFoundError('Post not found or not published')
 
     if (userRole !== 'admin') {
-      const isMember = await this.db.communityMember.findUnique({
-        where: { uq_community_member: { communityId: post.communityId, userId } },
+      const subscription = await this.db.subscription.findFirst({
+        where: { userId, communityId: post.communityId, isActive: true },
       })
-      if (!isMember) throw new ForbiddenError('You must be a community member to comment')
+      if (!subscription) throw new ForbiddenError('You must be a community member to comment')
     }
 
     let depth = 0
@@ -76,7 +76,7 @@ export class CommentsService {
           content: true,
           depth: true,
           createdAt: true,
-          author: { select: { id: true, name: true, avatarUrl: true } },
+          author: { select: { id: true, name: true, role: true, avatarUrl: true } },
         },
       })
     })
@@ -104,7 +104,7 @@ export class CommentsService {
         depth: true,
         path: true,
         createdAt: true,
-        author: { select: { id: true, name: true, avatarUrl: true } },
+        author: { select: { id: true, name: true, role: true, avatarUrl: true } },
       },
     })
 
@@ -127,7 +127,7 @@ export class CommentsService {
         depth: true,
         parentId: true,
         createdAt: true,
-        author: { select: { id: true, name: true, avatarUrl: true } },
+        author: { select: { id: true, name: true, role: true, avatarUrl: true } },
       },
     })
 
@@ -174,6 +174,14 @@ export class CommentsService {
     if (!comment) throw new NotFoundError('Comment not found')
     if (userRole !== 'admin' && comment.authorId !== userId) {
       throw new ForbiddenError('You can only delete your own comments')
+    }
+    if (userRole !== 'admin') {
+      const replyCount = await this.db.comment.count({
+        where: { parentId: commentId, deletedAt: null },
+      })
+      if (replyCount > 0) {
+        throw new ForbiddenError('Cannot delete a comment that has been replied to', 'HAS_REPLIES')
+      }
     }
 
     // soft-delete the comment AND all its descendants via materialized path

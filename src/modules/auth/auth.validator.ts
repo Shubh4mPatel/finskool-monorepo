@@ -18,6 +18,6 @@ export const registerSchema = z
   })
 
 export const loginSchema = z.object({
-  phone: phoneSchema,
+  email: z.string().email('Invalid email address').toLowerCase(),
   password: z.string().min(1, 'Password is required'),
 })

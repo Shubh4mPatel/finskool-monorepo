@@ -44,6 +44,7 @@ export interface PostFeedItemDTO {
   pinOrder: number | null
   publishedAt: Date | null
   createdAt: Date
+  commentCount: number
 }
 
 export interface ListPostsResponseDTO {

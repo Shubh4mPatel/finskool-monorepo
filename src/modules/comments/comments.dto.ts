@@ -6,6 +6,7 @@ export interface CreateCommentDTO {
 export interface CommentAuthorDTO {
   id: string
   name: string
+  role: string
   avatarUrl: string | null
 }
 
