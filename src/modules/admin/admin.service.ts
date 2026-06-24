@@ -187,7 +187,9 @@ export class AdminService {
 
     for (const [i, row] of rows.entries()) {
       const rowNum = i + 1
-      const phone = normalizePhone(row.phone)
+      const rawPhone = normalizePhone(row.phone)
+      if (!rawPhone) { summary.errors.push({ row: rowNum, phone: row.phone, reason: 'Invalid phone' }); continue }
+      const phone: string = rawPhone
       const community = communities.find(c => c.name.toLowerCase() === row.service.toLowerCase())
       if (!community) {
         summary.errors.push({ row: rowNum, phone, reason: `Community "${row.service}" not found` })
