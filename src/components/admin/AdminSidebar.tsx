@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { api } from "@/lib/api";
+import { clearSession } from "@/lib/session";
 import {
   LayoutDashboard,
   Pencil,
@@ -37,6 +38,7 @@ function SidebarContent({ onNav }: { onNav?: () => void }) {
 
   async function handleLogout() {
     try { await api.post("/api/v1/auth/logout", {}) } catch { /* ignore */ }
+    clearSession();
     router.push("/login");
   }
 

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Bell, Lock } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
+import { updateSessionCommunity } from "@/lib/session";
 
 interface Community {
   id: string;
@@ -77,6 +78,8 @@ export default function CommunitySelectorPage() {
   async function handleSelect(communityId: string) {
     try {
       await api.post("/api/v1/auth/select-community", { communityId });
+      const comm = meData?.communities.find(c => c.id === communityId);
+      if (comm) updateSessionCommunity(communityId, comm.name);
       router.push("/feed");
     } catch {
       setError("Failed to select community. Please try again.");

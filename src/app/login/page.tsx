@@ -7,6 +7,7 @@ import Link from "next/link";
 import AuthLayout from "@/components/auth/AuthLayout";
 import PasswordInput from "@/components/auth/PasswordInput";
 import { api, ApiError } from "@/lib/api";
+import { saveSession, initials } from "@/lib/session";
 import { useToast } from "@/components/ui/Toast";
 
 interface AuthResponse {
@@ -78,8 +79,11 @@ export default function LoginPage() {
       if (data.user.role === "admin") {
         router.push("/admin/dashboard");
       } else if (data.communities.length === 1) {
+        const comm = data.communities[0]!;
+        saveSession({ userName: data.user.name, userInitials: initials(data.user.name), communityName: comm.name, communityId: comm.id });
         router.push("/feed");
       } else {
+        saveSession({ userName: data.user.name, userInitials: initials(data.user.name), communityName: "", communityId: "" });
         router.push("/");
       }
     } catch (err) {

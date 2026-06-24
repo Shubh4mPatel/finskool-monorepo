@@ -8,6 +8,7 @@ import AuthLayout from "@/components/auth/AuthLayout";
 import PasswordInput from "@/components/auth/PasswordInput";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
+import { saveSession, initials } from "@/lib/session";
 
 interface AuthResponse {
   user: { id: string; name: string; role: string };
@@ -147,8 +148,11 @@ export default function SignupPage() {
       if (data.user.role === "admin") {
         router.push("/admin/dashboard");
       } else if (data.communities.length === 1) {
+        const comm = data.communities[0]!;
+        saveSession({ userName: data.user.name, userInitials: initials(data.user.name), communityName: comm.name, communityId: comm.id });
         router.push("/feed");
       } else {
+        saveSession({ userName: data.user.name, userInitials: initials(data.user.name), communityName: "", communityId: "" });
         router.push("/");
       }
     } catch (err) {
