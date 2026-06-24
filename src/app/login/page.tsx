@@ -15,13 +15,11 @@ interface AuthResponse {
   communities: { id: string; name: string; slug: string }[];
 }
 
-type FieldErrors = { phone?: string; password?: string };
+type FieldErrors = { email?: string; password?: string };
 
-function validatePhone(raw: string): string | undefined {
-  const digits = raw.replace(/[\s\-]/g, "");
-  if (!digits) return "Phone number is required";
-  if (!/^\d{10}$/.test(digits) && !/^\+[1-9]\d{6,14}$/.test(digits))
-    return "Enter a valid 10-digit phone number";
+function validateEmail(value: string): string | undefined {
+  if (!value.trim()) return "Email is required";
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return "Enter a valid email address";
 }
 
 function validatePassword(value: string): string | undefined {
@@ -31,7 +29,7 @@ function validatePassword(value: string): string | undefined {
 export default function LoginPage() {
   const router = useRouter();
   const toast = useToast();
-  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [errors, setErrors] = useState<FieldErrors>({});
   const [touched, setTouched] = useState<Record<string, boolean>>({});
@@ -39,40 +37,33 @@ export default function LoginPage() {
 
   function blurField(field: keyof FieldErrors, value: string) {
     setTouched((t) => ({ ...t, [field]: true }));
-    const msg =
-      field === "phone" ? validatePhone(value) : validatePassword(value);
+    const msg = field === "email" ? validateEmail(value) : validatePassword(value);
     setErrors((e) => ({ ...e, [field]: msg }));
   }
 
-  function changePhone(value: string) {
-    setPhone(value);
-    if (touched.phone)
-      setErrors((e) => ({ ...e, phone: validatePhone(value) }));
+  function changeEmail(value: string) {
+    setEmail(value);
+    if (touched.email) setErrors((e) => ({ ...e, email: validateEmail(value) }));
   }
 
   function changePassword(value: string) {
     setPassword(value);
-    if (touched.password)
-      setErrors((e) => ({ ...e, password: validatePassword(value) }));
+    if (touched.password) setErrors((e) => ({ ...e, password: validatePassword(value) }));
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
-    // Validate all fields on submit
-    const phoneErr = validatePhone(phone);
+    const emailErr = validateEmail(email);
     const passwordErr = validatePassword(password);
-    setTouched({ phone: true, password: true });
-    setErrors({ phone: phoneErr, password: passwordErr });
-    if (phoneErr || passwordErr) return;
+    setTouched({ email: true, password: true });
+    setErrors({ email: emailErr, password: passwordErr });
+    if (emailErr || passwordErr) return;
 
     setLoading(true);
-    const raw = phone.replace(/[\s\-]/g, "");
-    const normalised = /^\d{10}$/.test(raw) ? `+91${raw}` : raw;
-
     try {
       const data = await api.post<AuthResponse>("/api/v1/auth/login", {
-        phone: normalised,
+        email: email.trim().toLowerCase(),
         password,
       });
 
@@ -80,14 +71,18 @@ export default function LoginPage() {
         router.push("/admin/dashboard");
       } else if (data.communities.length === 1) {
         const comm = data.communities[0]!;
-        saveSession({ userName: data.user.name, userInitials: initials(data.user.name), communityName: comm.name, communityId: comm.id });
+        saveSession({ userId: data.user.id, userName: data.user.name, userInitials: initials(data.user.name), communityName: comm.name, communityId: comm.id });
         router.push("/feed");
       } else {
-        saveSession({ userName: data.user.name, userInitials: initials(data.user.name), communityName: "", communityId: "" });
+        saveSession({ userId: data.user.id, userName: data.user.name, userInitials: initials(data.user.name), communityName: "", communityId: "" });
         router.push("/");
       }
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Something went wrong. Please try again.");
+      if (err instanceof ApiError && err.code === "NOT_REGISTERED") {
+        toast.error({ title: "Account not set up", message: "You haven't registered yet. Please sign up first to set your password." });
+      } else {
+        toast.error(err instanceof ApiError ? err.message : "Something went wrong. Please try again.");
+      }
     } finally {
       setLoading(false);
     }
@@ -96,7 +91,7 @@ export default function LoginPage() {
   return (
     <AuthLayout
       heading={<>Welcome Back 👋</>}
-      bullets={["Access your private investment community.", "Your phone number must be pre-approved."]}
+      bullets={["Access your private investment community.", "Your email must be pre-approved by admin."]}
     >
       <div className="w-full max-w-md">
         <span className="flex items-center gap-1 text-sm font-semibold text-accent">
@@ -110,26 +105,19 @@ export default function LoginPage() {
 
         <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-5">
           <div>
-            <label className="text-sm font-semibold text-primary">Phone Number</label>
-            <div
-              className={`mt-2 flex overflow-hidden rounded-xl border transition-colors focus-within:border-accent ${
-                errors.phone ? "border-red-400" : "border-divider"
+            <label className="text-sm font-semibold text-primary">Email Address</label>
+            <input
+              type="email"
+              placeholder="Enter your email address"
+              value={email}
+              onChange={(e) => changeEmail(e.target.value)}
+              onBlur={() => blurField("email", email)}
+              className={`mt-2 w-full rounded-xl border bg-white px-4 py-3 text-sm text-primary placeholder:text-subtle transition-colors focus:outline-none focus:border-accent ${
+                errors.email ? "border-red-400" : "border-divider"
               }`}
-            >
-              <span className="flex items-center bg-primary px-4 text-sm font-semibold text-white">
-                +91
-              </span>
-              <input
-                type="tel"
-                placeholder="Enter your phone number"
-                value={phone}
-                onChange={(e) => changePhone(e.target.value)}
-                onBlur={() => blurField("phone", phone)}
-                className="w-full border-0 bg-white px-4 py-3 text-sm text-primary placeholder:text-subtle focus:outline-none focus:ring-0"
-              />
-            </div>
-            {errors.phone && (
-              <p className="mt-1.5 text-xs text-red-500">{errors.phone}</p>
+            />
+            {errors.email && (
+              <p className="mt-1.5 text-xs text-red-500">{errors.email}</p>
             )}
           </div>
 
@@ -158,7 +146,7 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-accent to-primary py-3 text-sm font-bold text-white shadow-glow transition-transform duration-300 hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+            className="flex items-center justify-center gap-2 rounded-full bg-primary py-3 text-sm font-bold text-white shadow-glow transition-transform duration-300 hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {loading ? "Logging in…" : "Login to Community"}
             {!loading && <ArrowRight size={16} />}

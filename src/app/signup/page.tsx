@@ -149,10 +149,10 @@ export default function SignupPage() {
         router.push("/admin/dashboard");
       } else if (data.communities.length === 1) {
         const comm = data.communities[0]!;
-        saveSession({ userName: data.user.name, userInitials: initials(data.user.name), communityName: comm.name, communityId: comm.id });
+        saveSession({ userId: data.user.id, userName: data.user.name, userInitials: initials(data.user.name), communityName: comm.name, communityId: comm.id });
         router.push("/feed");
       } else {
-        saveSession({ userName: data.user.name, userInitials: initials(data.user.name), communityName: "", communityId: "" });
+        saveSession({ userId: data.user.id, userName: data.user.name, userInitials: initials(data.user.name), communityName: "", communityId: "" });
         router.push("/");
       }
     } catch (err) {

@@ -1,4 +1,5 @@
 export interface SessionInfo {
+  userId: string
   userName: string
   userInitials: string
   communityName: string

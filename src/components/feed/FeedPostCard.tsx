@@ -1,8 +1,11 @@
-import { ArrowRight, Lightbulb, Pin } from "lucide-react";
+import { Lightbulb, Pin } from "lucide-react";
 import type { ReactNode } from "react";
 import PriceChart from "./PriceChart";
+import PostThreads from "./PostThreads";
 
 type FeedPostCardProps = {
+  postId?: string;
+  commentCount?: number;
   badge?: { label: string; icon?: "pin" | "idea" };
   communityName?: string;
   timestamp: string;
@@ -11,7 +14,6 @@ type FeedPostCardProps = {
   bodyHtml?: string;
   imageUrls?: string[];
   tags: string[];
-  viewThreadCount?: number;
   showChart?: boolean;
   reactions?: number;
   children?: ReactNode;
@@ -19,6 +21,8 @@ type FeedPostCardProps = {
 };
 
 export default function FeedPostCard({
+  postId,
+  commentCount,
   badge,
   communityName,
   timestamp,
@@ -27,7 +31,6 @@ export default function FeedPostCard({
   bodyHtml,
   imageUrls,
   tags,
-  viewThreadCount,
   showChart,
   reactions,
   children,
@@ -113,15 +116,7 @@ export default function FeedPostCard({
 
       {children}
 
-      {viewThreadCount !== undefined && (
-        <a
-          href="#"
-          className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-accent"
-        >
-          View Thread ({viewThreadCount})
-          <ArrowRight size={14} className="transition-transform duration-300 group-hover:translate-x-1" />
-        </a>
-      )}
+      {postId && <PostThreads postId={postId} initialCount={commentCount ?? 0} />}
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Bold, Code, Image, Italic, Pencil, Plus, Save, Trash2, X } from "lucide-react";
+import { Bold, Code, Image, Italic, MoreHorizontal, Pencil, Pin, Plus, Save, Trash2, X } from "lucide-react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import FeedPostCard from "@/components/feed/FeedPostCard";
@@ -259,6 +259,68 @@ function EditModal({
   );
 }
 
+// ── Post three-dot menu ──────────────────────────────────────────────────────
+
+function PostMenu({
+  post,
+  onEdit,
+  onDelete,
+  onPin,
+}: {
+  post: FeedPost;
+  onEdit: () => void;
+  onDelete: () => void;
+  onPin: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const isPinned = post.pinOrder !== null;
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    if (open) document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  function item(onClick: () => void, icon: React.ReactNode, label: string, danger = false) {
+    return (
+      <button
+        onClick={() => { onClick(); setOpen(false); }}
+        className={`flex w-full items-center gap-2.5 px-4 py-2.5 text-sm font-medium transition-colors hover:bg-divider/60 ${danger ? "text-red-500 hover:text-red-600" : "text-primary"}`}
+      >
+        {icon}
+        {label}
+      </button>
+    );
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="flex h-8 w-8 items-center justify-center rounded-full text-muted transition-colors hover:bg-divider/60 hover:text-primary"
+        title="Options"
+      >
+        <MoreHorizontal size={16} />
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-9 z-30 min-w-40 overflow-hidden rounded-2xl border border-divider bg-white py-1 shadow-xl">
+          {isPinned
+            ? item(onPin, <Pin size={14} className="text-accent" />, "Unpin Post")
+            : item(onPin, <Pin size={14} />, "Pin Post")}
+          {item(onEdit, <Pencil size={14} />, "Edit Post")}
+          {item(onDelete, <Trash2 size={14} />, "Delete Post", true)}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Page ────────────────────────────────────────────────────────────────────
 
 export default function AllPostsPage() {
@@ -272,6 +334,7 @@ export default function AllPostsPage() {
   const [total, setTotal] = useState(0);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingPost, setEditingPost] = useState<FeedPost | null>(null);
+  const [pinningId, setPinningId] = useState<string | null>(null);
 
   const fetchPosts = useCallback(async (pg: number, commId: string) => {
     setLoading(true);
@@ -302,6 +365,21 @@ export default function AllPostsPage() {
   useEffect(() => {
     fetchPosts(page, communityFilter);
   }, [fetchPosts, page, communityFilter]);
+
+  async function handlePin(post: FeedPost) {
+    if (pinningId) return;
+    setPinningId(post.id);
+    try {
+      const newPinOrder = post.pinOrder !== null ? null : 1;
+      await api.patch(`/api/v1/posts/${post.id}/pin`, { pinOrder: newPinOrder });
+      toast.success(newPinOrder ? "Post pinned." : "Post unpinned.");
+      fetchPosts(page, communityFilter);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to update pin");
+    } finally {
+      setPinningId(null);
+    }
+  }
 
   async function handleDelete(id: string) {
     if (!confirm("Delete this post? This cannot be undone.")) return;
@@ -391,23 +469,12 @@ export default function AllPostsPage() {
                 imageUrls={post.imageUrls}
                 tags={post.tags}
                 actions={
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => setEditingPost(post)}
-                      className="flex h-8 w-8 items-center justify-center rounded-full text-muted transition-colors hover:bg-divider/60 hover:text-accent"
-                      title="Edit post"
-                    >
-                      <Pencil size={14} />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(post.id)}
-                      disabled={deletingId === post.id}
-                      className="flex h-8 w-8 items-center justify-center rounded-full text-muted transition-colors hover:bg-red-50 hover:text-red-500 disabled:opacity-40"
-                      title="Delete post"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
+                  <PostMenu
+                    post={post}
+                    onEdit={() => setEditingPost(post)}
+                    onDelete={() => handleDelete(post.id)}
+                    onPin={() => handlePin(post)}
+                  />
                 }
               />
             ))}

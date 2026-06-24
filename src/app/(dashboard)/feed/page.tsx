@@ -19,6 +19,7 @@ interface FeedPost {
   pinOrder: number | null;
   publishedAt: string | null;
   createdAt: string;
+  commentCount: number;
 }
 
 interface ListPostsResponse {
@@ -73,6 +74,11 @@ export default function FeedPage() {
     )
     .slice()
     .sort((a, b) => {
+      // Pinned posts always come first, regardless of sort direction
+      if (a.pinOrder !== null && b.pinOrder === null) return -1;
+      if (a.pinOrder === null && b.pinOrder !== null) return 1;
+      if (a.pinOrder !== null && b.pinOrder !== null) return a.pinOrder - b.pinOrder;
+      // Non-pinned: sort by date
       const ta = new Date(a.publishedAt ?? a.createdAt).getTime();
       const tb = new Date(b.publishedAt ?? b.createdAt).getTime();
       return sortDesc ? tb - ta : ta - tb;
@@ -122,6 +128,8 @@ export default function FeedPage() {
             {displayed.map((post, i) => (
               <div key={post.id} className="animate-rise" style={{ animationDelay: `${i * 60}ms` }}>
                 <FeedPostCard
+                  postId={post.id}
+                  commentCount={post.commentCount}
                   communityName={post.communityName}
                   badge={post.pinOrder !== null ? { label: "PINNED", icon: "pin" } : undefined}
                   timestamp={formatTimestamp(post.publishedAt ?? post.createdAt)}
@@ -130,7 +138,6 @@ export default function FeedPage() {
                   bodyHtml={post.content}
                   imageUrls={post.imageUrls}
                   tags={post.tags}
-                  viewThreadCount={0}
                 />
               </div>
             ))}
@@ -158,7 +165,7 @@ export default function FeedPage() {
         )}
       </div>
 
-      <aside className="grid w-full grid-cols-1 gap-6 sm:grid-cols-2 lg:w-75 lg:shrink-0 lg:grid-cols-1">
+      <aside className="grid w-full grid-cols-1 gap-6 sm:grid-cols-2 lg:w-75 lg:shrink-0 lg:grid-cols-1 lg:self-start lg:sticky lg:top-6">
         <MarketTodayWidget />
         <CommunityRulesWidget />
       </aside>
