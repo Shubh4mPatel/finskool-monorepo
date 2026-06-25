@@ -1,10 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bold, Code, Image, Italic, MoreHorizontal, Pencil, Pin, Plus, Save, Search, Trash2, X } from "lucide-react";
+import { Bold, Code, ChevronDown, Image, Italic, MoreHorizontal, Pencil, Pin, Save, Search, Trash2, X } from "lucide-react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import Link from "next/link";
 import FeedPostCard from "@/components/feed/FeedPostCard";
 import MarketTodayWidget from "@/components/MarketTodayWidget";
 import CommunityRulesWidget from "@/components/CommunityRulesWidget";
@@ -272,18 +271,15 @@ export default function AdminFeedPage() {
             <h1 className="font-display text-2xl font-bold text-primary">Live Feed</h1>
             <div className="flex flex-wrap items-center gap-3">
               <div className="flex flex-1 items-center gap-2 rounded-full border border-divider bg-white px-4 py-2.5 transition-colors focus-within:border-accent sm:flex-none">
-                <Search size={15} className="shrink-0 text-subtle" />
+                <Search size={16} className="text-subtle shrink-0" />
                 <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search with Title and hashtags..."
                   className="w-full bg-transparent text-sm text-primary placeholder:text-subtle focus:outline-none sm:w-52" />
               </div>
               <button onClick={() => setSortDesc(p => !p)}
-                className="flex shrink-0 items-center gap-2 rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-white transition-transform hover:scale-105 active:scale-95">
+                className="flex shrink-0 items-center gap-2 rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-white transition-transform duration-300 hover:scale-105 active:scale-95">
                 {sortDesc ? "Latest First" : "Oldest First"}
+                <ChevronDown size={16} className={sortDesc ? "" : "rotate-180"} />
               </button>
-              <Link href="/admin/create-post"
-                className="flex items-center gap-2 rounded-full border border-divider bg-white px-4 py-2.5 text-sm font-semibold text-muted transition-colors hover:border-accent hover:text-primary">
-                <Plus size={14} /> Create Post
-              </Link>
             </div>
           </div>
 
