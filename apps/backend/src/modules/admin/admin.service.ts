@@ -469,7 +469,7 @@ export class AdminService {
   async listCommunities(): Promise<CommunityDTO[]> {
     const communities = await this.db.community.findMany({
       where: { deletedAt: null },
-      select: { id: true, name: true, slug: true },
+      select: { id: true, name: true, slug: true, coverImageUrl: true },
       orderBy: { name: 'asc' },
     })
     return communities

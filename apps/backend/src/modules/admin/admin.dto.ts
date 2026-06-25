@@ -22,6 +22,7 @@ export interface CommunityDTO {
   id: string
   name: string
   slug: string
+  coverImageUrl: string | null
 }
 
 // Status is derived, not stored
