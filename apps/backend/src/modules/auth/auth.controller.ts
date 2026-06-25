@@ -9,11 +9,9 @@ const selectCommunitySchema = z.object({
   communityId: z.string().uuid('Invalid community ID'),
 })
 
-const isProduction = env.nodeEnv === 'production'
-
 const COOKIE_BASE: CookieOptions = {
   httpOnly: true,
-  secure: isProduction,
+  secure: env.cookie.secure,
   sameSite: 'strict',
   path: '/',
 }

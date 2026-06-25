@@ -29,6 +29,10 @@ export const env = {
     accessExpiresIn: process.env['JWT_ACCESS_EXPIRES_IN'] ?? '15m',
   },
 
+  cookie: {
+    secure: process.env['COOKIE_SECURE'] !== 'false',
+  },
+
   minio: {
     endPoint: process.env['MINIO_ENDPOINT'] ?? 'localhost',
     // publicEndPoint is the hostname browsers use to reach MinIO (always the host machine)
@@ -46,5 +50,6 @@ export const env = {
   database: { url: string }
   redis: { host: string; port: number; password: string; db: number }
   jwt: { secret: string; accessExpiresIn: string }
+  cookie: { secure: boolean }
   minio: { endPoint: string; publicEndPoint: string; port: number; useSSL: boolean; accessKey: string; secretKey: string; bucket: string }
 }
