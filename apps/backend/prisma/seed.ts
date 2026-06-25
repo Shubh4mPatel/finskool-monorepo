@@ -1,4 +1,5 @@
 import { PrismaClient } from '../src/generated/prisma/client.js'
+import { PrismaPg } from '@prisma/adapter-pg'
 import bcrypt from 'bcryptjs'
 import * as Minio from 'minio'
 import { readFileSync } from 'fs'
@@ -8,7 +9,12 @@ import { randomUUID } from 'crypto'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
-const prisma = new PrismaClient()
+const connectionString = process.env['DATABASE_URL']
+if (!connectionString) throw new Error('DATABASE_URL is not set')
+
+const prisma = new PrismaClient({
+  adapter: new PrismaPg({ connectionString }),
+})
 
 const minioClient = new Minio.Client({
   endPoint: process.env['MINIO_ENDPOINT'] ?? 'localhost',
