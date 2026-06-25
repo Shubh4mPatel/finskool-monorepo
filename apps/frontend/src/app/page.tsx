@@ -10,6 +10,7 @@ interface Community {
   id: string;
   name: string;
   slug: string;
+  coverImageUrl: string | null;
 }
 
 interface MeResponse {
@@ -27,15 +28,26 @@ function CommunityCard({ community, active, onSelect }: CommunityCardProps) {
   return (
     <div className="group flex flex-col overflow-hidden rounded-2xl bg-white shadow-card transition-all duration-300 hover:-translate-y-1.5 hover:shadow-card-hover">
       <div className="relative h-40 overflow-hidden bg-gradient-to-br from-primary via-primary to-accent">
-        <div
-          className="absolute inset-0 opacity-20 transition-transform duration-700 group-hover:scale-110"
-          style={{
-            backgroundImage:
-              "radial-gradient(circle, rgba(193,242,110,0.9) 1.5px, transparent 1.5px)",
-            backgroundSize: "18px 18px",
-          }}
-        />
-        <div className="absolute -right-8 -top-8 h-32 w-32 rounded-full bg-lime/20 blur-2xl transition-transform duration-700 group-hover:scale-125" />
+        {community.coverImageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={community.coverImageUrl}
+            alt={community.name}
+            className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 group-hover:scale-110"
+          />
+        ) : (
+          <>
+            <div
+              className="absolute inset-0 opacity-20 transition-transform duration-700 group-hover:scale-110"
+              style={{
+                backgroundImage:
+                  "radial-gradient(circle, rgba(193,242,110,0.9) 1.5px, transparent 1.5px)",
+                backgroundSize: "18px 18px",
+              }}
+            />
+            <div className="absolute -right-8 -top-8 h-32 w-32 rounded-full bg-lime/20 blur-2xl transition-transform duration-700 group-hover:scale-125" />
+          </>
+        )}
       </div>
 
       <div className="flex flex-1 flex-col p-6 text-left">

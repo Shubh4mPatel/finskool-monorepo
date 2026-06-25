@@ -221,7 +221,7 @@ export class AuthService {
   private async fetchUserCommunities(userId: string): Promise<CommunityInfoDTO[]> {
     const subscriptions = await this.db.subscription.findMany({
       where: { userId, isActive: true },
-      select: { community: { select: { id: true, name: true, slug: true } } },
+      select: { community: { select: { id: true, name: true, slug: true, coverImageUrl: true } } },
     })
     return subscriptions.map(s => s.community)
   }
