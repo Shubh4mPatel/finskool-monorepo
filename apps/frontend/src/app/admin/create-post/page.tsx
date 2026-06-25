@@ -12,7 +12,7 @@ import { getSession } from "@/lib/session";
 
 type Step = 1 | 2 | 3;
 
-interface Community { id: string; name: string; slug: string }
+interface Community { id: string; name: string; slug: string; coverImageUrl: string | null }
 
 const COMMUNITY_COLORS = ["bg-primary/10", "bg-accent/10", "bg-lime/30", "bg-amber-100"];
 function communityBg(index: number): string {
@@ -214,15 +214,20 @@ export default function CreatePostPage() {
                     selectedCommunity === c.id ? "border-primary shadow-glow" : "border-transparent hover:border-divider"
                   }`}
                 >
-                  <div className={`relative flex h-36 items-center justify-center ${communityBg(idx)}`}>
+                  <div className={`relative flex h-36 items-center justify-center overflow-hidden ${!c.coverImageUrl ? communityBg(idx) : ''}`}>
+                    {c.coverImageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={c.coverImageUrl} alt={c.name} className="absolute inset-0 h-full w-full object-cover" />
+                    ) : (
+                      <span className="font-display text-3xl font-bold text-primary/20">
+                        {c.name.slice(0, 2).toUpperCase()}
+                      </span>
+                    )}
                     {selectedCommunity === c.id && (
-                      <div className="absolute right-3 top-3 flex h-6 w-6 items-center justify-center rounded-full bg-primary">
+                      <div className="absolute right-3 top-3 flex h-6 w-6 items-center justify-center rounded-full bg-primary z-10">
                         <Check size={12} className="text-white" />
                       </div>
                     )}
-                    <span className="font-display text-3xl font-bold text-primary/20">
-                      {c.name.slice(0, 2).toUpperCase()}
-                    </span>
                   </div>
                   <div className="p-4">
                     <p className="font-display font-bold text-primary">{c.name}</p>
