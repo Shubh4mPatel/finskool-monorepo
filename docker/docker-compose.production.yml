@@ -40,6 +40,7 @@ services:
       REDIS_PORT: "6379"
       MINIO_ENDPOINT: minio
       MINIO_PORT: "9000"
+      MINIO_PUBLIC_PORT: "9002"
       # Set this to your VPS public IP or domain so browser can reach MinIO
       # MINIO_PUBLIC_ENDPOINT: your-vps-ip-or-domain
     volumes:

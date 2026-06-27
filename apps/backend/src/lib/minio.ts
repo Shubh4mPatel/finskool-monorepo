@@ -17,7 +17,7 @@ const client = new Minio.Client({
 // is unreachable from inside the Docker container. MinIO always defaults to us-east-1.
 const publicClient = new Minio.Client({
   endPoint: env.minio.publicEndPoint,
-  port: env.minio.port,
+  port: env.minio.publicPort,
   useSSL: env.minio.useSSL,
   accessKey: env.minio.accessKey,
   secretKey: env.minio.secretKey,
@@ -51,7 +51,7 @@ export async function generateUploadUrl(
   const uploadUrl = await publicClient.presignedPutObject(env.minio.bucket, objectName, 5 * 60)
 
   const protocol = env.minio.useSSL ? 'https' : 'http'
-  const publicUrl = `${protocol}://${env.minio.publicEndPoint}:${env.minio.port}/${env.minio.bucket}/${objectName}`
+  const publicUrl = `${protocol}://${env.minio.publicEndPoint}:${env.minio.publicPort}/${env.minio.bucket}/${objectName}`
 
   return { uploadUrl, publicUrl }
 }
