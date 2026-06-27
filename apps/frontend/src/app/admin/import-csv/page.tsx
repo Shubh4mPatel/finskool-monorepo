@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import * as XLSX from "xlsx";
-import { CheckCircle, Download, Upload } from "lucide-react";
+import { AlertTriangle, CheckCircle, Download, Pencil, Upload, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 
@@ -19,6 +19,8 @@ interface ParsedRow {
   paidOn: string;
   valid: string;
   errors: string[];
+  warnings: string[];
+  isDuplicate: boolean;
 }
 
 interface ImportResult {
@@ -72,12 +74,17 @@ export default function ImportCSVPage() {
   const [step, setStep] = useState<Step>(1);
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [strategy, setStrategy] = useState<Strategy>("skip");
+  const strategy: Strategy = "overwrite";
   const [rows, setRows] = useState<ParsedRow[]>([]);
   const [communities, setCommunities] = useState<string[]>([]);
   const [previewPage, setPreviewPage] = useState(1);
   const [importing, setImporting] = useState(false);
+  const [validating, setValidating] = useState(false);
+  const [showErrorModal, setShowErrorModal] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
+  const [editCell, setEditCell] = useState<{ rowNum: number; field: string } | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const [needsRevalidation, setNeedsRevalidation] = useState(false);
 
   useEffect(() => {
     api.get<{ id: string; name: string }[]>("/api/v1/admin/communities")
@@ -85,13 +92,25 @@ export default function ImportCSVPage() {
       .catch(() => {});
   }, []);
 
+  const errorRows = rows.filter(r => r.errors.length > 0);
+
+  useEffect(() => {
+    if (step === 2 && errorRows.length > 0) {
+      setShowErrorModal(true);
+    }
+  }, [step]);
+
   function parseAndValidate(f: File, communityList: string[]) {
     const reader = new FileReader();
     reader.onload = e => {
       const data = new Uint8Array(e.target?.result as ArrayBuffer);
       const wb = XLSX.read(data, { type: "array", raw: false, cellDates: true });
       const sheet = wb.Sheets[wb.SheetNames[0]!];
-      const jsonRows = XLSX.utils.sheet_to_json<Record<string, string>>(sheet, { defval: "" });
+      const rawRows = XLSX.utils.sheet_to_json<Record<string, string>>(sheet, { defval: "" });
+      // Normalize header keys — trim whitespace so "Valid " matches "Valid"
+      const jsonRows = rawRows.map(r =>
+        Object.fromEntries(Object.entries(r).map(([k, v]) => [k.trim(), String(v ?? "").trim()]))
+      );
 
       const parsed: ParsedRow[] = jsonRows.map((row, i) => {
         const get = (key: string) => String(row[key] ?? "").trim();
@@ -99,7 +118,8 @@ export default function ImportCSVPage() {
         const phone   = get("Contact Number");
         const email   = get("Email");
         const service = get("Service");
-        const payment = get("Payment").replace(/[^0-9.]/g, "");
+        const rawPayment = get("Payment");
+        const payment = rawPayment.replace(/[^0-9.]/g, "");
         const paidOn  = get("Paid on");
         const valid   = get("Valid");
         const errors: string[] = [];
@@ -112,13 +132,15 @@ export default function ImportCSVPage() {
         if (!service) errors.push("Service required");
         else if (!communityList.includes(service.toLowerCase()))
           errors.push(`Community not found`);
-        if (!payment || isNaN(parseFloat(payment))) errors.push("Invalid payment");
+        if (/[+\-*/]/.test(rawPayment)) errors.push(`Payment contains expression "${rawPayment}" — enter a plain number`);
+        else if (!payment || isNaN(parseFloat(payment))) errors.push("Invalid payment amount");
         if (!valid) errors.push("Valid date required");
 
         return {
           rowNum: i + 2,
           name, phone: phone ? normalizePhone(phone) : "",
-          email, service, payment, paidOn, valid, errors,
+          email, service, payment, paidOn, valid,
+          errors, warnings: [], isDuplicate: false,
         };
       });
 
@@ -131,6 +153,48 @@ export default function ImportCSVPage() {
   function handleFile(f: File) {
     setFile(f);
     parseAndValidate(f, communities);
+  }
+
+  function commitEdit() {
+    if (!editCell) return;
+    setRows(prev => prev.map(r =>
+      r.rowNum === editCell.rowNum
+        ? { ...r, [editCell.field]: editValue, errors: [], warnings: [], isDuplicate: false }
+        : r
+    ));
+    setEditCell(null);
+    setNeedsRevalidation(true);
+  }
+
+  async function revalidate() {
+    setValidating(true);
+    try {
+      const payload = rows.map(r => ({
+        rowNum: r.rowNum,
+        name: r.name,
+        phone: r.phone,
+        email: r.email,
+        service: r.service,
+        payment: parseFloat(r.payment) || 0,
+        valid: r.valid,
+        ...(r.paidOn ? { paidOn: r.paidOn } : {}),
+      }));
+      const { results } = await api.post<{ results: { rowNum: number; errors: string[]; warnings: string[]; isDuplicate: boolean }[] }>(
+        "/api/v1/admin/validate-import",
+        { rows: payload }
+      );
+      setRows(prev => prev.map(r => {
+        const v = results.find(x => x.rowNum === r.rowNum);
+        if (!v) return r;
+        return { ...r, errors: v.errors, warnings: v.warnings, isDuplicate: v.isDuplicate };
+      }));
+      setNeedsRevalidation(false);
+      if (results.some(v => v.errors.length > 0)) setShowErrorModal(true);
+    } catch {
+      toast.error("Validation failed. Please try again.");
+    } finally {
+      setValidating(false);
+    }
   }
 
   async function handleConfirmImport() {
@@ -160,7 +224,7 @@ export default function ImportCSVPage() {
   }
 
   function downloadSample() {
-    const csv = `Contact Number,Name,Email,Service,Payment,Valid,Paid on\n9876543201,Amit Sharma,amit@example.com,Swing Alpha,999,2026-12-31,2026-01-05\n9876543202,Priya Verma,priya@example.com,Investor Community,1499,2026-12-31,2026-01-06`;
+    const csv = `Name,Contact Number,Payment,Paid on,Valid,Service,Email\nAmit Sharma,9876543201,999,2026-01-05,2026-12-31,Swing Alpha Community,amit@example.com\nPriya Verma,9876543202,1499,2026-01-06,2026-12-31,Investor Community,priya@example.com`;
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
     const a = document.createElement("a");
     a.href = url; a.download = "sample-import.csv"; a.click();
@@ -222,23 +286,48 @@ export default function ImportCSVPage() {
               <p className="text-xs text-subtle">CSV or Excel (.csv, .xlsx, .xls), max 5 MB</p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-divider p-4">
-              <p className="text-sm font-semibold text-primary">If a member already exists:</p>
-              <div className="flex gap-3">
-                {(["skip", "overwrite"] as Strategy[]).map(s => (
-                  <button key={s} onClick={() => setStrategy(s)}
-                    className={`rounded-full px-4 py-1.5 text-sm font-semibold transition-colors ${strategy === s ? "bg-primary text-white" : "border border-divider text-muted hover:border-accent hover:text-primary"}`}>
-                    {s === "skip" ? "Skip row" : "Overwrite"}
-                  </button>
-                ))}
-              </div>
-            </div>
 
             <div className="flex justify-end">
-              <button onClick={() => file && rows.length > 0 && setStep(2)}
-                disabled={!file || rows.length === 0}
+              <button
+                onClick={async () => {
+                  if (!file || rows.length === 0) return;
+                  setValidating(true);
+                  try {
+                    const payload = rows.map(r => ({
+                      rowNum: r.rowNum,
+                      name: r.name,
+                      phone: r.phone,
+                      email: r.email,
+                      service: r.service,
+                      payment: parseFloat(r.payment) || 0,
+                      valid: r.valid,
+                      ...(r.paidOn ? { paidOn: r.paidOn } : {}),
+                    }));
+                    const { results } = await api.post<{ results: { rowNum: number; errors: string[]; warnings: string[]; isDuplicate: boolean }[] }>(
+                      "/api/v1/admin/validate-import",
+                      { rows: payload }
+                    );
+                    setRows(prev => prev.map(r => {
+                      const validation = results.find(v => v.rowNum === r.rowNum);
+                      if (!validation) return r;
+                      return {
+                        ...r,
+                        errors: validation.errors.length > 0 ? validation.errors : r.errors,
+                        warnings: validation.warnings,
+                        isDuplicate: validation.isDuplicate,
+                      };
+                    }));
+                  } catch {
+                    toast.error("Validation failed. Please try again.");
+                  } finally {
+                    setValidating(false);
+                  }
+                  setStep(2);
+                }}
+                disabled={!file || rows.length === 0 || validating}
                 className="flex items-center gap-2 rounded-full bg-primary px-6 py-2.5 text-sm font-bold text-white shadow-glow transition-transform hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40">
-                Upload &amp; Preview <CheckCircle size={15} />
+                <CheckCircle size={15} />
+                {validating ? "Validating…" : "Upload & Preview"}
               </button>
             </div>
           </div>
@@ -246,11 +335,76 @@ export default function ImportCSVPage() {
 
         {/* ── Step 2: Preview ── */}
         {step === 2 && (
+          <>
+          {/* Validation Error Modal */}
+          {showErrorModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+              <div className="w-full max-w-2xl rounded-2xl bg-white shadow-xl">
+                <div className="flex items-center justify-between border-b border-divider px-6 py-4">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle size={18} className="text-red-500" />
+                    <h3 className="font-display text-base font-bold text-primary">Validation Issues</h3>
+                    <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-600">
+                      {errorRows.length} rows
+                    </span>
+                  </div>
+                  <button onClick={() => setShowErrorModal(false)} className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-divider transition-colors">
+                    <X size={16} className="text-muted" />
+                  </button>
+                </div>
+                <div className="max-h-[60vh] overflow-y-auto px-6 py-4">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs font-semibold uppercase text-subtle">
+                        <th className="pb-3 pr-4">Row</th>
+                        <th className="pb-3 pr-4">Name</th>
+                        <th className="pb-3">Issue</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {errorRows.map((r) => (
+                        <tr key={r.rowNum} className="border-t border-divider">
+                          <td className="py-3 pr-4 font-mono text-subtle">{r.rowNum}</td>
+                          <td className="py-3 pr-4 font-semibold text-primary">{r.name || "—"}</td>
+                          <td className="py-3">
+                            <ul className="flex flex-col gap-1">
+                              {r.errors.map((e, i) => (
+                                <li key={i} className="flex items-start gap-1.5 text-red-600">
+                                  <span className="mt-0.5 shrink-0 text-red-400">•</span>
+                                  {e}
+                                </li>
+                              ))}
+                            </ul>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="flex justify-end border-t border-divider px-6 py-4">
+                  <button onClick={() => setShowErrorModal(false)}
+                    className="rounded-full bg-primary px-5 py-2 text-sm font-bold text-white shadow-glow transition-transform hover:scale-105">
+                    Got it
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="mt-8 flex flex-col gap-5">
-            <h2 className="font-display text-base font-bold text-primary">
-              Sample CSV Preview
-              {rows.length > 0 && <span className="ml-2 text-sm font-normal text-muted">({rows.length} records)</span>}
-            </h2>
+            <div className="flex items-center justify-between">
+              <h2 className="font-display text-base font-bold text-primary">
+                Sample CSV Preview
+                {rows.length > 0 && <span className="ml-2 text-sm font-normal text-muted">({rows.length} records)</span>}
+              </h2>
+              {errorRows.length > 0 && (
+                <button onClick={() => setShowErrorModal(true)}
+                  className="flex items-center gap-2 rounded-full border border-red-200 bg-red-50 px-4 py-1.5 text-sm font-semibold text-red-600 transition-colors hover:bg-red-100">
+                  <AlertTriangle size={14} />
+                  {errorRows.length} validation issues
+                </button>
+              )}
+            </div>
 
             <div className="overflow-x-auto">
               <table className="w-full min-w-200 text-left text-sm">
@@ -264,29 +418,56 @@ export default function ImportCSVPage() {
                 <tbody>
                   {pageRows.map((r, i) => {
                     const hasError = r.errors.length > 0;
+                    const hasWarning = !hasError && r.warnings.length > 0;
+
+                    function EditableCell({ field, value, className }: { field: string; value: string; className?: string }) {
+                      const isEditing = editCell?.rowNum === r.rowNum && editCell?.field === field;
+                      if (isEditing) {
+                        if (field === "service") {
+                          return (
+                            <select autoFocus value={editValue}
+                              onChange={e => setEditValue(e.target.value)}
+                              onBlur={commitEdit}
+                              className="w-full rounded border border-accent px-2 py-1 text-xs focus:outline-none">
+                              <option value="">Select community</option>
+                              {communities.map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                          );
+                        }
+                        return (
+                          <input autoFocus value={editValue}
+                            onChange={e => setEditValue(e.target.value)}
+                            onBlur={commitEdit}
+                            onKeyDown={e => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditCell(null); }}
+                            className="w-full rounded border border-accent px-2 py-1 text-xs focus:outline-none" />
+                        );
+                      }
+                      return (
+                        <span className={`group flex cursor-pointer items-center gap-1 ${className ?? ""}`}
+                          onClick={() => { setEditCell({ rowNum: r.rowNum, field }); setEditValue(value); }}>
+                          {value || "—"}
+                          <Pencil size={11} className="shrink-0 opacity-0 transition-opacity group-hover:opacity-40" />
+                        </span>
+                      );
+                    }
+
                     return (
-                      <tr key={i} title={hasError ? r.errors.join(" · ") : undefined}
-                        className={`border-t border-divider transition-colors ${hasError ? "bg-red-50/40" : "hover:bg-background"}`}>
+                      <tr key={i}
+                        className={`border-t border-divider transition-colors ${hasError ? "bg-red-50/40" : hasWarning ? "bg-amber-50/60" : "hover:bg-background"}`}>
                         <td className="px-3 py-3 text-subtle">{(previewPage - 1) * PAGE_SIZE + i + 1}</td>
-                        <td className={`px-3 py-3 font-semibold ${hasError ? "text-red-600" : "text-primary"}`}>{r.name || "—"}</td>
-                        <td className="px-3 py-3 text-muted">{r.phone}</td>
-                        <td className="px-3 py-3 text-muted">{r.payment || "—"}</td>
-                        <td className="px-3 py-3 text-muted">{r.paidOn || "—"}</td>
-                        <td className="px-3 py-3 text-muted">{r.valid || "—"}</td>
                         <td className="px-3 py-3">
-                          {r.service ? (
-                            <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
-                              communities.includes(r.service.toLowerCase())
-                                ? r.service.toLowerCase().includes("investor")
-                                  ? "bg-primary/10 text-primary"
-                                  : "bg-lime/40 text-primary"
-                                : "bg-red-100 text-red-600"
-                            }`}>
-                              {r.service}
-                            </span>
-                          ) : "—"}
+                          <EditableCell field="name" value={r.name}
+                            className={`font-semibold ${hasError ? "text-red-600" : hasWarning ? "text-amber-700" : "text-primary"}`} />
+                          {hasWarning && <span className="ml-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">EXISTS</span>}
                         </td>
-                        <td className="px-3 py-3 text-muted">{r.email}</td>
+                        <td className="px-3 py-3 text-muted"><EditableCell field="phone" value={r.phone} /></td>
+                        <td className="px-3 py-3 text-muted"><EditableCell field="payment" value={r.payment} /></td>
+                        <td className="px-3 py-3 text-muted"><EditableCell field="paidOn" value={r.paidOn} /></td>
+                        <td className="px-3 py-3 text-muted"><EditableCell field="valid" value={r.valid} /></td>
+                        <td className="px-3 py-3">
+                          <EditableCell field="service" value={r.service} />
+                        </td>
+                        <td className="px-3 py-3 text-muted"><EditableCell field="email" value={r.email} /></td>
                       </tr>
                     );
                   })}
@@ -309,17 +490,27 @@ export default function ImportCSVPage() {
             )}
 
             <div className="flex items-center justify-between pt-2">
-              <button onClick={() => { setStep(1); setRows([]); setFile(null); }}
+              <button onClick={() => { setStep(1); setRows([]); setFile(null); setNeedsRevalidation(false); }}
                 className="rounded-full border border-divider px-6 py-2.5 text-sm font-semibold text-muted transition-colors hover:text-primary">
                 Cancel
               </button>
-              <button onClick={handleConfirmImport} disabled={importing || validRows.length === 0}
-                className="flex items-center gap-2 rounded-full bg-primary px-6 py-2.5 text-sm font-bold text-white shadow-glow transition-transform hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40">
-                <CheckCircle size={15} />
-                {importing ? "Importing…" : "Confirm Import"}
-              </button>
+              <div className="flex items-center gap-3">
+                {needsRevalidation && (
+                  <button onClick={revalidate} disabled={validating}
+                    className="flex items-center gap-2 rounded-full border border-accent px-5 py-2.5 text-sm font-semibold text-accent transition-colors hover:bg-accent/5 disabled:opacity-50">
+                    <AlertTriangle size={14} />
+                    {validating ? "Validating…" : "Re-validate"}
+                  </button>
+                )}
+                <button onClick={handleConfirmImport} disabled={importing || validRows.length === 0 || needsRevalidation}
+                  className="flex items-center gap-2 rounded-full bg-primary px-6 py-2.5 text-sm font-bold text-white shadow-glow transition-transform hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40">
+                  <CheckCircle size={15} />
+                  {importing ? "Importing…" : "Confirm Import"}
+                </button>
+              </div>
             </div>
           </div>
+          </>
         )}
 
         {/* ── Step 3: Success ── */}

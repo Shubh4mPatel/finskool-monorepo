@@ -27,6 +27,7 @@ const router = Router()
 
 router.get('/dashboard', authenticate, requireRole('admin'), controller.getDashboard)
 router.post('/import-json', authenticate, requireRole('admin'), controller.importJSON)
+router.post('/validate-import', authenticate, requireRole('admin'), controller.validateImport)
 
 router.post(
   '/import-csv',

@@ -31,6 +31,21 @@ const importJSONSchema = z.object({
   rows: z.array(importRowSchema).min(1, 'At least one row required'),
 })
 
+const validateImportRowSchema = z.object({
+  rowNum: z.number().int(),
+  name: z.string(),
+  phone: z.string(),
+  email: z.string(),
+  service: z.string(),
+  payment: z.coerce.number(),
+  valid: z.string(),
+  paidOn: z.string().optional(),
+})
+
+const validateImportSchema = z.object({
+  rows: z.array(validateImportRowSchema).min(1),
+})
+
 const listNotificationsSchema = z.object({
   isReplied: z
     .enum(['true', 'false'])
@@ -111,6 +126,16 @@ export class AdminController {
       const parsed = schema.safeParse(req.query)
       if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Invalid query')
       const result = await this.service.listMembers(parsed.data)
+      res.json({ success: true, data: result })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  validateImport = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { rows } = validateImportSchema.parse(req.body)
+      const result = await this.service.validateImport(rows)
       res.json({ success: true, data: result })
     } catch (err) {
       next(err)

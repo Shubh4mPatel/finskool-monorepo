@@ -84,6 +84,28 @@ export interface ImportErrorDTO {
   reason: string
 }
 
+export interface ValidateImportRowInput {
+  rowNum: number
+  name: string
+  phone: string
+  email: string
+  service: string
+  payment: number
+  valid: string
+  paidOn?: string | undefined
+}
+
+export interface ValidateImportRowResult {
+  rowNum: number
+  errors: string[]    // blocking — format / missing field
+  warnings: string[]  // non-blocking — duplicate exists
+  isDuplicate: boolean
+}
+
+export interface ValidateImportDTO {
+  results: ValidateImportRowResult[]
+}
+
 export interface ImportSummaryDTO {
   total: number
   created: number

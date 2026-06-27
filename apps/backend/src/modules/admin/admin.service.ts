@@ -16,6 +16,9 @@ import type {
   MemberItemDTO,
   MemberStatus,
   DashboardDTO,
+  ValidateImportRowInput,
+  ValidateImportRowResult,
+  ValidateImportDTO,
 } from './admin.dto.js'
 
 const _require = createRequire(import.meta.url)
@@ -464,6 +467,89 @@ export class AdminService {
       communityBreakdown,
       expiringSoon,
     }
+  }
+
+  async validateImport(rows: ValidateImportRowInput[]): Promise<ValidateImportDTO> {
+    const communities = await this.db.community.findMany({
+      where: { deletedAt: null },
+      select: { name: true },
+    })
+    const communityNames = new Set(communities.map(c => c.name.toLowerCase()))
+
+    // Batch-fetch existing phones and emails from the DB
+    const phones = rows.map(r => r.phone).filter(Boolean)
+    const emails = rows.map(r => r.email).filter(Boolean)
+
+    const [existingByPhone, existingByEmail] = await Promise.all([
+      this.db.approvedPhone.findMany({
+        where: { phone: { in: phones } },
+        select: { phone: true, name: true },
+      }),
+      this.db.user.findMany({
+        where: { email: { in: emails } },
+        select: { email: true, phone: true, name: true },
+      }),
+    ])
+
+    const existingPhoneSet = new Set(existingByPhone.map(r => r.phone))
+    const existingEmailMap = new Map(existingByEmail.map(r => [r.email, r]))
+
+    const results: ValidateImportRowResult[] = rows.map(row => {
+      const errors: string[] = []
+      const warnings: string[] = []
+
+      // Format validations
+      if (!row.name?.trim()) errors.push('Name is required')
+
+      const phoneDigits = row.phone.replace(/\D/g, '')
+      if (!row.phone?.trim()) {
+        errors.push('Phone is required')
+      } else if (
+        !/^\d{10,12}$/.test(phoneDigits) &&
+        !/^\+[1-9]\d{6,14}$/.test(row.phone.trim())
+      ) {
+        errors.push('Invalid phone number')
+      }
+
+      if (!row.email?.trim()) {
+        errors.push('Email is required')
+      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email)) {
+        errors.push('Invalid email address')
+      }
+
+      if (!row.service?.trim()) {
+        errors.push('Service is required')
+      } else if (!communityNames.has(row.service.toLowerCase())) {
+        errors.push(`Community "${row.service}" not found`)
+      }
+
+      if (!row.payment || isNaN(row.payment) || row.payment <= 0) {
+        errors.push('Invalid payment amount')
+      }
+
+      if (!row.valid?.trim()) errors.push('Valid date is required')
+
+      // Duplicate checks (warnings, not errors)
+      const phoneExists = existingPhoneSet.has(row.phone)
+      const emailMatch = row.email ? existingEmailMap.get(row.email) : undefined
+      const emailExistsDifferentPhone = emailMatch && emailMatch.phone !== row.phone
+
+      if (phoneExists) {
+        warnings.push(`Phone already exists — customer "${existingByPhone.find(p => p.phone === row.phone)?.name ?? row.phone}" will be updated based on strategy`)
+      }
+      if (emailExistsDifferentPhone) {
+        warnings.push(`Email already registered under a different phone (${emailMatch!.phone})`)
+      }
+
+      return {
+        rowNum: row.rowNum,
+        errors,
+        warnings,
+        isDuplicate: phoneExists || !!emailExistsDifferentPhone,
+      }
+    })
+
+    return { results }
   }
 
   async listCommunities(): Promise<CommunityDTO[]> {
