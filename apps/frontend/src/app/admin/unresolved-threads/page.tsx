@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Check, CheckCheck, ChevronDown, Loader2, Search } from "lucide-react";
 import FeedPostCard from "@/components/feed/FeedPostCard";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { api } from "@/lib/api";
 
 interface PendingPostThread {
@@ -30,6 +31,7 @@ function formatTimestamp(iso: string | null): string {
 }
 
 export default function UnresolvedThreadsPage() {
+  const confirm = useConfirm();
   const [posts, setPosts] = useState<PendingPostThread[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("All");
@@ -72,6 +74,16 @@ export default function UnresolvedThreadsPage() {
   const pending = filtered.reduce((sum, p) => sum + p.pendingThreads, 0);
 
   async function handleMarkAllReplied() {
+    const scope = activeTab === "All" ? "all communities" : activeTab;
+    const ok = await confirm({
+      message: (
+        <>
+          This action will <strong className="text-primary">mark all {pending} pending thread{pending === 1 ? "" : "s"} in {scope} as replied</strong>. Do you want to continue?
+        </>
+      ),
+    });
+    if (!ok) return;
+
     setMarkingAll(true);
     try {
       const communityId = activeTab === "All" ? undefined : communityMap.get(activeTab);
