@@ -214,7 +214,7 @@ export default function CreatePostPage() {
                     selectedCommunity === c.id ? "border-primary shadow-glow" : "border-transparent hover:border-divider"
                   }`}
                 >
-                  <div className={`relative flex h-36 items-center justify-center overflow-hidden ${!c.coverImageUrl ? communityBg(idx) : ''}`}>
+                  <div className={`relative flex aspect-video items-center justify-center overflow-hidden ${!c.coverImageUrl ? communityBg(idx) : 'bg-slate-100'}`}>
                     {c.coverImageUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={c.coverImageUrl} alt={c.name} className="absolute inset-0 h-full w-full object-cover" />
