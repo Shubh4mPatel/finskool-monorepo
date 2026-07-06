@@ -8,6 +8,8 @@ import type {
   ImportRowDTO,
   CommentNotificationItemDTO,
   CommentNotificationListDTO,
+  MarkAllRepliedDTO,
+  PostThreadSummaryDTO,
   AddMemberDTO,
   AddMemberResultDTO,
   CommunityDTO,
@@ -262,7 +264,7 @@ export class AdminService {
 
     const rows = await this.db.commentNotification.findMany({
       where,
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: 'asc' },
       take: limit + 1,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       select: {
@@ -278,7 +280,7 @@ export class AdminService {
             author: { select: { id: true, name: true, avatarUrl: true } },
           },
         },
-        post: { select: { id: true, title: true } },
+        post: { select: { id: true, title: true, community: { select: { id: true, name: true } } } },
       },
     })
 
@@ -296,7 +298,7 @@ export class AdminService {
         createdAt: r.comment.createdAt,
         author: r.comment.author,
       },
-      post: r.post,
+      post: { id: r.post.id, title: r.post.title, communityId: r.post.community.id, communityName: r.post.community.name },
     }))
 
     const last = page.at(-1)
@@ -327,7 +329,7 @@ export class AdminService {
             author: { select: { id: true, name: true, avatarUrl: true } },
           },
         },
-        post: { select: { id: true, title: true } },
+        post: { select: { id: true, title: true, community: { select: { id: true, name: true } } } },
       },
     })
 
@@ -343,8 +345,72 @@ export class AdminService {
         createdAt: updated.comment.createdAt,
         author: updated.comment.author,
       },
-      post: updated.post,
+      post: { id: updated.post.id, title: updated.post.title, communityId: updated.post.community.id, communityName: updated.post.community.name },
     }
+  }
+
+  async markAllNotificationsReplied(communityId: string | undefined): Promise<MarkAllRepliedDTO> {
+    const result = await this.db.commentNotification.updateMany({
+      where: {
+        isReplied: false,
+        ...(communityId ? { post: { communityId } } : {}),
+      },
+      data: { isReplied: true, repliedAt: new Date() },
+    })
+
+    logger.info({ communityId, count: result.count }, 'admin.markAllNotificationsReplied')
+    return { count: result.count }
+  }
+
+  async listPendingPostThreads(communityId: string | undefined, search: string | undefined): Promise<PostThreadSummaryDTO[]> {
+    const grouped = await this.db.commentNotification.groupBy({
+      by: ['postId'],
+      where: {
+        isReplied: false,
+        ...(communityId ? { post: { communityId } } : {}),
+      },
+      _count: { _all: true },
+    })
+    if (grouped.length === 0) return []
+
+    const pendingCountByPost = new Map(grouped.map(g => [g.postId, g._count._all]))
+    const term = search?.trim().replace(/^#/, '')
+
+    const posts = await this.db.post.findMany({
+      where: {
+        id: { in: grouped.map(g => g.postId) },
+        deletedAt: null,
+        ...(term
+          ? { OR: [{ title: { contains: term, mode: 'insensitive' } }, { tags: { hasSome: [term, `#${term}`] } }] }
+          : {}),
+      },
+      orderBy: { publishedAt: 'asc' },
+      select: {
+        id: true,
+        title: true,
+        contentMd: true,
+        imageUrls: true,
+        tags: true,
+        publishedAt: true,
+        createdAt: true,
+        community: { select: { id: true, name: true } },
+        _count: { select: { comments: { where: { deletedAt: null } } } },
+      },
+    })
+
+    return posts.map(p => ({
+      id: p.id,
+      title: p.title,
+      contentMd: p.contentMd,
+      imageUrls: p.imageUrls,
+      tags: p.tags,
+      publishedAt: p.publishedAt,
+      createdAt: p.createdAt,
+      communityId: p.community.id,
+      communityName: p.community.name,
+      totalComments: p._count.comments,
+      pendingThreads: pendingCountByPost.get(p.id) ?? 0,
+    }))
   }
 
   async getDashboard(): Promise<DashboardDTO> {

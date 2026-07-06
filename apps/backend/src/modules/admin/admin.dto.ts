@@ -123,6 +123,26 @@ export interface CommentNotificationAuthorDTO {
 export interface CommentNotificationPostDTO {
   id: string
   title: string
+  communityId: string
+  communityName: string
+}
+
+export interface MarkAllRepliedDTO {
+  count: number
+}
+
+export interface PostThreadSummaryDTO {
+  id: string
+  title: string
+  contentMd: string
+  imageUrls: string[]
+  tags: string[]
+  publishedAt: Date | null
+  createdAt: Date
+  communityId: string
+  communityName: string
+  totalComments: number
+  pendingThreads: number
 }
 
 export interface CommentNotificationItemDTO {

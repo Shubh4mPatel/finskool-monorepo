@@ -12,12 +12,18 @@ interface CommentAuthor {
   avatarUrl: string | null;
 }
 
+interface CommentNotificationRef {
+  id: string;
+  isReplied: boolean;
+}
+
 interface Comment {
   id: string;
   content: string;
   depth: number;
   createdAt: string;
   author: CommentAuthor;
+  notification: CommentNotificationRef | null;
   replies: Comment[];
 }
 
@@ -65,12 +71,16 @@ function CommentNode({
   isAdmin,
   onReply,
   onDelete,
+  onMarkReplied,
+  markingRepliedId,
 }: {
   comment: Comment;
   currentUserId: string;
   isAdmin: boolean;
   onReply: (id: string, label: string) => void;
   onDelete: (id: string) => void;
+  onMarkReplied?: (notificationId: string) => void;
+  markingRepliedId?: string | null;
 }) {
   const isAuthorAdmin = comment.author.role === "admin";
   const isOwn = comment.author.id === currentUserId;
@@ -78,6 +88,7 @@ function CommentNode({
   // Members can only delete their own comment if no one has replied yet; admins can always delete
   const canDelete = isAdmin || (isOwn && !hasReplies);
   const label = displayName(comment.author, currentUserId);
+  const isPending = isAdmin && !!comment.notification && !comment.notification.isReplied;
 
   return (
     <div className={`flex gap-3 ${comment.depth > 0 ? "ml-7 border-l-2 border-divider pl-4 pt-1" : ""}`}>
@@ -92,6 +103,9 @@ function CommentNode({
           <span className="text-sm font-semibold text-primary">{label}</span>
           {isAuthorAdmin && (
             <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">ADMIN</span>
+          )}
+          {isPending && (
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-600">PENDING</span>
           )}
           <span className="text-xs text-subtle">{timeAgo(comment.createdAt)}</span>
 
@@ -109,14 +123,25 @@ function CommentNode({
         {/* Content */}
         <p className="mt-1 text-sm leading-relaxed text-muted">{comment.content}</p>
 
-        {/* Reply action */}
-        <button
-          onClick={() => onReply(comment.id, label)}
-          className="mt-1.5 flex items-center gap-1 text-xs font-semibold text-accent hover:underline"
-        >
-          <FiCornerDownRight size={11} />
-          Reply
-        </button>
+        {/* Reply / Mark Replied actions */}
+        <div className="mt-1.5 flex items-center gap-3">
+          <button
+            onClick={() => onReply(comment.id, label)}
+            className="flex items-center gap-1 text-xs font-semibold text-accent hover:underline"
+          >
+            <FiCornerDownRight size={11} />
+            Reply
+          </button>
+          {isPending && onMarkReplied && comment.notification && (
+            <button
+              onClick={() => onMarkReplied(comment.notification!.id)}
+              disabled={markingRepliedId === comment.notification.id}
+              className="flex items-center gap-1 text-xs font-semibold text-muted hover:text-primary disabled:opacity-50"
+            >
+              {markingRepliedId === comment.notification.id ? "Marking…" : "Mark Replied"}
+            </button>
+          )}
+        </div>
 
         {/* Nested replies */}
         {comment.replies.map(reply => (
@@ -127,6 +152,8 @@ function CommentNode({
               isAdmin={isAdmin}
               onReply={onReply}
               onDelete={onDelete}
+              onMarkReplied={onMarkReplied}
+              markingRepliedId={markingRepliedId}
             />
           </div>
         ))}
@@ -214,8 +241,20 @@ function ReplyCard({
 
 // ── Main PostThreads ─────────────────────────────────────────────────────────
 
-export default function PostThreads({ postId, initialCount = 0 }: { postId: string; initialCount?: number }) {
-  const [open, setOpen] = useState(false);
+export default function PostThreads({
+  postId,
+  initialCount = 0,
+  isAdmin = false,
+  defaultOpen = false,
+  onChange,
+}: {
+  postId: string;
+  initialCount?: number;
+  isAdmin?: boolean;
+  defaultOpen?: boolean;
+  onChange?: () => void;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
   const [comments, setComments] = useState<Comment[]>([]);
   const [count, setCount] = useState(initialCount);
   const [loading, setLoading] = useState(false);
@@ -224,11 +263,11 @@ export default function PostThreads({ postId, initialCount = 0 }: { postId: stri
   const [text, setText] = useState("");
   const [replyingTo, setReplyingTo] = useState<{ id: string; name: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [markingRepliedId, setMarkingRepliedId] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
   const [currentUserId, setCurrentUserId] = useState(getSession()?.userId ?? "");
   const currentUserInitials = getSession()?.userInitials ?? "U";
-  const isAdmin = false;
 
   // Backfill userId into session if it was saved before we added that field
   useEffect(() => {
@@ -280,6 +319,7 @@ export default function PostThreads({ postId, initialCount = 0 }: { postId: stri
       setComments([]);
       setCount(c => c + 1);
       await fetchComments();
+      onChange?.();
     } catch (err) {
       alert(err instanceof ApiError ? err.message : "Failed to post reply");
     } finally {
@@ -294,8 +334,23 @@ export default function PostThreads({ postId, initialCount = 0 }: { postId: stri
       setComments([]);
       setCount(c => Math.max(0, c - 1));
       await fetchComments();
+      onChange?.();
     } catch {
       alert("Failed to delete comment");
+    }
+  }
+
+  async function handleMarkReplied(notificationId: string) {
+    setMarkingRepliedId(notificationId);
+    try {
+      await api.patch(`/api/v1/admin/comment-notifications/${notificationId}/mark-replied`, {});
+      setComments([]);
+      await fetchComments();
+      onChange?.();
+    } catch {
+      alert("Failed to mark thread as replied");
+    } finally {
+      setMarkingRepliedId(null);
     }
   }
 
@@ -334,6 +389,8 @@ export default function PostThreads({ postId, initialCount = 0 }: { postId: stri
                   isAdmin={isAdmin}
                   onReply={handleReply}
                   onDelete={handleDelete}
+                  onMarkReplied={handleMarkReplied}
+                  markingRepliedId={markingRepliedId}
                 />
               ))}
               {hasMore && (

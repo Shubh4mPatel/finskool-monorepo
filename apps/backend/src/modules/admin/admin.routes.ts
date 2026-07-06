@@ -50,4 +50,13 @@ router.patch(
   controller.markNotificationReplied,
 )
 
+router.patch(
+  '/comment-notifications/mark-all-replied',
+  authenticate,
+  requireRole('admin'),
+  controller.markAllNotificationsReplied,
+)
+
+router.get('/pending-post-threads', authenticate, requireRole('admin'), controller.listPendingPostThreads)
+
 export default router

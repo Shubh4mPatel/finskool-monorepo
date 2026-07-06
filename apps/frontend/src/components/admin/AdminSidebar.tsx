@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { clearSession } from "@/lib/session";
 import {
@@ -25,7 +25,7 @@ const navItems = [
   { href: "/admin/create-post", label: "Create Post", icon: Pencil },
   { href: "/admin/feed", label: "Feed", icon: LayoutGrid, badge: 1 },
   { href: "/admin/all-posts", label: "All Posts", icon: List, badge: 1 },
-  { href: "/admin/unresolved-threads", label: "Unreplied Threads", icon: MessagesSquare, badge: 7 },
+  { href: "/admin/unresolved-threads", label: "Unreplied Threads", icon: MessagesSquare, badge: undefined as number | undefined },
   { href: "/admin/members", label: "Members", icon: Users },
   { href: "/admin/import-csv", label: "Import CSV", icon: Upload },
   { href: "/admin/stock-recommendations", label: "Stock Recommendation", icon: TrendingUp },
@@ -35,6 +35,14 @@ const navItems = [
 function SidebarContent({ onNav }: { onNav?: () => void }) {
   const pathname = usePathname();
   const router = useRouter();
+  const [unresolvedThreads, setUnresolvedThreads] = useState<number | undefined>(undefined);
+
+  useEffect(() => {
+    api
+      .get<{ stats: { unresolvedThreads: number } }>("/api/v1/admin/dashboard")
+      .then((data) => setUnresolvedThreads(data.stats.unresolvedThreads))
+      .catch(() => {});
+  }, []);
 
   async function handleLogout() {
     try { await api.post("/api/v1/auth/logout", {}) } catch { /* ignore */ }
@@ -60,6 +68,7 @@ function SidebarContent({ onNav }: { onNav?: () => void }) {
         {navItems.map((item) => {
           const isActive = pathname?.startsWith(item.href);
           const Icon = item.icon;
+          const badge = item.href === "/admin/unresolved-threads" ? unresolvedThreads : item.badge;
           return (
             <Link
               key={item.href}
@@ -75,13 +84,13 @@ function SidebarContent({ onNav }: { onNav?: () => void }) {
                 <Icon size={15} />
                 {item.label}
               </span>
-              {item.badge != null && (
+              {badge != null && badge > 0 && (
                 <span
                   className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
                     isActive ? "bg-white/20 text-white" : "bg-primary/10 text-primary"
                   }`}
                 >
-                  {item.badge}
+                  {badge}
                 </span>
               )}
             </Link>

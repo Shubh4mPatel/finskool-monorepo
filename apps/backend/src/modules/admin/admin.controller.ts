@@ -46,6 +46,10 @@ const validateImportSchema = z.object({
   rows: z.array(validateImportRowSchema).min(1),
 })
 
+const markAllRepliedSchema = z.object({
+  communityId: z.string().uuid().optional(),
+})
+
 const listNotificationsSchema = z.object({
   isReplied: z
     .enum(['true', 'false'])
@@ -104,6 +108,31 @@ export class AdminController {
       const raw = req.params['id']
       const id = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
       const result = await this.service.markNotificationReplied(id)
+      res.json({ success: true, data: result })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  markAllNotificationsReplied = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { communityId } = markAllRepliedSchema.parse(req.body)
+      const result = await this.service.markAllNotificationsReplied(communityId)
+      res.json({ success: true, data: result })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  listPendingPostThreads = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const schema = z.object({
+        communityId: z.string().uuid().optional(),
+        search: z.string().max(100).optional(),
+      })
+      const parsed = schema.safeParse(req.query)
+      if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Invalid query')
+      const result = await this.service.listPendingPostThreads(parsed.data.communityId, parsed.data.search)
       res.json({ success: true, data: result })
     } catch (err) {
       next(err)

@@ -82,7 +82,7 @@ export class CommentsService {
     })
 
     logger.info({ commentId: comment.id, postId, depth }, 'comments.create: success')
-    return { ...comment, replies: [] }
+    return { ...comment, notification: null, replies: [] }
   }
 
   async listComments(postId: string, cursor: string | undefined, limit: number): Promise<CommentListDTO> {
@@ -105,6 +105,7 @@ export class CommentsService {
         path: true,
         createdAt: true,
         author: { select: { id: true, name: true, role: true, avatarUrl: true } },
+        notification: { select: { id: true, isReplied: true } },
       },
     })
 
@@ -128,6 +129,7 @@ export class CommentsService {
         parentId: true,
         createdAt: true,
         author: { select: { id: true, name: true, role: true, avatarUrl: true } },
+        notification: { select: { id: true, isReplied: true } },
       },
     })
 
@@ -137,13 +139,13 @@ export class CommentsService {
 
     for (const c of page) {
       map.set(c.id, {
-        dto: { id: c.id, content: c.content, author: c.author, depth: c.depth, createdAt: c.createdAt, replies: [] },
+        dto: { id: c.id, content: c.content, author: c.author, depth: c.depth, createdAt: c.createdAt, notification: c.notification, replies: [] },
         parentId: null,
       })
     }
     for (const c of descendants) {
       map.set(c.id, {
-        dto: { id: c.id, content: c.content, author: c.author, depth: c.depth, createdAt: c.createdAt, replies: [] },
+        dto: { id: c.id, content: c.content, author: c.author, depth: c.depth, createdAt: c.createdAt, notification: c.notification, replies: [] },
         parentId: c.parentId,
       })
     }

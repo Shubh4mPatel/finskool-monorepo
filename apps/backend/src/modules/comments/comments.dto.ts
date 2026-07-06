@@ -10,12 +10,18 @@ export interface CommentAuthorDTO {
   avatarUrl: string | null
 }
 
+export interface CommentNotificationRefDTO {
+  id: string
+  isReplied: boolean
+}
+
 export interface CommentTreeDTO {
   id: string
   content: string
   author: CommentAuthorDTO
   depth: number
   createdAt: Date
+  notification: CommentNotificationRefDTO | null
   replies: CommentTreeDTO[]
 }
 

@@ -17,6 +17,9 @@ type FeedPostCardProps = {
   tags: string[];
   children?: ReactNode;
   actions?: ReactNode;
+  isAdmin?: boolean;
+  defaultThreadsOpen?: boolean;
+  onThreadsChange?: () => void;
 };
 
 function formatDateParts(ts: string): { date: string; time: string } {
@@ -39,6 +42,9 @@ export default function FeedPostCard({
   tags,
   children,
   actions,
+  isAdmin,
+  defaultThreadsOpen,
+  onThreadsChange,
 }: FeedPostCardProps) {
   const session = typeof window !== "undefined" ? getSession() : null;
   const displayName = authorName ?? session?.userName ?? "Admin";
@@ -133,7 +139,13 @@ export default function FeedPostCard({
       {/* Threads */}
       {postId && (
         <div className="px-5 pb-4">
-          <PostThreads postId={postId} initialCount={commentCount ?? 0} />
+          <PostThreads
+            postId={postId}
+            initialCount={commentCount ?? 0}
+            isAdmin={isAdmin}
+            defaultOpen={defaultThreadsOpen}
+            onChange={onThreadsChange}
+          />
         </div>
       )}
     </div>
