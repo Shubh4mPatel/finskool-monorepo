@@ -2,3 +2,4 @@ node_modules/
 .turbo/
 .agents/
 .figma-export/
+apps/backend/src/generated/
