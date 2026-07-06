@@ -34,7 +34,7 @@ async function uploadSeedImage(filename: string): Promise<string> {
   })
   const protocol = process.env['MINIO_USE_SSL'] === 'true' ? 'https' : 'http'
   const publicEndpoint = process.env['MINIO_PUBLIC_ENDPOINT'] ?? process.env['MINIO_ENDPOINT'] ?? 'localhost'
-  const port = process.env['MINIO_PORT'] ?? '9000'
+  const port = process.env['MINIO_PUBLIC_PORT'] ?? process.env['MINIO_PORT'] ?? '9000'
   return `${protocol}://${publicEndpoint}:${port}/${bucket}/${objectName}`
 }
 
