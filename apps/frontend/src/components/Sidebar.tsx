@@ -6,22 +6,21 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { getSession, clearSession, type SessionInfo } from "@/lib/session";
 import {
+  ArrowLeft,
   LayoutGrid,
-  Megaphone,
-  TrendingUp,
-  BarChart3,
-  MessagesSquare,
   LogOut,
+  Megaphone,
   Menu,
+  MessagesSquare,
+  TrendingUp,
   X,
 } from "lucide-react";
 
 const navItems = [
-  { href: "/feed", label: "Feed", icon: LayoutGrid },
-  { href: "/announcements", label: "Announcements", icon: Megaphone },
-  { href: "/recommendations", label: "Recommendations", icon: TrendingUp },
-  { href: "/stock-tracker", label: "Stock Tracker", icon: BarChart3 },
-  { href: "/replies", label: "My Replies", icon: MessagesSquare },
+  { href: "/feed", label: "Feed", icon: LayoutGrid, count: 20 },
+  { href: "/announcements", label: "Announcements", icon: Megaphone, count: null },
+  { href: "/recommendations", label: "Recommendations", icon: TrendingUp, count: 10 },
+  { href: "/replies", label: "My Threads", icon: MessagesSquare, count: null },
 ];
 
 export default function Sidebar() {
@@ -45,31 +44,49 @@ export default function Sidebar() {
   const communityName = session?.communityName ?? "";
 
   return (
-    <aside className="flex w-full flex-col gap-4 rounded-2xl bg-white p-4 shadow-card lg:h-fit lg:w-[269px] lg:gap-0 lg:p-6">
-      <div className="flex items-center justify-between gap-3 lg:flex-col lg:justify-center lg:gap-3 lg:pb-6">
-        <div className="flex items-center gap-3 lg:flex-col lg:gap-2">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary text-lg font-bold text-white ring-2 ring-primary/20 ring-offset-2 ring-offset-white lg:h-16 lg:w-16 lg:text-xl">
+    <aside className="flex w-full flex-col gap-4 rounded-2xl bg-white p-4 shadow-card lg:sticky lg:top-8 lg:self-start lg:w-67.25 lg:gap-0 lg:p-6">
+      {/* Desktop header: back arrow + centered avatar / name / chip */}
+      <div className="hidden pb-5 lg:flex lg:flex-col">
+        <button
+          type="button"
+          onClick={() => router.back()}
+          className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-white transition-colors hover:bg-primary/80"
+          aria-label="Go back"
+        >
+          <ArrowLeft size={15} />
+        </button>
+        <div className="mt-4 flex flex-col items-center gap-2">
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-primary text-xl font-bold text-white ring-2 ring-primary/20 ring-offset-2 ring-offset-white">
             {displayInitials}
           </div>
-          <div className="flex items-center gap-2 lg:flex-col lg:gap-2">
-            <p className="font-display font-bold text-primary">{displayName}</p>
-            {communityName && (
-              <span className="rounded-full bg-lime px-4 py-1 text-sm font-bold text-primary">
-                {communityName}
-              </span>
-            )}
-          </div>
+          <p className="font-semibold text-primary">{displayName}</p>
+          {communityName && (
+            <span className="flex items-center gap-1 rounded-full border border-lime bg-lime/10 px-4 py-1 text-xs font-semibold text-primary">
+              ⚡ {communityName}
+            </span>
+          )}
         </div>
+      </div>
 
+      {/* Mobile header: hamburger + community chip + avatar */}
+      <div className="flex items-center justify-between gap-3 lg:hidden">
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
           aria-label={open ? "Close menu" : "Open menu"}
           aria-expanded={open}
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-primary transition-colors hover:bg-divider/60 lg:hidden"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-primary transition-colors hover:bg-divider/60"
         >
           {open ? <X size={20} /> : <Menu size={20} />}
         </button>
+        {communityName && (
+          <span className="flex items-center gap-1 rounded-full border border-lime bg-lime/10 px-4 py-1 text-sm font-semibold text-primary">
+            ⚡ {communityName}
+          </span>
+        )}
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-white">
+          {displayInitials}
+        </div>
       </div>
 
       <div className={`${open ? "block" : "hidden"} h-px w-full bg-divider lg:block`} />
@@ -83,14 +100,23 @@ export default function Sidebar() {
               key={item.href}
               href={item.href}
               onClick={() => setOpen(false)}
-              className={`flex w-full items-center gap-3 rounded-full px-4 py-3 text-base font-semibold transition-all duration-300 ${
+              className={`flex w-full items-center justify-between gap-3 rounded-full px-4 py-3 text-base font-semibold transition-all duration-300 ${
                 isActive
                   ? "bg-primary text-white shadow-glow"
                   : "text-muted hover:translate-x-0.5 hover:bg-divider/60 hover:text-primary"
               }`}
             >
-              <Icon size={18} />
-              {item.label}
+              <span className="flex items-center gap-3">
+                <Icon size={18} />
+                {item.label}
+              </span>
+              {item.count !== null && (
+                <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                  isActive ? "bg-white/25 text-white" : "bg-primary/10 text-primary"
+                }`}>
+                  {item.count}
+                </span>
+              )}
             </Link>
           );
         })}

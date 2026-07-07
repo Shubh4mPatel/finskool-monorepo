@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { ChevronDown, Search } from "lucide-react";
+import { Calendar, ChevronDown, Search } from "lucide-react";
 import CommunityRulesWidget from "@/components/CommunityRulesWidget";
 import MarketTodayWidget from "@/components/MarketTodayWidget";
 import FeedPostCard from "@/components/feed/FeedPostCard";
@@ -85,28 +85,34 @@ export default function FeedPage() {
     });
 
   return (
-    <div className="flex flex-col gap-6 lg:flex-row">
+    <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
       <div className="flex-1 space-y-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <h1 className="font-display text-2xl font-bold text-primary">Live Feed</h1>
+          <h1 className="font-display text-xl font-semibold text-primary">Live Feed</h1>
 
           <div className="flex flex-wrap items-center gap-3">
-            <div className="flex flex-1 items-center gap-2 rounded-full border border-divider bg-white px-4 py-2.5 transition-colors focus-within:border-accent sm:flex-none">
-              <Search size={16} className="text-subtle shrink-0" />
+            <div className="flex flex-1 items-center gap-2 rounded-full border border-accent bg-white px-4 py-2.5 transition-colors sm:flex-none">
+              <Search size={16} className="shrink-0 text-accent" />
               <input
                 type="text"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                placeholder="Search posts..."
-                className="w-full bg-transparent text-sm text-primary placeholder:text-subtle focus:outline-none sm:w-40"
+                placeholder="Search with Title and hashtags....."
+                className="w-full bg-transparent text-sm text-primary placeholder:text-accent/70 focus:outline-none sm:w-56"
               />
             </div>
             <button
-              onClick={() => setSortDesc(p => !p)}
-              className="flex shrink-0 items-center gap-2 rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-white transition-transform duration-300 hover:scale-105 active:scale-95"
+              className="flex shrink-0 items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-bold text-white"
+              type="button"
             >
-              <span className="hidden sm:inline">{sortDesc ? "Latest First" : "Oldest First"}</span>
-              <span className="sm:hidden">Sort</span>
+              Date <Calendar size={14} />
+            </button>
+            <button
+              onClick={() => setSortDesc(p => !p)}
+              type="button"
+              className="flex shrink-0 items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white transition-transform duration-300 hover:scale-105 active:scale-95"
+            >
+              {sortDesc ? "Latest First" : "Oldest First"}
               <ChevronDown size={16} className={sortDesc ? "" : "rotate-180"} />
             </button>
           </div>
@@ -165,7 +171,7 @@ export default function FeedPage() {
         )}
       </div>
 
-      <aside className="grid w-full grid-cols-1 gap-6 sm:grid-cols-2 lg:w-75 lg:shrink-0 lg:grid-cols-1 lg:self-start lg:sticky lg:top-6">
+      <aside className="flex w-full flex-col gap-5 sm:flex-row lg:w-70 lg:shrink-0 lg:flex-col lg:self-start lg:sticky lg:top-8">
         <MarketTodayWidget />
         <CommunityRulesWidget />
       </aside>

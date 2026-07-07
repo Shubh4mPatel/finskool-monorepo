@@ -52,7 +52,7 @@ export default function FeedPostCard({
   const { date, time } = formatDateParts(timestamp);
 
   return (
-    <div className="rounded-2xl bg-white shadow-card transition-all duration-300 hover:shadow-card-hover">
+    <div className="rounded-2xl border border-lime bg-white shadow-card transition-all duration-300 hover:shadow-card-hover">
       <div className="p-5">
         {/* Header */}
         <div className="flex items-center justify-between gap-3">
@@ -64,7 +64,7 @@ export default function FeedPostCard({
 
             {/* Name + badges */}
             <div className="flex flex-wrap items-center gap-2">
-              <span className="font-display font-semibold text-primary">{displayName}</span>
+              <span className="font-sans text-sm font-bold text-primary">{displayName}</span>
               {communityName && (
                 <span className="flex items-center gap-1 rounded-full border border-accent/50 px-2.5 py-0.5 text-[11px] font-semibold text-accent">
                   ⚡ {communityName}
@@ -84,18 +84,18 @@ export default function FeedPostCard({
         </div>
 
         {/* Title */}
-        <h3 className="mt-4 font-display text-base font-bold leading-snug text-primary">
+        <h3 className="mt-4 font-display text-base font-semibold leading-snug text-primary">
           {title}
         </h3>
 
         {/* Body */}
         {bodyHtml ? (
           <div
-            className="mt-2 text-sm leading-relaxed text-muted [&_p]:my-0.5 [&_strong]:text-primary [&_code]:rounded [&_code]:bg-divider [&_code]:px-1"
+            className="mt-2 text-sm leading-relaxed text-[#5a6a60] [&_p]:my-0.5 [&_strong]:text-primary [&_code]:rounded [&_code]:bg-divider [&_code]:px-1"
             dangerouslySetInnerHTML={{ __html: bodyHtml }}
           />
         ) : body ? (
-          <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-muted">{body}</p>
+          <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-[#5a6a60]">{body}</p>
         ) : null}
 
         {/* Image */}
@@ -110,8 +110,8 @@ export default function FeedPostCard({
         <div className="mt-4 flex items-center justify-between gap-4">
           <div className="flex flex-wrap items-center gap-3">
             {tags.map(tag => (
-              <span key={tag} className="text-xs font-medium text-muted">
-                {tag}
+              <span key={tag} className="text-xs font-semibold text-primary">
+                {tag.startsWith('#') ? tag : `#${tag}`}
               </span>
             ))}
           </div>

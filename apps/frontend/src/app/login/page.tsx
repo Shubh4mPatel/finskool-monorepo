@@ -95,75 +95,82 @@ export default function LoginPage() {
       bullets={["Access your private investment community.", "Your email must be pre-approved by admin."]}
     >
       <div className="w-full max-w-md">
-        <span className="flex items-center gap-1 text-sm font-semibold text-accent">
-          <ChevronRight size={14} />
-          Member Login
-        </span>
+        {/* White card */}
+        <div className="rounded-2xl bg-white px-10 py-10 shadow-card">
+          <span className="flex items-center gap-1 text-sm font-semibold text-accent">
+            <ChevronRight size={14} />
+            Member Login
+          </span>
 
-        <h2 className="mt-2 font-display text-3xl font-bold text-primary">
-          Login to your <span className="text-accent">Community</span>
-        </h2>
+          <h2 className="mt-3 font-display text-3xl font-bold text-primary">
+            Login to your <br />
+            <span className="text-[#85cd78]">Community</span>
+          </h2>
 
-        <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-5">
-          <div>
-            <label className="text-sm font-semibold text-primary">Email Address</label>
-            <input
-              type="email"
-              placeholder="Enter your email address"
-              value={email}
-              onChange={(e) => changeEmail(e.target.value)}
-              onBlur={() => blurField("email", email)}
-              className={`mt-2 w-full rounded-xl border bg-white px-4 py-3 text-sm text-primary placeholder:text-subtle transition-colors focus:outline-none focus:border-accent ${
-                errors.email ? "border-red-400" : "border-divider"
-              }`}
-            />
-            {errors.email && (
-              <p className="mt-1.5 text-xs text-red-500">{errors.email}</p>
-            )}
-          </div>
-
-          <div>
-            <label className="text-sm font-semibold text-primary">Password</label>
-            <div className="mt-2">
-              <PasswordInput
-                placeholder="Enter your password"
-                value={password}
-                onChange={(e) => changePassword(e.target.value)}
-                onBlur={() => blurField("password", password)}
-                hasError={!!errors.password}
+          <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-5">
+            <div>
+              <label className="text-sm font-semibold text-primary">Email Address</label>
+              <input
+                type="email"
+                placeholder="Enter your e mail address"
+                value={email}
+                onChange={(e) => changeEmail(e.target.value)}
+                onBlur={() => blurField("email", email)}
+                className={`mt-2 w-full rounded-xl border bg-white px-4 py-3 text-sm text-primary placeholder:text-[#b0aba1] transition-colors focus:outline-none focus:border-accent ${
+                  errors.email ? "border-red-400" : "border-[#d6d2c8]"
+                }`}
               />
+              {errors.email && (
+                <p className="mt-1.5 text-xs text-red-500">{errors.email}</p>
+              )}
             </div>
-            {errors.password ? (
-              <p className="mt-1.5 text-xs text-red-500">{errors.password}</p>
-            ) : (
+
+            <div>
+              <label className="text-sm font-semibold text-primary">Password</label>
+              <div className="mt-2">
+                <PasswordInput
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(e) => changePassword(e.target.value)}
+                  onBlur={() => blurField("password", password)}
+                  hasError={!!errors.password}
+                />
+              </div>
+              {errors.password && (
+                <p className="mt-1.5 text-xs text-red-500">{errors.password}</p>
+              )}
               <div className="mt-2 text-right">
                 <a href="#" className="text-sm font-semibold text-accent transition-colors hover:text-primary">
                   Forgot Password?
                 </a>
               </div>
-            )}
-          </div>
+            </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="flex items-center justify-center gap-2 rounded-full bg-primary py-3 text-sm font-bold text-white shadow-glow transition-transform duration-300 hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {loading ? "Logging in…" : "Login to Community"}
-            {!loading && <ArrowRight size={16} />}
-          </button>
-        </form>
+            <button
+              type="submit"
+              disabled={loading}
+              className="mt-1 flex items-center justify-center gap-2 rounded-full py-4 px-8 text-sm font-bold text-white transition-transform duration-300 hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+              style={{ background: "linear-gradient(to right, #c1f26e, #108b8b)" }}
+            >
+              {loading ? "Logging in…" : "Login to Community"}
+              {!loading && <ArrowRight size={16} />}
+            </button>
+          </form>
 
-        <p className="mt-6 flex items-center justify-center gap-1.5 text-xs text-subtle">
-          <Lock size={12} />
-          Your details are never shared with other members
-        </p>
+          <hr className="mt-6 border-divider" />
 
-        <div className="mt-8 flex items-center justify-center gap-3 border-t border-divider pt-6">
+          <p className="mt-4 flex items-center justify-center gap-1.5 text-xs text-subtle">
+            <Lock size={12} />
+            Your details are never shared with other members
+          </p>
+        </div>
+
+        {/* Outside card — sign up prompt */}
+        <div className="mt-6 flex items-center justify-center gap-3">
           <span className="text-sm text-muted">Don&apos;t have an account?</span>
           <Link
             href="/signup"
-            className="rounded-full border border-accent px-4 py-1.5 text-sm font-bold text-accent transition-all duration-300 hover:bg-accent/5 hover:shadow-card"
+            className="rounded-full border border-accent px-5 py-1.5 text-sm font-semibold text-accent transition-all duration-300 hover:bg-accent/5"
           >
             Sign up
           </Link>
