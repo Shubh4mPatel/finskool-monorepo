@@ -16,6 +16,7 @@ router.use(authenticate)
 
 // Any authenticated user
 router.get('/', controller.list)
+router.get('/my-comments', controller.listCommented)
 
 // Admin-only — requireRole applied inline so it doesn't bleed into comment routes
 // that share the /api/v1/posts prefix (e.g. POST /api/v1/posts/:id/comments)

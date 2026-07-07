@@ -335,8 +335,8 @@ export default function PostThreads({
       setCount(c => Math.max(0, c - 1));
       await fetchComments();
       onChange?.();
-    } catch {
-      alert("Failed to delete comment");
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : "Failed to delete comment");
     }
   }
 

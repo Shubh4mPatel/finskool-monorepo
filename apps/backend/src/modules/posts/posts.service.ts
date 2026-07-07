@@ -2,7 +2,14 @@ import type { PrismaClient } from '../../generated/prisma/client.js'
 import { uploadFile, deleteFile } from '../../lib/minio.js'
 import { NotFoundError, BadRequestError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
-import type { CreatePostDTO, UpdatePostDTO, PostResponseDTO, PostFeedItemDTO, ListPostsResponseDTO } from './posts.dto.js'
+import type {
+  CreatePostDTO,
+  UpdatePostDTO,
+  PostResponseDTO,
+  PostFeedItemDTO,
+  ListPostsResponseDTO,
+  CommentedPostItemDTO,
+} from './posts.dto.js'
 
 export class PostsService {
   constructor(private readonly db: PrismaClient) {}
@@ -58,6 +65,43 @@ export class PostsService {
       pageSize,
       totalPages: Math.max(1, Math.ceil(total / pageSize)),
     }
+  }
+
+  async listCommentedPosts(userId: string): Promise<CommentedPostItemDTO[]> {
+    const grouped = await this.db.comment.groupBy({
+      by: ['postId'],
+      where: { authorId: userId, deletedAt: null },
+      _max: { createdAt: true },
+    })
+    if (grouped.length === 0) return []
+
+    const lastCommentedByPost = new Map(grouped.map(g => [g.postId, g._max.createdAt!]))
+
+    const posts = await this.db.post.findMany({
+      where: { id: { in: grouped.map(g => g.postId) }, deletedAt: null },
+      include: {
+        community: { select: { name: true, slug: true } },
+        _count: { select: { comments: { where: { deletedAt: null } } } },
+      },
+    })
+
+    return posts
+      .map(p => ({
+        id: p.id,
+        communityId: p.communityId,
+        communityName: p.community.name,
+        communitySlug: p.community.slug,
+        title: p.title,
+        content: p.contentMd,
+        imageUrls: p.imageUrls,
+        tags: p.tags,
+        pinOrder: p.pinOrder,
+        publishedAt: p.publishedAt,
+        createdAt: p.createdAt,
+        commentCount: p._count.comments,
+        lastCommentedAt: lastCommentedByPost.get(p.id)!,
+      }))
+      .sort((a, b) => b.lastCommentedAt.getTime() - a.lastCommentedAt.getTime())
   }
 
   async createPost(adminId: string, data: CreatePostDTO): Promise<PostResponseDTO> {

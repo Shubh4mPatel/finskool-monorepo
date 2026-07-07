@@ -50,6 +50,15 @@ export class PostsController {
     }
   }
 
+  listCommented = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const result = await this.service.listCommentedPosts(req.user!.id)
+      res.json({ success: true, data: result })
+    } catch (err) {
+      next(err)
+    }
+  }
+
   getUploadUrl = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const { filename } = uploadUrlQuerySchema.parse(req.query)

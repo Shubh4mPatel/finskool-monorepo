@@ -54,3 +54,19 @@ export interface ListPostsResponseDTO {
   pageSize: number
   totalPages: number
 }
+
+export interface CommentedPostItemDTO {
+  id: string
+  communityId: string
+  communityName: string
+  communitySlug: string
+  title: string
+  content: string
+  imageUrls: string[]
+  tags: string[]
+  pinOrder: number | null
+  publishedAt: Date | null
+  createdAt: Date
+  commentCount: number
+  lastCommentedAt: Date
+}
