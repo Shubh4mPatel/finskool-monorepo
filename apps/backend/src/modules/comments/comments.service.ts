@@ -19,8 +19,10 @@ export class CommentsService {
     if (!post) throw new NotFoundError('Post not found or not published')
 
     if (userRole !== 'admin') {
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
       const subscription = await this.db.subscription.findFirst({
-        where: { userId, communityId: post.communityId, isActive: true },
+        where: { userId, communityId: post.communityId, isActive: true, validUntil: { gte: today } },
       })
       if (!subscription) throw new ForbiddenError('You must be a community member to comment')
     }

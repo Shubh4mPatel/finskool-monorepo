@@ -40,6 +40,17 @@ router.post(
 router.get('/communities', authenticate, requireRole('admin'), controller.listCommunities)
 router.get('/members', authenticate, requireRole('admin'), controller.listMembers)
 router.post('/members', authenticate, requireRole('admin'), controller.addMember)
+router.post('/members/bulk-delete', authenticate, requireRole('admin'), controller.bulkDeleteMembers)
+router.delete('/members/:id', authenticate, requireRole('admin'), controller.deleteMember)
+router.patch('/members/:id/suspend', authenticate, requireRole('admin'), controller.suspendMember)
+router.patch('/members/:id/revoke', authenticate, requireRole('admin'), controller.revokeSuspension)
+
+router.post(
+  '/subscriptions/:id/extend',
+  authenticate,
+  requireRole('admin'),
+  controller.extendSubscription,
+)
 
 router.get('/comment-notifications', authenticate, requireRole('admin'), controller.listCommentNotifications)
 

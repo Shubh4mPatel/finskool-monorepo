@@ -18,6 +18,57 @@ export interface AddMemberResultDTO {
   validUntil: string
 }
 
+export interface ExtendSubscriptionDTO {
+  validUntil: string   // ISO date string YYYY-MM-DD
+  payment: number
+  paidOn?: string | undefined       // ISO date string YYYY-MM-DD, defaults to today
+}
+
+export interface ExtendSubscriptionResultDTO {
+  id: string
+  userId: string
+  communityId: string
+  payment: number
+  paidOn: string | null
+  validUntil: string
+  isActive: boolean
+}
+
+export interface DeleteMemberResultDTO {
+  approvedPhoneId: string
+  userId: string | null   // null only in the (shouldn't-happen) missing-User edge case
+  phone: string
+  isActive: boolean        // always false on success
+}
+
+export interface BulkDeleteMembersDTO {
+  approvedPhoneIds: string[]
+}
+
+export interface BulkDeleteMembersResultDTO {
+  total: number
+  succeeded: number
+  failed: number
+  errors: { approvedPhoneId: string; reason: string }[]
+}
+
+export interface SuspendMemberDTO {
+  reason: string
+}
+
+export interface SuspendMemberResultDTO {
+  approvedPhoneId: string
+  userId: string
+  isActive: boolean          // always false on success
+  suspensionReason: string
+}
+
+export interface RevokeSuspensionResultDTO {
+  approvedPhoneId: string
+  userId: string
+  isActive: boolean          // always true on success
+}
+
 export interface CommunityDTO {
   id: string
   name: string
@@ -49,6 +100,7 @@ export interface MemberItemDTO {
   isRegistered: boolean
   status: MemberStatus
   createdAt: string
+  suspensionReason: string | null   // set only when suspended via suspendMember(); null otherwise (incl. deleted)
   subscription: {
     id: string
     communityId: string

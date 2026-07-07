@@ -30,6 +30,7 @@ model User {
   passwordHash String?   @map("password_hash") @db.VarChar(255)
   role         UserRole  @default(member)
   isActive     Boolean   @default(true) @map("is_active")
+  suspensionReason String? @map("suspension_reason") @db.Text
   avatarUrl    String?   @map("avatar_url") @db.VarChar(500)
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
   deletedAt    DateTime? @map("deleted_at") @db.Timestamptz
@@ -81,10 +82,10 @@ model Subscription {
   approvedPhone ApprovedPhone @relation(fields: [approvedPhoneId], references: [id], onDelete: Cascade)
   community     Community     @relation(fields: [communityId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, communityId], name: "uq_subscription_user_community")
   @@index([userId], name: "idx_subscriptions_user")
   @@index([approvedPhoneId], name: "idx_subscriptions_approved_phone")
   @@index([communityId], name: "idx_subscriptions_community")
+  @@index([userId, communityId], name: "idx_subscriptions_user_community")
   @@map("subscriptions")
 }
 

@@ -12,6 +12,20 @@ const addMemberSchema = z.object({
   validUntil: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Valid until must be YYYY-MM-DD'),
 })
 
+const extendSubscriptionSchema = z.object({
+  validUntil: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Valid until must be YYYY-MM-DD'),
+  payment: z.number().positive('Payment must be a positive number'),
+  paidOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Paid on must be YYYY-MM-DD').optional(),
+})
+
+const bulkDeleteMembersSchema = z.object({
+  approvedPhoneIds: z.array(z.string().uuid()).min(1, 'At least one member id is required'),
+})
+
+const suspendMemberSchema = z.object({
+  reason: z.string().trim().min(1, 'A reason is required').max(1000, 'Reason is too long'),
+})
+
 const importQuerySchema = z.object({
   duplicateStrategy: z.enum(['skip', 'overwrite']).default('skip'),
 })
@@ -186,6 +200,65 @@ export class AdminController {
       if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
       const result = await this.service.addMember(parsed.data, req.user!.id)
       res.status(201).json({ success: true, data: result })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  extendSubscription = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const raw = req.params['id']
+      const id = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
+      const parsed = extendSubscriptionSchema.safeParse(req.body)
+      if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
+      const result = await this.service.extendSubscription(id, parsed.data)
+      res.status(201).json({ success: true, data: result })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  deleteMember = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const raw = req.params['id']
+      const id = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
+      const result = await this.service.deleteMember(id)
+      res.json({ success: true, data: result })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  bulkDeleteMembers = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const parsed = bulkDeleteMembersSchema.safeParse(req.body)
+      if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
+      const result = await this.service.bulkDeleteMembers(parsed.data.approvedPhoneIds)
+      res.json({ success: true, data: result })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  suspendMember = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const raw = req.params['id']
+      const id = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
+      const parsed = suspendMemberSchema.safeParse(req.body)
+      if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
+      const result = await this.service.suspendMember(id, parsed.data.reason)
+      res.json({ success: true, data: result })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  revokeSuspension = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const raw = req.params['id']
+      const id = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
+      const result = await this.service.revokeSuspension(id)
+      res.json({ success: true, data: result })
     } catch (err) {
       next(err)
     }

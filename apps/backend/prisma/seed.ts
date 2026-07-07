@@ -60,7 +60,7 @@ async function main() {
 
   const swingAlpha = await prisma.community.upsert({
     where: { slug: 'swing-alpha' },
-    update: {},
+    update: { coverImageUrl: swingAlphaUrl },
     create: {
       createdBy: admin.id,
       name: 'Swing Alpha',
@@ -72,7 +72,7 @@ async function main() {
 
   const investorCommunity = await prisma.community.upsert({
     where: { slug: 'investor-community' },
-    update: {},
+    update: { coverImageUrl: investorUrl },
     create: {
       createdBy: admin.id,
       name: 'Investor Community',

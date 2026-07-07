@@ -24,6 +24,7 @@ interface MemberItem {
   isRegistered: boolean;
   status: "registered" | "pending" | "expired" | "suspended";
   createdAt: string;
+  suspensionReason: string | null;
   subscription: MemberSubscription | null;
 }
 
@@ -74,7 +75,7 @@ function getPaginationPages(current: number, total: number): (number | null)[] {
   return [1, null, current - 1, current, current + 1, null, total];
 }
 
-type ModalType = "add" | "extend" | "delete" | "suspend" | "revoke" | null;
+type ModalType = "add" | "extend" | "delete" | "bulk-delete" | "suspend" | "revoke" | null;
 
 interface Community { id: string; name: string; slug: string }
 
@@ -103,6 +104,16 @@ export default function MembersPage() {
   const [modal, setModal] = useState<ModalType>(null);
   const [suspendReason, setSuspendReason] = useState("");
   const [extendDate, setExtendDate] = useState("");
+  const [extendPayment, setExtendPayment] = useState("");
+  const [extendErrors, setExtendErrors] = useState<{ payment?: string; extendDate?: string }>({});
+  const [extending, setExtending] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [selectedMember, setSelectedMember] = useState<MemberItem | null>(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [suspending, setSuspending] = useState(false);
+  const [revoking, setRevoking] = useState(false);
 
   // Communities
   const [communities, setCommunities] = useState<Community[]>([]);
@@ -159,6 +170,7 @@ export default function MembersPage() {
     if (paidDate) { params.set("paidFrom", paidDate); params.set("paidTo", paidDate); }
 
     setLoading(true);
+    setSelectedIds(new Set());
     api.get<MemberList>(`/api/v1/admin/members?${params.toString()}`)
       .then(data => {
         setMembers(data.members);
@@ -189,7 +201,178 @@ export default function MembersPage() {
     setNewMember(EMPTY_MEMBER);
     setMemberErrors({});
     setMemberTouched({});
+    setSelectedMember(null);
+    setExtendDate("");
+    setExtendPayment("");
+    setExtendErrors({});
+    setSuspendReason("");
   };
+
+  function toggleSelect(id: string) {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  const allSelectedOnPage = members.length > 0 && members.every(m => selectedIds.has(m.id));
+
+  function toggleSelectAll() {
+    setSelectedIds(prev => {
+      if (allSelectedOnPage) {
+        const next = new Set(prev);
+        members.forEach(m => next.delete(m.id));
+        return next;
+      }
+      const next = new Set(prev);
+      members.forEach(m => next.add(m.id));
+      return next;
+    });
+  }
+
+  function exitSelectMode() {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  }
+
+  async function handleBulkDelete() {
+    setBulkDeleting(true);
+    try {
+      const ids = Array.from(selectedIds);
+      const result = await api.post<{ total: number; succeeded: number; failed: number }>(
+        "/api/v1/admin/members/bulk-delete",
+        { approvedPhoneIds: ids },
+      );
+      if (result.failed > 0) {
+        toast.error(`Deactivated ${result.succeeded} of ${result.total} members — ${result.failed} failed.`);
+      } else {
+        toast.success({ title: "Members deactivated", message: `${result.succeeded} member(s) no longer have access.` });
+      }
+      close();
+      exitSelectMode();
+      refresh();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to bulk delete members");
+    } finally {
+      setBulkDeleting(false);
+    }
+  }
+
+  function openSuspendModal(m: MemberItem) {
+    setSelectedMember(m);
+    setSuspendReason("");
+    setModal("suspend");
+  }
+
+  async function handleSuspendMember() {
+    if (!selectedMember) return;
+    if (!suspendReason.trim()) {
+      toast.error("Please provide a reason for suspension");
+      return;
+    }
+    setSuspending(true);
+    try {
+      await api.patch(`/api/v1/admin/members/${selectedMember.id}/suspend`, { reason: suspendReason.trim() });
+      toast.success({ title: "Member suspended", message: `${selectedMember.name} can no longer sign in.` });
+      close();
+      refresh();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to suspend member");
+    } finally {
+      setSuspending(false);
+    }
+  }
+
+  function openRevokeModal(m: MemberItem) {
+    setSelectedMember(m);
+    setModal("revoke");
+  }
+
+  async function handleRevokeSuspension() {
+    if (!selectedMember) return;
+    setRevoking(true);
+    try {
+      await api.patch(`/api/v1/admin/members/${selectedMember.id}/revoke`, {});
+      toast.success({ title: "Suspension revoked", message: `${selectedMember.name} can sign in again.` });
+      close();
+      refresh();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to revoke suspension");
+    } finally {
+      setRevoking(false);
+    }
+  }
+
+  function openDeleteModal(m: MemberItem) {
+    setSelectedMember(m);
+    setModal("delete");
+  }
+
+  async function handleDeleteMember() {
+    if (!selectedMember) return;
+    setDeleting(true);
+    try {
+      await api.delete(`/api/v1/admin/members/${selectedMember.id}`);
+      toast.success({
+        title: "Member deactivated",
+        message: `${selectedMember.name} no longer has access to the platform.`,
+      });
+      close();
+      refresh();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to deactivate member");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  function openExtendModal(m: MemberItem) {
+    if (!m.subscription) {
+      toast.error("This member has no subscription to extend");
+      return;
+    }
+    setSelectedMember(m);
+    setExtendDate("");
+    setExtendPayment(String(m.subscription.payment));
+    setExtendErrors({});
+    setModal("extend");
+  }
+
+  function validateExtend(payment: string, validUntil: string): { payment?: string; extendDate?: string } {
+    const errs: { payment?: string; extendDate?: string } = {};
+    const amt = parseFloat(payment);
+    if (!payment || isNaN(amt) || amt <= 0) errs.payment = "Enter a valid payment amount";
+    if (!validUntil) errs.extendDate = "Extend date is required";
+    else if (new Date(validUntil) <= new Date()) errs.extendDate = "Extend date must be in the future";
+    return errs;
+  }
+
+  async function handleExtendSubscription() {
+    if (!selectedMember?.subscription) return;
+    const errs = validateExtend(extendPayment, extendDate);
+    setExtendErrors(errs);
+    if (Object.values(errs).some(Boolean)) return;
+
+    setExtending(true);
+    try {
+      await api.post(`/api/v1/admin/subscriptions/${selectedMember.subscription.id}/extend`, {
+        validUntil: extendDate,
+        payment: parseFloat(extendPayment),
+      });
+      toast.success({
+        title: "Subscription extended",
+        message: `${selectedMember.name}'s subscription is now valid until ${formatDate(extendDate)}`,
+      });
+      close();
+      refresh();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to extend subscription");
+    } finally {
+      setExtending(false);
+    }
+  }
 
   function blurMemberField(field: MemberField) {
     setMemberTouched(t => ({ ...t, [field]: true }));
@@ -254,10 +437,32 @@ export default function MembersPage() {
           <p className="mt-1 text-sm text-muted">View and manage all whitelisted members.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="flex items-center gap-2 rounded-full border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-500 transition-colors hover:bg-red-100">
-            <Trash2 size={14} />
-            Bulk Delete
-          </button>
+          {selectMode ? (
+            <>
+              <button
+                onClick={exitSelectMode}
+                className="flex items-center gap-2 rounded-full border border-divider px-4 py-2 text-sm font-semibold text-muted transition-colors hover:border-subtle hover:text-primary"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => setModal("bulk-delete")}
+                disabled={selectedIds.size === 0}
+                className="flex items-center gap-2 rounded-full border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-500 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Trash2 size={14} />
+                Delete Selected{selectedIds.size > 0 ? ` (${selectedIds.size})` : ""}
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => setSelectMode(true)}
+              className="flex items-center gap-2 rounded-full border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-500 transition-colors hover:bg-red-100"
+            >
+              <Trash2 size={14} />
+              Bulk Delete
+            </button>
+          )}
           <button
             onClick={() => setModal("add")}
             className="flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-bold text-white shadow-glow transition-transform duration-300 hover:scale-105 active:scale-95"
@@ -342,6 +547,15 @@ export default function MembersPage() {
               <div key={m.id} className="rounded-xl border border-divider p-4 transition-shadow hover:shadow-card">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
+                    {selectMode && (
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(m.id)}
+                        onChange={() => toggleSelect(m.id)}
+                        className="h-4 w-4 shrink-0 cursor-pointer rounded border-divider text-accent focus:ring-accent/40"
+                        aria-label={`Select ${m.name}`}
+                      />
+                    )}
                     <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-white">
                       {getInitials(m.name)}
                     </div>
@@ -366,12 +580,12 @@ export default function MembersPage() {
                   <div><p className="text-xs text-subtle">Added</p><p className="text-primary">{formatDate(m.createdAt)}</p></div>
                 </div>
                 <div className="mt-3 flex items-center gap-2 border-t border-divider pt-3">
-                  <button onClick={() => setModal("extend")} className="flex items-center gap-1 rounded-full border border-accent px-3 py-1 text-xs font-semibold text-accent transition-colors hover:bg-accent/5">
+                  <button onClick={() => openExtendModal(m)} disabled={!m.subscription} className="flex items-center gap-1 rounded-full border border-accent px-3 py-1 text-xs font-semibold text-accent transition-colors hover:bg-accent/5 disabled:cursor-not-allowed disabled:opacity-40">
                     <Plus size={10} /> Extend
                   </button>
                   <button onClick={() => setModal(null)} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-divider/60 hover:text-accent"><Pencil size={13} /></button>
-                  <button onClick={() => setModal(m.status === "pending" ? "revoke" : "suspend")} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-amber-50 hover:text-amber-500"><Ban size={13} /></button>
-                  <button onClick={() => setModal("delete")} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-red-50 hover:text-red-500"><Trash2 size={13} /></button>
+                  <button onClick={() => (m.status === "suspended" ? openRevokeModal(m) : openSuspendModal(m))} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-amber-50 hover:text-amber-500"><Ban size={13} /></button>
+                  <button onClick={() => openDeleteModal(m)} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-red-50 hover:text-red-500"><Trash2 size={13} /></button>
                 </div>
               </div>
             ))}
@@ -384,6 +598,17 @@ export default function MembersPage() {
             <table className="w-full min-w-[900px] text-left text-sm">
               <thead>
                 <tr className="text-xs font-semibold uppercase text-subtle">
+                  {selectMode && (
+                    <th className="py-3 pl-2 pr-3">
+                      <input
+                        type="checkbox"
+                        checked={allSelectedOnPage}
+                        onChange={toggleSelectAll}
+                        className="h-4 w-4 cursor-pointer rounded border-divider text-accent focus:ring-accent/40"
+                        aria-label="Select all on this page"
+                      />
+                    </th>
+                  )}
                   <th className="py-3 pl-2 pr-3">#</th>
                   <th className="px-3 py-3">Name</th>
                   <th className="px-3 py-3">Phone</th>
@@ -400,6 +625,17 @@ export default function MembersPage() {
               <tbody>
                 {members.map((m, i) => (
                   <tr key={m.id} className="border-t border-divider transition-colors hover:bg-background">
+                    {selectMode && (
+                      <td className="py-3 pl-2 pr-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(m.id)}
+                          onChange={() => toggleSelect(m.id)}
+                          className="h-4 w-4 cursor-pointer rounded border-divider text-accent focus:ring-accent/40"
+                          aria-label={`Select ${m.name}`}
+                        />
+                      </td>
+                    )}
                     <td className="py-3 pl-2 pr-3 text-xs text-subtle">{(page - 1) * 8 + i + 1}</td>
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-2">
@@ -427,16 +663,16 @@ export default function MembersPage() {
                     </td>
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-1">
-                        <button onClick={() => setModal("extend")} className="flex items-center gap-1 rounded-full border border-accent px-2.5 py-1 text-xs font-semibold text-accent transition-colors hover:bg-accent/5">
+                        <button onClick={() => openExtendModal(m)} disabled={!m.subscription} className="flex items-center gap-1 rounded-full border border-accent px-2.5 py-1 text-xs font-semibold text-accent transition-colors hover:bg-accent/5 disabled:cursor-not-allowed disabled:opacity-40">
                           <Plus size={10} /> Extend
                         </button>
                         <button onClick={() => setModal(null)} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-divider/60 hover:text-accent">
                           <Pencil size={13} />
                         </button>
-                        <button onClick={() => setModal(m.status === "pending" ? "revoke" : "suspend")} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-amber-50 hover:text-amber-500">
+                        <button onClick={() => (m.status === "suspended" ? openRevokeModal(m) : openSuspendModal(m))} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-amber-50 hover:text-amber-500">
                           <Ban size={13} />
                         </button>
-                        <button onClick={() => setModal("delete")} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-red-50 hover:text-red-500">
+                        <button onClick={() => openDeleteModal(m)} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-red-50 hover:text-red-500">
                           <Trash2 size={13} />
                         </button>
                       </div>
@@ -566,13 +802,16 @@ export default function MembersPage() {
       )}
 
       {/* Extend Subscription Modal */}
-      {modal === "extend" && (
+      {modal === "extend" && selectedMember?.subscription && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-primary/40 p-4 backdrop-blur-sm">
           <div className="animate-rise w-full max-w-sm rounded-2xl bg-white p-6 shadow-card-hover">
             <div className="flex items-center justify-between">
               <h3 className="font-display text-lg font-bold text-primary">Extend Subscription</h3>
               <button onClick={close} className="rounded-full p-1 text-subtle transition-colors hover:bg-divider/60 hover:text-primary"><X size={18} /></button>
             </div>
+            <p className="mt-1 text-sm text-muted">
+              {selectedMember.name} &middot; {selectedMember.subscription.communityName} &middot; currently valid till {formatDate(selectedMember.subscription.validUntil)}
+            </p>
             <div className="mt-5 flex flex-col gap-4">
               <div>
                 <label className="text-sm font-semibold text-primary">Current Date</label>
@@ -580,67 +819,131 @@ export default function MembersPage() {
                   className="mt-2 w-full rounded-xl border border-divider bg-divider/40 px-4 py-3 text-sm text-muted" />
               </div>
               <div>
+                <label className="text-sm font-semibold text-primary">Payment (₹)</label>
+                <input type="number" placeholder="4000" value={extendPayment}
+                  onChange={(e) => setExtendPayment(e.target.value)}
+                  className="mt-2 w-full rounded-xl border border-divider bg-white px-4 py-3 text-sm text-primary transition-colors focus:outline-none focus:ring-2 focus:ring-accent/40" />
+                {extendErrors.payment && <p className="mt-1 text-xs text-red-500">{extendErrors.payment}</p>}
+              </div>
+              <div>
                 <label className="text-sm font-semibold text-primary">Extend Date</label>
                 <input type="date" value={extendDate} onChange={(e) => setExtendDate(e.target.value)}
                   className="mt-2 w-full rounded-xl border border-divider bg-white px-4 py-3 text-sm text-primary transition-colors focus:outline-none focus:ring-2 focus:ring-accent/40" />
+                {extendErrors.extendDate && <p className="mt-1 text-xs text-red-500">{extendErrors.extendDate}</p>}
               </div>
             </div>
             <div className="mt-6 flex items-center gap-3">
-              <button onClick={close} className="flex-1 rounded-full border border-divider px-5 py-2.5 text-sm font-bold text-muted transition-colors hover:border-subtle hover:text-primary">Cancel</button>
-              <button onClick={close} className="flex-1 rounded-full bg-primary px-5 py-2.5 text-sm font-bold text-white transition-transform hover:scale-105 active:scale-95">Extend Subscription</button>
+              <button onClick={close} disabled={extending}
+                className="flex-1 rounded-full border border-divider px-5 py-2.5 text-sm font-bold text-muted transition-colors hover:border-subtle hover:text-primary disabled:opacity-50">
+                Cancel
+              </button>
+              <button onClick={handleExtendSubscription} disabled={extending}
+                className="flex-1 rounded-full bg-primary px-5 py-2.5 text-sm font-bold text-white transition-transform hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60">
+                {extending ? "Extending…" : "Extend Subscription"}
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Delete User Modal */}
-      {modal === "delete" && (
+      {/* Delete (Deactivate) Member Modal */}
+      {modal === "delete" && selectedMember && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-primary/40 p-4 backdrop-blur-sm">
           <div className="animate-rise w-full max-w-sm rounded-2xl bg-white p-6 shadow-card-hover text-center">
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100 text-red-500">
               <Trash2 size={20} />
             </div>
-            <h3 className="mt-4 font-display text-lg font-bold text-primary">Delete User?</h3>
-            <p className="mt-2 text-sm text-muted">This action will permanently delete this user. Do you wish to continue?</p>
+            <h3 className="mt-4 font-display text-lg font-bold text-primary">Deactivate Member?</h3>
+            <p className="mt-2 text-sm text-muted">
+              This will revoke {selectedMember.name}&rsquo;s access — they&rsquo;ll be logged out and won&rsquo;t be able to sign in again. Their posts and comments will remain visible. This can&rsquo;t be undone from here.
+            </p>
             <div className="mt-6 flex items-center gap-3">
-              <button onClick={close} className="flex-1 rounded-full border border-divider px-5 py-2.5 text-sm font-bold text-muted transition-colors hover:border-subtle hover:text-primary">Cancel</button>
-              <button onClick={close} className="flex-1 rounded-full bg-red-500 px-5 py-2.5 text-sm font-bold text-white transition-transform hover:scale-105 active:scale-95">Yes, Delete</button>
+              <button onClick={close} disabled={deleting}
+                className="flex-1 rounded-full border border-divider px-5 py-2.5 text-sm font-bold text-muted transition-colors hover:border-subtle hover:text-primary disabled:opacity-50">
+                Cancel
+              </button>
+              <button onClick={handleDeleteMember} disabled={deleting}
+                className="flex-1 rounded-full bg-red-500 px-5 py-2.5 text-sm font-bold text-white transition-transform hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60">
+                {deleting ? "Deactivating…" : "Yes, Deactivate"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Delete Modal */}
+      {modal === "bulk-delete" && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-primary/40 p-4 backdrop-blur-sm">
+          <div className="animate-rise w-full max-w-sm rounded-2xl bg-white p-6 shadow-card-hover text-center">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100 text-red-500">
+              <Trash2 size={20} />
+            </div>
+            <h3 className="mt-4 font-display text-lg font-bold text-primary">Deactivate {selectedIds.size} Member{selectedIds.size === 1 ? "" : "s"}?</h3>
+            <p className="mt-2 text-sm text-muted">
+              They&rsquo;ll be logged out and won&rsquo;t be able to sign in again. Their posts and comments will remain visible. This can&rsquo;t be undone from here.
+            </p>
+            <div className="mt-6 flex items-center gap-3">
+              <button onClick={close} disabled={bulkDeleting}
+                className="flex-1 rounded-full border border-divider px-5 py-2.5 text-sm font-bold text-muted transition-colors hover:border-subtle hover:text-primary disabled:opacity-50">
+                Cancel
+              </button>
+              <button onClick={handleBulkDelete} disabled={bulkDeleting}
+                className="flex-1 rounded-full bg-red-500 px-5 py-2.5 text-sm font-bold text-white transition-transform hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60">
+                {bulkDeleting ? "Deactivating…" : "Yes, Deactivate"}
+              </button>
             </div>
           </div>
         </div>
       )}
 
       {/* Suspend Modal */}
-      {modal === "suspend" && (
+      {modal === "suspend" && selectedMember && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-primary/40 p-4 backdrop-blur-sm">
           <div className="animate-rise w-full max-w-sm rounded-2xl bg-white p-6 shadow-card-hover">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-500"><Ban size={18} /></div>
               <h3 className="font-display text-lg font-bold text-primary">Add Reason for Suspension</h3>
             </div>
-            <p className="mt-2 text-sm text-muted">Please provide a reason for suspending this user.</p>
+            <p className="mt-2 text-sm text-muted">Suspending {selectedMember.name} will block them from signing in until revoked. Please provide a reason.</p>
             <textarea rows={4} value={suspendReason} onChange={(e) => setSuspendReason(e.target.value)} placeholder="Enter reason..."
               className="mt-4 w-full resize-none rounded-xl border border-divider bg-white px-4 py-3 text-sm placeholder:text-subtle transition-colors focus:outline-none focus:ring-2 focus:ring-accent/40" />
             <div className="mt-4 flex items-center gap-3">
-              <button onClick={close} className="flex-1 rounded-full border border-divider px-5 py-2.5 text-sm font-bold text-muted transition-colors hover:border-subtle hover:text-primary">Cancel</button>
-              <button onClick={close} className="flex-1 rounded-full bg-red-500 px-5 py-2.5 text-sm font-bold text-white transition-transform hover:scale-105 active:scale-95">Suspend</button>
+              <button onClick={close} disabled={suspending}
+                className="flex-1 rounded-full border border-divider px-5 py-2.5 text-sm font-bold text-muted transition-colors hover:border-subtle hover:text-primary disabled:opacity-50">
+                Cancel
+              </button>
+              <button onClick={handleSuspendMember} disabled={suspending}
+                className="flex-1 rounded-full bg-red-500 px-5 py-2.5 text-sm font-bold text-white transition-transform hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60">
+                {suspending ? "Suspending…" : "Suspend"}
+              </button>
             </div>
           </div>
         </div>
       )}
 
       {/* Revoke Suspension Modal */}
-      {modal === "revoke" && (
+      {modal === "revoke" && selectedMember && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-primary/40 p-4 backdrop-blur-sm">
           <div className="animate-rise w-full max-w-sm rounded-2xl bg-white p-6 shadow-card-hover text-center">
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-accent/10 text-accent">
               <Ban size={20} />
             </div>
             <h3 className="mt-4 font-display text-lg font-bold text-primary">Revoke Suspension?</h3>
-            <p className="mt-2 text-sm text-muted">This action will revoke the suspension, are you sure you want to continue?</p>
+            <p className="mt-2 text-sm text-muted">
+              This will restore {selectedMember.name}&rsquo;s access and let them sign in again.
+              {selectedMember.suspensionReason && (
+                <> Suspended for: <span className="italic">&ldquo;{selectedMember.suspensionReason}&rdquo;</span></>
+              )}
+            </p>
             <div className="mt-6 flex items-center gap-3">
-              <button onClick={close} className="flex-1 rounded-full border border-divider px-5 py-2.5 text-sm font-bold text-muted transition-colors hover:border-subtle hover:text-primary">Cancel</button>
-              <button onClick={close} className="flex-1 rounded-full bg-primary px-5 py-2.5 text-sm font-bold text-white transition-transform hover:scale-105 active:scale-95">Yes, Revoke</button>
+              <button onClick={close} disabled={revoking}
+                className="flex-1 rounded-full border border-divider px-5 py-2.5 text-sm font-bold text-muted transition-colors hover:border-subtle hover:text-primary disabled:opacity-50">
+                Cancel
+              </button>
+              <button onClick={handleRevokeSuspension} disabled={revoking}
+                className="flex-1 rounded-full bg-primary px-5 py-2.5 text-sm font-bold text-white transition-transform hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60">
+                {revoking ? "Revoking…" : "Yes, Revoke"}
+              </button>
             </div>
           </div>
         </div>

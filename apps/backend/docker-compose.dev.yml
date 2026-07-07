@@ -25,6 +25,9 @@ services:
       MINIO_ENDPOINT: minio
       MINIO_PUBLIC_ENDPOINT: localhost
       MINIO_PORT: "9000"
+      # Browser-facing URLs must use the host-mapped port (.env's MINIO_PORT), not the
+      # in-network port above — otherwise uploaded image URLs are unreachable from outside.
+      MINIO_PUBLIC_PORT: "${MINIO_PORT}"
     command: sh -c "npx prisma generate && npx prisma migrate deploy && npm run dev"
     ports:
       - "${PORT}:${PORT}"
