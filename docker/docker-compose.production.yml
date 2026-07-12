@@ -61,6 +61,34 @@ services:
       retries: 5
       start_period: 30s
 
+  # ── Notifications worker ───────────────────────────────────────────────────
+  finskool-worker:
+    image: finskool-backend:latest
+    container_name: finskool-worker
+    restart: unless-stopped
+    env_file:
+      - ../apps/backend/.env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+    command: ["node", "dist/worker.js"]
+    volumes:
+      # Shares the same seed-flag volume as finskool-backend: the image's
+      # ENTRYPOINT (docker-entrypoint.sh) runs `npm run db:seed` on first boot
+      # if this flag is missing. finskool-backend always starts (and seeds)
+      # first — this service depends on it being healthy — so by the time this
+      # container starts, the flag already exists here and seeding is skipped.
+      # Without this mount, seed.ts (which re-uploads cover images to MinIO on
+      # every run, not fully idempotent) would re-run on every worker restart.
+      - finskool-seed-flag:/data/seed
+    depends_on:
+      finskool-backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   # ── Frontend (Next.js) ─────────────────────────────────────────────────────
   finskool-frontend:
     build:

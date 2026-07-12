@@ -14,7 +14,7 @@ export class CommentsService {
   ): Promise<CommentTreeDTO> {
     const post = await this.db.post.findUnique({
       where: { id: postId, deletedAt: null, status: 'published' },
-      select: { id: true, communityId: true },
+      select: { id: true, communityId: true, title: true },
     })
     if (!post) throw new NotFoundError('Post not found or not published')
 
@@ -30,12 +30,13 @@ export class CommentsService {
     let depth = 0
     let parentPath: string | null = null
     let parentId: string | null = null
+    let parentAuthorId: string | null = null
     let parentAuthorRole: string | null = null
 
     if (data.parentCommentId) {
       const parent = await this.db.comment.findUnique({
         where: { id: data.parentCommentId, deletedAt: null },
-        select: { id: true, postId: true, depth: true, path: true, author: { select: { role: true } } },
+        select: { id: true, postId: true, authorId: true, depth: true, path: true, author: { select: { role: true } } },
       })
       if (!parent) throw new NotFoundError('Parent comment not found')
       if (parent.postId !== postId) {
@@ -44,6 +45,7 @@ export class CommentsService {
       depth = parent.depth + 1
       parentPath = parent.path
       parentId = parent.id
+      parentAuthorId = parent.authorId
       parentAuthorRole = parent.author.role
     }
 
@@ -67,6 +69,21 @@ export class CommentsService {
         await tx.commentNotification.updateMany({
           where: { commentId: parentId, isReplied: false },
           data: { isReplied: true, repliedAt: new Date() },
+        })
+      }
+
+      // Notify the parent comment's author on reply — synchronous (single row),
+      // same transaction as the comment write. Skip self-replies.
+      if (parentId && parentAuthorId && parentAuthorId !== userId) {
+        const replier = await tx.user.findUnique({ where: { id: userId }, select: { name: true } })
+        await tx.notification.create({
+          data: {
+            communityId: post.communityId,
+            userId: parentAuthorId,
+            type: 'thread',
+            sourceId: created.id,
+            message: `${replier?.name ?? 'Someone'} replied to your comment on "${post.title}"`,
+          },
         })
       }
 

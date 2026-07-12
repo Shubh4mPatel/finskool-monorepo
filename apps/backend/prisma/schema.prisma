@@ -42,6 +42,7 @@ model User {
   likes              PostLike[]
   communities        Community[]
   subscriptions      Subscription[]
+  notifications      Notification[]
 
   @@index([phone], name: "idx_users_phone")
   @@index([email], name: "idx_users_email")
@@ -103,6 +104,7 @@ model Community {
   members       CommunityMember[]
   posts         Post[]
   subscriptions Subscription[]
+  notifications Notification[]
 
   @@index([slug], name: "idx_communities_slug")
   @@index([createdBy], name: "idx_communities_created_by")
@@ -209,4 +211,25 @@ model PostLike {
   @@index([postId], name: "idx_likes_post")
   @@index([userId], name: "idx_likes_user")
   @@map("post_likes")
+}
+
+model Notification {
+  id          String   @id @default(uuid()) @db.Uuid
+  communityId String   @map("community_id") @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  type        String   @db.VarChar(50)
+  sourceId    String   @map("source_id") @db.Uuid
+  message     String   @db.Text
+  isRead      Boolean  @default(false) @map("is_read")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type, sourceId], name: "uq_notifications_user_type_source")
+  @@index([userId, createdAt(sort: Desc)], name: "idx_notifications_user_feed")
+  @@index([userId, isRead], name: "idx_notifications_user_unread")
+  @@index([communityId], name: "idx_notifications_community")
+  @@map("notifications")
 }

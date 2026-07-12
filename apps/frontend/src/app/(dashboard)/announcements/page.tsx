@@ -1,32 +1,25 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { RefreshCw, ShieldCheck } from "lucide-react";
+import { RefreshCw, Megaphone, MessagesSquare } from "lucide-react";
 import { api } from "@/lib/api";
 
-interface Post {
+interface Notification {
   id: string;
-  communityName: string;
-  title: string;
-  tags: string[];
-  pinOrder: number | null;
-  publishedAt: string | null;
+  communityId: string;
+  type: string;
+  message: string;
+  isRead: boolean;
   createdAt: string;
-  commentCount: number;
+  updatedAt: string;
 }
 
-interface ListPostsResponse {
-  posts: Post[];
+interface ListNotificationsResponse {
+  notifications: Notification[];
   total: number;
   page: number;
   pageSize: number;
   totalPages: number;
-}
-
-function isToday(dateStr: string): boolean {
-  const d = new Date(dateStr);
-  const now = new Date();
-  return d.toDateString() === now.toDateString();
 }
 
 function formatRelativeTime(isoStr: string): string {
@@ -39,46 +32,35 @@ function formatRelativeTime(isoStr: string): string {
   return `${Math.floor(diff / 86400)}d ago`;
 }
 
-function isCompanyPost(tags: string[]): boolean {
-  const companyKeywords = ["fundamental", "results", "nse", "bse", "ipo", "earnings", "dividend"];
-  return tags.some(t => companyKeywords.some(k => t.toLowerCase().includes(k)));
-}
-
-function AnnouncementCard({ post }: { post: Post }) {
-  const official = isCompanyPost(post.tags);
-  const initials = post.communityName
-    .split(" ")
-    .map(w => w[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-  const text = official
-    ? "A company you follow has released new financial results."
-    : `${post.communityName} shared a new market insight.`;
-  const timestamp = formatRelativeTime(post.publishedAt ?? post.createdAt);
+function NotificationCard({
+  notification,
+  onMarkRead,
+}: {
+  notification: Notification;
+  onMarkRead: (id: string) => void;
+}) {
+  const Icon = notification.type === "thread" ? MessagesSquare : Megaphone;
+  const timestamp = formatRelativeTime(notification.createdAt);
 
   return (
     <div className="flex items-center gap-4 rounded-2xl bg-white px-5 py-4 shadow-card">
-      {official ? (
-        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-primary text-white">
-          <ShieldCheck size={22} />
-        </div>
-      ) : (
-        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-primary/15 text-base font-bold text-primary">
-          {initials}
-        </div>
-      )}
+      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
+        <Icon size={22} />
+      </div>
       <div className="flex min-w-0 flex-1 flex-col gap-2">
-        <p className="text-base text-black">{text}</p>
+        <p className="text-base text-black">{notification.message}</p>
         <div className="flex items-center justify-between gap-2">
           <span className="text-sm text-black/60">{timestamp}</span>
-          <button
-            type="button"
-            className="shrink-0 rounded-full px-4 py-1.5 text-xs font-semibold text-white"
-            style={{ background: "linear-gradient(to right, #c1f26e, #108b8b)" }}
-          >
-            View
-          </button>
+          {!notification.isRead && (
+            <button
+              type="button"
+              onClick={() => onMarkRead(notification.id)}
+              className="shrink-0 rounded-full px-4 py-1.5 text-xs font-semibold text-white"
+              style={{ background: "linear-gradient(to right, #c1f26e, #108b8b)" }}
+            >
+              Mark as read
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -86,27 +68,37 @@ function AnnouncementCard({ post }: { post: Post }) {
 }
 
 export default function AnnouncementsPage() {
-  const [posts, setPosts] = useState<Post[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchPosts = useCallback(async () => {
+  const fetchNotifications = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await api.get<ListPostsResponse>("/api/v1/posts?page=1&pageSize=20");
-      setPosts(data.posts);
+      const data = await api.get<ListNotificationsResponse>("/api/v1/notifications?page=1&pageSize=20");
+      setNotifications(data.notifications);
     } catch {
-      setPosts([]);
+      setNotifications([]);
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchPosts();
-  }, [fetchPosts]);
+    fetchNotifications();
+  }, [fetchNotifications]);
 
-  const recent = posts.filter(p => isToday(p.publishedAt ?? p.createdAt));
-  const previous = posts.filter(p => !isToday(p.publishedAt ?? p.createdAt));
+  const markRead = useCallback(async (id: string) => {
+    setNotifications(prev => prev.map(n => (n.id === id ? { ...n, isRead: true } : n)));
+    try {
+      await api.patch(`/api/v1/notifications/${id}/read`, {});
+      window.dispatchEvent(new Event("notifications:updated"));
+    } catch {
+      // best-effort optimistic update; a manual refresh will reconcile on failure
+    }
+  }, []);
+
+  const unread = notifications.filter(n => !n.isRead);
+  const read = notifications.filter(n => n.isRead);
 
   return (
     <div className="flex flex-col gap-6">
@@ -114,7 +106,7 @@ export default function AnnouncementsPage() {
       <div className="flex items-center justify-between gap-4">
         <h1 className="font-display text-xl font-semibold text-primary">Announcement</h1>
         <button
-          onClick={fetchPosts}
+          onClick={fetchNotifications}
           type="button"
           className="flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white ring-1 ring-white/20"
         >
@@ -131,20 +123,20 @@ export default function AnnouncementsPage() {
         </div>
       ) : (
         <>
-          {/* Recent */}
+          {/* New / unread */}
           <section className="flex flex-col gap-3">
             <div className="flex items-center gap-2">
-              <h2 className="font-display text-lg font-semibold text-primary">Recent</h2>
-              {recent.length > 0 && (
+              <h2 className="font-display text-lg font-semibold text-primary">New</h2>
+              {unread.length > 0 && (
                 <span className="h-2.5 w-2.5 rounded-full bg-[#dc2626]" />
               )}
             </div>
-            {recent.length === 0 ? (
-              <p className="text-sm text-muted">No new announcements today.</p>
+            {unread.length === 0 ? (
+              <p className="text-sm text-muted">No new notifications.</p>
             ) : (
               <div className="flex flex-col gap-3">
-                {recent.map(post => (
-                  <AnnouncementCard key={post.id} post={post} />
+                {unread.map(notification => (
+                  <NotificationCard key={notification.id} notification={notification} onMarkRead={markRead} />
                 ))}
               </div>
             )}
@@ -153,15 +145,15 @@ export default function AnnouncementsPage() {
           {/* Divider */}
           <div className="h-0.5 bg-[#d9d9d9]" />
 
-          {/* Previous */}
+          {/* Earlier / read */}
           <section className="flex flex-col gap-3">
-            <h2 className="font-display text-lg font-semibold text-primary">Previous</h2>
-            {previous.length === 0 ? (
-              <p className="text-sm text-muted">No earlier announcements.</p>
+            <h2 className="font-display text-lg font-semibold text-primary">Earlier</h2>
+            {read.length === 0 ? (
+              <p className="text-sm text-muted">No earlier notifications.</p>
             ) : (
               <div className="flex flex-col gap-3">
-                {previous.map(post => (
-                  <AnnouncementCard key={post.id} post={post} />
+                {read.map(notification => (
+                  <NotificationCard key={notification.id} notification={notification} onMarkRead={markRead} />
                 ))}
               </div>
             )}
@@ -171,4 +163,3 @@ export default function AnnouncementsPage() {
     </div>
   );
 }
-

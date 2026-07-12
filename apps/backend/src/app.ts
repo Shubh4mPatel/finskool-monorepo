@@ -9,6 +9,7 @@ import authRoutes from './modules/auth/auth.routes.js'
 import adminRoutes from './modules/admin/admin.routes.js'
 import postsRoutes from './modules/posts/posts.routes.js'
 import commentsRoutes from './modules/comments/comments.routes.js'
+import notificationsRoutes from './modules/notifications/notifications.routes.js'
 import prisma from './lib/prisma.js'
 
 function buildCorsOptions(): CorsOptions {
@@ -39,6 +40,7 @@ export function createApp() {
   app.use('/api/v1/admin', adminRoutes)
   app.use('/api/v1/posts', postsRoutes)
   app.use('/api/v1', commentsRoutes)
+  app.use('/api/v1/notifications', notificationsRoutes)
 
   app.get('/api/v1/communities', async (_req, res, next) => {
     try {

@@ -28,9 +28,25 @@ export default function Sidebar() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [session, setSession] = useState<SessionInfo | null>(null);
+  const [unreadCount, setUnreadCount] = useState<number | null>(null);
 
   useEffect(() => {
     setSession(getSession());
+  }, []);
+
+  useEffect(() => {
+    const load = () =>
+      api
+        .get<{ count: number }>("/api/v1/notifications/unread-count")
+        .then((d) => setUnreadCount(d.count))
+        .catch(() => {});
+    load();
+    const interval = setInterval(load, 45_000);
+    window.addEventListener("notifications:updated", load);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("notifications:updated", load);
+    };
   }, []);
 
   async function handleLogout() {
@@ -95,6 +111,7 @@ export default function Sidebar() {
         {navItems.map((item) => {
           const isActive = pathname?.startsWith(item.href);
           const Icon = item.icon;
+          const count = item.href === "/announcements" ? unreadCount : item.count;
           return (
             <Link
               key={item.href}
@@ -110,11 +127,11 @@ export default function Sidebar() {
                 <Icon size={18} />
                 {item.label}
               </span>
-              {item.count !== null && (
+              {count !== null && count > 0 && (
                 <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
                   isActive ? "bg-white/25 text-white" : "bg-primary/10 text-primary"
                 }`}>
-                  {item.count}
+                  {count}
                 </span>
               )}
             </Link>

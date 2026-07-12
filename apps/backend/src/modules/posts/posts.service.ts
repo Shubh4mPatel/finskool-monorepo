@@ -1,5 +1,6 @@
 import type { PrismaClient } from '../../generated/prisma/client.js'
 import { uploadFile, deleteFile } from '../../lib/minio.js'
+import { notificationsQueue, COMMUNITY_POST_JOB } from '../../lib/queue.js'
 import { NotFoundError, BadRequestError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
 import type {
@@ -174,6 +175,29 @@ export class PostsService {
       where: { id: postId },
       data: { status: 'published', publishedAt: new Date() },
     })
+
+    try {
+      await notificationsQueue.add(
+        COMMUNITY_POST_JOB,
+        {
+          communityId: updated.communityId,
+          postId: updated.id,
+          message: `New post: "${updated.title}"`,
+          triggeredByUserId: updated.authorId,
+        },
+        {
+          jobId: `post-published-${updated.id}`,
+          attempts: 5,
+          backoff: { type: 'exponential', delay: 5000 },
+          removeOnComplete: true,
+          removeOnFail: { count: 500 },
+        },
+      )
+    } catch (err) {
+      // Publish already succeeded at the DB level — a queue/Redis outage
+      // shouldn't fail the request.
+      logger.error({ err, postId: updated.id }, 'posts.publish: failed to enqueue notification job')
+    }
 
     logger.info({ postId }, 'posts.publish: success')
     return this.toResponse(updated)

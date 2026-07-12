@@ -55,7 +55,32 @@
       "Bash(curl -s -b /tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/2645e7d3-02bd-44d2-b0bb-d2385b873db1/scratchpad/admin-cj.txt -X POST http://localhost:3001/api/v1/admin/members/bulk-delete -H 'Content-Type: application/json' -d '{\"approvedPhoneIds\":[\"d70c226e-ba29-4e33-8085-d779a79df816\",\"040eb1ad-6543-40c6-b6c2-661e2a711643\",\"00000000-0000-4000-8000-000000000000\"]}' -w '\\\\nHTTP %{http_code}\\\\n')",
       "Bash(grep -n 'aria-label={`Select \\\\${m.name}`}\\\\|aria-label=\"Select all on this page\"' /home/shubh4m/projects/finskool-monorepo/apps/frontend/src/app/admin/members/page.tsx)",
       "Bash(grep -n \"aria-label={\\\\`Select \\\\${m.name}\\\\`}\" /home/shubh4m/projects/finskool-monorepo/apps/frontend/src/app/admin/members/page.tsx)",
-      "Bash(grep -n \"Select \\\\${m.name}\" /home/shubh4m/projects/finskool-monorepo/apps/frontend/src/app/admin/members/page.tsx)"
+      "Bash(grep -n \"Select \\\\${m.name}\" /home/shubh4m/projects/finskool-monorepo/apps/frontend/src/app/admin/members/page.tsx)",
+      "Bash(docker cp *)",
+      "Bash(curl -s -c /tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/8750fbd9-1edb-4d3f-b623-da0dec31a255/scratchpad/cookies.txt -X POST http://localhost:3001/api/v1/auth/login -H 'Content-Type: application/json' -d '{\"identifier\":\"admin@finskool.com\",\"password\":\"Admin@123\"}')",
+      "Bash(curl -s -c /tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/8750fbd9-1edb-4d3f-b623-da0dec31a255/scratchpad/cookies.txt -X POST http://localhost:3001/api/v1/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"admin@finskool.com\",\"password\":\"Admin@123\"}')",
+      "Bash(curl -s -b /tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/8750fbd9-1edb-4d3f-b623-da0dec31a255/scratchpad/cookies.txt -X POST http://localhost:3001/api/v1/posts -H 'Content-Type: application/json' -d '{\"communityId\":\"d4141bd5-8e94-4a63-b17e-85f66188260f\",\"title\":\"Notification test post\",\"content\":\"Testing the notification fan-out.\",\"tags\":[],\"imageUrls\":[]}')",
+      "Bash(time curl -s -b /tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/8750fbd9-1edb-4d3f-b623-da0dec31a255/scratchpad/cookies.txt -X PATCH http://localhost:3001/api/v1/posts/8c6fcf1a-da9b-4b18-bd63-a5aa46aba2ac/publish)",
+      "Bash(docker restart *)",
+      "Bash(curl -s -c /tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/8750fbd9-1edb-4d3f-b623-da0dec31a255/scratchpad/cookies_a.txt -X POST http://localhost:3001/api/v1/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"test.member.a@example.com\",\"password\":\"TestPass@123\"}')",
+      "Bash(curl -s -c /tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/8750fbd9-1edb-4d3f-b623-da0dec31a255/scratchpad/cookies_b.txt -X POST http://localhost:3001/api/v1/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"test.member.b@example.com\",\"password\":\"TestPass@123\"}')",
+      "Bash(curl -s -b /tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/8750fbd9-1edb-4d3f-b623-da0dec31a255/scratchpad/cookies_a.txt -X POST http://localhost:3001/api/v1/posts/0d34b4dd-6b35-42a8-9dd7-9c248fbedb1b/comments -H 'Content-Type: application/json' -d '{\"content\":\"This is member A replying\",\"parentCommentId\":\"__CMDSUB_OUTPUT__\"}')",
+      "Bash(curl -s -b /tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/8750fbd9-1edb-4d3f-b623-da0dec31a255/scratchpad/cookies_b.txt -X POST http://localhost:3001/api/v1/posts/0d34b4dd-6b35-42a8-9dd7-9c248fbedb1b/comments -H 'Content-Type: application/json' -d '{\"content\":\"Member B replying to self\",\"parentCommentId\":\"__CMDSUB_OUTPUT__\"}')",
+      "Bash(curl -s -b /tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/8750fbd9-1edb-4d3f-b623-da0dec31a255/scratchpad/cookies_b.txt 'http://localhost:3001/api/v1/notifications?page=1&pageSize=20')",
+      "Bash(curl -s -b /tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/8750fbd9-1edb-4d3f-b623-da0dec31a255/scratchpad/cookies_b.txt http://localhost:3001/api/v1/notifications/unread-count)",
+      "Bash(curl -s -b /tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/8750fbd9-1edb-4d3f-b623-da0dec31a255/scratchpad/cookies_b.txt -X PATCH http://localhost:3001/api/v1/notifications/34c2e515-9589-4dd2-a7da-93ec6bcae7ad/read)",
+      "Bash(curl -s -b /tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/8750fbd9-1edb-4d3f-b623-da0dec31a255/scratchpad/cookies_b.txt -X PATCH http://localhost:3001/api/v1/notifications/mark-all-read)",
+      "Bash(curl -s -b /tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/8750fbd9-1edb-4d3f-b623-da0dec31a255/scratchpad/cookies_a.txt -X PATCH http://localhost:3001/api/v1/notifications/34c2e515-9589-4dd2-a7da-93ec6bcae7ad/read)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000)",
+      "Bash(python3 -c \"import playwright; print\\('py playwright available'\\)\")",
+      "Bash(npx playwright *)",
+      "Bash(ls ~/.cache/ms-playwright 2>&1)",
+      "Read(//home/shubh4m/.cache/ms-playwright/**)",
+      "Bash(npm init *)",
+      "Bash(npm install *)",
+      "Bash(node pw_test.js)",
+      "Bash(node pw_verify.js)",
+      "Bash(rm -rf /tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/8750fbd9-1edb-4d3f-b623-da0dec31a255/scratchpad/node_modules /tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/8750fbd9-1edb-4d3f-b623-da0dec31a255/scratchpad/package*.json)"
     ]
   }
 }
