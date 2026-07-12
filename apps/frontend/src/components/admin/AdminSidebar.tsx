@@ -23,8 +23,8 @@ import {
 const navItems = [
   { href: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/create-post", label: "Create Post", icon: Pencil },
-  { href: "/admin/feed", label: "Feed", icon: LayoutGrid, badge: 1 },
-  { href: "/admin/all-posts", label: "All Posts", icon: List, badge: 1 },
+  { href: "/admin/feed", label: "Feed", icon: LayoutGrid },
+  { href: "/admin/all-posts", label: "All Posts", icon: List },
   { href: "/admin/unresolved-threads", label: "Unreplied Threads", icon: MessagesSquare, badge: undefined as number | undefined },
   { href: "/admin/members", label: "Members", icon: Users },
   { href: "/admin/import-csv", label: "Import CSV", icon: Upload },
