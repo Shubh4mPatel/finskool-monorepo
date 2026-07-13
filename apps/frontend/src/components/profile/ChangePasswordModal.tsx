@@ -1,21 +1,27 @@
 "use client";
 
 import { Lock, X } from "lucide-react";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import PasswordInput from "@/components/auth/PasswordInput";
 
-export default function ChangePasswordModal() {
+export default function ChangePasswordModal({ trigger }: { trigger?: ReactNode }) {
   const [open, setOpen] = useState(false);
 
   return (
     <>
-      <button
-        onClick={() => setOpen(true)}
-        className="flex items-center justify-center gap-2 rounded-full border border-accent px-5 py-2.5 text-sm font-bold text-accent transition-all duration-300 hover:bg-accent/5 hover:shadow-card"
-      >
-        <Lock size={14} />
-        Change Password
-      </button>
+      {trigger ? (
+        <span onClick={() => setOpen(true)} className="contents">
+          {trigger}
+        </span>
+      ) : (
+        <button
+          onClick={() => setOpen(true)}
+          className="flex items-center justify-center gap-2 rounded-full border border-accent px-5 py-2.5 text-sm font-bold text-accent transition-all duration-300 hover:bg-accent/5 hover:shadow-card"
+        >
+          <Lock size={14} />
+          Change Password
+        </button>
+      )}
 
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-primary/40 p-4 backdrop-blur-sm">

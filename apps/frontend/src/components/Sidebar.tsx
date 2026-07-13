@@ -71,8 +71,8 @@ export default function Sidebar() {
         >
           <ArrowLeft size={15} />
         </button>
-        <div className="mt-4 flex flex-col items-center gap-2">
-          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-primary text-xl font-bold text-white ring-2 ring-primary/20 ring-offset-2 ring-offset-white">
+        <Link href="/profile" className="mt-4 flex flex-col items-center gap-2">
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-primary text-xl font-bold text-white ring-2 ring-primary/20 ring-offset-2 ring-offset-white transition-transform hover:scale-105">
             {displayInitials}
           </div>
           <p className="font-semibold text-primary">{displayName}</p>
@@ -81,7 +81,7 @@ export default function Sidebar() {
               ⚡ {communityName}
             </span>
           )}
-        </div>
+        </Link>
       </div>
 
       {/* Mobile header: hamburger + community chip + avatar */}
@@ -100,9 +100,13 @@ export default function Sidebar() {
             ⚡ {communityName}
           </span>
         )}
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-white">
+        <Link
+          href="/profile"
+          onClick={() => setOpen(false)}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-white"
+        >
           {displayInitials}
-        </div>
+        </Link>
       </div>
 
       <div className={`${open ? "block" : "hidden"} h-px w-full bg-divider lg:block`} />
