@@ -1,6 +1,7 @@
 import type { PrismaClient } from '../../generated/prisma/client.js'
 import { uploadFile, deleteFile } from '../../lib/minio.js'
 import { notificationsQueue, COMMUNITY_POST_JOB } from '../../lib/queue.js'
+import { assertCommunityAccess } from '../../lib/community-access.js'
 import { NotFoundError, BadRequestError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
 import type {
@@ -110,6 +111,7 @@ export class PostsService {
       where: { id: data.communityId, deletedAt: null },
     })
     if (!community) throw new NotFoundError('Community not found')
+    await assertCommunityAccess(this.db, adminId, data.communityId)
 
     const post = await this.db.post.create({
       data: {
@@ -126,9 +128,10 @@ export class PostsService {
     return this.toResponse(post)
   }
 
-  async updatePost(postId: string, data: UpdatePostDTO): Promise<PostResponseDTO> {
+  async updatePost(postId: string, adminId: string, data: UpdatePostDTO): Promise<PostResponseDTO> {
     const post = await this.db.post.findUnique({ where: { id: postId, deletedAt: null } })
     if (!post) throw new NotFoundError('Post not found')
+    await assertCommunityAccess(this.db, adminId, post.communityId)
 
     let imageUrls = post.imageUrls
 
@@ -154,9 +157,10 @@ export class PostsService {
     return this.toResponse(updated)
   }
 
-  async deletePost(postId: string): Promise<void> {
+  async deletePost(postId: string, adminId: string): Promise<void> {
     const post = await this.db.post.findUnique({ where: { id: postId, deletedAt: null } })
     if (!post) throw new NotFoundError('Post not found')
+    await assertCommunityAccess(this.db, adminId, post.communityId)
 
     await this.db.post.update({
       where: { id: postId },
@@ -166,9 +170,10 @@ export class PostsService {
     logger.info({ postId }, 'posts.delete: soft deleted')
   }
 
-  async publishPost(postId: string): Promise<PostResponseDTO> {
+  async publishPost(postId: string, adminId: string): Promise<PostResponseDTO> {
     const post = await this.db.post.findUnique({ where: { id: postId, deletedAt: null } })
     if (!post) throw new NotFoundError('Post not found')
+    await assertCommunityAccess(this.db, adminId, post.communityId)
     if (post.status === 'published') throw new BadRequestError('Post is already published')
 
     const updated = await this.db.post.update({
@@ -203,9 +208,10 @@ export class PostsService {
     return this.toResponse(updated)
   }
 
-  async pinPost(postId: string, pinOrder: 1 | 2 | 3 | null): Promise<PostResponseDTO> {
+  async pinPost(postId: string, adminId: string, pinOrder: 1 | 2 | 3 | null): Promise<PostResponseDTO> {
     const post = await this.db.post.findUnique({ where: { id: postId, deletedAt: null } })
     if (!post) throw new NotFoundError('Post not found')
+    await assertCommunityAccess(this.db, adminId, post.communityId)
 
     const updated = await this.db.$transaction(async tx => {
       // If pinning, auto-unpin any existing pinned post in the same community

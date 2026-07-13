@@ -1,4 +1,5 @@
 import type { PrismaClient, UserRole } from '../../generated/prisma/client.js'
+import { assertCommunityAccess } from '../../lib/community-access.js'
 import { NotFoundError, ForbiddenError, BadRequestError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
 import type { CreateCommentDTO, CommentTreeDTO, CommentListDTO } from './comments.dto.js'
@@ -17,6 +18,10 @@ export class CommentsService {
       select: { id: true, communityId: true, title: true },
     })
     if (!post) throw new NotFoundError('Post not found or not published')
+
+    if (userRole === 'admin') {
+      await assertCommunityAccess(this.db, userId, post.communityId)
+    }
 
     if (userRole !== 'admin') {
       const today = new Date()

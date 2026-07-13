@@ -76,11 +76,20 @@ export interface CommunityDTO {
   coverImageUrl: string | null
 }
 
+export interface AdminUserDTO {
+  id: string
+  name: string
+  email: string
+  isSuperAdmin: boolean
+  communityAccess: { id: string; name: string; slug: string }[]
+}
+
 // Status is derived, not stored
 export type MemberStatus = 'registered' | 'pending' | 'expired' | 'suspended'
 
 export interface MemberListFilters {
   communityId?: string | undefined
+  communityIds?: string[] | undefined
   status?: MemberStatus | undefined
   validFrom?: string | undefined
   validTo?: string | undefined

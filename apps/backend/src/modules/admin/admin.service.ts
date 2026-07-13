@@ -1,5 +1,6 @@
 import { createRequire } from 'module'
 import type { PrismaClient } from '../../generated/prisma/client.js'
+import { assertSuperAdmin } from '../../lib/community-access.js'
 import { BadRequestError, ConflictError, NotFoundError, ForbiddenError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
 import type {
@@ -19,6 +20,7 @@ import type {
   SuspendMemberResultDTO,
   RevokeSuspensionResultDTO,
   CommunityDTO,
+  AdminUserDTO,
   MemberListFilters,
   MemberListDTO,
   MemberItemDTO,
@@ -634,6 +636,50 @@ export class AdminService {
     return communities
   }
 
+  async listAdmins(): Promise<AdminUserDTO[]> {
+    const admins = await this.db.user.findMany({
+      where: { role: 'admin', deletedAt: null },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        isSuperAdmin: true,
+        communityAccess: { select: { community: { select: { id: true, name: true, slug: true } } } },
+      },
+      orderBy: { name: 'asc' },
+    })
+    return admins.map(a => ({
+      id: a.id,
+      name: a.name,
+      email: a.email,
+      isSuperAdmin: a.isSuperAdmin,
+      communityAccess: a.communityAccess.map(ca => ca.community),
+    }))
+  }
+
+  async grantCommunityAccess(requestingAdminId: string, targetAdminId: string, communityId: string): Promise<void> {
+    await assertSuperAdmin(this.db, requestingAdminId)
+
+    const target = await this.db.user.findUnique({ where: { id: targetAdminId } })
+    if (!target || target.role !== 'admin') throw new NotFoundError('Admin not found')
+
+    const community = await this.db.community.findUnique({ where: { id: communityId, deletedAt: null } })
+    if (!community) throw new NotFoundError('Community not found')
+
+    await this.db.communityAdmin.upsert({
+      where: { uq_community_admin: { communityId, adminId: targetAdminId } },
+      create: { communityId, adminId: targetAdminId },
+      update: {},
+    })
+    logger.info({ targetAdminId, communityId }, 'admin.grantCommunityAccess: success')
+  }
+
+  async revokeCommunityAccess(requestingAdminId: string, targetAdminId: string, communityId: string): Promise<void> {
+    await assertSuperAdmin(this.db, requestingAdminId)
+    await this.db.communityAdmin.deleteMany({ where: { adminId: targetAdminId, communityId } })
+    logger.info({ targetAdminId, communityId }, 'admin.revokeCommunityAccess: success')
+  }
+
   async addMember(data: AddMemberDTO, adminId: string): Promise<AddMemberResultDTO> {
     const digits = data.phone.replace(/\D/g, '')
     const phone =
@@ -817,7 +863,7 @@ export class AdminService {
   }
 
   async listMembers(filters: MemberListFilters): Promise<MemberListDTO> {
-    const { communityId, status, validFrom, validTo, paidFrom, paidTo, search, page, pageSize } = filters
+    const { communityId, communityIds, status, validFrom, validTo, paidFrom, paidTo, search, page, pageSize } = filters
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
@@ -829,6 +875,7 @@ export class AdminService {
     const subWhere: Record<string, unknown> = { isActive: true }
     let hasSubFilter = false
     if (communityId) { subWhere['communityId'] = communityId; hasSubFilter = true }
+    else if (communityIds) { subWhere['communityId'] = { in: communityIds }; hasSubFilter = true }
     if (validFrom || validTo) {
       subWhere['validUntil'] = {
         ...(validFrom ? { gte: new Date(validFrom) } : {}),

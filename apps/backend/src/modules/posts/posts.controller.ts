@@ -3,6 +3,9 @@ import { z } from 'zod'
 import type { PostsService } from './posts.service.js'
 import { createPostSchema, updatePostSchema, pinPostSchema } from './posts.validator.js'
 import { generateUploadUrl } from '../../lib/minio.js'
+import { getAccessibleCommunityIds } from '../../lib/community-access.js'
+import { ForbiddenError } from '../../shared/errors/index.js'
+import prisma from '../../lib/prisma.js'
 
 const uploadUrlQuerySchema = z.object({
   filename: z.string().min(1, 'filename is required'),
@@ -31,8 +34,19 @@ export class PostsController {
       let listParams: { page: number; pageSize: number; communityId?: string; communityIds?: string[] }
 
       if (user.role === 'admin') {
-        // Admin: use client-provided query param (can see all communities)
-        listParams = { page, pageSize, ...(communityId !== undefined && { communityId }) }
+        const accessible = await getAccessibleCommunityIds(prisma, user.id)
+        if (accessible === null) {
+          // Super admin: use client-provided query param (can see all communities)
+          listParams = { page, pageSize, ...(communityId !== undefined && { communityId }) }
+        } else if (communityId !== undefined) {
+          if (!accessible.includes(communityId)) {
+            throw new ForbiddenError('You do not have access to this community', 'COMMUNITY_ACCESS_DENIED')
+          }
+          listParams = { page, pageSize, communityId }
+        } else {
+          // Scoped admin with no community specified: restrict to their granted set
+          listParams = { page, pageSize, communityIds: accessible }
+        }
       } else {
         // Member: use selectedCommunityId from JWT (set at login or via select-community endpoint)
         if (user.selectedCommunityId) {
@@ -82,7 +96,7 @@ export class PostsController {
   update = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const data = updatePostSchema.parse(req.body)
-      const post = await this.service.updatePost(getParam(req, 'id'), data)
+      const post = await this.service.updatePost(getParam(req, 'id'), req.user!.id, data)
       res.json({ success: true, data: post })
     } catch (err) {
       next(err)
@@ -91,7 +105,7 @@ export class PostsController {
 
   delete = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      await this.service.deletePost(getParam(req, 'id'))
+      await this.service.deletePost(getParam(req, 'id'), req.user!.id)
       res.json({ success: true, message: 'Post deleted' })
     } catch (err) {
       next(err)
@@ -100,7 +114,7 @@ export class PostsController {
 
   publish = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const post = await this.service.publishPost(getParam(req, 'id'))
+      const post = await this.service.publishPost(getParam(req, 'id'), req.user!.id)
       res.json({ success: true, data: post })
     } catch (err) {
       next(err)
@@ -110,7 +124,7 @@ export class PostsController {
   pin = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const { pinOrder } = pinPostSchema.parse(req.body)
-      const post = await this.service.pinPost(getParam(req, 'id'), pinOrder)
+      const post = await this.service.pinPost(getParam(req, 'id'), req.user!.id, pinOrder)
       res.json({ success: true, data: post })
     } catch (err) {
       next(err)

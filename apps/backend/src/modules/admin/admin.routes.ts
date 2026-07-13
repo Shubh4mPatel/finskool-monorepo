@@ -38,6 +38,15 @@ router.post(
 )
 
 router.get('/communities', authenticate, requireRole('admin'), controller.listCommunities)
+
+router.get('/admins', authenticate, requireRole('admin'), controller.listAdmins)
+router.post('/admins/:adminId/communities', authenticate, requireRole('admin'), controller.grantCommunityAccess)
+router.delete(
+  '/admins/:adminId/communities/:communityId',
+  authenticate,
+  requireRole('admin'),
+  controller.revokeCommunityAccess,
+)
 router.get('/members', authenticate, requireRole('admin'), controller.listMembers)
 router.post('/members', authenticate, requireRole('admin'), controller.addMember)
 router.post('/members/bulk-delete', authenticate, requireRole('admin'), controller.bulkDeleteMembers)
