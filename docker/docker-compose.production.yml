@@ -43,8 +43,10 @@ services:
       MINIO_PUBLIC_PORT: "9002"
       # Set this to your VPS public IP or domain so browser can reach MinIO
       # MINIO_PUBLIC_ENDPOINT: your-vps-ip-or-domain
-      SMTP_HOST: mailhog
-      SMTP_PORT: "1025"
+      # SMTP_HOST/PORT/USER/PASSWORD/FROM are NOT overridden here — they come
+      # straight from .env (env_file above), so you can point production at
+      # a real relay (Gmail/SES/SendGrid/etc.) or at the mailhog service below
+      # just by editing .env, with no compose file changes needed.
     volumes:
       - finskool-seed-flag:/data/seed
     depends_on:
@@ -56,8 +58,6 @@ services:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
-      mailhog:
-        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://localhost:'+(process.env.PORT||3001)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 15s
@@ -77,8 +77,7 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_HOST: redis
       REDIS_PORT: "6379"
-      SMTP_HOST: mailhog
-      SMTP_PORT: "1025"
+      # SMTP_* comes from .env (env_file above) — see the note on finskool-backend.
     command: ["node", "dist/worker.js"]
     volumes:
       # Shares the same seed-flag volume as finskool-backend: the image's
@@ -94,8 +93,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      mailhog:
-        condition: service_started
 
   # ── Frontend (Next.js) ─────────────────────────────────────────────────────
   finskool-frontend:

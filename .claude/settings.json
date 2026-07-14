@@ -80,7 +80,12 @@
       "Bash(npm install *)",
       "Bash(node pw_test.js)",
       "Bash(node pw_verify.js)",
-      "Bash(rm -rf /tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/8750fbd9-1edb-4d3f-b623-da0dec31a255/scratchpad/node_modules /tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/8750fbd9-1edb-4d3f-b623-da0dec31a255/scratchpad/package*.json)"
+      "Bash(rm -rf /tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/8750fbd9-1edb-4d3f-b623-da0dec31a255/scratchpad/node_modules /tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/8750fbd9-1edb-4d3f-b623-da0dec31a255/scratchpad/package*.json)",
+      "Bash(curl -s http://localhost:8025/api/v2/messages)",
+      "Bash(curl -s \"http://localhost:8025/api/v2/messages?limit=5\")",
+      "Bash(curl -s -X DELETE http://localhost:8025/api/v1/messages)",
+      "Bash(echo \"exit:$?\")",
+      "Bash(git -C /home/shubh4m/projects/finskool-monorepo status --porcelain apps/backend/.env.example apps/backend/.env)"
     ]
   }
 }
