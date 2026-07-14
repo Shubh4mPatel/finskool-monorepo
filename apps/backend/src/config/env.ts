@@ -43,6 +43,15 @@ export const env = {
     secretKey: process.env['MINIO_SECRET_KEY'] ?? '',
     bucket: process.env['MINIO_BUCKET'] ?? 'finskool',
   },
+
+  smtp: {
+    host: process.env['SMTP_HOST'] ?? 'localhost',
+    port: Number(process.env['SMTP_PORT'] ?? 1025),
+    secure: process.env['SMTP_SECURE'] === 'true',
+    user: process.env['SMTP_USER'] ?? '',
+    password: process.env['SMTP_PASSWORD'] ?? '',
+    from: process.env['SMTP_FROM'] ?? 'Finskool <notifications@finskool.local>',
+  },
 } as const satisfies {
   nodeEnv: 'development' | 'production' | 'test'
   port: number
@@ -52,4 +61,5 @@ export const env = {
   jwt: { secret: string; accessExpiresIn: string }
   cookie: { secure: boolean }
   minio: { endPoint: string; publicEndPoint: string; port: number; publicPort: number; useSSL: boolean; accessKey: string; secretKey: string; bucket: string }
+  smtp: { host: string; port: number; secure: boolean; user: string; password: string; from: string }
 }

@@ -4,6 +4,7 @@ import { env } from '../config/env.js'
 
 export const NOTIFICATIONS_QUEUE_NAME = 'notifications'
 export const COMMUNITY_POST_JOB = 'community-post'
+export const THREAD_REPLY_EMAIL_JOB = 'thread-reply-email'
 
 export interface CommunityPostNotificationJobPayload {
   communityId: string
@@ -11,6 +12,13 @@ export interface CommunityPostNotificationJobPayload {
   message: string
   triggeredByUserId: string
 }
+
+export interface ThreadReplyEmailJobPayload {
+  toEmail: string
+  message: string
+}
+
+export type NotificationJobPayload = CommunityPostNotificationJobPayload | ThreadReplyEmailJobPayload
 
 // BullMQ requires maxRetriesPerRequest: null on any Redis connection it manages —
 // a different tuning than lib/redis.ts's client (used for refresh tokens/caching).
@@ -28,7 +36,7 @@ export function createBullConnection(): ConnectionOptions {
   }
 }
 
-export const notificationsQueue = new Queue<CommunityPostNotificationJobPayload, unknown, string>(
+export const notificationsQueue = new Queue<NotificationJobPayload, unknown, string>(
   NOTIFICATIONS_QUEUE_NAME,
   { connection: createBullConnection() },
 )

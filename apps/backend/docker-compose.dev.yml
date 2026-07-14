@@ -28,6 +28,8 @@ services:
       # Browser-facing URLs must use the host-mapped port (.env's MINIO_PORT), not the
       # in-network port above — otherwise uploaded image URLs are unreachable from outside.
       MINIO_PUBLIC_PORT: "${MINIO_PORT}"
+      SMTP_HOST: mailhog
+      SMTP_PORT: "1025"
     command: sh -c "npx prisma generate && npx prisma migrate deploy && npm run dev"
     ports:
       - "${PORT}:${PORT}"
@@ -46,6 +48,8 @@ services:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
+      mailhog:
+        condition: service_started
 
   worker:
     build:
@@ -62,6 +66,8 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_HOST: redis
       REDIS_PORT: "6379"
+      SMTP_HOST: mailhog
+      SMTP_PORT: "1025"
     command: sh -c "npx prisma generate && npx prisma migrate deploy && npm run dev:worker"
     volumes:
       - ./src:/app/src
@@ -73,6 +79,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      mailhog:
+        condition: service_started
 
   postgres:
     image: postgres:16-alpine
@@ -127,6 +135,16 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # Catches outbound SMTP traffic and shows it in a web UI at :8025 instead of
+  # actually delivering it — nothing sent through this reaches a real inbox.
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: finskool-mailhog
+    restart: unless-stopped
+    ports:
+      - "1025:1025"   # SMTP
+      - "8025:8025"   # web UI
 
   # One-shot: creates the bucket the app uploads to and makes objects readable,
   # so host-run `npm run dev` uploads work against this infra.

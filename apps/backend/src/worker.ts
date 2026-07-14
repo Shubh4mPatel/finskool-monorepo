@@ -1,6 +1,11 @@
 import 'dotenv/config'
 import { Worker } from 'bullmq'
-import { createBullConnection, NOTIFICATIONS_QUEUE_NAME, COMMUNITY_POST_JOB } from './lib/queue.js'
+import {
+  createBullConnection,
+  NOTIFICATIONS_QUEUE_NAME,
+  COMMUNITY_POST_JOB,
+  THREAD_REPLY_EMAIL_JOB,
+} from './lib/queue.js'
 import prisma from './lib/prisma.js'
 import { logger } from './shared/logger.js'
 import { NotificationsService } from './modules/notifications/notifications.service.js'
@@ -12,6 +17,7 @@ const worker = new Worker(
   NOTIFICATIONS_QUEUE_NAME,
   async job => {
     if (job.name === COMMUNITY_POST_JOB) return service.fanOutCommunityPost(job.data)
+    if (job.name === THREAD_REPLY_EMAIL_JOB) return service.sendThreadReplyEmail(job.data)
   },
   { connection, concurrency: 5 },
 )

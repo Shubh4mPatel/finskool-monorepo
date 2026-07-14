@@ -1,5 +1,6 @@
 import type { PrismaClient, UserRole } from '../../generated/prisma/client.js'
 import { assertCommunityAccess } from '../../lib/community-access.js'
+import { notificationsQueue, THREAD_REPLY_EMAIL_JOB } from '../../lib/queue.js'
 import { NotFoundError, ForbiddenError, BadRequestError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
 import type { CreateCommentDTO, CommentTreeDTO, CommentListDTO } from './comments.dto.js'
@@ -36,12 +37,20 @@ export class CommentsService {
     let parentPath: string | null = null
     let parentId: string | null = null
     let parentAuthorId: string | null = null
+    let parentAuthorEmail: string | null = null
     let parentAuthorRole: string | null = null
 
     if (data.parentCommentId) {
       const parent = await this.db.comment.findUnique({
         where: { id: data.parentCommentId, deletedAt: null },
-        select: { id: true, postId: true, authorId: true, depth: true, path: true, author: { select: { role: true } } },
+        select: {
+          id: true,
+          postId: true,
+          authorId: true,
+          depth: true,
+          path: true,
+          author: { select: { role: true, email: true } },
+        },
       })
       if (!parent) throw new NotFoundError('Parent comment not found')
       if (parent.postId !== postId) {
@@ -51,11 +60,21 @@ export class CommentsService {
       parentPath = parent.path
       parentId = parent.id
       parentAuthorId = parent.authorId
+      parentAuthorEmail = parent.author.email
       parentAuthorRole = parent.author.role
     }
 
     // Notify admin when: commenter is not admin AND (top-level comment OR reply to admin's comment)
     const shouldNotify = userRole !== 'admin' && (depth === 0 || parentAuthorRole === 'admin')
+
+    // Fetched once, ahead of the transaction, so it's available both for the
+    // in-app notification message and the post-transaction email job below.
+    const replyNotifyTarget = parentId && parentAuthorId && parentAuthorId !== userId
+      ? await this.db.user.findUnique({ where: { id: userId }, select: { name: true } })
+      : null
+    const replyMessage = replyNotifyTarget
+      ? `${replyNotifyTarget.name} replied to your comment on "${post.title}"`
+      : null
 
     // create with temp path, then update with real path (needs the new id)
     const comment = await this.db.$transaction(async tx => {
@@ -79,15 +98,14 @@ export class CommentsService {
 
       // Notify the parent comment's author on reply — synchronous (single row),
       // same transaction as the comment write. Skip self-replies.
-      if (parentId && parentAuthorId && parentAuthorId !== userId) {
-        const replier = await tx.user.findUnique({ where: { id: userId }, select: { name: true } })
+      if (replyMessage && parentAuthorId) {
         await tx.notification.create({
           data: {
             communityId: post.communityId,
             userId: parentAuthorId,
             type: 'thread',
             sourceId: created.id,
-            message: `${replier?.name ?? 'Someone'} replied to your comment on "${post.title}"`,
+            message: replyMessage,
           },
         })
       }
@@ -104,6 +122,21 @@ export class CommentsService {
         },
       })
     })
+
+    // Enqueued after the transaction commits (not inside it) — email delivery
+    // is a side effect that shouldn't be tied to the DB transaction, and the
+    // API response shouldn't wait on an SMTP round-trip for a reply notification.
+    if (replyMessage && parentAuthorEmail) {
+      try {
+        await notificationsQueue.add(
+          THREAD_REPLY_EMAIL_JOB,
+          { toEmail: parentAuthorEmail, message: replyMessage },
+          { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
+        )
+      } catch (err) {
+        logger.error({ err, commentId: comment.id }, 'comments.create: failed to enqueue reply email job')
+      }
+    }
 
     logger.info({ commentId: comment.id, postId, depth }, 'comments.create: success')
     return { ...comment, notification: null, replies: [] }

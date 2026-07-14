@@ -43,6 +43,8 @@ services:
       MINIO_PUBLIC_PORT: "9002"
       # Set this to your VPS public IP or domain so browser can reach MinIO
       # MINIO_PUBLIC_ENDPOINT: your-vps-ip-or-domain
+      SMTP_HOST: mailhog
+      SMTP_PORT: "1025"
     volumes:
       - finskool-seed-flag:/data/seed
     depends_on:
@@ -54,6 +56,8 @@ services:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
+      mailhog:
+        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://localhost:'+(process.env.PORT||3001)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 15s
@@ -73,6 +77,8 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_HOST: redis
       REDIS_PORT: "6379"
+      SMTP_HOST: mailhog
+      SMTP_PORT: "1025"
     command: ["node", "dist/worker.js"]
     volumes:
       # Shares the same seed-flag volume as finskool-backend: the image's
@@ -88,6 +94,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      mailhog:
+        condition: service_started
 
   # ── Frontend (Next.js) ─────────────────────────────────────────────────────
   finskool-frontend:
@@ -104,6 +112,18 @@ services:
       NEXT_PUBLIC_API_URL: ""   # empty = same origin, nginx proxies /api/ to backend
     depends_on:
       - finskool-backend
+
+  # ── Mail (SMTP) ────────────────────────────────────────────────────────────
+  # MailHog catches outbound SMTP traffic and shows it in a web UI — it does
+  # NOT deliver mail to real inboxes. Swap SMTP_HOST/PORT (and add SMTP_USER/
+  # SMTP_PASSWORD) in .env to point at a real relay (SES/SendGrid/Mailgun/etc.)
+  # when real delivery to users' inboxes is needed.
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: finskool-mailhog
+    restart: unless-stopped
+    ports:
+      - "8025:8025"   # web UI — view "sent" mail at http://<host>:8025
 
   # ── PostgreSQL ─────────────────────────────────────────────────────────────
   postgres:
