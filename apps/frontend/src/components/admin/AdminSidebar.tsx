@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { clearSession } from "@/lib/session";
+import { clearSession, getSession, type SessionInfo } from "@/lib/session";
 import {
   LayoutDashboard,
   Pencil,
@@ -36,6 +36,14 @@ function SidebarContent({ onNav }: { onNav?: () => void }) {
   const pathname = usePathname();
   const router = useRouter();
   const [unresolvedThreads, setUnresolvedThreads] = useState<number | undefined>(undefined);
+  const [session, setSession] = useState<SessionInfo | null>(null);
+
+  useEffect(() => {
+    setSession(getSession());
+    const onUpdate = () => setSession(getSession());
+    window.addEventListener("profile:updated", onUpdate);
+    return () => window.removeEventListener("profile:updated", onUpdate);
+  }, []);
 
   useEffect(() => {
     api
@@ -43,6 +51,10 @@ function SidebarContent({ onNav }: { onNav?: () => void }) {
       .then((data) => setUnresolvedThreads(data.stats.unresolvedThreads))
       .catch(() => {});
   }, []);
+
+  const displayName = session?.userName ?? "Admin";
+  const displayInitials = session?.userInitials ?? "A";
+  const avatarUrl = session?.avatarUrl ?? null;
 
   async function handleLogout() {
     try { await api.post("/api/v1/auth/logout", {}) } catch { /* ignore */ }
@@ -54,10 +66,13 @@ function SidebarContent({ onNav }: { onNav?: () => void }) {
     <div className="flex h-full flex-col">
       {/* Profile */}
       <div className="flex flex-col items-center gap-2 px-4 py-6">
-        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary text-base font-bold text-white">
-          RK
-        </div>
-        <p className="text-sm font-bold text-primary">Ritesh Kumar</p>
+        <Link href="/admin/profile" onClick={onNav} className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-full bg-primary text-base font-bold text-white transition-transform hover:scale-105">
+          {avatarUrl
+            ? <img src={avatarUrl} alt={displayName} className="h-full w-full object-cover" />
+            : displayInitials
+          }
+        </Link>
+        <p className="text-sm font-bold text-primary">{displayName}</p>
         <span className="rounded-full bg-lime px-3 py-0.5 text-xs font-bold text-primary">
           Super Admin
         </span>
