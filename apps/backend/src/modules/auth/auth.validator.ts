@@ -40,3 +40,7 @@ export const changePasswordSchema = z
 export const updateNotificationsSchema = z.object({
   postNotificationsEnabled: z.boolean(),
 })
+
+export const updateAvatarSchema = z.object({
+  avatarUrl: z.string().url('Invalid avatar URL'),
+})

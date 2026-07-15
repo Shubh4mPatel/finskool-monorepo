@@ -64,10 +64,19 @@ export default function ProfilePage() {
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const form = new FormData();
-    form.append('avatar', file);
     try {
-      const data = await api.postForm<{ user: UserProfile }>('/api/v1/auth/me/avatar', form);
+      // 1. Get presigned upload URL from backend
+      const { uploadUrl, publicUrl } = await api.get<{ uploadUrl: string; publicUrl: string }>(
+        `/api/v1/auth/me/avatar/upload-url?filename=${encodeURIComponent(file.name)}`
+      );
+      // 2. Upload directly to MinIO
+      await fetch(uploadUrl, {
+        method: 'PUT',
+        body: file,
+        headers: { 'Content-Type': file.type },
+      });
+      // 3. Save the public URL to the user record
+      const data = await api.patch<{ user: UserProfile }>('/api/v1/auth/me/avatar', { avatarUrl: publicUrl });
       setUser(data.user);
     } catch {
       // no-op

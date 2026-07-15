@@ -6,7 +6,7 @@ import type { Redis } from "ioredis";
 import { refreshTokenKey, selectedCommunityKey } from "../../lib/redis.js";
 import { env } from "../../config/env.js";
 import { logger } from "../../shared/logger.js";
-import { uploadFile, deleteFile } from "../../lib/minio.js";
+import { generateUploadUrl, deleteFile } from "../../lib/minio.js";
 import {
   ConflictError,
   UnauthorizedError,
@@ -350,11 +350,13 @@ export class AuthService {
     return this.toPublicUser(updated);
   }
 
-  async updateAvatar(userId: string, buffer: Buffer, filename: string, mimetype: string): Promise<PublicUserDTO> {
+  async getAvatarUploadUrl(filename: string): Promise<{ uploadUrl: string; publicUrl: string }> {
+    return generateUploadUrl(filename, 'avatars');
+  }
+
+  async updateAvatar(userId: string, avatarUrl: string): Promise<PublicUserDTO> {
     const user = await this.db.user.findUnique({ where: { id: userId } });
     if (!user || user.deletedAt) throw new UnauthorizedError('User not found');
-
-    const avatarUrl = await uploadFile(buffer, filename, mimetype, 'avatars');
 
     if (user.avatarUrl) {
       await deleteFile(user.avatarUrl).catch(() => {});

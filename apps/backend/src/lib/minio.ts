@@ -43,9 +43,10 @@ export async function uploadFile(
 
 export async function generateUploadUrl(
   originalName: string,
+  folder = 'posts',
 ): Promise<{ uploadUrl: string; publicUrl: string }> {
   const ext = originalName.split('.').pop() ?? 'bin'
-  const objectName = `posts/${randomUUID()}.${ext}`
+  const objectName = `${folder}/${randomUUID()}.${ext}`
 
   // Use publicClient so the HMAC signature is bound to the browser-reachable hostname.
   // Presigning is purely local — no network call is made to MinIO here.

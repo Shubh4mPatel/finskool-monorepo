@@ -1,12 +1,16 @@
 import type { Request, Response, NextFunction, CookieOptions } from 'express'
 import { z } from 'zod'
 import type { AuthService } from './auth.service.js'
-import { registerSchema, loginSchema, updateEmailSchema, changePasswordSchema, updateNotificationsSchema } from './auth.validator.js'
+import { registerSchema, loginSchema, updateEmailSchema, changePasswordSchema, updateNotificationsSchema, updateAvatarSchema } from './auth.validator.js'
 import { env } from '../../config/env.js'
-import { UnauthorizedError, BadRequestError } from '../../shared/errors/index.js'
+import { UnauthorizedError } from '../../shared/errors/index.js'
 
 const selectCommunitySchema = z.object({
   communityId: z.string().uuid('Invalid community ID'),
+})
+
+const avatarUploadUrlQuerySchema = z.object({
+  filename: z.string().min(1),
 })
 
 const COOKIE_BASE: CookieOptions = {
@@ -135,15 +139,20 @@ export class AuthController {
     }
   }
 
+  getAvatarUploadUrl = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { filename } = avatarUploadUrlQuerySchema.parse(req.query)
+      const urls = await this.service.getAvatarUploadUrl(filename)
+      res.json({ success: true, data: urls })
+    } catch (err) {
+      next(err)
+    }
+  }
+
   updateAvatar = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      if (!req.file) throw new BadRequestError('No image file provided')
-      const user = await this.service.updateAvatar(
-        req.user!.id,
-        req.file.buffer,
-        req.file.originalname,
-        req.file.mimetype,
-      )
+      const { avatarUrl } = updateAvatarSchema.parse(req.body)
+      const user = await this.service.updateAvatar(req.user!.id, avatarUrl)
       res.json({ success: true, data: { user } })
     } catch (err) {
       next(err)
