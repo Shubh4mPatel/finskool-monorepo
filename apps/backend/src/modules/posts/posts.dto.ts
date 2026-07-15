@@ -37,6 +37,8 @@ export interface PostFeedItemDTO {
   communityId: string
   communityName: string
   communitySlug: string
+  authorName: string
+  authorAvatarUrl: string | null
   title: string
   content: string
   imageUrls: string[]

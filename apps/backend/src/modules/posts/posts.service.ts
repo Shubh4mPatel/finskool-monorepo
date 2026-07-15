@@ -38,6 +38,7 @@ export class PostsService {
         where,
         include: {
           community: { select: { name: true, slug: true } },
+          author: { select: { name: true, avatarUrl: true } },
           _count: { select: { comments: { where: { deletedAt: null } } } },
         },
         orderBy: [{ pinOrder: { sort: 'asc', nulls: 'last' } }, { publishedAt: 'desc' }],
@@ -53,6 +54,8 @@ export class PostsService {
         communityId: p.communityId,
         communityName: p.community.name,
         communitySlug: p.community.slug,
+        authorName: p.author.name,
+        authorAvatarUrl: p.author.avatarUrl,
         title: p.title,
         content: p.contentMd,
         imageUrls: p.imageUrls,

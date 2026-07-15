@@ -1,7 +1,7 @@
 import { Calendar, Clock, Pin } from "lucide-react";
 import type { ReactNode } from "react";
 import PostThreads from "./PostThreads";
-import { getSession } from "@/lib/session";
+import { initials } from "@/lib/session";
 
 type FeedPostCardProps = {
   postId?: string;
@@ -9,6 +9,7 @@ type FeedPostCardProps = {
   badge?: { label: string; icon?: "pin" | "idea" };
   communityName?: string;
   authorName?: string;
+  authorAvatarUrl?: string | null;
   timestamp: string;
   title: string;
   body: string;
@@ -34,6 +35,7 @@ export default function FeedPostCard({
   badge,
   communityName,
   authorName,
+  authorAvatarUrl,
   timestamp,
   title,
   body,
@@ -46,9 +48,8 @@ export default function FeedPostCard({
   defaultThreadsOpen,
   onThreadsChange,
 }: FeedPostCardProps) {
-  const session = typeof window !== "undefined" ? getSession() : null;
-  const displayName = authorName ?? session?.userName ?? "Admin";
-  const initials = session?.userInitials ?? "A";
+  const displayName = authorName ?? "Admin";
+  const authorInitials = initials(displayName);
   const { date, time } = formatDateParts(timestamp);
 
   return (
@@ -59,7 +60,10 @@ export default function FeedPostCard({
           <div className="flex items-center gap-3">
             {/* Avatar */}
             <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary text-sm font-bold text-white">
-              {initials}
+              {authorAvatarUrl
+                ? <img src={authorAvatarUrl} alt={displayName} className="h-full w-full object-cover" />
+                : authorInitials
+              }
             </div>
 
             {/* Name + badges */}
