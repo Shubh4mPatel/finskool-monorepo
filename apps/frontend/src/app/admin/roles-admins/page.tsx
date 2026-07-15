@@ -51,8 +51,8 @@ export default function RolesAdminsPage() {
 
   useEffect(() => {
     Promise.all([
-      api.get<AdminUser[]>("/admin/admins"),
-      api.get<Community[]>("/admin/communities"),
+      api.get<AdminUser[]>("/api/v1/admin/admins"),
+      api.get<Community[]>("/api/v1/admin/communities"),
     ])
       .then(([a, c]) => {
         setAdmins(a);
@@ -76,7 +76,7 @@ export default function RolesAdminsPage() {
     e.preventDefault();
     setAddSubmitting(true);
     try {
-      const created = await api.post<AdminUser>("/admin/admins", addForm);
+      const created = await api.post<AdminUser>("/api/v1/admin/admins", addForm);
       setAdmins(prev => [...prev, created]);
       setAddOpen(false);
       setAddForm(EMPTY_ADD_FORM);
@@ -98,7 +98,7 @@ export default function RolesAdminsPage() {
     if (!editTarget) return;
     setEditSubmitting(true);
     try {
-      const updated = await api.patch<AdminUser>(`/admin/admins/${editTarget.id}`, { communityIds: editIds });
+      const updated = await api.patch<AdminUser>(`/api/v1/admin/admins/${editTarget.id}`, { communityIds: editIds });
       setAdmins(prev => prev.map(a => (a.id === updated.id ? updated : a)));
       setEditTarget(null);
       toast.success("Admin access updated");
@@ -113,7 +113,7 @@ export default function RolesAdminsPage() {
     if (!deleteTarget) return;
     setDeleteSubmitting(true);
     try {
-      await api.delete(`/admin/admins/${deleteTarget.id}`);
+      await api.delete(`/api/v1/admin/admins/${deleteTarget.id}`);
       setAdmins(prev => prev.filter(a => a.id !== deleteTarget.id));
       setDeleteTarget(null);
       toast.success("Admin removed");

@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import Image from "next/image";
 import { ArrowRight, Lock } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { updateSessionCommunity } from "@/lib/session";
@@ -126,11 +125,10 @@ export default function CommunitySelectorPage() {
               </span>
             )}
             {meData?.user.avatarUrl ? (
-              <Image
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
                 src={meData.user.avatarUrl}
                 alt={meData.user.name}
-                width={36}
-                height={36}
                 className="h-9 w-9 rounded-full object-cover ring-2 ring-lime/50 ring-offset-2 ring-offset-background"
               />
             ) : (
