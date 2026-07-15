@@ -58,6 +58,14 @@ export default function Sidebar() {
   const displayName = session?.userName ?? "Member";
   const displayInitials = session?.userInitials ?? "M";
   const communityName = session?.communityName ?? "";
+  const avatarUrl = session?.avatarUrl ?? null;
+
+  // Re-read session when profile is updated (e.g. avatar change)
+  useEffect(() => {
+    const onUpdate = () => setSession(getSession());
+    window.addEventListener("profile:updated", onUpdate);
+    return () => window.removeEventListener("profile:updated", onUpdate);
+  }, []);
 
   return (
     <aside className="flex w-full flex-col gap-4 rounded-2xl bg-white p-4 shadow-card lg:sticky lg:top-8 lg:self-start lg:w-67.25 lg:gap-0 lg:p-6">
@@ -72,8 +80,11 @@ export default function Sidebar() {
           <ArrowLeft size={15} />
         </button>
         <Link href="/profile" className="mt-4 flex flex-col items-center gap-2">
-          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-primary text-xl font-bold text-white ring-2 ring-primary/20 ring-offset-2 ring-offset-white transition-transform hover:scale-105">
-            {displayInitials}
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-primary text-xl font-bold text-white ring-2 ring-primary/20 ring-offset-2 ring-offset-white transition-transform hover:scale-105 overflow-hidden">
+            {avatarUrl
+              ? <img src={avatarUrl} alt={displayName} className="h-full w-full object-cover" />
+              : displayInitials
+            }
           </div>
           <p className="font-semibold text-primary">{displayName}</p>
           {communityName && (
@@ -103,9 +114,12 @@ export default function Sidebar() {
         <Link
           href="/profile"
           onClick={() => setOpen(false)}
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-white"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-white overflow-hidden"
         >
-          {displayInitials}
+          {avatarUrl
+            ? <img src={avatarUrl} alt={displayName} className="h-full w-full object-cover" />
+            : displayInitials
+          }
         </Link>
       </div>
 

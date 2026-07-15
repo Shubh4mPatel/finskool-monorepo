@@ -4,6 +4,7 @@ export interface SessionInfo {
   userInitials: string
   communityName: string
   communityId: string
+  avatarUrl?: string | null
 }
 
 const KEY = 'finskool_session'
@@ -32,6 +33,14 @@ export function getSession(): SessionInfo | null {
   } catch {
     return null
   }
+}
+
+export function updateSessionAvatar(avatarUrl: string | null): void {
+  if (typeof window === 'undefined') return
+  const existing = getSession()
+  if (!existing) return
+  saveSession({ ...existing, avatarUrl })
+  window.dispatchEvent(new Event('profile:updated'))
 }
 
 export function clearSession(): void {

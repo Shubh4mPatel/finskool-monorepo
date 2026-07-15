@@ -5,7 +5,7 @@ import ChangePasswordModal from "@/components/profile/ChangePasswordModal";
 import ToggleSwitch from "@/components/profile/ToggleSwitch";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
-import { initials } from "@/lib/session";
+import { initials, updateSessionAvatar } from "@/lib/session";
 
 interface UserProfile {
   id: string;
@@ -78,6 +78,7 @@ export default function ProfilePage() {
       // 3. Save the public URL to the user record
       const data = await api.patch<{ user: UserProfile }>('/api/v1/auth/me/avatar', { avatarUrl: publicUrl });
       setUser(data.user);
+      updateSessionAvatar(data.user.avatarUrl ?? null);
     } catch {
       // no-op
     } finally {
