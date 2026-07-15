@@ -18,6 +18,7 @@ interface UserProfile {
 export default function ProfilePage() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [email, setEmail] = useState("");
+  const [isEditing, setIsEditing] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [saving, setSaving] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -47,11 +48,17 @@ export default function ProfilePage() {
     try {
       const data = await api.patch<{ user: UserProfile }>("/api/v1/auth/me/email", { email });
       setUser(data.user);
+      setIsEditing(false);
     } catch {
       // no-op
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleCancelEdit = () => {
+    setEmail(user?.email ?? "");
+    setIsEditing(false);
   };
 
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -188,7 +195,12 @@ export default function ProfilePage() {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="mt-2 w-full rounded-[10px] border border-[#d6d2c8] bg-[#f8f7f5] px-4 py-3 text-sm text-black placeholder:text-subtle transition-colors focus:outline-none focus:ring-2 focus:ring-accent/40"
+              disabled={!isEditing}
+              className={`mt-2 w-full rounded-[10px] border px-4 py-3 text-sm text-black placeholder:text-subtle transition-colors focus:outline-none focus:ring-2 focus:ring-accent/40 ${
+                isEditing
+                  ? "border-accent bg-white"
+                  : "border-[#d6d2c8] bg-[#f8f7f5] cursor-default"
+              }`}
             />
           </div>
         </div>
@@ -202,14 +214,32 @@ export default function ProfilePage() {
               </button>
             }
           />
-          <button
-            onClick={handleEditDetails}
-            disabled={saving}
-            className="flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-lime to-accent px-5 py-2.5 text-sm font-bold text-white shadow-glow transition-transform duration-300 hover:scale-105 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
-          >
-            <Pencil size={14} />
-            {saving ? "Saving..." : "Edit Details"}
-          </button>
+          {isEditing ? (
+            <>
+              <button
+                onClick={handleCancelEdit}
+                className="flex items-center justify-center gap-2 rounded-full border border-divider px-5 py-2.5 text-sm font-bold text-muted transition-colors hover:border-subtle hover:text-primary"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleEditDetails}
+                disabled={saving}
+                className="flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-lime to-accent px-5 py-2.5 text-sm font-bold text-white shadow-glow transition-transform duration-300 hover:scale-105 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                <Pencil size={14} />
+                {saving ? "Saving..." : "Save"}
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => setIsEditing(true)}
+              className="flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-lime to-accent px-5 py-2.5 text-sm font-bold text-white shadow-glow transition-transform duration-300 hover:scale-105 active:scale-95"
+            >
+              <Pencil size={14} />
+              Edit Details
+            </button>
+          )}
         </div>
       </div>
     </div>
