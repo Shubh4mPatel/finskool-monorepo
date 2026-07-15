@@ -24,7 +24,7 @@ export default function ProfilePage() {
 
   useEffect(() => {
     api
-      .get<{ user: UserProfile }>("/auth/me")
+      .get<{ user: UserProfile }>("/api/v1/auth/me")
       .then((data) => {
         setUser(data.user);
         setEmail(data.user.email);
@@ -37,7 +37,7 @@ export default function ProfilePage() {
     const next = !notificationsEnabled;
     setNotificationsEnabled(next);
     api
-      .patch("/auth/me/notifications", { postNotificationsEnabled: next })
+      .patch("/api/v1/auth/me/notifications", { postNotificationsEnabled: next })
       .catch(() => setNotificationsEnabled(!next));
   };
 
@@ -45,7 +45,7 @@ export default function ProfilePage() {
     if (saving) return;
     setSaving(true);
     try {
-      const data = await api.patch<{ user: UserProfile }>("/auth/me/email", { email });
+      const data = await api.patch<{ user: UserProfile }>("/api/v1/auth/me/email", { email });
       setUser(data.user);
     } catch {
       // no-op
@@ -60,7 +60,7 @@ export default function ProfilePage() {
     const form = new FormData();
     form.append('avatar', file);
     try {
-      const data = await api.postForm<{ user: UserProfile }>('/auth/me/avatar', form);
+      const data = await api.postForm<{ user: UserProfile }>('/api/v1/auth/me/avatar', form);
       setUser(data.user);
     } catch {
       // no-op

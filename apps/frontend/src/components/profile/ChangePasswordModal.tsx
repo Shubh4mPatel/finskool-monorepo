@@ -29,7 +29,7 @@ export default function ChangePasswordModal({ trigger }: { trigger?: ReactNode }
     }
     setSubmitting(true);
     try {
-      await api.patch("/auth/me/password", { currentPassword, newPassword, confirmNewPassword });
+      await api.patch("/api/v1/auth/me/password", { currentPassword, newPassword, confirmNewPassword });
       handleClose();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to change password");
