@@ -1,4 +1,5 @@
 import { createRequire } from 'module'
+import bcrypt from 'bcryptjs'
 import type { PrismaClient } from '../../generated/prisma/client.js'
 import { assertSuperAdmin } from '../../lib/community-access.js'
 import { BadRequestError, ConflictError, NotFoundError, ForbiddenError } from '../../shared/errors/index.js'
@@ -21,6 +22,8 @@ import type {
   RevokeSuspensionResultDTO,
   CommunityDTO,
   AdminUserDTO,
+  CreateAdminDTO,
+  UpdateAdminAccessDTO,
   MemberListFilters,
   MemberListDTO,
   MemberItemDTO,
@@ -678,6 +681,105 @@ export class AdminService {
     await assertSuperAdmin(this.db, requestingAdminId)
     await this.db.communityAdmin.deleteMany({ where: { adminId: targetAdminId, communityId } })
     logger.info({ targetAdminId, communityId }, 'admin.revokeCommunityAccess: success')
+  }
+
+  async createAdmin(requestingAdminId: string, data: CreateAdminDTO): Promise<AdminUserDTO> {
+    await assertSuperAdmin(this.db, requestingAdminId)
+
+    const digits = data.phone.replace(/\D/g, '')
+    const phone =
+      digits.length === 10 ? `+91${digits}`
+      : digits.length === 12 && digits.startsWith('91') ? `+${digits}`
+      : data.phone
+
+    if (await this.db.user.findUnique({ where: { phone } })) {
+      throw new ConflictError('Phone number already in use', 'PHONE_EXISTS')
+    }
+    if (await this.db.user.findUnique({ where: { email: data.email } })) {
+      throw new ConflictError('Email address already in use', 'EMAIL_EXISTS')
+    }
+
+    const communities = await this.db.community.findMany({
+      where: { id: { in: data.communityIds }, deletedAt: null },
+      select: { id: true, name: true, slug: true },
+    })
+    if (communities.length !== data.communityIds.length) {
+      throw new BadRequestError('One or more community IDs are invalid')
+    }
+
+    const passwordHash = await bcrypt.hash(data.password, 12)
+
+    const created = await this.db.$transaction(async tx => {
+      const user = await tx.user.create({
+        data: { phone, name: data.name, email: data.email, passwordHash, role: 'admin' },
+      })
+      await tx.communityAdmin.createMany({
+        data: data.communityIds.map(cid => ({ adminId: user.id, communityId: cid })),
+      })
+      return user
+    })
+
+    logger.info({ adminId: created.id }, 'admin.createAdmin: success')
+    return {
+      id: created.id,
+      name: created.name,
+      email: created.email,
+      isSuperAdmin: false,
+      communityAccess: communities,
+    }
+  }
+
+  async updateAdminAccess(requestingAdminId: string, targetAdminId: string, data: UpdateAdminAccessDTO): Promise<AdminUserDTO> {
+    await assertSuperAdmin(this.db, requestingAdminId)
+
+    if (requestingAdminId === targetAdminId) {
+      throw new ForbiddenError('Cannot modify your own community access')
+    }
+
+    const target = await this.db.user.findUnique({ where: { id: targetAdminId } })
+    if (!target || target.role !== 'admin' || target.deletedAt) {
+      throw new NotFoundError('Admin not found')
+    }
+
+    const communities = await this.db.community.findMany({
+      where: { id: { in: data.communityIds }, deletedAt: null },
+      select: { id: true, name: true, slug: true },
+    })
+    if (communities.length !== data.communityIds.length) {
+      throw new BadRequestError('One or more community IDs are invalid')
+    }
+
+    await this.db.$transaction(async tx => {
+      await tx.communityAdmin.deleteMany({ where: { adminId: targetAdminId } })
+      await tx.communityAdmin.createMany({
+        data: data.communityIds.map(cid => ({ adminId: targetAdminId, communityId: cid })),
+      })
+    })
+
+    logger.info({ targetAdminId }, 'admin.updateAdminAccess: success')
+    return {
+      id: target.id,
+      name: target.name,
+      email: target.email,
+      isSuperAdmin: target.isSuperAdmin,
+      communityAccess: communities,
+    }
+  }
+
+  async deleteAdmin(requestingAdminId: string, targetAdminId: string): Promise<void> {
+    await assertSuperAdmin(this.db, requestingAdminId)
+
+    if (requestingAdminId === targetAdminId) {
+      throw new ForbiddenError('Cannot delete your own admin account')
+    }
+
+    const target = await this.db.user.findUnique({ where: { id: targetAdminId } })
+    if (!target || target.role !== 'admin' || target.deletedAt) {
+      throw new NotFoundError('Admin not found')
+    }
+
+    await this.db.user.update({ where: { id: targetAdminId }, data: { deletedAt: new Date() } })
+    logger.info({ targetAdminId }, 'admin.deleteAdmin: success')
   }
 
   async addMember(data: AddMemberDTO, adminId: string): Promise<AddMemberResultDTO> {

@@ -40,6 +40,9 @@ router.post(
 router.get('/communities', authenticate, requireRole('admin'), controller.listCommunities)
 
 router.get('/admins', authenticate, requireRole('admin'), controller.listAdmins)
+router.post('/admins', authenticate, requireRole('admin'), controller.createAdmin)
+router.patch('/admins/:adminId', authenticate, requireRole('admin'), controller.updateAdminAccess)
+router.delete('/admins/:adminId', authenticate, requireRole('admin'), controller.deleteAdmin)
 router.post('/admins/:adminId/communities', authenticate, requireRole('admin'), controller.grantCommunityAccess)
 router.delete(
   '/admins/:adminId/communities/:communityId',

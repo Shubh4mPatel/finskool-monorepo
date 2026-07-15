@@ -84,6 +84,18 @@ export interface AdminUserDTO {
   communityAccess: { id: string; name: string; slug: string }[]
 }
 
+export interface CreateAdminDTO {
+  name: string
+  email: string
+  phone: string
+  password: string
+  communityIds: string[]
+}
+
+export interface UpdateAdminAccessDTO {
+  communityIds: string[]
+}
+
 // Status is derived, not stored
 export type MemberStatus = 'registered' | 'pending' | 'expired' | 'suspended'
 

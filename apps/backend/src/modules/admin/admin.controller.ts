@@ -67,6 +67,18 @@ const markAllRepliedSchema = z.object({
   communityId: z.string().uuid().optional(),
 })
 
+const createAdminSchema = z.object({
+  name: z.string().min(2, 'Name must be at least 2 characters'),
+  email: z.string().email('Invalid email address'),
+  phone: z.string().min(10, 'Phone is required'),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+  communityIds: z.array(z.string().uuid('Invalid community ID')).min(1, 'At least one community is required'),
+})
+
+const updateAdminAccessSchema = z.object({
+  communityIds: z.array(z.string().uuid('Invalid community ID')).min(1, 'At least one community is required'),
+})
+
 const listNotificationsSchema = z.object({
   isReplied: z
     .enum(['true', 'false'])
@@ -311,6 +323,41 @@ export class AdminController {
       const id = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
       const result = await this.service.revokeSuspension(id)
       res.json({ success: true, data: result })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  createAdmin = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const parsed = createAdminSchema.safeParse(req.body)
+      if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
+      const result = await this.service.createAdmin(req.user!.id, parsed.data)
+      res.status(201).json({ success: true, data: result })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  updateAdminAccess = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const raw = req.params['adminId']
+      const adminId = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
+      const parsed = updateAdminAccessSchema.safeParse(req.body)
+      if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
+      const result = await this.service.updateAdminAccess(req.user!.id, adminId, parsed.data)
+      res.json({ success: true, data: result })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  deleteAdmin = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const raw = req.params['adminId']
+      const adminId = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
+      await this.service.deleteAdmin(req.user!.id, adminId)
+      res.json({ success: true })
     } catch (err) {
       next(err)
     }
