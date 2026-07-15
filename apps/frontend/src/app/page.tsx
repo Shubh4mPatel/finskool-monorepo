@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Bell, Lock } from "lucide-react";
+import Image from "next/image";
+import { ArrowRight, Lock } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { updateSessionCommunity } from "@/lib/session";
 
@@ -27,7 +28,7 @@ type CommunityCardProps = {
 function CommunityCard({ community, active, onSelect }: CommunityCardProps) {
   return (
     <div className="group flex flex-col overflow-hidden rounded-2xl bg-white shadow-card transition-all duration-300 hover:-translate-y-1.5 hover:shadow-card-hover">
-      <div className="relative h-40 overflow-hidden bg-gradient-to-br from-primary via-primary to-accent">
+      <div className="relative h-40 overflow-hidden bg-linear-to-br from-primary via-primary to-accent">
         {community.coverImageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -57,7 +58,7 @@ function CommunityCard({ community, active, onSelect }: CommunityCardProps) {
           onClick={() => onSelect(community.id)}
           className={`mt-6 flex items-center justify-center gap-2 rounded-full px-6 py-3 text-sm font-bold transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] ${
             active
-              ? "bg-gradient-to-r from-accent to-primary text-white shadow-glow"
+              ? "bg-linear-to-r from-accent to-primary text-white shadow-glow"
               : "border border-accent bg-white text-accent hover:bg-accent/5"
           }`}
         >
@@ -109,11 +110,11 @@ export default function CommunitySelectorPage() {
     <div className="relative isolate flex min-h-screen w-full flex-col overflow-hidden">
       <div className="pointer-events-none absolute -left-32 -top-32 h-96 w-96 rounded-full bg-lime/30 blur-3xl animate-float" />
       <div
-        className="pointer-events-none absolute -right-40 top-1/3 h-[28rem] w-[28rem] rounded-full bg-accent/15 blur-3xl animate-float"
+        className="pointer-events-none absolute -right-40 top-1/3 h-112 w-md rounded-full bg-accent/15 blur-3xl animate-float"
         style={{ animationDelay: "-3s" }}
       />
 
-      <div className="relative mx-auto flex w-full max-w-[1512px] flex-1 flex-col px-4 py-6 sm:px-8 sm:py-8">
+      <div className="relative mx-auto flex w-full max-w-378 flex-1 flex-col px-4 py-6 sm:px-8 sm:py-8">
         <div className="flex items-center justify-between">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo.svg" alt="Finskool" className="h-9 w-9" />
@@ -124,12 +125,19 @@ export default function CommunitySelectorPage() {
                 Welcome back, {meData.user.name.split(" ")[0]}
               </span>
             )}
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-accent to-primary text-sm font-bold text-lime ring-2 ring-lime/50 ring-offset-2 ring-offset-background">
-              {initials}
-            </div>
-            <button className="flex h-9 w-9 items-center justify-center rounded-full border border-divider bg-white shadow-card transition-all duration-300 hover:-translate-y-0.5 hover:shadow-card-hover">
-              <Bell size={15} className="text-muted" />
-            </button>
+            {meData?.user.avatarUrl ? (
+              <Image
+                src={meData.user.avatarUrl}
+                alt={meData.user.name}
+                width={36}
+                height={36}
+                className="h-9 w-9 rounded-full object-cover ring-2 ring-lime/50 ring-offset-2 ring-offset-background"
+              />
+            ) : (
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-linear-to-br from-accent to-primary text-sm font-bold text-lime ring-2 ring-lime/50 ring-offset-2 ring-offset-background">
+                {initials}
+              </div>
+            )}
           </div>
         </div>
 
@@ -141,7 +149,7 @@ export default function CommunitySelectorPage() {
 
           <h1 className="animate-rise mt-6 font-display text-3xl font-bold tracking-tight text-primary sm:text-4xl lg:text-5xl [animation-delay:120ms]">
             Where would you like to go{" "}
-            <span className="bg-gradient-to-r from-accent to-lime bg-clip-text text-transparent">
+            <span className="bg-linear-to-r from-accent to-lime bg-clip-text text-transparent">
               today?
             </span>
           </h1>

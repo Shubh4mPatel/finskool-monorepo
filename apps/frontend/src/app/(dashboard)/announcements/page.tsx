@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { RefreshCw, Megaphone, MessagesSquare } from "lucide-react";
 import { api } from "@/lib/api";
+import { getSession } from "@/lib/session";
 
 interface Notification {
   id: string;
@@ -74,7 +75,12 @@ export default function AnnouncementsPage() {
   const fetchNotifications = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await api.get<ListNotificationsResponse>("/api/v1/notifications?page=1&pageSize=20");
+      const session = getSession();
+      const communityId = session?.communityId;
+      const url = communityId
+        ? `/api/v1/notifications?page=1&pageSize=20&communityId=${communityId}`
+        : `/api/v1/notifications?page=1&pageSize=20`;
+      const data = await api.get<ListNotificationsResponse>(url);
       setNotifications(data.notifications);
     } catch {
       setNotifications([]);

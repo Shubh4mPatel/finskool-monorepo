@@ -17,8 +17,8 @@ function startOfToday(): Date {
 export class NotificationsService {
   constructor(private readonly db: PrismaClient) {}
 
-  async listForUser(userId: string, page: number, pageSize: number): Promise<ListNotificationsResponseDTO> {
-    const where = { userId }
+  async listForUser(userId: string, page: number, pageSize: number, communityId?: string): Promise<ListNotificationsResponseDTO> {
+    const where = communityId ? { userId, communityId } : { userId }
 
     const [notifications, total] = await Promise.all([
       this.db.notification.findMany({
