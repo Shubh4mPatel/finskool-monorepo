@@ -170,7 +170,10 @@ model Post {
   likes                 PostLike[]
   commentNotifications  CommentNotification[]
 
-  @@unique([communityId, pinOrder], name: "uq_community_pin_order")
+  // (communityId, pinOrder) uniqueness among non-deleted posts is enforced by a
+  // partial unique index created directly in migration SQL (Prisma's schema DSL
+  // can't express a WHERE clause on @@unique) — see migration
+  // 20260715150000_partial_unique_pin_order. Do not add @@unique here.
   @@index([communityId, status, publishedAt(sort: Desc)], name: "idx_posts_community_feed")
   @@index([communityId, pinOrder], name: "idx_posts_pinned")
   @@index([authorId], name: "idx_posts_author")
