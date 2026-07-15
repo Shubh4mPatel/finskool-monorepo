@@ -6,6 +6,7 @@ import type { Redis } from "ioredis";
 import { refreshTokenKey, selectedCommunityKey } from "../../lib/redis.js";
 import { env } from "../../config/env.js";
 import { logger } from "../../shared/logger.js";
+import { uploadFile, deleteFile } from "../../lib/minio.js";
 import {
   ConflictError,
   UnauthorizedError,
@@ -18,8 +19,9 @@ import type {
   LoginDTO,
   PublicUserDTO,
   CommunityInfoDTO,
-  RegisterDTO,
-} from "./auth.dto.js";
+  RegisterDTO,  UpdateEmailDTO,
+  ChangePasswordDTO,
+  UpdateNotificationsDTO,} from "./auth.dto.js";
 import type { JwtPayload } from "../../middlewares/auth.middleware.js";
 
 const BCRYPT_ROUNDS = 12;
@@ -42,6 +44,7 @@ type DbUser = {
   passwordHash: string | null;
   role: string;
   avatarUrl: string | null;
+  postNotificationsEnabled: boolean;
 };
 
 export class AuthService {
@@ -311,6 +314,60 @@ export class AuthService {
     } as jwt.SignOptions);
   }
 
+  async updateEmail(userId: string, data: UpdateEmailDTO): Promise<PublicUserDTO> {
+    const existing = await this.db.user.findFirst({
+      where: { email: data.email, id: { not: userId } },
+    });
+    if (existing) throw new ConflictError('This email address is already in use');
+
+    const updated = await this.db.user.update({
+      where: { id: userId },
+      data: { email: data.email },
+    });
+    logger.info({ userId }, 'auth.updateEmail: success');
+    return this.toPublicUser(updated);
+  }
+
+  async changePassword(userId: string, data: ChangePasswordDTO): Promise<void> {
+    const user = await this.db.user.findUnique({ where: { id: userId } });
+    if (!user || user.deletedAt) throw new UnauthorizedError('User not found');
+    if (!user.passwordHash) throw new BadRequestError('No password set for this account');
+
+    const valid = await bcrypt.compare(data.currentPassword, user.passwordHash);
+    if (!valid) throw new BadRequestError('Current password is incorrect');
+
+    const newHash = await bcrypt.hash(data.newPassword, BCRYPT_ROUNDS);
+    await this.db.user.update({ where: { id: userId }, data: { passwordHash: newHash } });
+    logger.info({ userId }, 'auth.changePassword: success');
+  }
+
+  async updateNotifications(userId: string, data: UpdateNotificationsDTO): Promise<PublicUserDTO> {
+    const updated = await this.db.user.update({
+      where: { id: userId },
+      data: { postNotificationsEnabled: data.postNotificationsEnabled },
+    });
+    logger.info({ userId, postNotificationsEnabled: data.postNotificationsEnabled }, 'auth.updateNotifications: success');
+    return this.toPublicUser(updated);
+  }
+
+  async updateAvatar(userId: string, buffer: Buffer, filename: string, mimetype: string): Promise<PublicUserDTO> {
+    const user = await this.db.user.findUnique({ where: { id: userId } });
+    if (!user || user.deletedAt) throw new UnauthorizedError('User not found');
+
+    const avatarUrl = await uploadFile(buffer, filename, mimetype, 'avatars');
+
+    if (user.avatarUrl) {
+      await deleteFile(user.avatarUrl).catch(() => {});
+    }
+
+    const updated = await this.db.user.update({
+      where: { id: userId },
+      data: { avatarUrl },
+    });
+    logger.info({ userId }, 'auth.updateAvatar: success');
+    return this.toPublicUser(updated);
+  }
+
   private toPublicUser(user: DbUser): PublicUserDTO {
     return {
       id: user.id,
@@ -319,6 +376,7 @@ export class AuthService {
       email: user.email,
       role: user.role,
       avatarUrl: user.avatarUrl,
+      postNotificationsEnabled: user.postNotificationsEnabled,
     };
   }
 }

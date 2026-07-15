@@ -70,12 +70,12 @@ export class NotificationsService {
   async fanOutCommunityPost(payload: CommunityPostNotificationJobPayload): Promise<{ created: number }> {
     const subs = await this.db.subscription.findMany({
       where: { communityId: payload.communityId, isActive: true, validUntil: { gte: startOfToday() } },
-      select: { userId: true, user: { select: { email: true } } },
+      select: { userId: true, user: { select: { email: true, postNotificationsEnabled: true } } },
       distinct: ['userId'],
     })
 
     const recipients = subs
-      .filter(s => s.userId !== payload.triggeredByUserId)
+      .filter(s => s.userId !== payload.triggeredByUserId && s.user.postNotificationsEnabled)
       .map(s => ({ userId: s.userId, email: s.user.email }))
     if (recipients.length === 0) return { created: 0 }
 

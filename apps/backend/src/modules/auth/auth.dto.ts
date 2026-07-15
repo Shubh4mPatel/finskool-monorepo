@@ -18,6 +18,20 @@ export interface PublicUserDTO {
   email: string
   role: string
   avatarUrl: string | null
+  postNotificationsEnabled: boolean
+}
+
+export interface UpdateEmailDTO {
+  email: string
+}
+
+export interface ChangePasswordDTO {
+  currentPassword: string
+  newPassword: string
+}
+
+export interface UpdateNotificationsDTO {
+  postNotificationsEnabled: boolean
 }
 
 export interface CommunityInfoDTO {

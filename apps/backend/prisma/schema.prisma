@@ -33,6 +33,7 @@ model User {
   isActive     Boolean   @default(true) @map("is_active")
   suspensionReason String? @map("suspension_reason") @db.Text
   avatarUrl    String?   @map("avatar_url") @db.VarChar(500)
+  postNotificationsEnabled Boolean @default(true) @map("post_notifications_enabled")
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
   deletedAt    DateTime? @map("deleted_at") @db.Timestamptz
 

@@ -28,9 +28,10 @@ export async function uploadFile(
   buffer: Buffer,
   originalName: string,
   mimetype: string,
+  folder = 'posts',
 ): Promise<string> {
   const ext = originalName.split('.').pop() ?? 'bin'
-  const objectName = `posts/${randomUUID()}.${ext}`
+  const objectName = `${folder}/${randomUUID()}.${ext}`
 
   await client.putObject(env.minio.bucket, objectName, buffer, buffer.length, {
     'Content-Type': mimetype,

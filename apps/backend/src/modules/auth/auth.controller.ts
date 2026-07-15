@@ -1,9 +1,9 @@
 import type { Request, Response, NextFunction, CookieOptions } from 'express'
 import { z } from 'zod'
 import type { AuthService } from './auth.service.js'
-import { registerSchema, loginSchema } from './auth.validator.js'
+import { registerSchema, loginSchema, updateEmailSchema, changePasswordSchema, updateNotificationsSchema } from './auth.validator.js'
 import { env } from '../../config/env.js'
-import { UnauthorizedError } from '../../shared/errors/index.js'
+import { UnauthorizedError, BadRequestError } from '../../shared/errors/index.js'
 
 const selectCommunitySchema = z.object({
   communityId: z.string().uuid('Invalid community ID'),
@@ -97,6 +97,54 @@ export class AuthController {
     try {
       const result = await this.service.getMe(req.user!.id)
       res.json({ success: true, data: result })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  updateEmail = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const data = updateEmailSchema.parse(req.body)
+      const user = await this.service.updateEmail(req.user!.id, data)
+      res.json({ success: true, data: { user } })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  changePassword = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const data = changePasswordSchema.parse(req.body)
+      await this.service.changePassword(req.user!.id, {
+        currentPassword: data.currentPassword,
+        newPassword: data.newPassword,
+      })
+      res.json({ success: true, message: 'Password updated successfully' })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  updateNotifications = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const data = updateNotificationsSchema.parse(req.body)
+      const user = await this.service.updateNotifications(req.user!.id, data)
+      res.json({ success: true, data: { user } })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  updateAvatar = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      if (!req.file) throw new BadRequestError('No image file provided')
+      const user = await this.service.updateAvatar(
+        req.user!.id,
+        req.file.buffer,
+        req.file.originalname,
+        req.file.mimetype,
+      )
+      res.json({ success: true, data: { user } })
     } catch (err) {
       next(err)
     }
