@@ -100,13 +100,13 @@ services:
       context: ../apps/frontend
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: "/api/v1"
+        NEXT_PUBLIC_API_URL: ""
     image: finskool-frontend:latest
     container_name: finskool-frontend
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      NEXT_PUBLIC_API_URL: "/api/v1"
+      NEXT_PUBLIC_API_URL: ""
     depends_on:
       - finskool-backend
 
