@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { RefreshCw, Megaphone, MessagesSquare } from "lucide-react";
 import { api } from "@/lib/api";
 
@@ -34,10 +35,10 @@ function formatRelativeTime(isoStr: string): string {
 
 function NotificationCard({
   notification,
-  onMarkRead,
+  onView,
 }: {
   notification: Notification;
-  onMarkRead: (id: string) => void;
+  onView: (id: string, type: string, isRead: boolean) => void;
 }) {
   const Icon = notification.type === "thread" ? MessagesSquare : Megaphone;
   const timestamp = formatRelativeTime(notification.createdAt);
@@ -51,16 +52,14 @@ function NotificationCard({
         <p className="text-base text-black">{notification.message}</p>
         <div className="flex items-center justify-between gap-2">
           <span className="text-sm text-black/60">{timestamp}</span>
-          {!notification.isRead && (
-            <button
-              type="button"
-              onClick={() => onMarkRead(notification.id)}
-              className="shrink-0 rounded-full px-4 py-1.5 text-xs font-semibold text-white"
-              style={{ background: "linear-gradient(to right, #c1f26e, #108b8b)" }}
-            >
-              Mark as read
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => onView(notification.id, notification.type, notification.isRead)}
+            className="shrink-0 rounded-full px-4 py-1.5 text-xs font-semibold text-white"
+            style={{ background: "linear-gradient(to right, #c1f26e, #108b8b)" }}
+          >
+            View
+          </button>
         </div>
       </div>
     </div>
@@ -68,6 +67,7 @@ function NotificationCard({
 }
 
 export default function AnnouncementsPage() {
+  const router = useRouter();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -87,15 +87,20 @@ export default function AnnouncementsPage() {
     fetchNotifications();
   }, [fetchNotifications]);
 
-  const markRead = useCallback(async (id: string) => {
-    setNotifications(prev => prev.map(n => (n.id === id ? { ...n, isRead: true } : n)));
-    try {
-      await api.patch(`/api/v1/notifications/${id}/read`, {});
-      window.dispatchEvent(new Event("notifications:updated"));
-    } catch {
-      // best-effort optimistic update; a manual refresh will reconcile on failure
+  const handleView = useCallback(async (id: string, type: string, isRead: boolean) => {
+    if (!isRead) {
+      setNotifications(prev => prev.map(n => (n.id === id ? { ...n, isRead: true } : n)));
+      try {
+        await api.patch(`/api/v1/notifications/${id}/read`, {});
+        window.dispatchEvent(new Event("notifications:updated"));
+      } catch {
+        // best-effort optimistic update
+      }
     }
-  }, []);
+    if (type === "post") {
+      router.push("/feed");
+    }
+  }, [router]);
 
   const unread = notifications.filter(n => !n.isRead);
   const read = notifications.filter(n => n.isRead);
@@ -136,7 +141,7 @@ export default function AnnouncementsPage() {
             ) : (
               <div className="flex flex-col gap-3">
                 {unread.map(notification => (
-                  <NotificationCard key={notification.id} notification={notification} onMarkRead={markRead} />
+                  <NotificationCard key={notification.id} notification={notification} onView={handleView} />
                 ))}
               </div>
             )}
@@ -153,7 +158,7 @@ export default function AnnouncementsPage() {
             ) : (
               <div className="flex flex-col gap-3">
                 {read.map(notification => (
-                  <NotificationCard key={notification.id} notification={notification} onMarkRead={markRead} />
+                  <NotificationCard key={notification.id} notification={notification} onView={handleView} />
                 ))}
               </div>
             )}

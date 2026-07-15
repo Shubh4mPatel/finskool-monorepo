@@ -4,7 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
-import { ArrowRight, Bold, Check, ChevronLeft, Code, Image, Italic, Link, List, AlignLeft, X } from "lucide-react";
+import TextAlign from "@tiptap/extension-text-align";
+import TiptapLink from "@tiptap/extension-link";
+import { ArrowRight, Bold, Check, ChevronLeft, Code, Image, Italic, Link, List, AlignLeft, AlignCenter, AlignRight, X } from "lucide-react";
 
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
@@ -59,13 +61,27 @@ function StepIndicator({ current }: { current: Step }) {
 
 function TipTapToolbar({ editor }: { editor: ReturnType<typeof useEditor> }) {
   if (!editor) return null;
+
+  const setLink = () => {
+    const prev = (editor.getAttributes("link").href as string) ?? "";
+    const url = window.prompt("Enter URL", prev);
+    if (url === null) return;
+    if (url === "") {
+      editor.chain().focus().unsetLink().run();
+    } else {
+      editor.chain().focus().setLink({ href: url }).run();
+    }
+  };
+
   const tools = [
-    { icon: Bold,     action: () => editor.chain().focus().toggleBold().run(),         active: editor.isActive("bold"),         label: "Bold" },
-    { icon: Italic,   action: () => editor.chain().focus().toggleItalic().run(),       active: editor.isActive("italic"),       label: "Italic" },
-    { icon: List,     action: () => editor.chain().focus().toggleBulletList().run(),   active: editor.isActive("bulletList"),   label: "Bullet List" },
-    { icon: AlignLeft,action: () => {},                                                active: false,                           label: "Align" },
-    { icon: Link,     action: () => {},                                                active: false,                           label: "Link" },
-    { icon: Code,     action: () => editor.chain().focus().toggleCode().run(),         active: editor.isActive("code"),         label: "Code" },
+    { icon: Bold,        action: () => editor.chain().focus().toggleBold().run(),             active: editor.isActive("bold"),                  label: "Bold" },
+    { icon: Italic,      action: () => editor.chain().focus().toggleItalic().run(),           active: editor.isActive("italic"),                label: "Italic" },
+    { icon: List,        action: () => editor.chain().focus().toggleBulletList().run(),       active: editor.isActive("bulletList"),             label: "Bullet List" },
+    { icon: AlignLeft,   action: () => editor.chain().focus().setTextAlign("left").run(),     active: editor.isActive({ textAlign: "left" }),    label: "Align Left" },
+    { icon: AlignCenter, action: () => editor.chain().focus().setTextAlign("center").run(),   active: editor.isActive({ textAlign: "center" }),  label: "Align Center" },
+    { icon: AlignRight,  action: () => editor.chain().focus().setTextAlign("right").run(),    active: editor.isActive({ textAlign: "right" }),   label: "Align Right" },
+    { icon: Link,        action: setLink,                                                     active: editor.isActive("link"),                   label: "Link" },
+    { icon: Code,        action: () => editor.chain().focus().toggleCode().run(),             active: editor.isActive("code"),                   label: "Code" },
   ];
   return (
     <div className="flex items-center gap-0.5 border-b border-divider pb-2.5">
@@ -103,6 +119,8 @@ export default function CreatePostPage() {
     extensions: [
       StarterKit,
       Placeholder.configure({ placeholder: "Add Description e.g. Tip: Include entry price, target, stop loss and reasoning for stock calls." }),
+      TextAlign.configure({ types: ["heading", "paragraph"] }),
+      TiptapLink.configure({ openOnClick: false }),
     ],
     editorProps: {
       attributes: { class: "outline-none" },
@@ -285,7 +303,7 @@ export default function CreatePostPage() {
               <TipTapToolbar editor={editor} />
               <EditorContent
                 editor={editor}
-                className="mt-3 min-h-24 text-sm text-primary [&_.ProseMirror]:outline-none [&_.ProseMirror]:min-h-24 [&_.ProseMirror_p.is-editor-empty:first-child::before]:text-subtle [&_.ProseMirror_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.ProseMirror_p.is-editor-empty:first-child::before]:float-none [&_.ProseMirror_p.is-editor-empty:first-child::before]:pointer-events-none"
+                className="mt-3 min-h-24 text-sm text-primary [&_.ProseMirror]:outline-none [&_.ProseMirror]:min-h-24 [&_.ProseMirror_ul]:list-disc [&_.ProseMirror_ul]:pl-5 [&_.ProseMirror_ol]:list-decimal [&_.ProseMirror_ol]:pl-5 [&_.ProseMirror_li]:my-0.5 [&_.ProseMirror_a]:text-accent [&_.ProseMirror_a]:underline [&_.ProseMirror_p.is-editor-empty:first-child::before]:text-subtle [&_.ProseMirror_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.ProseMirror_p.is-editor-empty:first-child::before]:float-none [&_.ProseMirror_p.is-editor-empty:first-child::before]:pointer-events-none"
               />
             </div>
 
