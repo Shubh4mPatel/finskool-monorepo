@@ -112,6 +112,16 @@ export interface MemberListFilters {
   pageSize: number
 }
 
+export interface MemberSubscriptionDTO {
+  id: string
+  communityId: string
+  communityName: string
+  payment: number
+  paidOn: string | null
+  validUntil: string
+  isActive: boolean
+}
+
 export interface MemberItemDTO {
   id: string            // approvedPhone.id
   name: string
@@ -122,15 +132,20 @@ export interface MemberItemDTO {
   status: MemberStatus
   createdAt: string
   suspensionReason: string | null   // set only when suspended via suspendMember(); null otherwise (incl. deleted)
-  subscription: {
-    id: string
+  subscription: MemberSubscriptionDTO | null   // most recent active subscription (for status / extend)
+  allSubscriptions: MemberSubscriptionDTO[]    // all active subscriptions (one UI row per entry)
+}
+
+export interface UpdateMemberDTO {
+  name: string
+  phone: string
+  email: string
+  newCommunity?: {
     communityId: string
-    communityName: string
     payment: number
-    paidOn: string | null
-    validUntil: string
-    isActive: boolean
-  } | null
+    paidOn?: string | undefined   // YYYY-MM-DD, defaults to today
+    validUntil: string            // YYYY-MM-DD
+  } | undefined
 }
 
 export interface MemberListDTO {

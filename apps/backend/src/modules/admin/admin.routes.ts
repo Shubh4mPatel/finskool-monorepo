@@ -52,8 +52,10 @@ router.delete(
 )
 router.get('/members', authenticate, requireRole('admin'), controller.listMembers)
 router.post('/members', authenticate, requireRole('admin'), controller.addMember)
+router.patch('/members/:id', authenticate, requireRole('admin'), controller.updateMember)
 router.post('/members/bulk-delete', authenticate, requireRole('admin'), controller.bulkDeleteMembers)
 router.delete('/members/:id', authenticate, requireRole('admin'), controller.deleteMember)
+router.delete('/members/:id/communities/:communityId', authenticate, requireRole('admin'), controller.revokeMemberCommunity)
 router.patch('/members/:id/suspend', authenticate, requireRole('admin'), controller.suspendMember)
 router.patch('/members/:id/revoke', authenticate, requireRole('admin'), controller.revokeSuspension)
 

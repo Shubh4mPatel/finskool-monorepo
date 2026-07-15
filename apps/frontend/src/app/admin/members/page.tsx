@@ -26,6 +26,7 @@ interface MemberItem {
   createdAt: string;
   suspensionReason: string | null;
   subscription: MemberSubscription | null;
+  allSubscriptions: MemberSubscription[];
 }
 
 interface MemberList {
@@ -75,7 +76,7 @@ function getPaginationPages(current: number, total: number): (number | null)[] {
   return [1, null, current - 1, current, current + 1, null, total];
 }
 
-type ModalType = "add" | "extend" | "delete" | "bulk-delete" | "suspend" | "revoke" | null;
+type ModalType = "add" | "edit" | "extend" | "delete" | "bulk-delete" | "suspend" | "revoke" | "revoke-community" | null;
 
 interface Community { id: string; name: string; slug: string }
 
@@ -114,6 +115,18 @@ export default function MembersPage() {
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [suspending, setSuspending] = useState(false);
   const [revoking, setRevoking] = useState(false);
+
+  // Edit member
+  const [editForm, setEditForm] = useState({ name: "", phone: "", email: "" });
+  const [editNewCom, setEditNewCom] = useState({ communityId: "", payment: "", paidOn: "", validUntil: "" });
+  const [showAddCom, setShowAddCom] = useState(false);
+  const [editSubmitting, setEditSubmitting] = useState(false);
+  const [editErrors, setEditErrors] = useState<Partial<Record<string, string>>>({});
+
+  // Revoke community
+  const [revokeCommunityId, setRevokeCommunityId] = useState("");
+  const [revokeCommunityName, setRevokeCommunityName] = useState("");
+  const [revokingCommunity, setRevokingCommunity] = useState(false);
 
   // Communities
   const [communities, setCommunities] = useState<Community[]>([]);
@@ -206,6 +219,12 @@ export default function MembersPage() {
     setExtendPayment("");
     setExtendErrors({});
     setSuspendReason("");
+    setEditForm({ name: "", phone: "", email: "" });
+    setEditNewCom({ communityId: "", payment: "", paidOn: "", validUntil: "" });
+    setShowAddCom(false);
+    setEditErrors({});
+    setRevokeCommunityId("");
+    setRevokeCommunityName("");
   };
 
   function toggleSelect(id: string) {
@@ -412,6 +431,87 @@ export default function MembersPage() {
     }
   }
 
+  function openEditModal(m: MemberItem) {
+    setSelectedMember(m);
+    setEditForm({ name: m.name, phone: m.phone, email: m.email });
+    setEditNewCom({ communityId: "", payment: "", paidOn: "", validUntil: "" });
+    setShowAddCom(false);
+    setEditErrors({});
+    setModal("edit");
+  }
+
+  function validateEditForm() {
+    const errs: Partial<Record<string, string>> = {};
+    if (editForm.name.trim().length < 2) errs.name = "Name must be at least 2 characters";
+    const digits = editForm.phone.replace(/\D/g, "");
+    if (!digits) errs.phone = "Phone is required";
+    else if (digits.length !== 10 && !(digits.length === 12 && digits.startsWith("91")))
+      errs.phone = "Enter a valid 10-digit phone number";
+    if (!editForm.email) errs.email = "Email is required";
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(editForm.email)) errs.email = "Invalid email address";
+    if (showAddCom) {
+      if (!editNewCom.communityId) errs.newCommunityId = "Select a community";
+      const amt = parseFloat(editNewCom.payment);
+      if (!editNewCom.payment || isNaN(amt) || amt <= 0) errs.newPayment = "Enter a valid payment amount";
+      if (!editNewCom.validUntil) errs.newValidUntil = "Valid till date is required";
+    }
+    return errs;
+  }
+
+  async function handleUpdateMember(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedMember) return;
+    const errs = validateEditForm();
+    setEditErrors(errs);
+    if (Object.values(errs).some(Boolean)) return;
+
+    setEditSubmitting(true);
+    try {
+      const body: {
+        name: string; phone: string; email: string;
+        newCommunity?: { communityId: string; payment: number; paidOn?: string; validUntil: string }
+      } = { name: editForm.name, phone: editForm.phone, email: editForm.email };
+      if (showAddCom && editNewCom.communityId) {
+        body.newCommunity = {
+          communityId: editNewCom.communityId,
+          payment: parseFloat(editNewCom.payment),
+          validUntil: editNewCom.validUntil,
+          ...(editNewCom.paidOn ? { paidOn: editNewCom.paidOn } : {}),
+        };
+      }
+      const updated = await api.patch<MemberItem>(`/api/v1/admin/members/${selectedMember.id}`, body);
+      setMembers(prev => prev.map(m => (m.id === updated.id ? updated : m)));
+      toast.success({ title: "Member updated", message: `${updated.name} has been updated.` });
+      close();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to update member");
+    } finally {
+      setEditSubmitting(false);
+    }
+  }
+
+  function openRevokeCommunityModal(m: MemberItem, communityId: string, communityName: string) {
+    setSelectedMember(m);
+    setRevokeCommunityId(communityId);
+    setRevokeCommunityName(communityName);
+    setModal("revoke-community");
+  }
+
+  async function handleRevokeCommunity() {
+    if (!selectedMember || !revokeCommunityId) return;
+    setRevokingCommunity(true);
+    try {
+      await api.delete(`/api/v1/admin/members/${selectedMember.id}/communities/${revokeCommunityId}`);
+      toast.success({ title: "Access revoked", message: `${selectedMember.name} removed from ${revokeCommunityName}.` });
+      close();
+      refresh();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to revoke access");
+    } finally {
+      setRevokingCommunity(false);
+    }
+  }
+
   const fieldCls = (err?: string) =>
     `mt-2 w-full rounded-xl border bg-white px-4 py-2.5 text-sm placeholder:text-subtle transition-colors focus:outline-none focus:ring-2 ${
       err ? "border-red-400 focus:ring-red-200" : "border-divider focus:ring-accent/40"
@@ -543,8 +643,12 @@ export default function MembersPage() {
         {/* Mobile card list */}
         {!loading && members.length > 0 && (
           <div className="mt-4 flex flex-col gap-3 lg:hidden">
-            {members.map((m) => (
-              <div key={m.id} className="rounded-xl border border-divider p-4 transition-shadow hover:shadow-card">
+            {members.flatMap(m =>
+              m.allSubscriptions.length > 0
+                ? m.allSubscriptions.map(sub => ({ m, sub }))
+                : [{ m, sub: null as MemberSubscription | null }]
+            ).map(({ m, sub }) => (
+              <div key={`${m.id}-${sub?.id ?? "none"}`} className="rounded-xl border border-divider p-4 transition-shadow hover:shadow-card">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
                     {selectMode && (
@@ -569,23 +673,27 @@ export default function MembersPage() {
                   </span>
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-                  <div><p className="text-xs text-subtle">Payment</p><p className="font-semibold text-primary">{m.subscription ? formatCurrency(m.subscription.payment) : "—"}</p></div>
-                  <div><p className="text-xs text-subtle">Valid Till</p><p className="font-semibold text-primary">{formatDate(m.subscription?.validUntil)}</p></div>
+                  <div><p className="text-xs text-subtle">Payment</p><p className="font-semibold text-primary">{sub ? formatCurrency(sub.payment) : "—"}</p></div>
+                  <div><p className="text-xs text-subtle">Valid Till</p><p className="font-semibold text-primary">{formatDate(sub?.validUntil)}</p></div>
                   <div>
                     <p className="text-xs text-subtle">Community</p>
-                    {m.subscription
-                      ? <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${communityBadge(m.subscription.communityName)}`}>{m.subscription.communityName}</span>
+                    {sub
+                      ? <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${communityBadge(sub.communityName)}`}>{sub.communityName}</span>
                       : <span className="text-xs text-muted">—</span>}
                   </div>
                   <div><p className="text-xs text-subtle">Added</p><p className="text-primary">{formatDate(m.createdAt)}</p></div>
                 </div>
                 <div className="mt-3 flex items-center gap-2 border-t border-divider pt-3">
-                  <button onClick={() => openExtendModal(m)} disabled={!m.subscription} className="flex items-center gap-1 rounded-full border border-accent px-3 py-1 text-xs font-semibold text-accent transition-colors hover:bg-accent/5 disabled:cursor-not-allowed disabled:opacity-40">
+                  <button onClick={() => openExtendModal({ ...m, subscription: sub })} disabled={!sub} className="flex items-center gap-1 rounded-full border border-accent px-3 py-1 text-xs font-semibold text-accent transition-colors hover:bg-accent/5 disabled:cursor-not-allowed disabled:opacity-40">
                     <Plus size={10} /> Extend
                   </button>
-                  <button onClick={() => setModal(null)} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-divider/60 hover:text-accent"><Pencil size={13} /></button>
+                  <button onClick={() => openEditModal(m)} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-divider/60 hover:text-accent" title="Edit member"><Pencil size={13} /></button>
                   <button onClick={() => (m.status === "suspended" ? openRevokeModal(m) : openSuspendModal(m))} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-amber-50 hover:text-amber-500"><Ban size={13} /></button>
-                  <button onClick={() => openDeleteModal(m)} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-red-50 hover:text-red-500"><Trash2 size={13} /></button>
+                  <button
+                    onClick={() => sub ? openRevokeCommunityModal(m, sub.communityId, sub.communityName) : openDeleteModal(m)}
+                    className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-red-50 hover:text-red-500"
+                    title={sub ? `Remove from ${sub.communityName}` : "Deactivate member"}
+                  ><Trash2 size={13} /></button>
                 </div>
               </div>
             ))}
@@ -595,7 +703,7 @@ export default function MembersPage() {
         {/* Desktop table */}
         {!loading && members.length > 0 && (
           <div className="mt-4 hidden overflow-x-auto lg:block">
-            <table className="w-full min-w-[900px] text-left text-sm">
+            <table className="w-full min-w-225 text-left text-sm">
               <thead>
                 <tr className="text-xs font-semibold uppercase text-subtle">
                   {selectMode && (
@@ -623,8 +731,12 @@ export default function MembersPage() {
                 </tr>
               </thead>
               <tbody>
-                {members.map((m, i) => (
-                  <tr key={m.id} className="border-t border-divider transition-colors hover:bg-background">
+                {members.flatMap((m, mi) =>
+                  m.allSubscriptions.length > 0
+                    ? m.allSubscriptions.map((sub, si) => ({ m, sub, rowIdx: mi * 10 + si }))
+                    : [{ m, sub: null as MemberSubscription | null, rowIdx: mi * 10 }]
+                ).map(({ m, sub, rowIdx }) => (
+                  <tr key={`${m.id}-${sub?.id ?? "none"}`} className="border-t border-divider transition-colors hover:bg-background">
                     {selectMode && (
                       <td className="py-3 pl-2 pr-3">
                         <input
@@ -636,7 +748,7 @@ export default function MembersPage() {
                         />
                       </td>
                     )}
-                    <td className="py-3 pl-2 pr-3 text-xs text-subtle">{(page - 1) * 8 + i + 1}</td>
+                    <td className="py-3 pl-2 pr-3 text-xs text-subtle">{(page - 1) * 8 + rowIdx + 1}</td>
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-2">
                         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-white">
@@ -646,13 +758,13 @@ export default function MembersPage() {
                       </div>
                     </td>
                     <td className="px-3 py-3 text-muted">{m.phone}</td>
-                    <td className="px-3 py-3 font-semibold text-primary">{m.subscription ? formatCurrency(m.subscription.payment) : "—"}</td>
-                    <td className="px-3 py-3 text-muted">{formatDate(m.subscription?.paidOn)}</td>
-                    <td className="px-3 py-3 text-muted">{formatDate(m.subscription?.validUntil)}</td>
+                    <td className="px-3 py-3 font-semibold text-primary">{sub ? formatCurrency(sub.payment) : "—"}</td>
+                    <td className="px-3 py-3 text-muted">{formatDate(sub?.paidOn)}</td>
+                    <td className="px-3 py-3 text-muted">{formatDate(sub?.validUntil)}</td>
                     <td className="px-3 py-3 text-muted">{formatDate(m.createdAt)}</td>
                     <td className="px-3 py-3">
-                      {m.subscription
-                        ? <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${communityBadge(m.subscription.communityName)}`}>{m.subscription.communityName}</span>
+                      {sub
+                        ? <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${communityBadge(sub.communityName)}`}>{sub.communityName}</span>
                         : <span className="text-xs text-muted">—</span>}
                     </td>
                     <td className="px-3 py-3 text-muted">{m.email}</td>
@@ -663,16 +775,20 @@ export default function MembersPage() {
                     </td>
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-1">
-                        <button onClick={() => openExtendModal(m)} disabled={!m.subscription} className="flex items-center gap-1 rounded-full border border-accent px-2.5 py-1 text-xs font-semibold text-accent transition-colors hover:bg-accent/5 disabled:cursor-not-allowed disabled:opacity-40">
+                        <button onClick={() => openExtendModal({ ...m, subscription: sub })} disabled={!sub} className="flex items-center gap-1 rounded-full border border-accent px-2.5 py-1 text-xs font-semibold text-accent transition-colors hover:bg-accent/5 disabled:cursor-not-allowed disabled:opacity-40">
                           <Plus size={10} /> Extend
                         </button>
-                        <button onClick={() => setModal(null)} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-divider/60 hover:text-accent">
+                        <button onClick={() => openEditModal(m)} title="Edit member" className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-divider/60 hover:text-accent">
                           <Pencil size={13} />
                         </button>
                         <button onClick={() => (m.status === "suspended" ? openRevokeModal(m) : openSuspendModal(m))} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-amber-50 hover:text-amber-500">
                           <Ban size={13} />
                         </button>
-                        <button onClick={() => openDeleteModal(m)} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-red-50 hover:text-red-500">
+                        <button
+                          onClick={() => sub ? openRevokeCommunityModal(m, sub.communityId, sub.communityName) : openDeleteModal(m)}
+                          title={sub ? `Remove from ${sub.communityName}` : "Deactivate member"}
+                          className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-red-50 hover:text-red-500"
+                        >
                           <Trash2 size={13} />
                         </button>
                       </div>
@@ -943,6 +1059,146 @@ export default function MembersPage() {
               <button onClick={handleRevokeSuspension} disabled={revoking}
                 className="flex-1 rounded-full bg-primary px-5 py-2.5 text-sm font-bold text-white transition-transform hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60">
                 {revoking ? "Revoking…" : "Yes, Revoke"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Member Modal */}
+      {modal === "edit" && selectedMember && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-primary/40 p-4 backdrop-blur-sm">
+          <div className="animate-rise w-full max-w-md rounded-2xl bg-white p-6 shadow-card-hover">
+            <div className="flex items-center justify-between">
+              <h3 className="font-display text-lg font-bold text-primary">Edit Member</h3>
+              <button onClick={close} className="rounded-full p-1 text-subtle transition-colors hover:bg-divider/60 hover:text-primary"><X size={18} /></button>
+            </div>
+            <form onSubmit={handleUpdateMember} className="mt-5 flex flex-col gap-4">
+              <div>
+                <label className="text-sm font-semibold text-primary">Name</label>
+                <input type="text" value={editForm.name}
+                  onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))}
+                  className={fieldCls(editErrors.name)} placeholder="Full name" />
+                {editErrors.name && <p className="mt-1 text-xs text-red-500">{editErrors.name}</p>}
+              </div>
+              <div>
+                <label className="text-sm font-semibold text-primary">Phone Number</label>
+                <input type="tel" value={editForm.phone}
+                  onChange={e => setEditForm(f => ({ ...f, phone: e.target.value }))}
+                  className={fieldCls(editErrors.phone)} placeholder="10-digit number" />
+                {editErrors.phone && <p className="mt-1 text-xs text-red-500">{editErrors.phone}</p>}
+              </div>
+              <div>
+                <label className="text-sm font-semibold text-primary">Email</label>
+                <input type="email" value={editForm.email}
+                  onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))}
+                  className={fieldCls(editErrors.email)} placeholder="Enter email" />
+                {editErrors.email && <p className="mt-1 text-xs text-red-500">{editErrors.email}</p>}
+              </div>
+
+              {/* Current communities */}
+              {selectedMember.allSubscriptions.length > 0 && (
+                <div>
+                  <p className="text-sm font-semibold text-primary">Current Communities</p>
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {selectedMember.allSubscriptions.map(s => (
+                      <span key={s.id} className={`rounded-full px-3 py-1 text-xs font-bold ${communityBadge(s.communityName)}`}>{s.communityName}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Add to another community */}
+              {!showAddCom ? (
+                <button type="button" onClick={() => setShowAddCom(true)}
+                  className="flex items-center gap-1.5 self-start text-xs font-semibold text-accent transition-colors hover:text-primary">
+                  <Plus size={13} /> Add to another community
+                </button>
+              ) : (
+                <div className="rounded-xl border border-divider p-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-semibold text-primary">Add to Community</p>
+                    <button type="button" onClick={() => { setShowAddCom(false); setEditNewCom({ communityId: "", payment: "", paidOn: "", validUntil: "" }); setEditErrors(e => ({ ...e, newCommunityId: undefined, newPayment: undefined, newValidUntil: undefined })); }}
+                      className="rounded-full p-0.5 text-subtle hover:text-primary"><X size={14} /></button>
+                  </div>
+                  <div className="mt-3 flex flex-col gap-3">
+                    <div>
+                      <label className="text-xs font-semibold text-muted">Community</label>
+                      <select value={editNewCom.communityId}
+                        onChange={e => setEditNewCom(c => ({ ...c, communityId: e.target.value }))}
+                        className={fieldCls(editErrors.newCommunityId)}>
+                        <option value="">Select community</option>
+                        {communities
+                          .filter(c => !selectedMember.allSubscriptions.some(s => s.communityId === c.id))
+                          .map(c => <option key={c.id} value={c.id}>{c.name}</option>)
+                        }
+                      </select>
+                      {editErrors.newCommunityId && <p className="mt-1 text-xs text-red-500">{editErrors.newCommunityId}</p>}
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs font-semibold text-muted">Payment (₹)</label>
+                        <input type="number" placeholder="4000" value={editNewCom.payment}
+                          onChange={e => setEditNewCom(c => ({ ...c, payment: e.target.value }))}
+                          className={fieldCls(editErrors.newPayment)} />
+                        {editErrors.newPayment && <p className="mt-1 text-xs text-red-500">{editErrors.newPayment}</p>}
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-muted">Valid Till</label>
+                        <input type="date" value={editNewCom.validUntil}
+                          onChange={e => setEditNewCom(c => ({ ...c, validUntil: e.target.value }))}
+                          className={fieldCls(editErrors.newValidUntil)} />
+                        {editErrors.newValidUntil && <p className="mt-1 text-xs text-red-500">{editErrors.newValidUntil}</p>}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-muted">Paid On (optional)</label>
+                      <input type="date" value={editNewCom.paidOn}
+                        onChange={e => setEditNewCom(c => ({ ...c, paidOn: e.target.value }))}
+                        className={fieldCls()} />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center gap-3">
+                <button type="button" onClick={close} disabled={editSubmitting}
+                  className="flex-1 rounded-full border border-divider px-5 py-2.5 text-sm font-bold text-muted transition-colors hover:border-subtle hover:text-primary disabled:opacity-50">
+                  Cancel
+                </button>
+                <button type="submit" disabled={editSubmitting}
+                  className="flex-1 rounded-full bg-primary px-5 py-2.5 text-sm font-bold text-white transition-transform hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60">
+                  {editSubmitting ? "Saving…" : "Save Changes"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Revoke Community Access Modal */}
+      {modal === "revoke-community" && selectedMember && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-primary/40 p-4 backdrop-blur-sm">
+          <div className="animate-rise w-full max-w-sm rounded-2xl bg-white p-6 shadow-card-hover text-center">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100 text-red-500">
+              <Trash2 size={20} />
+            </div>
+            <h3 className="mt-4 font-display text-lg font-bold text-primary">Remove from Community?</h3>
+            <p className="mt-2 text-sm text-muted">
+              This will remove <span className="font-semibold text-primary">{selectedMember.name}</span> from{" "}
+              <span className="font-semibold text-primary">{revokeCommunityName}</span>.
+              {selectedMember.allSubscriptions.length <= 1
+                ? " Since this is their only community, their account will also be deactivated."
+                : ""}
+            </p>
+            <div className="mt-6 flex items-center gap-3">
+              <button onClick={close} disabled={revokingCommunity}
+                className="flex-1 rounded-full border border-divider px-5 py-2.5 text-sm font-bold text-muted transition-colors hover:border-subtle hover:text-primary disabled:opacity-50">
+                Cancel
+              </button>
+              <button onClick={handleRevokeCommunity} disabled={revokingCommunity}
+                className="flex-1 rounded-full bg-red-500 px-5 py-2.5 text-sm font-bold text-white transition-transform hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60">
+                {revokingCommunity ? "Removing…" : "Yes, Remove"}
               </button>
             </div>
           </div>

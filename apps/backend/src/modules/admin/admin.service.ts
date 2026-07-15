@@ -27,7 +27,9 @@ import type {
   MemberListFilters,
   MemberListDTO,
   MemberItemDTO,
+  MemberSubscriptionDTO,
   MemberStatus,
+  UpdateMemberDTO,
   DashboardDTO,
   ValidateImportRowInput,
   ValidateImportRowResult,
@@ -1064,7 +1066,6 @@ export class AdminService {
             where: { isActive: true },
             include: { community: { select: { id: true, name: true } } },
             orderBy: { createdAt: 'desc' },
-            take: 1,
           },
         },
       }),
@@ -1079,7 +1080,8 @@ export class AdminService {
     const userByPhone = new Map(users.map(u => [u.phone, u]))
 
     const members: MemberItemDTO[] = rows.map(ap => {
-      const sub = ap.subscriptions[0] ?? null
+      const allSubs = ap.subscriptions
+      const sub = allSubs[0] ?? null
       const user = userByPhone.get(ap.phone)
       const suspendedByUser = user ? !user.isActive : false
 
@@ -1115,9 +1117,176 @@ export class AdminService {
               isActive: sub.isActive,
             }
           : null,
+        allSubscriptions: allSubs.map(s => ({
+          id: s.id,
+          communityId: s.communityId,
+          communityName: s.community.name,
+          payment: Number(s.payment),
+          paidOn: s.paidOn ? s.paidOn.toISOString().split('T')[0]! : null,
+          validUntil: s.validUntil.toISOString().split('T')[0]!,
+          isActive: s.isActive,
+        })),
       }
     })
 
     return { members, total, page, pageSize, totalPages: Math.ceil(total / pageSize) }
+  }
+
+  private buildSubDTO(s: {
+    id: string
+    communityId: string
+    community: { name: string }
+    payment: { toNumber(): number } | number
+    paidOn: Date | null
+    validUntil: Date
+    isActive: boolean
+  }): MemberSubscriptionDTO {
+    return {
+      id: s.id,
+      communityId: s.communityId,
+      communityName: s.community.name,
+      payment: typeof s.payment === 'number' ? s.payment : s.payment.toNumber(),
+      paidOn: s.paidOn ? s.paidOn.toISOString().split('T')[0]! : null,
+      validUntil: s.validUntil.toISOString().split('T')[0]!,
+      isActive: s.isActive,
+    }
+  }
+
+  private async fetchMemberDTO(approvedPhoneId: string): Promise<MemberItemDTO> {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    const ap = await this.db.approvedPhone.findUnique({
+      where: { id: approvedPhoneId },
+      include: {
+        subscriptions: {
+          where: { isActive: true },
+          include: { community: { select: { id: true, name: true } } },
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+    })
+    if (!ap) throw new NotFoundError('Member not found')
+
+    const user = await this.db.user.findUnique({
+      where: { phone: ap.phone },
+      select: { isActive: true, suspensionReason: true },
+    })
+
+    const allSubs = ap.subscriptions
+    const sub = allSubs[0] ?? null
+    const suspendedByUser = user ? !user.isActive : false
+
+    let status: MemberStatus
+    if (!ap.isActive || suspendedByUser) status = 'suspended'
+    else if (!ap.isRegistered) status = 'pending'
+    else if (sub && new Date(sub.validUntil) < today) status = 'expired'
+    else status = 'registered'
+
+    return {
+      id: ap.id,
+      name: ap.name ?? '',
+      phone: ap.phone,
+      email: ap.email ?? '',
+      isActive: ap.isActive && !suspendedByUser,
+      isRegistered: ap.isRegistered,
+      status,
+      createdAt: ap.createdAt.toISOString(),
+      suspensionReason: suspendedByUser ? (user?.suspensionReason ?? null) : null,
+      subscription: sub ? this.buildSubDTO(sub) : null,
+      allSubscriptions: allSubs.map(s => this.buildSubDTO(s)),
+    }
+  }
+
+  async updateMember(approvedPhoneId: string, data: UpdateMemberDTO): Promise<MemberItemDTO> {
+    const ap = await this.db.approvedPhone.findUnique({ where: { id: approvedPhoneId } })
+    if (!ap) throw new NotFoundError('Member not found')
+
+    const user = await this.db.user.findUnique({ where: { phone: ap.phone } })
+
+    const digits = data.phone.replace(/\D/g, '')
+    const normalizedPhone =
+      digits.length === 10 ? `+91${digits}`
+      : digits.length === 12 && digits.startsWith('91') ? `+${digits}`
+      : data.phone
+
+    if (normalizedPhone !== ap.phone) {
+      const phoneConflict = await this.db.approvedPhone.findUnique({ where: { phone: normalizedPhone } })
+      if (phoneConflict) throw new ConflictError('Phone number already in use', 'PHONE_EXISTS')
+    }
+    if (data.email !== (ap.email ?? '')) {
+      const emailConflict = await this.db.user.findUnique({ where: { email: data.email } })
+      if (emailConflict && emailConflict.phone !== ap.phone) {
+        throw new ConflictError('Email address already in use', 'EMAIL_EXISTS')
+      }
+    }
+
+    if (data.newCommunity) {
+      const community = await this.db.community.findUnique({
+        where: { id: data.newCommunity.communityId, deletedAt: null },
+      })
+      if (!community) throw new NotFoundError('Community not found')
+      if (user) {
+        const alreadyIn = await this.db.subscription.findFirst({
+          where: { userId: user.id, communityId: data.newCommunity.communityId, isActive: true },
+        })
+        if (alreadyIn) throw new ConflictError('Member is already in this community', 'ALREADY_IN_COMMUNITY')
+      }
+    }
+
+    await this.db.$transaction(async tx => {
+      await tx.approvedPhone.update({
+        where: { id: approvedPhoneId },
+        data: { name: data.name, phone: normalizedPhone, email: data.email },
+      })
+      if (user) {
+        await tx.user.update({
+          where: { id: user.id },
+          data: { name: data.name, phone: normalizedPhone, email: data.email },
+        })
+      }
+      if (data.newCommunity && user) {
+        const paidOn = data.newCommunity.paidOn ? new Date(data.newCommunity.paidOn) : new Date()
+        await tx.subscription.create({
+          data: {
+            userId: user.id,
+            approvedPhoneId,
+            communityId: data.newCommunity.communityId,
+            payment: data.newCommunity.payment,
+            paidOn,
+            validUntil: new Date(data.newCommunity.validUntil),
+            isActive: true,
+          },
+        })
+      }
+    })
+
+    logger.info({ approvedPhoneId }, 'admin.updateMember: success')
+    return this.fetchMemberDTO(approvedPhoneId)
+  }
+
+  async revokeMemberCommunity(approvedPhoneId: string, communityId: string): Promise<void> {
+    const ap = await this.db.approvedPhone.findUnique({ where: { id: approvedPhoneId } })
+    if (!ap) throw new NotFoundError('Member not found')
+
+    const user = await this.db.user.findUnique({ where: { phone: ap.phone } })
+    if (!user) throw new NotFoundError('Member account not found')
+
+    const sub = await this.db.subscription.findFirst({
+      where: { userId: user.id, communityId, isActive: true },
+    })
+    if (!sub) throw new NotFoundError('Active subscription not found for this community')
+
+    await this.db.subscription.update({ where: { id: sub.id }, data: { isActive: false } })
+
+    const remaining = await this.db.subscription.count({ where: { userId: user.id, isActive: true } })
+    if (remaining === 0) {
+      await this.db.$transaction(async tx => {
+        await tx.approvedPhone.update({ where: { id: approvedPhoneId }, data: { isActive: false } })
+        await tx.user.update({ where: { id: user.id }, data: { isActive: false } })
+      })
+    }
+
+    logger.info({ approvedPhoneId, communityId, remaining }, 'admin.revokeMemberCommunity: success')
   }
 }

@@ -79,6 +79,18 @@ const updateAdminAccessSchema = z.object({
   communityIds: z.array(z.string().uuid('Invalid community ID')).min(1, 'At least one community is required'),
 })
 
+const updateMemberSchema = z.object({
+  name: z.string().min(2, 'Name must be at least 2 characters'),
+  phone: z.string().min(10, 'Phone is required'),
+  email: z.string().email('Invalid email address'),
+  newCommunity: z.object({
+    communityId: z.string().uuid('Invalid community'),
+    payment: z.number().positive('Payment must be a positive number'),
+    paidOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    validUntil: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Valid until must be YYYY-MM-DD'),
+  }).optional(),
+})
+
 const listNotificationsSchema = z.object({
   isReplied: z
     .enum(['true', 'false'])
@@ -357,6 +369,32 @@ export class AdminController {
       const raw = req.params['adminId']
       const adminId = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
       await this.service.deleteAdmin(req.user!.id, adminId)
+      res.json({ success: true })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  updateMember = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const raw = req.params['id']
+      const id = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
+      const parsed = updateMemberSchema.safeParse(req.body)
+      if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
+      const result = await this.service.updateMember(id, parsed.data)
+      res.json({ success: true, data: result })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  revokeMemberCommunity = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const idRaw = req.params['id']
+      const id = Array.isArray(idRaw) ? (idRaw[0] ?? '') : (idRaw ?? '')
+      const communityIdRaw = req.params['communityId']
+      const communityId = Array.isArray(communityIdRaw) ? (communityIdRaw[0] ?? '') : (communityIdRaw ?? '')
+      await this.service.revokeMemberCommunity(id, communityId)
       res.json({ success: true })
     } catch (err) {
       next(err)
