@@ -167,7 +167,10 @@ export class PostsService {
 
     await this.db.post.update({
       where: { id: postId },
-      data: { deletedAt: new Date() },
+      // Clear pin fields too — the DB's unique (communityId, pinOrder) index applies
+      // regardless of deletedAt, so a deleted post left pinned would permanently
+      // block any other post in the community from taking that pin slot.
+      data: { deletedAt: new Date(), pinOrder: null, pinnedAt: null, pinnedBy: null },
     })
 
     logger.info({ postId }, 'posts.delete: soft deleted')
