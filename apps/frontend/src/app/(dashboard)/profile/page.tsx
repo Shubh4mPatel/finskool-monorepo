@@ -1,7 +1,6 @@
 "use client";
 
-import Link from "next/link";
-import { Camera, Crown, Lock, Pencil, Settings } from "lucide-react";
+import { Camera, Crown, Lock, Pencil } from "lucide-react";
 import ChangePasswordModal from "@/components/profile/ChangePasswordModal";
 import ToggleSwitch from "@/components/profile/ToggleSwitch";
 import { useEffect, useRef, useState } from "react";
@@ -77,13 +76,6 @@ export default function ProfilePage() {
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <h1 className="font-display text-2xl font-bold text-primary">Profile</h1>
-        <Link
-          href="/profile/settings"
-          className="flex items-center gap-2 rounded-full border border-divider px-4 py-2 text-sm font-semibold text-muted transition-colors hover:border-accent hover:text-accent"
-        >
-          <Settings size={16} />
-          Settings
-        </Link>
       </div>
 
       <div className="animate-rise overflow-hidden rounded-2xl bg-white shadow-card">
