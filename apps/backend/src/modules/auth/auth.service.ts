@@ -299,6 +299,7 @@ export class AuthService {
             name: true,
             slug: true,
             description: true,
+            tags: true,
             coverImageUrl: true,
             _count: { select: { members: true } },
           },

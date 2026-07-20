@@ -11,6 +11,7 @@ interface Community {
   name: string;
   slug: string;
   description: string | null;
+  tags: string[];
   coverImageUrl: string | null;
   memberCount: number;
 }
@@ -20,15 +21,11 @@ interface MeResponse {
   communities: Community[];
 }
 
-const COMMUNITY_META: Record<string, { category: string; chips: string[] }> = {
-  "investor-community": {
-    category: "Long-term Investing",
-    chips: ["Research", "Portfolio", "Long-term"],
-  },
-  "swing-alpha": {
-    category: "Short-term Trading",
-    chips: ["Trade Alerts", "Swing Calls", "Live Updates"],
-  },
+// The "category" eyebrow isn't backed by a DB column — chips now come from the
+// community's own `tags` field, but this label is still a client-side lookup.
+const COMMUNITY_CATEGORY: Record<string, string> = {
+  "investor-community": "Long-term Investing",
+  "swing-alpha": "Short-term Trading",
 };
 
 type CommunityCardProps = {
@@ -37,7 +34,7 @@ type CommunityCardProps = {
 };
 
 function CommunityCard({ community, onSelect }: CommunityCardProps) {
-  const meta = COMMUNITY_META[community.slug];
+  const category = COMMUNITY_CATEGORY[community.slug];
 
   return (
     <div className="group flex flex-col overflow-hidden rounded-2xl bg-white shadow-card transition-all duration-300 hover:-translate-y-1.5 hover:shadow-card-hover">
@@ -68,22 +65,22 @@ function CommunityCard({ community, onSelect }: CommunityCardProps) {
       </div>
 
       <div className="flex flex-1 flex-col p-6 text-left">
-        {meta && (
-          <span className="text-xs font-semibold tracking-wide text-accent">{meta.category}</span>
+        {category && (
+          <span className="text-xs font-semibold tracking-wide text-accent">{category}</span>
         )}
         <h2 className="mt-1 font-display text-2xl font-bold text-black">{community.name}</h2>
         {community.description && (
           <p className="mt-2 text-sm leading-relaxed text-black">{community.description}</p>
         )}
 
-        {meta && (
+        {community.tags.length > 0 && (
           <div className="mt-4 flex flex-wrap gap-2">
-            {meta.chips.map((chip) => (
+            {community.tags.map((tag) => (
               <span
-                key={chip}
+                key={tag}
                 className="rounded-full border border-primary px-3 py-1 text-xs font-semibold text-primary"
               >
-                {chip}
+                {tag}
               </span>
             ))}
           </div>

@@ -58,26 +58,31 @@ async function main() {
   const swingAlphaUrl = await uploadSeedImage('swing-alpha.png')
   const investorUrl = await uploadSeedImage('investor-community.png')
 
+  const swingAlphaTags = ['Trade Alerts', 'Swing Calls', 'Live Updates']
+  const investorTags = ['Research', 'Portfolio', 'Long-term']
+
   const swingAlpha = await prisma.community.upsert({
     where: { slug: 'swing-alpha' },
-    update: { coverImageUrl: swingAlphaUrl },
+    update: { coverImageUrl: swingAlphaUrl, tags: swingAlphaTags },
     create: {
       createdBy: admin.id,
       name: 'Swing Alpha',
       slug: 'swing-alpha',
       description: 'Short to medium-term trade calls, breakout plays, and momentum stocks.',
+      tags: swingAlphaTags,
       coverImageUrl: swingAlphaUrl,
     },
   })
 
   const investorCommunity = await prisma.community.upsert({
     where: { slug: 'investor-community' },
-    update: { coverImageUrl: investorUrl },
+    update: { coverImageUrl: investorUrl, tags: investorTags },
     create: {
       createdBy: admin.id,
       name: 'Investor Community',
       slug: 'investor-community',
       description: 'Long-term fundamental investing, value picks, and multi-year wealth building ideas.',
+      tags: investorTags,
       coverImageUrl: investorUrl,
     },
   })

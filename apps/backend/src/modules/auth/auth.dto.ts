@@ -39,6 +39,7 @@ export interface CommunityInfoDTO {
   name: string
   slug: string
   description: string | null
+  tags: string[]
   coverImageUrl: string | null
   memberCount: number
 }

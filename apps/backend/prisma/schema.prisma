@@ -99,6 +99,7 @@ model Community {
   name          String    @db.VarChar(150)
   slug          String    @unique @db.VarChar(150)
   description   String?
+  tags          String[]
   coverImageUrl String?   @map("cover_image_url") @db.VarChar(500)
   createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
   deletedAt     DateTime? @map("deleted_at") @db.Timestamptz
