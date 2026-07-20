@@ -315,6 +315,19 @@ export default function AllPostsPage() {
     fetchPosts(page, communityFilter);
   }, [fetchPosts, page, communityFilter]);
 
+  useEffect(() => {
+    api
+      .get<{ id: string; name: string }[]>("/api/v1/admin/communities")
+      .then((all) => {
+        setCommunities((prev) => {
+          const merged = new Map(prev.map((c) => [c.id, c.name]));
+          all.forEach((c) => merged.set(c.id, c.name));
+          return Array.from(merged.entries()).map(([id, name]) => ({ id, name }));
+        });
+      })
+      .catch(() => {});
+  }, []);
+
   async function handlePin(post: FeedPost) {
     if (pinningId) return;
     setPinningId(post.id);

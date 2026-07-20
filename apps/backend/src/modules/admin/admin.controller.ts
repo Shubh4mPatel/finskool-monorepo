@@ -79,6 +79,18 @@ const updateAdminAccessSchema = z.object({
   communityIds: z.array(z.string().uuid('Invalid community ID')).min(1, 'At least one community is required'),
 })
 
+const createCommunitySchema = z.object({
+  name: z.string().min(1, 'Name is required').max(150),
+  slug: z.string().min(1).max(150).optional(),
+  description: z.string().max(2000).optional(),
+  tags: z.array(z.string().min(1).max(50)).default([]),
+  coverImageUrl: z.string().url('Invalid cover image URL').optional(),
+})
+
+const communityUploadUrlQuerySchema = z.object({
+  filename: z.string().min(1, 'filename is required'),
+})
+
 const updateMemberSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
   phone: z.string().min(10, 'Phone is required'),
@@ -229,6 +241,27 @@ export class AdminController {
     try {
       const result = await this.service.listCommunities()
       res.json({ success: true, data: result })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  createCommunity = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const parsed = createCommunitySchema.safeParse(req.body)
+      if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
+      const result = await this.service.createCommunity(req.user!.id, parsed.data)
+      res.status(201).json({ success: true, data: result })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  getCommunityUploadUrl = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { filename } = communityUploadUrlQuerySchema.parse(req.query)
+      const urls = await this.service.getCommunityUploadUrl(filename)
+      res.json({ success: true, data: urls })
     } catch (err) {
       next(err)
     }

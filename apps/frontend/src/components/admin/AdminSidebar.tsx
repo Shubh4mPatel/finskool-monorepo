@@ -15,6 +15,7 @@ import {
   Upload,
   TrendingUp,
   ShieldCheck,
+  Building2,
   LogOut,
   Menu,
   X,
@@ -30,6 +31,7 @@ const navItems = [
   { href: "/admin/import-csv", label: "Import CSV", icon: Upload },
   { href: "/admin/stock-recommendations", label: "Stock Recommendation", icon: TrendingUp },
   { href: "/admin/roles-admins", label: "Roles & Admins", icon: ShieldCheck },
+  { href: "/admin/communities", label: "Communities", icon: Building2, superAdminOnly: true },
 ];
 
 function SidebarContent({ onNav }: { onNav?: () => void }) {
@@ -74,13 +76,13 @@ function SidebarContent({ onNav }: { onNav?: () => void }) {
         </Link>
         <p className="text-sm font-bold text-primary">{displayName}</p>
         <span className="rounded-full bg-lime px-3 py-0.5 text-xs font-bold text-primary">
-          Super Admin
+          {session?.isSuperAdmin ? "Super Admin" : "Admin"}
         </span>
       </div>
 
       {/* Nav */}
       <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-3 pb-4">
-        {navItems.map((item) => {
+        {navItems.filter((item) => !item.superAdminOnly || session?.isSuperAdmin).map((item) => {
           const isActive = pathname?.startsWith(item.href);
           const Icon = item.icon;
           const badge = item.href === "/admin/unresolved-threads" ? unresolvedThreads : item.badge;

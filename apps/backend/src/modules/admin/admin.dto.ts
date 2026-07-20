@@ -74,8 +74,17 @@ export interface CommunityDTO {
   name: string
   slug: string
   description: string | null
+  tags: string[]
   coverImageUrl: string | null
   memberCount: number
+}
+
+export interface CreateCommunityDTO {
+  name: string
+  slug?: string | undefined
+  description?: string | undefined
+  tags: string[]
+  coverImageUrl?: string | undefined
 }
 
 export interface AdminUserDTO {

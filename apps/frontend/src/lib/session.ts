@@ -5,6 +5,7 @@ export interface SessionInfo {
   communityName: string
   communityId: string
   avatarUrl?: string | null
+  isSuperAdmin?: boolean
 }
 
 const KEY = 'finskool_session'

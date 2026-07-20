@@ -11,7 +11,7 @@ import { saveSession, initials } from "@/lib/session";
 import { useToast } from "@/components/ui/Toast";
 
 interface AuthResponse {
-  user: { id: string; name: string; role: string; avatarUrl?: string | null };
+  user: { id: string; name: string; role: string; isSuperAdmin: boolean; avatarUrl?: string | null };
   communities: { id: string; name: string; slug: string }[];
 }
 
@@ -68,14 +68,14 @@ export default function LoginPage() {
       });
 
       if (data.user.role === "admin") {
-        saveSession({ userId: data.user.id, userName: data.user.name, userInitials: initials(data.user.name), communityName: "", communityId: "", avatarUrl: data.user.avatarUrl ?? null });
+        saveSession({ userId: data.user.id, userName: data.user.name, userInitials: initials(data.user.name), communityName: "", communityId: "", avatarUrl: data.user.avatarUrl ?? null, isSuperAdmin: data.user.isSuperAdmin });
         router.push("/admin/dashboard");
       } else if (data.communities.length === 1) {
         const comm = data.communities[0]!;
-        saveSession({ userId: data.user.id, userName: data.user.name, userInitials: initials(data.user.name), communityName: comm.name, communityId: comm.id, avatarUrl: data.user.avatarUrl ?? null });
+        saveSession({ userId: data.user.id, userName: data.user.name, userInitials: initials(data.user.name), communityName: comm.name, communityId: comm.id, avatarUrl: data.user.avatarUrl ?? null, isSuperAdmin: data.user.isSuperAdmin });
         router.push("/feed");
       } else {
-        saveSession({ userId: data.user.id, userName: data.user.name, userInitials: initials(data.user.name), communityName: "", communityId: "", avatarUrl: data.user.avatarUrl ?? null });
+        saveSession({ userId: data.user.id, userName: data.user.name, userInitials: initials(data.user.name), communityName: "", communityId: "", avatarUrl: data.user.avatarUrl ?? null, isSuperAdmin: data.user.isSuperAdmin });
         router.push("/");
       }
     } catch (err) {

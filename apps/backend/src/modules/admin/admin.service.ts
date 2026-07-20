@@ -2,6 +2,7 @@ import { createRequire } from 'module'
 import bcrypt from 'bcryptjs'
 import type { PrismaClient } from '../../generated/prisma/client.js'
 import { assertSuperAdmin } from '../../lib/community-access.js'
+import { generateUploadUrl } from '../../lib/minio.js'
 import { BadRequestError, ConflictError, NotFoundError, ForbiddenError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
 import type {
@@ -21,6 +22,7 @@ import type {
   SuspendMemberResultDTO,
   RevokeSuspensionResultDTO,
   CommunityDTO,
+  CreateCommunityDTO,
   AdminUserDTO,
   CreateAdminDTO,
   UpdateAdminAccessDTO,
@@ -40,6 +42,14 @@ const _require = createRequire(import.meta.url)
 const XLSX = _require('xlsx') as {
   read(data: Buffer, opts: object): { SheetNames: string[]; Sheets: Record<string, unknown> }
   utils: { sheet_to_json<T>(ws: unknown, opts?: object): T[] }
+}
+
+function slugify(raw: string): string {
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
 }
 
 function normalizePhone(raw: string): string | null {
@@ -640,6 +650,7 @@ export class AdminService {
         name: true,
         slug: true,
         description: true,
+        tags: true,
         coverImageUrl: true,
         _count: { select: { subscriptions: { where: { isActive: true } } } },
       },
@@ -649,6 +660,39 @@ export class AdminService {
       const { _count, ...community } = c
       return { ...community, memberCount: _count.subscriptions }
     })
+  }
+
+  async createCommunity(adminId: string, data: CreateCommunityDTO): Promise<CommunityDTO> {
+    await assertSuperAdmin(this.db, adminId)
+
+    const base = slugify(data.slug ?? data.name)
+    if (!base) throw new BadRequestError('Name must contain at least one letter or number')
+
+    let slug = base
+    let suffix = 2
+    while (await this.db.community.findUnique({ where: { slug } })) {
+      slug = `${base}-${suffix}`
+      suffix++
+    }
+
+    const community = await this.db.community.create({
+      data: {
+        createdBy: adminId,
+        name: data.name,
+        slug,
+        description: data.description ?? null,
+        tags: data.tags,
+        coverImageUrl: data.coverImageUrl ?? null,
+      },
+      select: { id: true, name: true, slug: true, description: true, tags: true, coverImageUrl: true },
+    })
+
+    logger.info({ communityId: community.id, slug }, 'admin.createCommunity: success')
+    return { ...community, memberCount: 0 }
+  }
+
+  async getCommunityUploadUrl(filename: string): Promise<{ uploadUrl: string; publicUrl: string }> {
+    return generateUploadUrl(filename, 'communities')
   }
 
   async listAdmins(): Promise<AdminUserDTO[]> {

@@ -43,6 +43,7 @@ type DbUser = {
   email: string;
   passwordHash: string | null;
   role: string;
+  isSuperAdmin: boolean;
   avatarUrl: string | null;
   postNotificationsEnabled: boolean;
 };
@@ -388,6 +389,7 @@ export class AuthService {
       phone: user.phone,
       email: user.email,
       role: user.role,
+      isSuperAdmin: user.isSuperAdmin,
       avatarUrl: user.avatarUrl,
       postNotificationsEnabled: user.postNotificationsEnabled,
     };

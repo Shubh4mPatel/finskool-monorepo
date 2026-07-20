@@ -17,6 +17,7 @@ export interface PublicUserDTO {
   phone: string
   email: string
   role: string
+  isSuperAdmin: boolean
   avatarUrl: string | null
   postNotificationsEnabled: boolean
 }
