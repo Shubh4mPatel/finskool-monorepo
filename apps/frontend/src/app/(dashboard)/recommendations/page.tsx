@@ -155,7 +155,9 @@ export default function RecommendationsPage() {
       <div className="rounded-2xl bg-white p-6 shadow-card">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <h2 className="flex items-center gap-2 font-display text-lg font-bold text-primary">
-            <LayoutGrid size={18} className="text-accent" />
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-white">
+              <LayoutGrid size={16} />
+            </span>
             All Calls
           </h2>
           <div className="flex w-full items-center gap-2 rounded-full border border-divider px-4 py-2 transition-colors focus-within:border-accent sm:w-auto">

@@ -112,7 +112,8 @@ export default function ChangePasswordModal({ trigger }: { trigger?: ReactNode }
               <button
                 onClick={handleSave}
                 disabled={submitting}
-                className="flex-1 rounded-full bg-gradient-to-r from-accent to-primary px-5 py-2.5 text-sm font-bold text-white shadow-glow transition-transform duration-300 hover:scale-105 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
+                className="flex-1 rounded-full px-5 py-2.5 text-sm font-bold text-white transition-transform duration-300 hover:scale-105 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
+                style={{ background: "linear-gradient(to right, #c1f26e, #108b8b)" }}
               >
                 {submitting ? "Saving..." : "Save"}
               </button>

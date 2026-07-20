@@ -50,7 +50,7 @@ export default function RepliesPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="font-display text-2xl font-bold text-primary">My Replies</h1>
+      <h1 className="font-display text-2xl font-bold text-primary">My Threads</h1>
 
       {loading ? (
         <div className="space-y-5">

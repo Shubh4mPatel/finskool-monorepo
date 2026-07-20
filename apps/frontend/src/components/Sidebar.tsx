@@ -23,6 +23,8 @@ const navItems = [
   { href: "/replies", label: "My Threads", icon: MessagesSquare, count: null },
 ];
 
+const mobileTabItems = navItems;
+
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
@@ -166,6 +168,40 @@ export default function Sidebar() {
         <LogOut size={14} />
         Logout
       </button>
+
+      {/* Mobile bottom tab bar */}
+      <nav className="fixed inset-x-0 bottom-0 z-40 flex items-stretch justify-around border-t border-[#e0ddd8] bg-white px-2 pb-6 pt-2 lg:hidden">
+        {mobileTabItems.map((item) => {
+          const isActive = pathname?.startsWith(item.href);
+          const Icon = item.icon;
+          const count = item.href === "/announcements" ? unreadCount : item.count;
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className="flex flex-1 flex-col items-center gap-1 py-1"
+            >
+              <span className="relative flex h-8 w-8 items-center justify-center rounded-full">
+                <span
+                  className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${
+                    isActive ? "bg-accent text-white" : "text-subtle"
+                  }`}
+                >
+                  <Icon size={17} />
+                </span>
+                {count !== null && count > 0 && (
+                  <span className="absolute -top-1 -right-1 rounded-full bg-subtle/30 px-1.5 text-[10px] font-bold text-primary">
+                    {count}
+                  </span>
+                )}
+              </span>
+              <span className={`text-[11px] font-medium ${isActive ? "text-accent" : "text-subtle"}`}>
+                {item.href === "/recommendations" ? "Picks" : item.label}
+              </span>
+            </Link>
+          );
+        })}
+      </nav>
     </aside>
   );
 }

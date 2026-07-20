@@ -294,11 +294,21 @@ export class AuthService {
       where: { userId, isActive: true, validUntil: { gte: startOfToday() } },
       select: {
         community: {
-          select: { id: true, name: true, slug: true, coverImageUrl: true },
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            description: true,
+            coverImageUrl: true,
+            _count: { select: { members: true } },
+          },
         },
       },
     });
-    return subscriptions.map((s) => s.community);
+    return subscriptions.map((s) => {
+      const { _count, ...community } = s.community;
+      return { ...community, memberCount: _count.members };
+    });
   }
 
   private async hasActiveSubscription(userId: string): Promise<boolean> {

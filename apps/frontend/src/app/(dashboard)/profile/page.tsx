@@ -129,6 +129,7 @@ export default function ProfilePage() {
                 <p className="font-display text-lg font-bold text-primary">{displayName}</p>
                 <button
                   type="button"
+                  onClick={() => setIsEditing(true)}
                   className="flex items-center gap-1 rounded-full bg-primary/15 px-3 py-1 text-xs font-semibold text-primary transition-colors hover:bg-primary/25"
                 >
                   <Pencil size={11} />

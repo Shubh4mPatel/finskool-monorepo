@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FiLock, FiSend, FiTrash2, FiCornerDownRight, FiChevronDown, FiChevronUp } from "react-icons/fi";
 import { api, ApiError } from "@/lib/api";
 import { getSession, saveSession } from "@/lib/session";
@@ -53,22 +53,40 @@ function authorInitials(name: string): string {
 
 // ── Single comment node ──────────────────────────────────────────────────────
 
-function displayName(author: CommentAuthor, currentUserId: string): string {
-  if (author.id === currentUserId) return "You";
-  if (author.role === "admin") return author.name;
-  return `M${author.id.replace(/-/g, "").slice(0, 6)}`;
+// Pastel avatar palette cycled across anonymised members (M1, M2, M3, …)
+const MEMBER_AVATAR_COLORS = [
+  { bg: "#e8f5ec", text: "#153d3a" },
+  { bg: "#e0f4f4", text: "#108b8b" },
+  { bg: "#e8eeec", text: "#2d5e5a" },
+];
+
+function buildMemberLabels(comments: Comment[], currentUserId: string): Map<string, string> {
+  const map = new Map<string, string>();
+  let n = 0;
+  function walk(list: Comment[]) {
+    for (const c of list) {
+      if (c.author.role !== "admin" && c.author.id !== currentUserId && !map.has(c.author.id)) {
+        n += 1;
+        map.set(c.author.id, `M${n}`);
+      }
+      walk(c.replies);
+    }
+  }
+  walk(comments);
+  return map;
 }
 
-function displayInitials(author: CommentAuthor, currentUserId: string): string {
-  if (author.id === currentUserId) return authorInitials(author.name);
-  if (author.role === "admin") return authorInitials(author.name);
-  return "M";
+function displayName(author: CommentAuthor, currentUserId: string, memberLabels: Map<string, string>): string {
+  if (author.id === currentUserId) return "You";
+  if (author.role === "admin") return author.name;
+  return memberLabels.get(author.id) ?? "Member";
 }
 
 function CommentNode({
   comment,
   currentUserId,
   isAdmin,
+  memberLabels,
   onReply,
   onDelete,
   onMarkReplied,
@@ -77,6 +95,7 @@ function CommentNode({
   comment: Comment;
   currentUserId: string;
   isAdmin: boolean;
+  memberLabels: Map<string, string>;
   onReply: (id: string, label: string) => void;
   onDelete: (id: string) => void;
   onMarkReplied?: (notificationId: string) => void;
@@ -87,22 +106,34 @@ function CommentNode({
   const hasReplies = comment.replies.length > 0;
   // Members can only delete their own comment if no one has replied yet; admins can always delete
   const canDelete = isAdmin || (isOwn && !hasReplies);
-  const label = displayName(comment.author, currentUserId);
+  const label = displayName(comment.author, currentUserId, memberLabels);
   const isPending = isAdmin && !!comment.notification && !comment.notification.isReplied;
+  const memberLabel = memberLabels.get(comment.author.id);
+  const memberColorIndex = memberLabel ? (parseInt(memberLabel.slice(1), 10) - 1) % MEMBER_AVATAR_COLORS.length : 0;
+  const avatarColor = MEMBER_AVATAR_COLORS[memberColorIndex]!;
 
   return (
-    <div className={`flex gap-3 ${comment.depth > 0 ? "ml-7 border-l-2 border-divider pl-4 pt-1" : ""}`}>
+    <div className={`flex gap-3 ${comment.depth > 0 ? "ml-7 border-l-2 pl-4 pt-1 border-[#85cd78]/50" : ""}`}>
       {/* Avatar */}
-      <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white ${isAuthorAdmin ? "bg-primary" : isOwn ? "bg-accent" : "bg-divider text-muted"}`}>
-        {displayInitials(comment.author, currentUserId)}
+      <div
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold"
+        style={
+          isAuthorAdmin
+            ? { background: "#153d3a", color: "#ffffff" }
+            : isOwn
+              ? { background: "#108b8b", color: "#ffffff" }
+              : { background: avatarColor.bg, color: avatarColor.text }
+        }
+      >
+        {isAuthorAdmin || isOwn ? authorInitials(comment.author.name) : label}
       </div>
 
-      <div className="flex-1 min-w-0">
+      <div className={`flex-1 min-w-0 ${isAuthorAdmin ? "rounded-xl border-l-4 border-[#85cd78] bg-background px-3.5 py-3" : ""}`}>
         {/* Header */}
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-sm font-semibold text-primary">{label}</span>
           {isAuthorAdmin && (
-            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">ADMIN</span>
+            <span className="rounded-full bg-lime px-2 py-0.5 text-[10px] font-bold text-primary">ADMIN</span>
           )}
           {isPending && (
             <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-600">PENDING</span>
@@ -130,7 +161,7 @@ function CommentNode({
             className="flex items-center gap-1 text-xs font-semibold text-accent hover:underline"
           >
             <FiCornerDownRight size={11} />
-            Reply
+            {isOwn && hasReplies ? `Reply (${comment.replies.length})` : "Reply"}
           </button>
           {isPending && onMarkReplied && comment.notification && (
             <button
@@ -150,6 +181,7 @@ function CommentNode({
               comment={reply}
               currentUserId={currentUserId}
               isAdmin={isAdmin}
+              memberLabels={memberLabels}
               onReply={onReply}
               onDelete={onDelete}
               onMarkReplied={onMarkReplied}
@@ -205,7 +237,7 @@ function ReplyCard({
         )}
 
         {/* Input box */}
-        <div className="overflow-hidden rounded-2xl border-2 border-accent/50 bg-white focus-within:border-accent transition-colors">
+        <div className="overflow-hidden rounded-xl border border-accent bg-white focus-within:border-primary transition-colors">
           <textarea
             ref={inputRef}
             value={text}
@@ -228,7 +260,8 @@ function ReplyCard({
           <button
             onClick={onSubmit}
             disabled={submitting || !text.trim()}
-            className="flex items-center gap-1.5 rounded-full bg-primary px-5 py-2 text-xs font-bold text-white shadow-glow transition-transform hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex items-center gap-1.5 rounded-full px-5 py-2 text-xs font-bold text-white transition-transform hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+            style={{ background: "linear-gradient(to right, #c1f26e, #108b8b)" }}
           >
             {submitting ? "Posting…" : "Post Reply"}
             <FiSend size={12} />
@@ -354,6 +387,8 @@ export default function PostThreads({
     }
   }
 
+  const memberLabels = useMemo(() => buildMemberLabels(comments, currentUserId), [comments, currentUserId]);
+
   return (
     <div className="mt-4 border-t border-divider pt-4">
       {/* Toggle */}
@@ -366,10 +401,13 @@ export default function PostThreads({
       </button>
 
       {open && (
-        <div className="mt-5 flex flex-col gap-5">
+        <div className="mt-5 flex flex-col gap-5 rounded-xl bg-[#fafbfe] p-4">
           {/* Thread count heading */}
           {comments.length > 0 && (
-            <p className="text-sm font-bold text-primary">Threads ({count})</p>
+            <p className="text-sm">
+              <span className="font-bold text-primary">Threads</span>{" "}
+              <span className="font-semibold text-accent">({count})</span>
+            </p>
           )}
 
           {/* Comments */}
@@ -387,6 +425,7 @@ export default function PostThreads({
                   comment={c}
                   currentUserId={currentUserId}
                   isAdmin={isAdmin}
+                  memberLabels={memberLabels}
                   onReply={handleReply}
                   onDelete={handleDelete}
                   onMarkReplied={handleMarkReplied}

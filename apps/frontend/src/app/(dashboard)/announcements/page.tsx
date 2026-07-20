@@ -134,10 +134,10 @@ export default function AnnouncementsPage() {
         </div>
       ) : (
         <>
-          {/* New / unread */}
+          {/* Recent / unread */}
           <section className="flex flex-col gap-3">
             <div className="flex items-center gap-2">
-              <h2 className="font-display text-lg font-semibold text-primary">New</h2>
+              <h2 className="font-display text-lg font-semibold text-primary">Recent</h2>
               {unread.length > 0 && (
                 <span className="h-2.5 w-2.5 rounded-full bg-[#dc2626]" />
               )}
@@ -156,9 +156,9 @@ export default function AnnouncementsPage() {
           {/* Divider */}
           <div className="h-0.5 bg-[#d9d9d9]" />
 
-          {/* Earlier / read */}
+          {/* Previous / read */}
           <section className="flex flex-col gap-3">
-            <h2 className="font-display text-lg font-semibold text-primary">Earlier</h2>
+            <h2 className="font-display text-lg font-semibold text-primary">Previous</h2>
             {read.length === 0 ? (
               <p className="text-sm text-muted">No earlier notifications.</p>
             ) : (

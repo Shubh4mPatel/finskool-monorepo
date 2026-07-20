@@ -90,32 +90,32 @@ export default function FeedPage() {
     <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
       <div className="flex-1 space-y-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <h1 className="font-display text-xl font-semibold text-primary">Live Feed</h1>
+          <h1 className="order-2 font-display text-xl font-semibold text-primary sm:order-none">Live Feed</h1>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex flex-1 items-center gap-2 rounded-full border border-accent bg-white px-4 py-2.5 transition-colors sm:flex-none">
+          <div className="order-1 flex flex-wrap items-center gap-3 sm:order-none">
+            <div className="order-3 flex flex-1 items-center gap-2 rounded-full border border-primary bg-white px-4 py-2.5 transition-colors sm:order-1 sm:flex-none sm:border-accent">
               <Search size={16} className="shrink-0 text-accent" />
               <input
                 type="text"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 placeholder="Search with Title and hashtags....."
-                className="w-full bg-transparent text-sm text-primary placeholder:text-accent/70 focus:outline-none sm:w-56"
+                className="w-full bg-transparent text-sm text-primary placeholder:text-primary/70 focus:outline-none sm:w-56 sm:placeholder:text-accent/70"
               />
             </div>
             <button
-              className="flex shrink-0 items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-bold text-white"
-              type="button"
-            >
-              Date <Calendar size={14} />
-            </button>
-            <button
               onClick={() => setSortDesc(p => !p)}
               type="button"
-              className="flex shrink-0 items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white transition-transform duration-300 hover:scale-105 active:scale-95"
+              className="order-1 flex shrink-0 items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white transition-transform duration-300 hover:scale-105 active:scale-95 sm:order-2"
             >
               {sortDesc ? "Latest First" : "Oldest First"}
               <ChevronDown size={16} className={sortDesc ? "" : "rotate-180"} />
+            </button>
+            <button
+              className="order-2 flex shrink-0 items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-bold text-white sm:order-3"
+              type="button"
+            >
+              Date <Calendar size={14} />
             </button>
           </div>
         </div>

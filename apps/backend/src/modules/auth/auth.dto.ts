@@ -38,7 +38,9 @@ export interface CommunityInfoDTO {
   id: string
   name: string
   slug: string
+  description: string | null
   coverImageUrl: string | null
+  memberCount: number
 }
 
 // Returned in response body — tokens are in httpOnly cookies, not here

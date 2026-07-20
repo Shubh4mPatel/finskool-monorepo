@@ -2,15 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Lock } from "lucide-react";
+import { ArrowRight, ChevronRight, Lock, LogOut } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
-import { updateSessionCommunity } from "@/lib/session";
+import { clearSession, updateSessionCommunity } from "@/lib/session";
 
 interface Community {
   id: string;
   name: string;
   slug: string;
+  description: string | null;
   coverImageUrl: string | null;
+  memberCount: number;
 }
 
 interface MeResponse {
@@ -18,16 +20,28 @@ interface MeResponse {
   communities: Community[];
 }
 
+const COMMUNITY_META: Record<string, { category: string; chips: string[] }> = {
+  "investor-community": {
+    category: "Long-term Investing",
+    chips: ["Research", "Portfolio", "Long-term"],
+  },
+  "swing-alpha": {
+    category: "Short-term Trading",
+    chips: ["Trade Alerts", "Swing Calls", "Live Updates"],
+  },
+};
+
 type CommunityCardProps = {
   community: Community;
-  active?: boolean;
   onSelect: (id: string) => void;
 };
 
-function CommunityCard({ community, active, onSelect }: CommunityCardProps) {
+function CommunityCard({ community, onSelect }: CommunityCardProps) {
+  const meta = COMMUNITY_META[community.slug];
+
   return (
     <div className="group flex flex-col overflow-hidden rounded-2xl bg-white shadow-card transition-all duration-300 hover:-translate-y-1.5 hover:shadow-card-hover">
-      <div className="relative h-40 overflow-hidden bg-linear-to-br from-primary via-primary to-accent">
+      <div className="relative h-58 overflow-hidden bg-linear-to-br from-primary via-primary to-accent">
         {community.coverImageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -48,18 +62,37 @@ function CommunityCard({ community, active, onSelect }: CommunityCardProps) {
             <div className="absolute -right-8 -top-8 h-32 w-32 rounded-full bg-lime/20 blur-2xl transition-transform duration-700 group-hover:scale-125" />
           </>
         )}
+        <span className="absolute bottom-3 left-3 rounded-full bg-accent px-3 py-1 text-xs font-semibold text-white">
+          {community.memberCount} {community.memberCount === 1 ? "Member" : "Members"}
+        </span>
       </div>
 
       <div className="flex flex-1 flex-col p-6 text-left">
-        <h2 className="font-display text-2xl font-bold text-primary">{community.name}</h2>
+        {meta && (
+          <span className="text-xs font-semibold tracking-wide text-accent">{meta.category}</span>
+        )}
+        <h2 className="mt-1 font-display text-2xl font-bold text-black">{community.name}</h2>
+        {community.description && (
+          <p className="mt-2 text-sm leading-relaxed text-black">{community.description}</p>
+        )}
+
+        {meta && (
+          <div className="mt-4 flex flex-wrap gap-2">
+            {meta.chips.map((chip) => (
+              <span
+                key={chip}
+                className="rounded-full border border-primary px-3 py-1 text-xs font-semibold text-primary"
+              >
+                {chip}
+              </span>
+            ))}
+          </div>
+        )}
 
         <button
           onClick={() => onSelect(community.id)}
-          className={`mt-6 flex items-center justify-center gap-2 rounded-full px-6 py-3 text-sm font-bold transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] ${
-            active
-              ? "bg-linear-to-r from-accent to-primary text-white shadow-glow"
-              : "border border-accent bg-white text-accent hover:bg-accent/5"
-          }`}
+          className="mt-6 flex items-center justify-center gap-2 rounded-full px-6 py-3 text-sm font-bold text-white transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
+          style={{ background: "linear-gradient(to right, #c1f26e, #108b8b)" }}
         >
           Enter Community
           <ArrowRight size={16} className="transition-transform duration-300 group-hover:translate-x-1" />
@@ -98,6 +131,11 @@ export default function CommunitySelectorPage() {
     }
   }
 
+  function handleLogout() {
+    clearSession();
+    router.push("/login");
+  }
+
   const initials = meData?.user.name
     .split(" ")
     .slice(0, 2)
@@ -120,7 +158,7 @@ export default function CommunitySelectorPage() {
 
           <div className="flex items-center gap-3">
             {meData && (
-              <span className="hidden text-sm text-muted sm:inline">
+              <span className="text-xs text-muted sm:text-sm">
                 Welcome back, {meData.user.name.split(" ")[0]}
               </span>
             )}
@@ -129,23 +167,30 @@ export default function CommunitySelectorPage() {
               <img
                 src={meData.user.avatarUrl}
                 alt={meData.user.name}
-                className="h-9 w-9 rounded-full object-cover ring-2 ring-lime/50 ring-offset-2 ring-offset-background"
+                className="h-9 w-9 rounded-full object-cover"
               />
             ) : (
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-linear-to-br from-accent to-primary text-sm font-bold text-lime ring-2 ring-lime/50 ring-offset-2 ring-offset-background">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-linear-to-br from-accent to-primary text-sm font-bold text-lime">
                 {initials}
               </div>
             )}
+            <button
+              onClick={handleLogout}
+              aria-label="Logout"
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-[#d6d2c8] bg-white text-muted transition-colors hover:text-accent"
+            >
+              <LogOut size={16} />
+            </button>
           </div>
         </div>
 
-        <div className="flex flex-1 flex-col items-center justify-center py-12 text-center">
-          <span className="animate-rise flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-semibold text-accent shadow-card">
-            <Lock size={14} />
+        <div className="flex flex-1 flex-col items-center justify-center py-12 text-left sm:text-center">
+          <span className="animate-rise flex items-center gap-1 self-start text-sm font-semibold text-accent sm:self-center">
+            <ChevronRight size={14} />
             Select Community
           </span>
 
-          <h1 className="animate-rise mt-6 font-display text-3xl font-bold tracking-tight text-primary sm:text-4xl lg:text-5xl [animation-delay:120ms]">
+          <h1 className="animate-rise mt-3 font-display text-3xl font-bold tracking-tight text-primary sm:text-4xl lg:text-[44px] [animation-delay:120ms]">
             Where would you like to go{" "}
             <span className="bg-linear-to-r from-accent to-lime bg-clip-text text-transparent">
               today?
@@ -153,7 +198,7 @@ export default function CommunitySelectorPage() {
           </h1>
 
           {meData && meData.communities.length > 1 && (
-            <p className="animate-rise mt-4 max-w-xl text-base text-muted [animation-delay:220ms]">
+            <p className="animate-rise mt-4 max-w-xl text-sm text-primary sm:text-base [animation-delay:220ms]">
               You have access to {meData.communities.length} communities. Each community has completely separate content.
             </p>
           )}
@@ -168,11 +213,10 @@ export default function CommunitySelectorPage() {
 
           {meData && (
             <div className="animate-rise mt-12 grid w-full max-w-4xl grid-cols-1 gap-6 sm:grid-cols-2 [animation-delay:320ms]">
-              {meData.communities.map((community, i) => (
+              {meData.communities.map((community) => (
                 <CommunityCard
                   key={community.id}
                   community={community}
-                  active={i === 0}
                   onSelect={handleSelect}
                 />
               ))}
