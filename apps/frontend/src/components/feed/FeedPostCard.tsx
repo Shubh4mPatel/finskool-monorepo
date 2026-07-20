@@ -1,6 +1,7 @@
 import { Calendar, Clock, Pin } from "lucide-react";
 import type { ReactNode } from "react";
 import PostThreads from "./PostThreads";
+import PostImageGallery from "./PostImageGallery";
 import { initials } from "@/lib/session";
 
 type FeedPostCardProps = {
@@ -103,12 +104,7 @@ export default function FeedPostCard({
         ) : null}
 
         {/* Image */}
-        {imageUrls && imageUrls.length > 0 && (
-          <div className="mt-4 overflow-hidden rounded-xl">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={imageUrls[0]} alt="Post image" className="max-h-72 w-full object-cover" />
-          </div>
-        )}
+        {imageUrls && imageUrls.length > 0 && <PostImageGallery imageUrls={imageUrls} />}
 
         {/* Footer: tags left | date+time right */}
         <div className="mt-4 flex items-center justify-between gap-4">

@@ -1,16 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import TextAlign from "@tiptap/extension-text-align";
 import TiptapLink from "@tiptap/extension-link";
-import { ArrowRight, Bold, Check, ChevronLeft, Code, Image, Italic, Link, List, AlignLeft, AlignCenter, AlignRight, X } from "lucide-react";
+import { ArrowRight, Bold, Check, ChevronLeft, Code, Italic, Link, List, AlignLeft, AlignCenter, AlignRight, X } from "lucide-react";
 
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 import { getSession } from "@/lib/session";
+import PostImageUploader from "@/components/admin/PostImageUploader";
 
 type Step = 1 | 2 | 3;
 
@@ -110,11 +111,9 @@ export default function CreatePostPage() {
   const [tags, setTags] = useState<string[]>(defaultTags);
   const [tagInput, setTagInput] = useState("");
   const [publishing, setPublishing] = useState(false);
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [uploadingImage, setUploadingImage] = useState(false);
+  const [imageUrls, setImageUrls] = useState<string[]>([]);
 
   const [communities, setCommunities] = useState<Community[]>([]);
-  const imageInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     api.get<Community[]>("/api/v1/admin/communities")
@@ -142,30 +141,6 @@ export default function CreatePostPage() {
 
   const previewContent = editor?.getText() || "Strong breakout above ₹1,400 resistance with high delivery volumes. Swing setup with defined risk. Enter...";
 
-  async function handleImageFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!imageInputRef.current) return;
-    imageInputRef.current.value = "";
-    if (!file) return;
-
-    setUploadingImage(true);
-    try {
-      const { uploadUrl, publicUrl } = await api.get<{ uploadUrl: string; publicUrl: string }>(
-        `/api/v1/posts/upload-url?filename=${encodeURIComponent(file.name)}`
-      );
-      await fetch(uploadUrl, {
-        method: "PUT",
-        body: file,
-        headers: { "Content-Type": file.type },
-      });
-      setImageUrl(publicUrl);
-    } catch {
-      toast.error("Failed to upload image. Please try again.");
-    } finally {
-      setUploadingImage(false);
-    }
-  }
-
   async function handlePublish() {
     if (!selectedCommunity || !headline.trim() || !editor?.getText().trim()) {
       toast.error("Please fill in community, headline and content before publishing.");
@@ -178,7 +153,7 @@ export default function CreatePostPage() {
         title: headline.trim(),
         content: editor.getHTML(),
         tags,
-        imageUrls: imageUrl ? [imageUrl] : [],
+        imageUrls,
       });
       await api.patch(`/api/v1/posts/${post.id}/publish`, {});
       toast.success({ title: "Post published", message: "Your post is now live in the community." });
@@ -186,7 +161,7 @@ export default function CreatePostPage() {
       setSelectedCommunity(null);
       setHeadline("");
       setTags(defaultTags);
-      setImageUrl(null);
+      setImageUrls([]);
       editor.commands.clearContent();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Failed to publish post");
@@ -205,14 +180,6 @@ export default function CreatePostPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <input
-        ref={imageInputRef}
-        type="file"
-        accept="image/jpeg,image/png,image/webp,image/gif"
-        className="hidden"
-        onChange={handleImageFileChange}
-      />
-
       <div>
         <p className="text-xs font-semibold text-accent">Dashboard &rsaquo; Create Post</p>
         <h1 className="font-display text-2xl font-bold text-primary">Create New Post</h1>
@@ -321,23 +288,8 @@ export default function CreatePostPage() {
               />
             </div>
 
-            {/* Add Image */}
-            {imageUrl ? (
-              <div className="relative overflow-hidden rounded-xl border border-divider">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={imageUrl} alt="Post image" className="max-h-48 w-full object-cover" />
-                <button type="button" onClick={() => setImageUrl(null)}
-                  className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-white/80 text-primary shadow hover:bg-white">
-                  <X size={12} />
-                </button>
-              </div>
-            ) : (
-              <button type="button" onClick={() => imageInputRef.current?.click()} disabled={uploadingImage}
-                className="flex w-fit items-center gap-2 rounded-xl border border-divider bg-background px-4 py-2 text-sm font-semibold text-muted transition-colors hover:border-accent hover:text-primary disabled:opacity-50">
-                <Image size={15} />
-                {uploadingImage ? "Uploading…" : "Add Image"}
-              </button>
-            )}
+            {/* Add Images */}
+            <PostImageUploader imageUrls={imageUrls} onChange={setImageUrls} />
 
             {/* Tags */}
             <div>
@@ -411,10 +363,14 @@ export default function CreatePostPage() {
                 </h3>
                 <p className="mt-2 text-sm leading-relaxed text-muted">{previewContent}</p>
 
-                {imageUrl && (
-                  <div className="mt-4 overflow-hidden rounded-xl border border-divider">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={imageUrl} alt="Post image" className="max-h-48 w-full object-cover" />
+                {imageUrls.length > 0 && (
+                  <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-4">
+                    {imageUrls.map((url, idx) => (
+                      <div key={url} className="overflow-hidden rounded-xl border border-divider">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={url} alt={`Post image ${idx + 1}`} className="h-24 w-full object-cover" />
+                      </div>
+                    ))}
                   </div>
                 )}
 

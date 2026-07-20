@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Bold, Code, Image, Italic, MoreHorizontal, Pencil, Pin, Plus, Save, Trash2, X } from "lucide-react";
+import { Bold, Code, Italic, MoreHorizontal, Pencil, Pin, Plus, Save, Trash2, X } from "lucide-react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import FeedPostCard from "@/components/feed/FeedPostCard";
+import PostImageUploader from "@/components/admin/PostImageUploader";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
@@ -60,36 +61,12 @@ function EditModal({
   const [tags, setTags] = useState<string[]>(post.tags);
   const [tagInput, setTagInput] = useState("");
   const [saving, setSaving] = useState(false);
-  const [imageUrl, setImageUrl] = useState<string | null>(post.imageUrls[0] ?? null);
-  const [uploadingImage, setUploadingImage] = useState(false);
-  const imageInputRef = useRef<HTMLInputElement>(null);
+  const [imageUrls, setImageUrls] = useState<string[]>(post.imageUrls);
 
   const editor = useEditor({
     extensions: [StarterKit],
     content: post.content,
   });
-
-  async function handleImageFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (imageInputRef.current) imageInputRef.current.value = "";
-    if (!file) return;
-    setUploadingImage(true);
-    try {
-      const { uploadUrl, publicUrl } = await api.get<{ uploadUrl: string; publicUrl: string }>(
-        `/api/v1/posts/upload-url?filename=${encodeURIComponent(file.name)}`
-      );
-      await fetch(uploadUrl, {
-        method: "PUT",
-        body: file,
-        headers: { "Content-Type": file.type },
-      });
-      setImageUrl(publicUrl);
-    } catch {
-      toast.error("Failed to upload image. Please try again.");
-    } finally {
-      setUploadingImage(false);
-    }
-  }
 
   async function handleSave() {
     if (!title.trim()) {
@@ -102,7 +79,7 @@ function EditModal({
         title: title.trim(),
         content: editor?.getHTML() ?? post.content,
         tags,
-        imageUrls: imageUrl ? [imageUrl] : [],
+        imageUrls,
       });
       toast.success("Post updated.");
       onSaved();
@@ -127,14 +104,6 @@ function EditModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
       <div className="relative z-10 flex w-full max-w-2xl flex-col gap-5 rounded-2xl bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto">
-        <input
-          ref={imageInputRef}
-          type="file"
-          accept="image/jpeg,image/png,image/webp,image/gif"
-          className="hidden"
-          onChange={handleImageFileChange}
-        />
-
         <div className="flex items-center justify-between">
           <h2 className="font-display text-lg font-bold text-primary">Edit Post</h2>
           <button
@@ -189,30 +158,8 @@ function EditModal({
 
         {/* Image */}
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-semibold text-muted">Image</label>
-          {imageUrl ? (
-            <div className="relative overflow-hidden rounded-xl border border-divider">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={imageUrl} alt="Post image" className="max-h-48 w-full object-cover" />
-              <button
-                type="button"
-                onClick={() => setImageUrl(null)}
-                className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-primary shadow transition-colors hover:bg-white"
-              >
-                <X size={13} />
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => imageInputRef.current?.click()}
-              disabled={uploadingImage}
-              className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-divider bg-background py-5 text-sm font-semibold text-muted transition-colors hover:border-accent hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Image size={16} />
-              {uploadingImage ? "Uploading…" : "Add Image"}
-            </button>
-          )}
+          <label className="text-xs font-semibold text-muted">Images</label>
+          <PostImageUploader imageUrls={imageUrls} onChange={setImageUrls} />
         </div>
 
         {/* Tags */}
@@ -248,7 +195,7 @@ function EditModal({
           </button>
           <button
             onClick={handleSave}
-            disabled={saving || uploadingImage}
+            disabled={saving}
             className="flex items-center gap-2 rounded-full bg-primary px-5 py-2 text-sm font-bold text-white shadow-glow transition-transform duration-300 hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Save size={14} />

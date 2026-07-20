@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bold, Code, ChevronDown, Image, Italic, MoreHorizontal, Pencil, Pin, Save, Search, Trash2, X } from "lucide-react";
+import { Bold, Code, ChevronDown, Italic, MoreHorizontal, Pencil, Pin, Save, Search, Trash2, X } from "lucide-react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import FeedPostCard from "@/components/feed/FeedPostCard";
+import PostImageUploader from "@/components/admin/PostImageUploader";
 import MarketTodayWidget from "@/components/MarketTodayWidget";
 import CommunityRulesWidget from "@/components/CommunityRulesWidget";
 import { api, ApiError } from "@/lib/api";
@@ -54,32 +55,15 @@ function EditModal({ post, onClose, onSaved }: { post: FeedPost; onClose: () => 
   const [tags, setTags] = useState<string[]>(post.tags);
   const [tagInput, setTagInput] = useState("");
   const [saving, setSaving] = useState(false);
-  const [imageUrl, setImageUrl] = useState<string | null>(post.imageUrls[0] ?? null);
-  const [uploadingImage, setUploadingImage] = useState(false);
-  const imageInputRef = useRef<HTMLInputElement>(null);
+  const [imageUrls, setImageUrls] = useState<string[]>(post.imageUrls);
 
   const editor = useEditor({ extensions: [StarterKit], content: post.content });
-
-  async function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (imageInputRef.current) imageInputRef.current.value = "";
-    if (!file) return;
-    setUploadingImage(true);
-    try {
-      const { uploadUrl, publicUrl } = await api.get<{ uploadUrl: string; publicUrl: string }>(
-        `/api/v1/posts/upload-url?filename=${encodeURIComponent(file.name)}`
-      );
-      await fetch(uploadUrl, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
-      setImageUrl(publicUrl);
-    } catch { toast.error("Failed to upload image."); }
-    finally { setUploadingImage(false); }
-  }
 
   async function handleSave() {
     if (!title.trim()) { toast.error("Title is required."); return; }
     setSaving(true);
     try {
-      await api.patch(`/api/v1/posts/${post.id}`, { title: title.trim(), content: editor?.getHTML() ?? post.content, tags, imageUrls: imageUrl ? [imageUrl] : [] });
+      await api.patch(`/api/v1/posts/${post.id}`, { title: title.trim(), content: editor?.getHTML() ?? post.content, tags, imageUrls });
       toast.success("Post updated.");
       onSaved(); onClose();
     } catch (err) { toast.error(err instanceof ApiError ? err.message : "Failed to update post"); }
@@ -98,7 +82,6 @@ function EditModal({ post, onClose, onSaved }: { post: FeedPost; onClose: () => 
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
       <div className="relative z-10 flex w-full max-w-2xl flex-col gap-5 rounded-2xl bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto">
-        <input ref={imageInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden" onChange={handleImageChange} />
         <div className="flex items-center justify-between">
           <h2 className="font-display text-lg font-bold text-primary">Edit Post</h2>
           <button onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-full text-muted hover:bg-divider/60"><X size={16} /></button>
@@ -122,19 +105,8 @@ function EditModal({ post, onClose, onSaved }: { post: FeedPost; onClose: () => 
           </div>
         </div>
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-semibold text-muted">Image</label>
-          {imageUrl ? (
-            <div className="relative overflow-hidden rounded-xl border border-divider">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={imageUrl} alt="" className="max-h-48 w-full object-cover" />
-              <button onClick={() => setImageUrl(null)} className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-primary shadow hover:bg-white"><X size={13} /></button>
-            </div>
-          ) : (
-            <button type="button" onClick={() => imageInputRef.current?.click()} disabled={uploadingImage}
-              className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-divider bg-background py-5 text-sm font-semibold text-muted hover:border-accent hover:text-primary disabled:opacity-50">
-              <Image size={16} />{uploadingImage ? "Uploading…" : "Add Image"}
-            </button>
-          )}
+          <label className="text-xs font-semibold text-muted">Images</label>
+          <PostImageUploader imageUrls={imageUrls} onChange={setImageUrls} />
         </div>
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-semibold text-muted">Tags</label>
@@ -149,7 +121,7 @@ function EditModal({ post, onClose, onSaved }: { post: FeedPost; onClose: () => 
         </div>
         <div className="flex justify-end gap-3 pt-1">
           <button onClick={onClose} className="rounded-full border border-divider px-5 py-2 text-sm font-semibold text-muted hover:text-primary">Cancel</button>
-          <button onClick={handleSave} disabled={saving || uploadingImage}
+          <button onClick={handleSave} disabled={saving}
             className="flex items-center gap-2 rounded-full bg-primary px-5 py-2 text-sm font-bold text-white shadow-glow disabled:opacity-60">
             <Save size={14} />{saving ? "Saving…" : "Save Changes"}
           </button>
