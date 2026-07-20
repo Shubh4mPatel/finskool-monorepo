@@ -14,7 +14,14 @@ import { getSession } from "@/lib/session";
 
 type Step = 1 | 2 | 3;
 
-interface Community { id: string; name: string; slug: string; coverImageUrl: string | null }
+interface Community {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  coverImageUrl: string | null;
+  memberCount: number;
+}
 
 const COMMUNITY_COLORS = ["bg-primary/10", "bg-accent/10", "bg-lime/30", "bg-amber-100"];
 function communityBg(index: number): string {
@@ -249,6 +256,12 @@ export default function CreatePostPage() {
                   </div>
                   <div className="p-4">
                     <p className="font-display font-bold text-primary">{c.name}</p>
+                    {c.description && (
+                      <p className="mt-1 line-clamp-2 text-xs text-muted">{c.description}</p>
+                    )}
+                    <span className="mt-2 inline-block rounded-full bg-divider/60 px-2.5 py-0.5 text-[11px] font-semibold text-muted">
+                      {c.memberCount} member{c.memberCount === 1 ? "" : "s"}
+                    </span>
                   </div>
                 </button>
               ))}
@@ -257,7 +270,8 @@ export default function CreatePostPage() {
               <button
                 onClick={() => selectedCommunity && setStep(2)}
                 disabled={!selectedCommunity}
-                className="flex items-center gap-2 rounded-full bg-primary px-6 py-2.5 text-sm font-bold text-white shadow-glow transition-all duration-300 hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+                className="flex items-center gap-2 rounded-full px-6 py-2.5 text-sm font-bold text-white shadow-glow transition-all duration-300 hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+                style={{ background: "linear-gradient(to right, #c1f26e, #108b8b)" }}
               >
                 Continue
                 <ArrowRight size={15} />
@@ -355,7 +369,8 @@ export default function CreatePostPage() {
                 Cancel
               </button>
               <button onClick={() => setStep(3)}
-                className="flex items-center gap-2 rounded-full bg-primary px-6 py-2.5 text-sm font-bold text-white shadow-glow transition-transform hover:scale-105 active:scale-95">
+                className="flex items-center gap-2 rounded-full px-6 py-2.5 text-sm font-bold text-white shadow-glow transition-transform hover:scale-105 active:scale-95"
+                style={{ background: "linear-gradient(to right, #c1f26e, #108b8b)" }}>
                 Continue to review →
               </button>
             </div>
@@ -371,18 +386,25 @@ export default function CreatePostPage() {
             <div>
               <span className="rounded-full bg-lime/40 px-3 py-1 text-xs font-bold text-primary">Post preview</span>
               <div className="mt-4 rounded-2xl border border-divider p-5">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-white">A</div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-display font-semibold text-primary">Ritesh Kumar</span>
-                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">ADMIN</span>
-                      <span className="rounded-full bg-lime px-2 py-0.5 text-[10px] font-bold text-primary">
-                        {communities.find((c) => c.id === selectedCommunity)?.name}
-                      </span>
+                {(() => {
+                  const session = getSession();
+                  return (
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-white">
+                        {session?.userInitials ?? "A"}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-display font-semibold text-primary">{session?.userName ?? "Admin"}</span>
+                          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">ADMIN</span>
+                          <span className="rounded-full bg-lime px-2 py-0.5 text-[10px] font-bold text-primary">
+                            {communities.find((c) => c.id === selectedCommunity)?.name}
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
+                  );
+                })()}
 
                 <h3 className="mt-4 font-display text-lg font-bold text-primary">
                   {headline || "RELIANCE — Breakout swing setup. Target ₹1,575"}
@@ -416,7 +438,8 @@ export default function CreatePostPage() {
                 <button
                   onClick={handlePublish}
                   disabled={publishing}
-                  className="flex items-center justify-center gap-2 rounded-full bg-primary px-6 py-2.5 text-sm font-bold text-white shadow-glow transition-transform duration-300 hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="flex items-center justify-center gap-2 rounded-full px-6 py-2.5 text-sm font-bold text-white shadow-glow transition-transform duration-300 hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+                  style={{ background: "linear-gradient(to right, #c1f26e, #108b8b)" }}
                 >
                   <Check size={15} />
                   {publishing ? "Publishing…" : "Publish"}

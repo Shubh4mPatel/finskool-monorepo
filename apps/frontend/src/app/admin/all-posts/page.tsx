@@ -8,6 +8,7 @@ import StarterKit from "@tiptap/starter-kit";
 import FeedPostCard from "@/components/feed/FeedPostCard";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 
 interface FeedPost {
   id: string;
@@ -325,6 +326,7 @@ function PostMenu({
 
 export default function AllPostsPage() {
   const toast = useToast();
+  const confirm = useConfirm();
   const [posts, setPosts] = useState<FeedPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [communities, setCommunities] = useState<Community[]>([]);
@@ -382,7 +384,13 @@ export default function AllPostsPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Delete this post? This cannot be undone.")) return;
+    const ok = await confirm({
+      title: "Delete Post?",
+      message: "This will permanently delete the post and all its comments. This cannot be undone.",
+      confirmLabel: "Delete",
+      variant: "destructive",
+    });
+    if (!ok) return;
     setDeletingId(id);
     try {
       await api.delete(`/api/v1/posts/${id}`);

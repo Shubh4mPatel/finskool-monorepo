@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 
 interface Community {
   id: string;
@@ -28,6 +29,7 @@ const EMPTY_ADD_FORM = { name: "", email: "", phone: "", password: "", community
 
 export default function RolesAdminsPage() {
   const toast = useToast();
+  const confirm = useConfirm();
 
   const [admins, setAdmins] = useState<AdminUser[]>([]);
   const [communities, setCommunities] = useState<Community[]>([]);
@@ -45,8 +47,7 @@ export default function RolesAdminsPage() {
   const [editIds, setEditIds] = useState<string[]>([]);
   const [editSubmitting, setEditSubmitting] = useState(false);
 
-  // Delete modal
-  const [deleteTarget, setDeleteTarget] = useState<AdminUser | null>(null);
+  // Delete
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
 
   useEffect(() => {
@@ -109,13 +110,24 @@ export default function RolesAdminsPage() {
     }
   }
 
-  async function handleDelete() {
-    if (!deleteTarget) return;
+  async function handleDeleteClick(admin: AdminUser) {
+    const ok = await confirm({
+      title: "Delete Admin?",
+      message: (
+        <>
+          This will remove{" "}
+          <span className="font-semibold text-primary">{admin.name}</span> admin access
+          immediately. Their account will be archived.
+        </>
+      ),
+      confirmLabel: "Yes, Delete",
+      variant: "destructive",
+    });
+    if (!ok) return;
     setDeleteSubmitting(true);
     try {
-      await api.delete(`/api/v1/admin/admins/${deleteTarget.id}`);
-      setAdmins(prev => prev.filter(a => a.id !== deleteTarget.id));
-      setDeleteTarget(null);
+      await api.delete(`/api/v1/admin/admins/${admin.id}`);
+      setAdmins(prev => prev.filter(a => a.id !== admin.id));
       toast.success("Admin removed");
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Failed to delete admin");
@@ -235,8 +247,8 @@ export default function RolesAdminsPage() {
                             <Pencil size={14} />
                           </button>
                           <button
-                            onClick={() => setDeleteTarget(a)}
-                            disabled={a.isSuperAdmin}
+                            onClick={() => handleDeleteClick(a)}
+                            disabled={a.isSuperAdmin || deleteSubmitting}
                             title="Delete admin"
                             className="flex h-8 w-8 items-center justify-center rounded-full text-muted transition-colors hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-40"
                           >
@@ -413,37 +425,6 @@ export default function RolesAdminsPage() {
         </div>
       )}
 
-      {/* Delete Confirm Modal */}
-      {deleteTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-primary/40 p-4 backdrop-blur-sm">
-          <div className="animate-rise w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-card-hover">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100 text-red-500">
-              <Trash2 size={20} />
-            </div>
-            <h3 className="mt-4 font-display text-lg font-bold text-primary">Delete Admin?</h3>
-            <p className="mt-2 text-sm text-muted">
-              This will remove{" "}
-              <span className="font-semibold text-primary">{deleteTarget.name}</span> admin access
-              immediately. Their account will be archived.
-            </p>
-            <div className="mt-6 flex items-center gap-3">
-              <button
-                onClick={() => setDeleteTarget(null)}
-                className="flex-1 rounded-full border border-divider px-5 py-2.5 text-sm font-bold text-muted transition-colors hover:border-subtle hover:text-primary"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleDelete}
-                disabled={deleteSubmitting}
-                className="flex-1 rounded-full bg-red-500 px-5 py-2.5 text-sm font-bold text-white transition-transform hover:scale-105 active:scale-95 disabled:scale-100 disabled:opacity-60"
-              >
-                {deleteSubmitting ? "Deleting..." : "Yes, Delete"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -73,7 +73,9 @@ export interface CommunityDTO {
   id: string
   name: string
   slug: string
+  description: string | null
   coverImageUrl: string | null
+  memberCount: number
 }
 
 export interface AdminUserDTO {

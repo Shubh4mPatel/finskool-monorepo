@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Ban, Download, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 
 interface MemberSubscription {
   id: string;
@@ -76,7 +77,7 @@ function getPaginationPages(current: number, total: number): (number | null)[] {
   return [1, null, current - 1, current, current + 1, null, total];
 }
 
-type ModalType = "add" | "edit" | "extend" | "delete" | "bulk-delete" | "suspend" | "revoke" | "revoke-community" | null;
+type ModalType = "add" | "edit" | "extend" | "suspend" | null;
 
 interface Community { id: string; name: string; slug: string }
 
@@ -102,6 +103,7 @@ function validateMember(m: typeof EMPTY_MEMBER): MemberErrors {
 
 export default function MembersPage() {
   const toast = useToast();
+  const confirm = useConfirm();
   const [modal, setModal] = useState<ModalType>(null);
   const [suspendReason, setSuspendReason] = useState("");
   const [extendDate, setExtendDate] = useState("");
@@ -124,8 +126,6 @@ export default function MembersPage() {
   const [editErrors, setEditErrors] = useState<Partial<Record<string, string>>>({});
 
   // Revoke community
-  const [revokeCommunityId, setRevokeCommunityId] = useState("");
-  const [revokeCommunityName, setRevokeCommunityName] = useState("");
   const [revokingCommunity, setRevokingCommunity] = useState(false);
 
   // Communities
@@ -223,8 +223,6 @@ export default function MembersPage() {
     setEditNewCom({ communityId: "", payment: "", paidOn: "", validUntil: "" });
     setShowAddCom(false);
     setEditErrors({});
-    setRevokeCommunityId("");
-    setRevokeCommunityName("");
   };
 
   function toggleSelect(id: string) {
@@ -257,6 +255,13 @@ export default function MembersPage() {
   }
 
   async function handleBulkDelete() {
+    const ok = await confirm({
+      title: `Deactivate ${selectedIds.size} Member${selectedIds.size === 1 ? "" : "s"}?`,
+      message: "They'll be logged out and won't be able to sign in again. Their posts and comments will remain visible. This can't be undone from here.",
+      confirmLabel: "Yes, Deactivate",
+      variant: "destructive",
+    });
+    if (!ok) return;
     setBulkDeleting(true);
     try {
       const ids = Array.from(selectedIds);
@@ -269,7 +274,6 @@ export default function MembersPage() {
       } else {
         toast.success({ title: "Members deactivated", message: `${result.succeeded} member(s) no longer have access.` });
       }
-      close();
       exitSelectMode();
       refresh();
     } catch (err) {
@@ -304,18 +308,25 @@ export default function MembersPage() {
     }
   }
 
-  function openRevokeModal(m: MemberItem) {
-    setSelectedMember(m);
-    setModal("revoke");
-  }
-
-  async function handleRevokeSuspension() {
-    if (!selectedMember) return;
+  async function handleRevokeSuspension(m: MemberItem) {
+    const ok = await confirm({
+      title: "Revoke Suspension?",
+      message: (
+        <>
+          This will restore {m.name}&rsquo;s access and let them sign in again.
+          {m.suspensionReason && (
+            <> Suspended for: <span className="italic">&ldquo;{m.suspensionReason}&rdquo;</span></>
+          )}
+        </>
+      ),
+      confirmLabel: "Yes, Revoke",
+      variant: "positive",
+    });
+    if (!ok) return;
     setRevoking(true);
     try {
-      await api.patch(`/api/v1/admin/members/${selectedMember.id}/revoke`, {});
-      toast.success({ title: "Suspension revoked", message: `${selectedMember.name} can sign in again.` });
-      close();
+      await api.patch(`/api/v1/admin/members/${m.id}/revoke`, {});
+      toast.success({ title: "Suspension revoked", message: `${m.name} can sign in again.` });
       refresh();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Failed to revoke suspension");
@@ -324,21 +335,21 @@ export default function MembersPage() {
     }
   }
 
-  function openDeleteModal(m: MemberItem) {
-    setSelectedMember(m);
-    setModal("delete");
-  }
-
-  async function handleDeleteMember() {
-    if (!selectedMember) return;
+  async function handleDeleteMember(m: MemberItem) {
+    const ok = await confirm({
+      title: "Deactivate Member?",
+      message: `This will revoke ${m.name}'s access — they'll be logged out and won't be able to sign in again. Their posts and comments will remain visible. This can't be undone from here.`,
+      confirmLabel: "Yes, Deactivate",
+      variant: "destructive",
+    });
+    if (!ok) return;
     setDeleting(true);
     try {
-      await api.delete(`/api/v1/admin/members/${selectedMember.id}`);
+      await api.delete(`/api/v1/admin/members/${m.id}`);
       toast.success({
         title: "Member deactivated",
-        message: `${selectedMember.name} no longer has access to the platform.`,
+        message: `${m.name} no longer has access to the platform.`,
       });
-      close();
       refresh();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Failed to deactivate member");
@@ -490,26 +501,61 @@ export default function MembersPage() {
     }
   }
 
-  function openRevokeCommunityModal(m: MemberItem, communityId: string, communityName: string) {
-    setSelectedMember(m);
-    setRevokeCommunityId(communityId);
-    setRevokeCommunityName(communityName);
-    setModal("revoke-community");
-  }
-
-  async function handleRevokeCommunity() {
-    if (!selectedMember || !revokeCommunityId) return;
+  async function handleRevokeCommunity(m: MemberItem, communityId: string, communityName: string) {
+    const ok = await confirm({
+      title: "Remove from Community?",
+      message: (
+        <>
+          This will remove <span className="font-semibold text-primary">{m.name}</span> from{" "}
+          <span className="font-semibold text-primary">{communityName}</span>.
+          {m.allSubscriptions.length <= 1
+            ? " Since this is their only community, their account will also be deactivated."
+            : ""}
+        </>
+      ),
+      confirmLabel: "Yes, Remove",
+      variant: "destructive",
+    });
+    if (!ok) return;
     setRevokingCommunity(true);
     try {
-      await api.delete(`/api/v1/admin/members/${selectedMember.id}/communities/${revokeCommunityId}`);
-      toast.success({ title: "Access revoked", message: `${selectedMember.name} removed from ${revokeCommunityName}.` });
-      close();
+      await api.delete(`/api/v1/admin/members/${m.id}/communities/${communityId}`);
+      toast.success({ title: "Access revoked", message: `${m.name} removed from ${communityName}.` });
       refresh();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Failed to revoke access");
     } finally {
       setRevokingCommunity(false);
     }
+  }
+
+  function exportMembersCSV() {
+    const header = ["Name", "Phone", "Email", "Community", "Payment", "Paid On", "Valid Till", "Status", "Added On"];
+    const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
+    const rows = members
+      .flatMap(m =>
+        m.allSubscriptions.length > 0
+          ? m.allSubscriptions.map(sub => ({ m, sub }))
+          : [{ m, sub: null as MemberSubscription | null }]
+      )
+      .map(({ m, sub }) => [
+        m.name,
+        m.phone,
+        m.email,
+        sub?.communityName ?? "—",
+        sub ? formatCurrency(sub.payment) : "—",
+        formatDate(sub?.paidOn),
+        formatDate(sub?.validUntil),
+        STATUS_LABELS[m.status] ?? m.status,
+        formatDate(m.createdAt),
+      ]);
+    const csv = "﻿" + [header, ...rows].map(r => r.map(escape).join(",")).join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `members-export-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   const fieldCls = (err?: string) =>
@@ -546,8 +592,8 @@ export default function MembersPage() {
                 Cancel
               </button>
               <button
-                onClick={() => setModal("bulk-delete")}
-                disabled={selectedIds.size === 0}
+                onClick={handleBulkDelete}
+                disabled={selectedIds.size === 0 || bulkDeleting}
                 className="flex items-center gap-2 rounded-full border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-500 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <Trash2 size={14} />
@@ -619,7 +665,11 @@ export default function MembersPage() {
             <input type="date" value={paidDate} onChange={e => setPaidDate(e.target.value)} className={dateCls} />
           </div>
 
-          <button className="flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-xs font-bold text-white transition-transform hover:scale-105 active:scale-95">
+          <button
+            onClick={exportMembersCSV}
+            disabled={members.length === 0}
+            className="flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-xs font-bold text-white transition-transform hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+          >
             <Download size={13} />
             Export CSV
           </button>
@@ -688,9 +738,10 @@ export default function MembersPage() {
                     <Plus size={10} /> Extend
                   </button>
                   <button onClick={() => openEditModal(m)} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-divider/60 hover:text-accent" title="Edit member"><Pencil size={13} /></button>
-                  <button onClick={() => (m.status === "suspended" ? openRevokeModal(m) : openSuspendModal(m))} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-amber-50 hover:text-amber-500"><Ban size={13} /></button>
+                  <button onClick={() => (m.status === "suspended" ? handleRevokeSuspension(m) : openSuspendModal(m))} disabled={revoking} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-amber-50 hover:text-amber-500"><Ban size={13} /></button>
                   <button
-                    onClick={() => sub ? openRevokeCommunityModal(m, sub.communityId, sub.communityName) : openDeleteModal(m)}
+                    onClick={() => sub ? handleRevokeCommunity(m, sub.communityId, sub.communityName) : handleDeleteMember(m)}
+                    disabled={deleting || revokingCommunity}
                     className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-red-50 hover:text-red-500"
                     title={sub ? `Remove from ${sub.communityName}` : "Deactivate member"}
                   ><Trash2 size={13} /></button>
@@ -781,11 +832,12 @@ export default function MembersPage() {
                         <button onClick={() => openEditModal(m)} title="Edit member" className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-divider/60 hover:text-accent">
                           <Pencil size={13} />
                         </button>
-                        <button onClick={() => (m.status === "suspended" ? openRevokeModal(m) : openSuspendModal(m))} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-amber-50 hover:text-amber-500">
+                        <button onClick={() => (m.status === "suspended" ? handleRevokeSuspension(m) : openSuspendModal(m))} disabled={revoking} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-amber-50 hover:text-amber-500">
                           <Ban size={13} />
                         </button>
                         <button
-                          onClick={() => sub ? openRevokeCommunityModal(m, sub.communityId, sub.communityName) : openDeleteModal(m)}
+                          onClick={() => sub ? handleRevokeCommunity(m, sub.communityId, sub.communityName) : handleDeleteMember(m)}
+                    disabled={deleting || revokingCommunity}
                           title={sub ? `Remove from ${sub.communityName}` : "Deactivate member"}
                           className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-red-50 hover:text-red-500"
                         >
@@ -962,56 +1014,6 @@ export default function MembersPage() {
         </div>
       )}
 
-      {/* Delete (Deactivate) Member Modal */}
-      {modal === "delete" && selectedMember && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-primary/40 p-4 backdrop-blur-sm">
-          <div className="animate-rise w-full max-w-sm rounded-2xl bg-white p-6 shadow-card-hover text-center">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100 text-red-500">
-              <Trash2 size={20} />
-            </div>
-            <h3 className="mt-4 font-display text-lg font-bold text-primary">Deactivate Member?</h3>
-            <p className="mt-2 text-sm text-muted">
-              This will revoke {selectedMember.name}&rsquo;s access — they&rsquo;ll be logged out and won&rsquo;t be able to sign in again. Their posts and comments will remain visible. This can&rsquo;t be undone from here.
-            </p>
-            <div className="mt-6 flex items-center gap-3">
-              <button onClick={close} disabled={deleting}
-                className="flex-1 rounded-full border border-divider px-5 py-2.5 text-sm font-bold text-muted transition-colors hover:border-subtle hover:text-primary disabled:opacity-50">
-                Cancel
-              </button>
-              <button onClick={handleDeleteMember} disabled={deleting}
-                className="flex-1 rounded-full bg-red-500 px-5 py-2.5 text-sm font-bold text-white transition-transform hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60">
-                {deleting ? "Deactivating…" : "Yes, Deactivate"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Bulk Delete Modal */}
-      {modal === "bulk-delete" && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-primary/40 p-4 backdrop-blur-sm">
-          <div className="animate-rise w-full max-w-sm rounded-2xl bg-white p-6 shadow-card-hover text-center">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100 text-red-500">
-              <Trash2 size={20} />
-            </div>
-            <h3 className="mt-4 font-display text-lg font-bold text-primary">Deactivate {selectedIds.size} Member{selectedIds.size === 1 ? "" : "s"}?</h3>
-            <p className="mt-2 text-sm text-muted">
-              They&rsquo;ll be logged out and won&rsquo;t be able to sign in again. Their posts and comments will remain visible. This can&rsquo;t be undone from here.
-            </p>
-            <div className="mt-6 flex items-center gap-3">
-              <button onClick={close} disabled={bulkDeleting}
-                className="flex-1 rounded-full border border-divider px-5 py-2.5 text-sm font-bold text-muted transition-colors hover:border-subtle hover:text-primary disabled:opacity-50">
-                Cancel
-              </button>
-              <button onClick={handleBulkDelete} disabled={bulkDeleting}
-                className="flex-1 rounded-full bg-red-500 px-5 py-2.5 text-sm font-bold text-white transition-transform hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60">
-                {bulkDeleting ? "Deactivating…" : "Yes, Deactivate"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Suspend Modal */}
       {modal === "suspend" && selectedMember && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-primary/40 p-4 backdrop-blur-sm">
@@ -1031,34 +1033,6 @@ export default function MembersPage() {
               <button onClick={handleSuspendMember} disabled={suspending}
                 className="flex-1 rounded-full bg-red-500 px-5 py-2.5 text-sm font-bold text-white transition-transform hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60">
                 {suspending ? "Suspending…" : "Suspend"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Revoke Suspension Modal */}
-      {modal === "revoke" && selectedMember && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-primary/40 p-4 backdrop-blur-sm">
-          <div className="animate-rise w-full max-w-sm rounded-2xl bg-white p-6 shadow-card-hover text-center">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-accent/10 text-accent">
-              <Ban size={20} />
-            </div>
-            <h3 className="mt-4 font-display text-lg font-bold text-primary">Revoke Suspension?</h3>
-            <p className="mt-2 text-sm text-muted">
-              This will restore {selectedMember.name}&rsquo;s access and let them sign in again.
-              {selectedMember.suspensionReason && (
-                <> Suspended for: <span className="italic">&ldquo;{selectedMember.suspensionReason}&rdquo;</span></>
-              )}
-            </p>
-            <div className="mt-6 flex items-center gap-3">
-              <button onClick={close} disabled={revoking}
-                className="flex-1 rounded-full border border-divider px-5 py-2.5 text-sm font-bold text-muted transition-colors hover:border-subtle hover:text-primary disabled:opacity-50">
-                Cancel
-              </button>
-              <button onClick={handleRevokeSuspension} disabled={revoking}
-                className="flex-1 rounded-full bg-primary px-5 py-2.5 text-sm font-bold text-white transition-transform hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60">
-                {revoking ? "Revoking…" : "Yes, Revoke"}
               </button>
             </div>
           </div>
@@ -1176,34 +1150,6 @@ export default function MembersPage() {
         </div>
       )}
 
-      {/* Revoke Community Access Modal */}
-      {modal === "revoke-community" && selectedMember && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-primary/40 p-4 backdrop-blur-sm">
-          <div className="animate-rise w-full max-w-sm rounded-2xl bg-white p-6 shadow-card-hover text-center">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100 text-red-500">
-              <Trash2 size={20} />
-            </div>
-            <h3 className="mt-4 font-display text-lg font-bold text-primary">Remove from Community?</h3>
-            <p className="mt-2 text-sm text-muted">
-              This will remove <span className="font-semibold text-primary">{selectedMember.name}</span> from{" "}
-              <span className="font-semibold text-primary">{revokeCommunityName}</span>.
-              {selectedMember.allSubscriptions.length <= 1
-                ? " Since this is their only community, their account will also be deactivated."
-                : ""}
-            </p>
-            <div className="mt-6 flex items-center gap-3">
-              <button onClick={close} disabled={revokingCommunity}
-                className="flex-1 rounded-full border border-divider px-5 py-2.5 text-sm font-bold text-muted transition-colors hover:border-subtle hover:text-primary disabled:opacity-50">
-                Cancel
-              </button>
-              <button onClick={handleRevokeCommunity} disabled={revokingCommunity}
-                className="flex-1 rounded-full bg-red-500 px-5 py-2.5 text-sm font-bold text-white transition-transform hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60">
-                {revokingCommunity ? "Removing…" : "Yes, Remove"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

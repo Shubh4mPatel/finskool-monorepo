@@ -635,10 +635,20 @@ export class AdminService {
   async listCommunities(): Promise<CommunityDTO[]> {
     const communities = await this.db.community.findMany({
       where: { deletedAt: null },
-      select: { id: true, name: true, slug: true, coverImageUrl: true },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        description: true,
+        coverImageUrl: true,
+        _count: { select: { subscriptions: { where: { isActive: true } } } },
+      },
       orderBy: { name: 'asc' },
     })
-    return communities
+    return communities.map(c => {
+      const { _count, ...community } = c
+      return { ...community, memberCount: _count.subscriptions }
+    })
   }
 
   async listAdmins(): Promise<AdminUserDTO[]> {

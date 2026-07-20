@@ -9,6 +9,7 @@ import MarketTodayWidget from "@/components/MarketTodayWidget";
 import CommunityRulesWidget from "@/components/CommunityRulesWidget";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 
 interface FeedPost {
   id: string;
@@ -202,6 +203,7 @@ function PostMenu({ post, onEdit, onDelete, onPin }: { post: FeedPost; onEdit: (
 
 export default function AdminFeedPage() {
   const toast = useToast();
+  const confirm = useConfirm();
   const [posts, setPosts] = useState<FeedPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -237,7 +239,13 @@ export default function AdminFeedPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Delete this post?")) return;
+    const ok = await confirm({
+      title: "Delete Post?",
+      message: "This will permanently delete the post and all its comments. This cannot be undone.",
+      confirmLabel: "Delete",
+      variant: "destructive",
+    });
+    if (!ok) return;
     setDeletingId(id);
     try {
       await api.delete(`/api/v1/posts/${id}`);

@@ -301,14 +301,14 @@ export class AuthService {
             description: true,
             tags: true,
             coverImageUrl: true,
-            _count: { select: { members: true } },
+            _count: { select: { subscriptions: { where: { isActive: true } } } },
           },
         },
       },
     });
     return subscriptions.map((s) => {
       const { _count, ...community } = s.community;
-      return { ...community, memberCount: _count.members };
+      return { ...community, memberCount: _count.subscriptions };
     });
   }
 

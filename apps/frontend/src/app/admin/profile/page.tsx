@@ -9,9 +9,22 @@ import { initials, updateSessionAvatar } from "@/lib/session";
 interface AdminProfile {
   id: string;
   name: string;
+  phone: string;
   email: string;
   role: string;
   avatarUrl: string | null;
+}
+
+interface Community {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+interface AdminUser {
+  id: string;
+  isSuperAdmin: boolean;
+  communityAccess: Community[];
 }
 
 export default function AdminProfilePage() {
@@ -19,6 +32,7 @@ export default function AdminProfilePage() {
   const [email, setEmail] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [communityAccess, setCommunityAccess] = useState<Community[]>([]);
   const avatarInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -30,6 +44,19 @@ export default function AdminProfilePage() {
       })
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    Promise.all([
+      api.get<AdminUser[]>("/api/v1/admin/admins"),
+      api.get<Community[]>("/api/v1/admin/communities"),
+    ])
+      .then(([admins, communities]) => {
+        const self = admins.find((a) => a.id === user.id);
+        setCommunityAccess(self?.isSuperAdmin ? communities : self?.communityAccess ?? []);
+      })
+      .catch(() => {});
+  }, [user]);
 
   const handleEditDetails = async () => {
     if (saving) return;
@@ -104,10 +131,36 @@ export default function AdminProfilePage() {
               />
             </div>
             <div>
-              <p className="font-display text-lg font-bold text-primary">{displayName}</p>
-              <span className="rounded-full bg-lime px-3 py-0.5 text-xs font-bold text-primary">{roleLabel}</span>
+              <div className="flex items-center gap-2">
+                <p className="font-display text-lg font-bold text-primary">{displayName}</p>
+                <button
+                  type="button"
+                  onClick={() => setIsEditing(true)}
+                  className="flex items-center gap-1 rounded-full bg-primary/15 px-3 py-1 text-xs font-semibold text-primary transition-colors hover:bg-primary/25"
+                >
+                  <Pencil size={11} />
+                  Edit
+                </button>
+              </div>
+              <span className="mt-1 inline-block rounded-full bg-lime px-3 py-0.5 text-xs font-bold text-primary">{roleLabel}</span>
             </div>
           </div>
+
+          {communityAccess.length > 0 && (
+            <div className="flex flex-col items-end gap-1.5">
+              <span className="text-xs text-subtle">Community</span>
+              <div className="flex flex-wrap justify-end gap-2">
+                {communityAccess.map((c) => (
+                  <span
+                    key={c.id}
+                    className="rounded-full border border-lime bg-lime/10 px-3 py-1 text-xs font-semibold text-primary"
+                  >
+                    {c.name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="h-px w-full bg-divider" />
@@ -118,7 +171,7 @@ export default function AdminProfilePage() {
               <label className="text-sm font-semibold text-primary">Phone Number</label>
               <input
                 type="text"
-                value=""  
+                value={user?.phone ?? ""}
                 disabled
                 className="mt-2 w-full rounded-xl border border-divider bg-divider/40 px-4 py-3 text-sm text-muted"
               />
