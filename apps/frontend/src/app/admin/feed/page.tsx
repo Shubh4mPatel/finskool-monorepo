@@ -203,7 +203,7 @@ export default function AdminFeedPage() {
     if (pinningId) return;
     setPinningId(post.id);
     try {
-      await api.patch(`/api/v1/posts/${post.id}/pin`, { pinOrder: post.pinOrder !== null ? null : 1 });
+      await api.patch(`/api/v1/posts/${post.id}/pin`, {});
       toast.success(post.pinOrder !== null ? "Post unpinned." : "Post pinned.");
       fetchPosts(page);
     } catch (err) { toast.error(err instanceof ApiError ? err.message : "Failed to update pin"); }

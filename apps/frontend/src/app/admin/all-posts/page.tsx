@@ -319,9 +319,8 @@ export default function AllPostsPage() {
     if (pinningId) return;
     setPinningId(post.id);
     try {
-      const newPinOrder = post.pinOrder !== null ? null : 1;
-      await api.patch(`/api/v1/posts/${post.id}/pin`, { pinOrder: newPinOrder });
-      toast.success(newPinOrder ? "Post pinned." : "Post unpinned.");
+      await api.patch(`/api/v1/posts/${post.id}/pin`, {});
+      toast.success(post.pinOrder !== null ? "Post unpinned." : "Post pinned.");
       fetchPosts(page, communityFilter);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Failed to update pin");

@@ -14,7 +14,3 @@ export const updatePostSchema = z.object({
   tags: z.array(z.string().min(1).max(50)).optional(),
   imageUrls: z.array(z.string().url('Invalid image URL')).optional(),
 })
-
-export const pinPostSchema = z.object({
-  pinOrder: z.union([z.literal(1), z.literal(2), z.literal(3), z.null()]),
-})

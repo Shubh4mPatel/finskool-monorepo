@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
 import type { PostsService } from './posts.service.js'
-import { createPostSchema, updatePostSchema, pinPostSchema } from './posts.validator.js'
+import { createPostSchema, updatePostSchema } from './posts.validator.js'
 import { generateUploadUrl } from '../../lib/minio.js'
 import { getAccessibleCommunityIds } from '../../lib/community-access.js'
 import { ForbiddenError } from '../../shared/errors/index.js'
@@ -123,8 +123,7 @@ export class PostsController {
 
   pin = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const { pinOrder } = pinPostSchema.parse(req.body)
-      const post = await this.service.pinPost(getParam(req, 'id'), req.user!.id, pinOrder)
+      const post = await this.service.pinPost(getParam(req, 'id'), req.user!.id)
       res.json({ success: true, data: post })
     } catch (err) {
       next(err)

@@ -1,4 +1,4 @@
-import type { PrismaClient } from '../../generated/prisma/client.js'
+import type { PrismaClient, Prisma } from '../../generated/prisma/client.js'
 import { uploadFile, deleteFile } from '../../lib/minio.js'
 import { notificationsQueue, COMMUNITY_POST_JOB } from '../../lib/queue.js'
 import { assertCommunityAccess } from '../../lib/community-access.js'
@@ -165,12 +165,18 @@ export class PostsService {
     if (!post) throw new NotFoundError('Post not found')
     await assertCommunityAccess(this.db, adminId, post.communityId)
 
-    await this.db.post.update({
-      where: { id: postId },
-      // Clear pin fields too — the DB's unique (communityId, pinOrder) index applies
-      // regardless of deletedAt, so a deleted post left pinned would permanently
-      // block any other post in the community from taking that pin slot.
-      data: { deletedAt: new Date(), pinOrder: null, pinnedAt: null, pinnedBy: null },
+    await this.db.$transaction(async tx => {
+      await tx.post.update({
+        where: { id: postId },
+        // Clear pin fields too — the DB's unique (communityId, pinOrder) index applies
+        // regardless of deletedAt, so a deleted post left pinned would permanently
+        // block any other post in the community from taking that pin slot.
+        data: { deletedAt: new Date(), pinOrder: null, pinnedAt: null, pinnedBy: null },
+      })
+
+      if (post.pinOrder !== null) {
+        await this.compactPinnedPosts(tx, post.communityId, post.pinOrder)
+      }
     })
 
     logger.info({ postId }, 'posts.delete: soft deleted')
@@ -214,36 +220,72 @@ export class PostsService {
     return this.toResponse(updated)
   }
 
-  async pinPost(postId: string, adminId: string, pinOrder: 1 | 2 | 3 | null): Promise<PostResponseDTO> {
+  /**
+   * Toggles pin state for a post. Pinning always places the post at slot 1,
+   * pushing every other pinned post in the community down one slot; whatever
+   * falls off slot 3 is evicted (fully unpinned). Unpinning clears the post's
+   * slot and compacts the posts below it up by one so pinned slots always
+   * stay contiguous (1..N, N <= 3). The caller only supplies the post id —
+   * pin vs. unpin is derived from the post's current pinOrder.
+   */
+  async pinPost(postId: string, adminId: string): Promise<PostResponseDTO> {
     const post = await this.db.post.findUnique({ where: { id: postId, deletedAt: null } })
     if (!post) throw new NotFoundError('Post not found')
     await assertCommunityAccess(this.db, adminId, post.communityId)
 
     const updated = await this.db.$transaction(async tx => {
-      // If pinning, auto-unpin any existing pinned post in the same community
-      if (pinOrder !== null) {
-        await tx.post.updateMany({
-          where: {
-            communityId: post.communityId,
-            pinOrder,
-            deletedAt: null,
-            id: { not: postId },
-          },
-          data: { pinOrder: null, pinnedAt: null },
+      if (post.pinOrder !== null) {
+        await tx.post.update({
+          where: { id: postId },
+          data: { pinOrder: null, pinnedAt: null, pinnedBy: null },
         })
+        await this.compactPinnedPosts(tx, post.communityId, post.pinOrder)
+        return tx.post.findUniqueOrThrow({ where: { id: postId } })
+      }
+
+      // Push every currently-pinned post down one slot, highest slot first so
+      // each move lands on a slot already vacated by the previous step.
+      const pinned = await tx.post.findMany({
+        where: { communityId: post.communityId, deletedAt: null, pinOrder: { not: null } },
+        orderBy: { pinOrder: 'desc' },
+      })
+      for (const p of pinned) {
+        if (p.pinOrder! >= 3) {
+          await tx.post.update({
+            where: { id: p.id },
+            data: { pinOrder: null, pinnedAt: null, pinnedBy: null },
+          })
+        } else {
+          await tx.post.update({
+            where: { id: p.id },
+            data: { pinOrder: p.pinOrder! + 1 },
+          })
+        }
       }
 
       return tx.post.update({
         where: { id: postId },
-        data: {
-          pinOrder,
-          pinnedAt: pinOrder !== null ? new Date() : null,
-        },
+        data: { pinOrder: 1, pinnedAt: new Date(), pinnedBy: adminId },
       })
     })
 
-    logger.info({ postId, pinOrder }, 'posts.pin: success')
+    logger.info({ postId, pinOrder: updated.pinOrder }, 'posts.pin: success')
     return this.toResponse(updated)
+  }
+
+  /** Shifts every pinned post below `removedOrder` up by one slot, in ascending order so each move lands on an already-vacated slot. */
+  private async compactPinnedPosts(
+    tx: Prisma.TransactionClient,
+    communityId: string,
+    removedOrder: number,
+  ): Promise<void> {
+    const below = await tx.post.findMany({
+      where: { communityId, deletedAt: null, pinOrder: { gt: removedOrder } },
+      orderBy: { pinOrder: 'asc' },
+    })
+    for (const p of below) {
+      await tx.post.update({ where: { id: p.id }, data: { pinOrder: p.pinOrder! - 1 } })
+    }
   }
 
   private toResponse(post: {

@@ -13,10 +13,6 @@ export interface UpdatePostDTO {
   imageUrls?: string[] | undefined
 }
 
-export interface PinPostDTO {
-  pinOrder: 1 | 2 | 3 | null
-}
-
 export interface PostResponseDTO {
   id: string
   communityId: string
