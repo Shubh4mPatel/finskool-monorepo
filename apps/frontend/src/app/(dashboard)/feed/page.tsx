@@ -223,7 +223,8 @@ export default function FeedPage() {
         )}
       </div>
 
-      <aside className="flex w-full flex-col gap-5 sm:flex-row lg:w-70 lg:shrink-0 lg:flex-col lg:self-start lg:sticky lg:top-8">
+      {/* Hidden on mobile — reachable there via the hamburger panel in Sidebar */}
+      <aside className="hidden w-full flex-col gap-5 sm:flex sm:flex-row lg:w-70 lg:shrink-0 lg:flex-col lg:self-start lg:sticky lg:top-8">
         <MarketTodayWidget />
         <CommunityRulesWidget />
       </aside>

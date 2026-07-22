@@ -5,6 +5,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { getSession, clearSession, type SessionInfo } from "@/lib/session";
+import MarketTodayWidget from "@/components/MarketTodayWidget";
+import CommunityRulesWidget from "@/components/CommunityRulesWidget";
 import {
   ArrowLeft,
   LayoutGrid,
@@ -113,21 +115,33 @@ export default function Sidebar() {
             ⚡ {communityName}
           </span>
         )}
-        <Link
-          href="/profile"
-          onClick={() => setOpen(false)}
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-white overflow-hidden"
-        >
-          {avatarUrl
-            ? <img src={avatarUrl} alt={displayName} className="h-full w-full object-cover" />
-            : displayInitials
-          }
-        </Link>
+        <div className="flex shrink-0 items-center gap-2">
+          <Link
+            href="/profile"
+            onClick={() => setOpen(false)}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-white overflow-hidden"
+          >
+            {avatarUrl
+              ? <img src={avatarUrl} alt={displayName} className="h-full w-full object-cover" />
+              : displayInitials
+            }
+          </Link>
+          <button
+            type="button"
+            onClick={handleLogout}
+            aria-label="Logout"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-primary transition-colors hover:bg-divider/60"
+          >
+            <LogOut size={18} />
+          </button>
+        </div>
       </div>
 
-      <div className={`${open ? "block" : "hidden"} h-px w-full bg-divider lg:block`} />
+      {/* Desktop-only: nav links + logout live in the sidebar card. On mobile,
+          navigation is via the bottom tab bar and logout is the icon above. */}
+      <div className="hidden h-px w-full bg-divider lg:block" />
 
-      <nav className={`${open ? "flex" : "hidden"} flex-col gap-1 lg:flex lg:py-4 lg:pb-4`}>
+      <nav className="hidden flex-col gap-1 lg:flex lg:py-4 lg:pb-4">
         {navItems.map((item) => {
           const isActive = pathname?.startsWith(item.href);
           const Icon = item.icon;
@@ -136,7 +150,6 @@ export default function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
-              onClick={() => setOpen(false)}
               className={`flex w-full items-center justify-between gap-3 rounded-full px-4 py-3 text-base font-semibold transition-all duration-300 ${
                 isActive
                   ? "bg-primary text-white shadow-glow"
@@ -159,15 +172,44 @@ export default function Sidebar() {
         })}
       </nav>
 
-      <div className={`${open ? "block" : "hidden"} h-px w-full bg-divider lg:block`} />
+      <div className="hidden h-px w-full bg-divider lg:block" />
 
       <button
-        onClick={() => { setOpen(false); handleLogout(); }}
-        className={`${open ? "flex" : "hidden"} items-center gap-2 self-start rounded-full px-3.5 py-1.5 text-sm font-semibold text-subtle transition-colors hover:bg-divider/60 hover:text-primary lg:flex lg:mt-4`}
+        onClick={handleLogout}
+        className="hidden items-center gap-2 self-start rounded-full px-3.5 py-1.5 text-sm font-semibold text-subtle transition-colors hover:bg-divider/60 hover:text-primary lg:flex lg:mt-4"
       >
         <LogOut size={14} />
         Logout
       </button>
+
+      {/* Mobile: hamburger opens quick-access widgets as a left-anchored overlay
+          drawer instead of a nav drawer (navigation is via the bottom tab bar). */}
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40 bg-black/40 lg:hidden" onClick={() => setOpen(false)} />
+          <div className="fixed inset-y-0 left-0 z-50 w-[80%] max-w-xs overflow-y-auto bg-background p-4 shadow-card-hover lg:hidden">
+            <div className="flex items-center justify-between pb-4">
+              {communityName && (
+                <span className="flex items-center gap-1 rounded-full border border-lime bg-lime/10 px-4 py-1 text-sm font-semibold text-primary">
+                  ⚡ {communityName}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                aria-label="Close panel"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-primary transition-colors hover:bg-divider/60"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="flex flex-col gap-4">
+              <MarketTodayWidget />
+              <CommunityRulesWidget />
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Mobile bottom tab bar */}
       <nav className="fixed inset-x-0 bottom-0 z-40 flex items-stretch justify-around border-t border-[#e0ddd8] bg-white px-2 pb-6 pt-2 lg:hidden">
