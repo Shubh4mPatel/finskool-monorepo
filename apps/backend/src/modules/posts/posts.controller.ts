@@ -15,6 +15,8 @@ const listQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(50).default(20),
   communityId: z.string().uuid().optional(),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be YYYY-MM-DD').optional(),
+  order: z.enum(['asc', 'desc']).default('desc'),
 })
 
 // Express 5 types params as string | string[] — route params are always strings
@@ -28,32 +30,41 @@ export class PostsController {
 
   list = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const { page, pageSize, communityId } = listQuerySchema.parse(req.query)
+      const { page, pageSize, communityId, date, order } = listQuerySchema.parse(req.query)
       const user = req.user!
 
-      let listParams: { page: number; pageSize: number; communityId?: string; communityIds?: string[] }
+      let listParams: {
+        page: number
+        pageSize: number
+        communityId?: string
+        communityIds?: string[]
+        date?: string
+        order: 'asc' | 'desc'
+      }
+
+      const dateParam = date !== undefined ? { date } : {}
 
       if (user.role === 'admin') {
         const accessible = await getAccessibleCommunityIds(prisma, user.id)
         if (accessible === null) {
           // Super admin: use client-provided query param (can see all communities)
-          listParams = { page, pageSize, ...(communityId !== undefined && { communityId }) }
+          listParams = { page, pageSize, order, ...dateParam, ...(communityId !== undefined && { communityId }) }
         } else if (communityId !== undefined) {
           if (!accessible.includes(communityId)) {
             throw new ForbiddenError('You do not have access to this community', 'COMMUNITY_ACCESS_DENIED')
           }
-          listParams = { page, pageSize, communityId }
+          listParams = { page, pageSize, communityId, order, ...dateParam }
         } else {
           // Scoped admin with no community specified: restrict to their granted set
-          listParams = { page, pageSize, communityIds: accessible }
+          listParams = { page, pageSize, communityIds: accessible, order, ...dateParam }
         }
       } else {
         // Member: use selectedCommunityId from JWT (set at login or via select-community endpoint)
         if (user.selectedCommunityId) {
-          listParams = { page, pageSize, communityId: user.selectedCommunityId }
+          listParams = { page, pageSize, communityId: user.selectedCommunityId, order, ...dateParam }
         } else {
           // No community selected yet — fall back to all subscribed communities
-          listParams = { page, pageSize, communityIds: user.communityIds }
+          listParams = { page, pageSize, communityIds: user.communityIds, order, ...dateParam }
         }
       }
 

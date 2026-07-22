@@ -21,8 +21,16 @@ export class PostsService {
     pageSize: number
     communityId?: string
     communityIds?: string[]
+    date?: string
+    order?: 'asc' | 'desc'
   }): Promise<ListPostsResponseDTO> {
-    const { page, pageSize, communityId, communityIds } = params
+    const { page, pageSize, communityId, communityIds, date, order = 'desc' } = params
+    // Anchored to IST (+05:30), not UTC — the frontend displays/labels dates in
+    // en-IN local time, so a "day" here must match what the user sees on a post
+    // card, not the UTC calendar day the timestamp happens to fall on.
+    const dayStart = date ? new Date(`${date}T00:00:00.000+05:30`) : undefined
+    const dayEnd = dayStart ? new Date(dayStart.getTime() + 24 * 60 * 60 * 1000) : undefined
+
     const where = {
       status: 'published' as const,
       deletedAt: null,
@@ -31,6 +39,7 @@ export class PostsService {
         : communityIds !== undefined
           ? { communityId: { in: communityIds } }
           : {}),
+      ...(dayStart && dayEnd ? { publishedAt: { gte: dayStart, lt: dayEnd } } : {}),
     }
 
     const [posts, total] = await Promise.all([
@@ -41,7 +50,7 @@ export class PostsService {
           author: { select: { name: true, avatarUrl: true } },
           _count: { select: { comments: { where: { deletedAt: null } } } },
         },
-        orderBy: [{ pinOrder: { sort: 'asc', nulls: 'last' } }, { publishedAt: 'desc' }],
+        orderBy: [{ pinOrder: { sort: 'asc', nulls: 'last' } }, { publishedAt: order }],
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),

@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Calendar, ChevronDown, Search } from "lucide-react";
+import { DayPicker } from "react-day-picker";
+import "react-day-picker/style.css";
+import { Calendar, ChevronDown, Search, X } from "lucide-react";
 import CommunityRulesWidget from "@/components/CommunityRulesWidget";
 import MarketTodayWidget from "@/components/MarketTodayWidget";
 import FeedPostCard from "@/components/feed/FeedPostCard";
@@ -42,18 +44,30 @@ function formatTimestamp(iso: string | null): string {
   );
 }
 
+// Formats using the date's own calendar fields (not toISOString, which shifts
+// to UTC and can land on the wrong day depending on the browser's timezone).
+function toDateParam(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 export default function FeedPage() {
   const [posts, setPosts] = useState<FeedPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [sortDesc, setSortDesc] = useState(true);
+  const [order, setOrder] = useState<"asc" | "desc">("desc");
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
 
-  const fetchPosts = useCallback(async (pg: number) => {
+  const fetchPosts = useCallback(async (pg: number, ord: "asc" | "desc", date: Date | undefined) => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ page: String(pg), pageSize: "20" });
+      const params = new URLSearchParams({ page: String(pg), pageSize: "20", order: ord });
+      if (date) params.set("date", toDateParam(date));
       const data = await api.get<ListPostsResponse>(`/api/v1/posts?${params}`);
       setPosts(data.posts);
       setTotalPages(data.totalPages);
@@ -65,26 +79,31 @@ export default function FeedPage() {
   }, []);
 
   useEffect(() => {
-    fetchPosts(page);
-  }, [fetchPosts, page]);
+    fetchPosts(page, order, selectedDate);
+  }, [fetchPosts, page, order, selectedDate]);
 
-  const displayed = posts
-    .filter(p =>
-      !search ||
-      p.title.toLowerCase().includes(search.toLowerCase()) ||
-      p.tags.some(t => t.toLowerCase().includes(search.toLowerCase()))
-    )
-    .slice()
-    .sort((a, b) => {
-      // Pinned posts always come first, regardless of sort direction
-      if (a.pinOrder !== null && b.pinOrder === null) return -1;
-      if (a.pinOrder === null && b.pinOrder !== null) return 1;
-      if (a.pinOrder !== null && b.pinOrder !== null) return a.pinOrder - b.pinOrder;
-      // Non-pinned: sort by date
-      const ta = new Date(a.publishedAt ?? a.createdAt).getTime();
-      const tb = new Date(b.publishedAt ?? b.createdAt).getTime();
-      return sortDesc ? tb - ta : ta - tb;
-    });
+  function handleSelectDate(date: Date | undefined) {
+    setSelectedDate(date);
+    setShowDatePicker(false);
+    setPage(1);
+  }
+
+  function clearDate(e: React.MouseEvent) {
+    e.stopPropagation();
+    setSelectedDate(undefined);
+    setPage(1);
+  }
+
+  function toggleOrder() {
+    setOrder(o => (o === "desc" ? "asc" : "desc"));
+    setPage(1);
+  }
+
+  const displayed = posts.filter(p =>
+    !search ||
+    p.title.toLowerCase().includes(search.toLowerCase()) ||
+    p.tags.some(t => t.toLowerCase().includes(search.toLowerCase()))
+  );
 
   return (
     <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
@@ -93,7 +112,7 @@ export default function FeedPage() {
           <h1 className="order-2 font-display text-xl font-semibold text-primary sm:order-none">Live Feed</h1>
 
           <div className="order-1 flex flex-wrap items-center gap-3 sm:order-none">
-            <div className="order-3 flex flex-1 items-center gap-2 rounded-full border border-primary bg-white px-4 py-2.5 transition-colors sm:order-1 sm:flex-none sm:border-accent">
+            <div className="order-1 flex w-full items-center gap-2 rounded-full border border-primary bg-white px-4 py-2.5 transition-colors sm:order-1 sm:w-auto sm:flex-none sm:border-accent">
               <Search size={16} className="shrink-0 text-accent" />
               <input
                 type="text"
@@ -104,19 +123,46 @@ export default function FeedPage() {
               />
             </div>
             <button
-              onClick={() => setSortDesc(p => !p)}
+              onClick={toggleOrder}
               type="button"
-              className="order-1 flex shrink-0 items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white transition-transform duration-300 hover:scale-105 active:scale-95 sm:order-2"
+              className="order-2 flex shrink-0 items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white transition-transform duration-300 hover:scale-105 active:scale-95 sm:order-2"
             >
-              {sortDesc ? "Latest First" : "Oldest First"}
-              <ChevronDown size={16} className={sortDesc ? "" : "rotate-180"} />
+              {order === "desc" ? "Latest First" : "Oldest First"}
+              <ChevronDown size={16} className={order === "desc" ? "" : "rotate-180"} />
             </button>
-            <button
-              className="order-2 flex shrink-0 items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-bold text-white sm:order-3"
-              type="button"
-            >
-              Date <Calendar size={14} />
-            </button>
+            <div className="relative order-3 sm:order-3">
+              <button
+                onClick={() => setShowDatePicker(v => !v)}
+                className="flex shrink-0 items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-bold text-white"
+                type="button"
+              >
+                {selectedDate
+                  ? selectedDate.toLocaleDateString("en-IN", { day: "numeric", month: "short" })
+                  : "Date"}
+                {selectedDate ? (
+                  <X size={14} onClick={clearDate} />
+                ) : (
+                  <Calendar size={14} />
+                )}
+              </button>
+
+              {showDatePicker && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowDatePicker(false)} />
+                  {/* Mobile: centered + clamped to the viewport so a ~300px calendar can
+                      never spill off-screen regardless of where the Date button sits.
+                      sm+: revert to a normal anchored dropdown under the button. */}
+                  <div className="rdp-theme fixed inset-x-4 top-1/2 z-50 -translate-y-1/2 rounded-2xl bg-white p-3 shadow-card-hover sm:absolute sm:inset-x-auto sm:top-full sm:right-0 sm:mt-2 sm:w-auto sm:translate-y-0">
+                    <DayPicker
+                      mode="single"
+                      selected={selectedDate}
+                      onSelect={handleSelectDate}
+                      autoFocus
+                    />
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
 
@@ -129,7 +175,9 @@ export default function FeedPage() {
         ) : displayed.length === 0 ? (
           <div className="flex h-48 flex-col items-center justify-center rounded-2xl bg-white shadow-card">
             <p className="font-display text-base font-semibold text-primary">No posts yet</p>
-            <p className="mt-1 text-sm text-muted">Check back later for updates from your community.</p>
+            <p className="mt-1 text-sm text-muted">
+              {selectedDate ? "No posts were published on this day." : "Check back later for updates from your community."}
+            </p>
           </div>
         ) : (
           <div className="space-y-5">
