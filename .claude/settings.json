@@ -116,7 +116,10 @@
       "Bash(node -e ' *)",
       "Bash(curl -s -c C:/Users/baps/AppData/Local/Temp/claude/d--finskool-monorepo/8daf1fac-d456-4ad4-9d53-e8f7ec0bbc24/scratchpad/cookies.txt -H 'Content-Type: application/json' -d '{\"email\":\"admin@finskool.com\",\"password\":\"Admin@123\"}' http://localhost:3010/api/v1/auth/login -o /dev/null -w 'login status: %{http_code}\\\\n')",
       "Bash(curl -s -b C:/Users/baps/AppData/Local/Temp/claude/d--finskool-monorepo/8daf1fac-d456-4ad4-9d53-e8f7ec0bbc24/scratchpad/cookies.txt http://localhost:3010/api/v1/stocks?search=reliance)",
-      "Bash(curl -s -b C:/Users/baps/AppData/Local/Temp/claude/d--finskool-monorepo/8daf1fac-d456-4ad4-9d53-e8f7ec0bbc24/scratchpad/cookies.txt http://localhost:3010/api/v1/stocks?search=hdfc)"
+      "Bash(curl -s -b C:/Users/baps/AppData/Local/Temp/claude/d--finskool-monorepo/8daf1fac-d456-4ad4-9d53-e8f7ec0bbc24/scratchpad/cookies.txt http://localhost:3010/api/v1/stocks?search=hdfc)",
+      "Bash(find /d -maxdepth 2 -iname \"*eqlion*\" -type d)",
+      "Bash(find /d -maxdepth 3 -iname \"market-feed\" -type d)",
+      "Bash(xargs -I{} wc -l {})"
     ]
   }
 }

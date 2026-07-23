@@ -1,5 +1,6 @@
 import type { PrismaClient } from '../../generated/prisma/client.js'
 import { assertCommunityAccess } from '../../lib/community-access.js'
+import { liveStockFeed } from '../../lib/live-stock-feed.js'
 import { NotFoundError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
 import type {
@@ -65,6 +66,13 @@ export class StockRecommendationsService {
     })
 
     logger.info({ recommendationId: rec.id }, 'stock-recommendations.create: success')
+
+    // Fire-and-forget: start streaming live price ticks for this stock right
+    // away rather than waiting for the next AngelOne reconnect to pick it up.
+    liveStockFeed.ensureSubscribed(data.stockId).catch(err => {
+      logger.error({ err, stockId: data.stockId }, 'stock-recommendations.create: failed to subscribe live feed')
+    })
+
     return this.toResponse(rec)
   }
 

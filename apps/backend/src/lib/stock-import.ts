@@ -43,6 +43,15 @@ interface StockRow {
   symbol: string
   sector: null
   token: string
+  exchange: 'nse' | 'bse'
+}
+
+// Our curated seed stocks (prisma/seed.ts) whose DB `symbol` doesn't literally
+// match the scrip master's `name` field, so the exchange backfill below can't
+// resolve them by name lookup. TATAMOTORS was seeded against "TMPV" (see
+// seed.ts's comment on the Tata Motors demerger) — both are NSE.
+const MANUAL_EXCHANGE_OVERRIDES: Record<string, 'nse' | 'bse'> = {
+  TATAMOTORS: 'nse',
 }
 
 function isLikelyNonEquity(entry: ScripEntry): boolean {
@@ -55,13 +64,17 @@ function isLikelyNonEquity(entry: ScripEntry): boolean {
   return false
 }
 
-async function fetchStockRows(): Promise<StockRow[]> {
+async function fetchScripEntries(): Promise<ScripEntry[]> {
   logger.info({ url: SCRIP_MASTER_URL }, 'stock-import: fetching AngelOne scrip master')
   const res = await fetch(SCRIP_MASTER_URL)
   if (!res.ok) throw new Error(`Failed to fetch scrip master: HTTP ${res.status}`)
   const data = (await res.json()) as ScripEntry[]
   logger.info({ total: data.length }, 'stock-import: fetched scrip master')
+  return data
+}
 
+/** Filters the raw scrip master down to our NSE-authoritative + BSE-gap-fill candidate rows. */
+function filterCandidates(data: ScripEntry[]): StockRow[] {
   const nseEquities = data.filter(d => d.exch_seg === 'NSE' && d.symbol.endsWith('-EQ'))
   const nseNames = new Set(nseEquities.map(d => d.name))
 
@@ -79,6 +92,7 @@ async function fetchStockRows(): Promise<StockRow[]> {
     symbol: d.name,
     sector: null,
     token: d.token,
+    exchange: d.exch_seg === 'NSE' ? 'nse' : 'bse',
   }))
 
   // De-dupe by symbol (our unique key) in case the source data has stray
@@ -91,16 +105,46 @@ async function fetchStockRows(): Promise<StockRow[]> {
   return [...bySymbol.values()]
 }
 
-/** Fetches + inserts the full NSE/BSE equity universe. Existing symbols (e.g. hand-curated stocks) are left untouched. */
+/** Fetches + inserts the full NSE/BSE equity universe, and backfills `exchange` on any existing rows missing it. Existing symbols' other fields (e.g. hand-curated name/sector) are left untouched. */
 export async function importStocks(db: PrismaClient): Promise<number> {
-  const rows = await fetchStockRows()
+  const rows = filterCandidates(await fetchScripEntries())
+
   let created = 0
   for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
     const chunk = rows.slice(i, i + CHUNK_SIZE)
     const result = await db.stock.createMany({ data: chunk, skipDuplicates: true })
     created += result.count
   }
+
+  await backfillExchange(db, rows)
   return created
+}
+
+/** One-time fix-up for rows inserted before the `exchange` column existed. Safe/no-op once every row has it set. */
+async function backfillExchange(db: PrismaClient, rows: StockRow[]): Promise<void> {
+  const missing = await db.stock.findMany({ where: { exchange: null }, select: { symbol: true } })
+  if (missing.length === 0) return
+
+  const exchangeBySymbol = new Map<string, 'nse' | 'bse'>(rows.map(r => [r.symbol, r.exchange]))
+  for (const [symbol, exchange] of Object.entries(MANUAL_EXCHANGE_OVERRIDES)) {
+    exchangeBySymbol.set(symbol, exchange)
+  }
+
+  const nseSymbols = missing.map(m => m.symbol).filter(s => exchangeBySymbol.get(s) === 'nse')
+  const bseSymbols = missing.map(m => m.symbol).filter(s => exchangeBySymbol.get(s) === 'bse')
+
+  if (nseSymbols.length > 0) {
+    await db.stock.updateMany({ where: { symbol: { in: nseSymbols } }, data: { exchange: 'nse' } })
+  }
+  if (bseSymbols.length > 0) {
+    await db.stock.updateMany({ where: { symbol: { in: bseSymbols } }, data: { exchange: 'bse' } })
+  }
+
+  const unresolved = missing.length - nseSymbols.length - bseSymbols.length
+  logger.info(
+    { backfilledNse: nseSymbols.length, backfilledBse: bseSymbols.length, unresolved },
+    'stock-import: backfilled exchange on pre-existing rows',
+  )
 }
 
 /** Runs `importStocks` only if the table is currently empty — safe to call on every server boot. */

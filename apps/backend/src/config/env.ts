@@ -52,6 +52,13 @@ export const env = {
     password: process.env['SMTP_PASSWORD'] ?? '',
     from: process.env['SMTP_FROM'] ?? 'Finskool <notifications@finskool.local>',
   },
+
+  angelone: {
+    apiKey: process.env['ANGELONE_API_KEY'] ?? '',
+    clientCode: process.env['ANGELONE_CLIENT_CODE'] ?? '',
+    pin: process.env['ANGELONE_PIN'] ?? '',
+    totpSecret: process.env['ANGELONE_TOTP_SECRET'] ?? '',
+  },
 } as const satisfies {
   nodeEnv: 'development' | 'production' | 'test'
   port: number
@@ -62,4 +69,5 @@ export const env = {
   cookie: { secure: boolean }
   minio: { endPoint: string; publicEndPoint: string; port: number; publicPort: number; useSSL: boolean; accessKey: string; secretKey: string; bucket: string }
   smtp: { host: string; port: number; secure: boolean; user: string; password: string; from: string }
+  angelone: { apiKey: string; clientCode: string; pin: string; totpSecret: string }
 }

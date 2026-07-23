@@ -34,6 +34,15 @@ enum StockRiskLevel {
   high
 }
 
+// Which exchange the AngelOne `token` resolves against — required to
+// subscribe the correct exchangeType on the live SmartAPI WebSocket feed.
+// Nullable only because pre-existing rows need a one-time backfill; every
+// newly-imported/seeded stock always sets it.
+enum StockExchange {
+  nse
+  bse
+}
+
 model User {
   id           String    @id @default(uuid()) @db.Uuid
   name         String    @map("full_name") @db.VarChar(100)
@@ -201,6 +210,7 @@ model Stock {
   symbol    String   @unique @db.VarChar(50)
   sector    String?  @db.VarChar(100)
   token     String?  @db.VarChar(50)
+  exchange  StockExchange?
   cmp       Decimal? @db.Decimal(10, 2)
   isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
