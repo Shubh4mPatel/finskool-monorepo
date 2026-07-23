@@ -22,6 +22,18 @@ enum PostStatus {
   published
 }
 
+enum StockActionCall {
+  buy
+  hold
+  exit
+}
+
+enum StockRiskLevel {
+  low
+  medium
+  high
+}
+
 model User {
   id           String    @id @default(uuid()) @db.Uuid
   name         String    @map("full_name") @db.VarChar(100)
@@ -46,6 +58,7 @@ model User {
   subscriptions      Subscription[]
   notifications      Notification[]
   communityAccess    CommunityAdmin[]
+  stockRecommendations StockRecommendation[]
 
   @@index([phone], name: "idx_users_phone")
   @@index([email], name: "idx_users_email")
@@ -110,6 +123,7 @@ model Community {
   subscriptions Subscription[]
   notifications Notification[]
   adminAccess   CommunityAdmin[]
+  stockRecommendations StockRecommendation[]
 
   @@index([slug], name: "idx_communities_slug")
   @@index([createdBy], name: "idx_communities_created_by")
@@ -179,6 +193,49 @@ model Post {
   @@index([communityId, pinOrder], name: "idx_posts_pinned")
   @@index([authorId], name: "idx_posts_author")
   @@map("posts")
+}
+
+model Stock {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @db.VarChar(150)
+  symbol    String   @unique @db.VarChar(50)
+  sector    String?  @db.VarChar(100)
+  token     String?  @db.VarChar(50)
+  cmp       Decimal? @db.Decimal(10, 2)
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  recommendations StockRecommendation[]
+
+  @@index([symbol], name: "idx_stocks_symbol")
+  @@index([isActive], name: "idx_stocks_active")
+  @@map("stocks")
+}
+
+model StockRecommendation {
+  id                  String          @id @default(uuid()) @db.Uuid
+  communityId         String          @map("community_id") @db.Uuid
+  recommendedBy       String          @map("recommended_by") @db.Uuid
+  stockId             String          @map("stock_id") @db.Uuid
+  entryPrice          Decimal         @map("entry_price") @db.Decimal(10, 2)
+  targetPrice         Decimal         @map("target_price") @db.Decimal(10, 2)
+  stopLossPrice       Decimal         @map("stop_loss_price") @db.Decimal(10, 2)
+  actionCall          StockActionCall @map("action_call")
+  riskLevel           StockRiskLevel  @map("risk_level")
+  recommendationNotes String?         @map("recommendation_notes") @db.Text
+  createdAt           DateTime        @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt           DateTime?       @map("deleted_at") @db.Timestamptz
+
+  community   Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  recommender User      @relation(fields: [recommendedBy], references: [id])
+  stock       Stock     @relation(fields: [stockId], references: [id])
+
+  @@index([communityId, deletedAt], name: "idx_stock_recommendations_community_feed")
+  @@index([recommendedBy], name: "idx_stock_recommendations_recommended_by")
+  @@index([stockId], name: "idx_stock_recommendations_stock")
+  @@map("stock_recommendations")
 }
 
 model Comment {

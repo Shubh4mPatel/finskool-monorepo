@@ -1,112 +1,84 @@
-import { ChevronDown, LayoutGrid, Search } from "lucide-react";
+"use client";
 
-const stats = [
-  { value: "14", label: "Total Calls" },
-  { value: "11", label: "Active" },
-  { value: "+18.4%", label: "Avg Return", positive: true },
-  { value: "76%", label: "Win Rate" },
-];
+import { useEffect, useState } from "react";
+import { ChevronDown, LayoutGrid, Search } from "lucide-react";
+import { api } from "@/lib/api";
+
+interface StockRecommendationItem {
+  id: string;
+  communityId: string;
+  symbol: string;
+  name: string;
+  sector: string | null;
+  cmp: number | null;
+  entryPrice: number;
+  targetPrice: number;
+  stopLossPrice: number;
+  actionCall: "buy" | "hold" | "exit";
+  riskLevel: "low" | "medium" | "high";
+  recommendationNotes: string | null;
+  returnPercent: number | null;
+  createdAt: string;
+}
 
 const riskStyles: Record<string, string> = {
-  Low: "text-accent",
-  Medium: "text-amber-500",
-  High: "text-red-500",
+  low: "text-accent",
+  medium: "text-amber-500",
+  high: "text-red-500",
 };
+
+const riskLabels: Record<string, string> = { low: "Low", medium: "Medium", high: "High" };
 
 const callStyles: Record<string, string> = {
-  BUY: "bg-accent text-white",
-  HOLD: "bg-amber-400 text-white",
-  SELL: "bg-red-400 text-white",
+  buy: "bg-accent text-white",
+  hold: "bg-amber-400 text-white",
+  exit: "bg-red-400 text-white",
 };
 
-const recommendations = [
-  {
-    company: "Adani Power",
-    exchange: "NSE",
-    sector: "Energy",
-    date: "12 May 2026",
-    entry: "₹2,780",
-    cmp: "₹3,100",
-    target: "₹3,400",
-    stopLoss: "₹2,600",
-    return: "+13.4%",
-    risk: "Low",
-    call: "BUY",
-    color: "bg-orange-100 text-orange-600",
-  },
-  {
-    company: "Infosys",
-    exchange: "NSE",
-    sector: "IT",
-    date: "28 Apr 2026",
-    entry: "₹1,480",
-    cmp: "₹1,800",
-    target: "₹2,100",
-    stopLoss: "₹1,380",
-    return: "+21.6%",
-    risk: "Medium",
-    call: "BUY",
-    color: "bg-blue-100 text-blue-600",
-  },
-  {
-    company: "TATA Motors",
-    exchange: "NSE",
-    sector: "Auto",
-    date: "03 Mar 2026",
-    entry: "₹685",
-    cmp: "₹1,050",
-    target: "₹1,200",
-    stopLoss: "₹620",
-    return: "+53.2%",
-    risk: "High",
-    call: "HOLD",
-    color: "bg-purple-100 text-purple-600",
-  },
-  {
-    company: "ITC",
-    exchange: "FMCG",
-    sector: "FMCG",
-    date: "18 Apr 2026",
-    entry: "₹380",
-    cmp: "₹460",
-    target: "₹520",
-    stopLoss: "₹350",
-    return: "+21.0%",
-    risk: "Low",
-    call: "BUY",
-    color: "bg-lime/40 text-primary",
-  },
-  {
-    company: "Wipro",
-    exchange: "NSE",
-    sector: "IT",
-    date: "05 May 2026",
-    entry: "₹420",
-    cmp: "₹390",
-    target: "₹500",
-    stopLoss: "₹395",
-    return: "-7.1%",
-    risk: "Medium",
-    call: "HOLD",
-    color: "bg-blue-100 text-blue-600",
-  },
-  {
-    company: "Bajaj Finance",
-    exchange: "NSE",
-    sector: "NBFC",
-    date: "20 Apr 2026",
-    entry: "₹6,200",
-    cmp: "₹7,100",
-    target: "₹7,800",
-    stopLoss: "₹5,900",
-    return: "+14.5%",
-    risk: "Low",
-    call: "SELL",
-    color: "bg-slate-100 text-slate-600",
-  },
+const callLabels: Record<string, string> = { buy: "BUY", hold: "HOLD", exit: "EXIT" };
+
+const AVATAR_COLORS = [
+  "bg-orange-100 text-orange-600",
+  "bg-blue-100 text-blue-600",
+  "bg-purple-100 text-purple-600",
+  "bg-lime/40 text-primary",
+  "bg-slate-100 text-slate-600",
 ];
 
+function avatarColor(symbol: string): string {
+  return AVATAR_COLORS[symbol.charCodeAt(0) % AVATAR_COLORS.length] ?? "bg-divider text-muted";
+}
+
+function formatMoney(n: number | null): string {
+  return n == null ? "—" : `₹${n.toLocaleString("en-IN")}`;
+}
+
+function formatReturn(n: number | null): string {
+  return n == null ? "—" : `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
+}
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+}
+
 export default function RecommendationsPage() {
+  const [recommendations, setRecommendations] = useState<StockRecommendationItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get<StockRecommendationItem[]>("/api/v1/stock-recommendations")
+      .then(setRecommendations)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const stats = [
+    { value: String(recommendations.length), label: "Total Calls" },
+    { value: String(recommendations.length), label: "Active" },
+    { value: "—", label: "Avg Return" },
+    { value: "—", label: "Win Rate" },
+  ];
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -132,7 +104,7 @@ export default function RecommendationsPage() {
           </div>
           <span className="flex items-center gap-1.5 text-xs text-subtle">
             <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
-            Last updated: 2 min ago
+            Last updated: just now
           </span>
         </div>
       </div>
@@ -144,7 +116,7 @@ export default function RecommendationsPage() {
             className="animate-rise rounded-2xl bg-white p-5 text-center shadow-card transition-all duration-300 hover:-translate-y-1 hover:shadow-card-hover"
             style={{ animationDelay: `${i * 60}ms` }}
           >
-            <p className={`font-display text-2xl font-bold ${stat.positive ? "text-accent" : "text-primary"}`}>
+            <p className="font-display text-2xl font-bold text-primary">
               {stat.value}
             </p>
             <p className="mt-1 text-sm text-muted">{stat.label}</p>
@@ -170,128 +142,134 @@ export default function RecommendationsPage() {
           </div>
         </div>
 
+        {loading && (
+          <div className="mt-8 flex items-center justify-center py-12">
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-divider border-t-accent" />
+          </div>
+        )}
+
+        {!loading && recommendations.length === 0 && (
+          <div className="mt-8 flex flex-col items-center justify-center py-12 text-center">
+            <p className="font-semibold text-primary">No recommendations yet</p>
+            <p className="mt-1 text-sm text-muted">Your admin hasn&apos;t posted any stock calls for this community yet.</p>
+          </div>
+        )}
+
         {/* Mobile / tablet card list */}
-        <div className="mt-4 flex flex-col gap-3 lg:hidden">
-          {recommendations.map((row) => (
-            <div
-              key={row.company}
-              className="rounded-xl border border-divider p-4 transition-shadow duration-300 hover:shadow-card"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold ${row.color}`}>
-                    {row.company.slice(0, 1)}
-                  </span>
-                  <div>
-                    <p className="font-semibold text-primary">{row.company}</p>
-                    <p className="text-xs text-subtle">
-                      {row.exchange} · {row.sector}
-                    </p>
-                  </div>
-                </div>
-                <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${callStyles[row.call]}`}>
-                  {row.call}
-                </span>
-              </div>
-
-              <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
-                <div>
-                  <p className="text-xs text-subtle">Entry ₹</p>
-                  <p className="font-semibold text-primary">{row.entry}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-subtle">CMP ₹</p>
-                  <p className="font-semibold text-primary">{row.cmp}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-subtle">Target ₹</p>
-                  <p className="font-semibold text-primary">{row.target}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-subtle">Stop Loss ₹</p>
-                  <p className="font-semibold text-primary">{row.stopLoss}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-subtle">Return</p>
-                  <p className={`font-semibold ${row.return.startsWith("-") ? "text-red-500" : "text-accent"}`}>
-                    {row.return}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-subtle">Risk</p>
-                  <p className={`font-semibold ${riskStyles[row.risk]}`}>{row.risk}</p>
-                </div>
-              </div>
-
-              <p className="mt-3 text-xs text-subtle">Recommended {row.date}</p>
-            </div>
-          ))}
-        </div>
-
-        {/* Desktop table */}
-        <div className="mt-4 hidden overflow-x-auto lg:block">
-          <table className="w-full min-w-[900px] text-left text-sm">
-            <thead>
-              <tr className="text-xs font-semibold text-subtle">
-                <th className="px-3 py-2">COMPANY</th>
-                <th className="px-3 py-2">SECTOR</th>
-                <th className="px-3 py-2">REC. DATE</th>
-                <th className="px-3 py-2">ENTRY ₹</th>
-                <th className="px-3 py-2">CMP ₹</th>
-                <th className="px-3 py-2">TARGET ₹</th>
-                <th className="px-3 py-2">STOP LOSS ₹</th>
-                <th className="px-3 py-2">RETURN %</th>
-                <th className="px-3 py-2">RISK</th>
-                <th className="px-3 py-2">CALL</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recommendations.map((row) => (
-                <tr key={row.company} className="border-t border-divider transition-colors hover:bg-background">
-                  <td className="flex items-center gap-3 px-3 py-3">
-                    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-display text-xs font-bold ${row.color}`}>
-                      {row.company.slice(0, 1)}
+        {!loading && recommendations.length > 0 && (
+          <div className="mt-4 flex flex-col gap-3 lg:hidden">
+            {recommendations.map((row) => (
+              <div
+                key={row.id}
+                className="rounded-xl border border-divider p-4 transition-shadow duration-300 hover:shadow-card"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold ${avatarColor(row.symbol)}`}>
+                      {row.name.slice(0, 1)}
                     </span>
                     <div>
-                      <p className="font-semibold text-primary">{row.company}</p>
-                      <p className="text-xs text-subtle">{row.exchange}</p>
+                      <p className="font-semibold text-primary">{row.name}</p>
+                      <p className="text-xs text-subtle">{row.sector ?? "Uncategorized"}</p>
                     </div>
-                  </td>
-                  <td className="px-3 py-3 text-muted">{row.sector}</td>
-                  <td className="px-3 py-3 text-muted">{row.date}</td>
-                  <td className="px-3 py-3 text-muted">{row.entry}</td>
-                  <td className="px-3 py-3 font-semibold text-primary">{row.cmp}</td>
-                  <td className="px-3 py-3 text-muted">{row.target}</td>
-                  <td className="px-3 py-3 text-muted">{row.stopLoss}</td>
-                  <td className={`px-3 py-3 font-semibold ${row.return.startsWith("-") ? "text-red-500" : "text-accent"}`}>
-                    {row.return}
-                  </td>
-                  <td className={`px-3 py-3 font-semibold ${riskStyles[row.risk]}`}>{row.risk}</td>
-                  <td className="px-3 py-3">
-                    <span className={`rounded-full px-3 py-1 text-xs font-bold ${callStyles[row.call]}`}>
-                      {row.call}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                  </div>
+                  <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${callStyles[row.actionCall]}`}>
+                    {callLabels[row.actionCall]}
+                  </span>
+                </div>
 
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
-          <p className="text-sm text-subtle">Showing 6 of 14 recommendations</p>
-          <div className="flex items-center gap-2">
-            <button className="rounded-full border border-divider px-4 py-1.5 text-sm font-semibold text-muted transition-colors hover:border-accent hover:text-primary">
-              Previous
-            </button>
-            <button className="h-8 w-8 rounded-full bg-primary text-sm font-semibold text-white shadow-glow">1</button>
-            <button className="h-8 w-8 rounded-full text-sm font-semibold text-muted transition-colors hover:bg-divider/60 hover:text-primary">2</button>
-            <button className="h-8 w-8 rounded-full text-sm font-semibold text-muted transition-colors hover:bg-divider/60 hover:text-primary">3</button>
-            <button className="rounded-full border border-divider px-4 py-1.5 text-sm font-semibold text-muted transition-colors hover:border-accent hover:text-primary">
-              Next
-            </button>
+                <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
+                  <div>
+                    <p className="text-xs text-subtle">Entry ₹</p>
+                    <p className="font-semibold text-primary">{formatMoney(row.entryPrice)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-subtle">CMP ₹</p>
+                    <p className="font-semibold text-primary">{formatMoney(row.cmp)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-subtle">Target ₹</p>
+                    <p className="font-semibold text-primary">{formatMoney(row.targetPrice)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-subtle">Stop Loss ₹</p>
+                    <p className="font-semibold text-primary">{formatMoney(row.stopLossPrice)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-subtle">Return</p>
+                    <p className={`font-semibold ${row.returnPercent != null && row.returnPercent < 0 ? "text-red-500" : "text-accent"}`}>
+                      {formatReturn(row.returnPercent)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-subtle">Risk</p>
+                    <p className={`font-semibold ${riskStyles[row.riskLevel]}`}>{riskLabels[row.riskLevel]}</p>
+                  </div>
+                </div>
+
+                <p className="mt-3 text-xs text-subtle">Recommended {formatDate(row.createdAt)}</p>
+              </div>
+            ))}
           </div>
-        </div>
+        )}
+
+        {/* Desktop table */}
+        {!loading && recommendations.length > 0 && (
+          <div className="mt-4 hidden overflow-x-auto lg:block">
+            <table className="w-full min-w-225 text-left text-sm">
+              <thead>
+                <tr className="text-xs font-semibold text-subtle">
+                  <th className="px-3 py-2">COMPANY</th>
+                  <th className="px-3 py-2">SECTOR</th>
+                  <th className="px-3 py-2">REC. DATE</th>
+                  <th className="px-3 py-2">ENTRY ₹</th>
+                  <th className="px-3 py-2">CMP ₹</th>
+                  <th className="px-3 py-2">TARGET ₹</th>
+                  <th className="px-3 py-2">STOP LOSS ₹</th>
+                  <th className="px-3 py-2">RETURN %</th>
+                  <th className="px-3 py-2">RISK</th>
+                  <th className="px-3 py-2">CALL</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recommendations.map((row) => (
+                  <tr key={row.id} className="border-t border-divider transition-colors hover:bg-background">
+                    <td className="flex items-center gap-3 px-3 py-3">
+                      <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-display text-xs font-bold ${avatarColor(row.symbol)}`}>
+                        {row.name.slice(0, 1)}
+                      </span>
+                      <div>
+                        <p className="font-semibold text-primary">{row.name}</p>
+                        <p className="text-xs text-subtle">{row.symbol}</p>
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 text-muted">{row.sector ?? "—"}</td>
+                    <td className="px-3 py-3 text-muted">{formatDate(row.createdAt)}</td>
+                    <td className="px-3 py-3 text-muted">{formatMoney(row.entryPrice)}</td>
+                    <td className="px-3 py-3 font-semibold text-primary">{formatMoney(row.cmp)}</td>
+                    <td className="px-3 py-3 text-muted">{formatMoney(row.targetPrice)}</td>
+                    <td className="px-3 py-3 text-muted">{formatMoney(row.stopLossPrice)}</td>
+                    <td className={`px-3 py-3 font-semibold ${row.returnPercent != null && row.returnPercent < 0 ? "text-red-500" : "text-accent"}`}>
+                      {formatReturn(row.returnPercent)}
+                    </td>
+                    <td className={`px-3 py-3 font-semibold ${riskStyles[row.riskLevel]}`}>{riskLabels[row.riskLevel]}</td>
+                    <td className="px-3 py-3">
+                      <span className={`rounded-full px-3 py-1 text-xs font-bold ${callStyles[row.actionCall]}`}>
+                        {callLabels[row.actionCall]}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {!loading && recommendations.length > 0 && (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
+            <p className="text-sm text-subtle">Showing {recommendations.length} recommendation{recommendations.length === 1 ? "" : "s"}</p>
+          </div>
+        )}
       </div>
 
       <p className="text-center text-xs text-subtle">

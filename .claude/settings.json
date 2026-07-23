@@ -98,7 +98,25 @@
       "Bash(curl -s -b /tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/8750fbd9-1edb-4d3f-b623-da0dec31a255/scratchpad/cookies.txt 'http://localhost:3001/api/v1/posts?page=1&pageSize=20&order=desc&date=2026-07-13&communityId=d4141bd5-8e94-4a63-b17e-85f66188260f')",
       "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\)['data']; print\\([p['title'] for p in d['posts']]\\)\")",
       "Bash(node pw_popover_fix.js)",
-      "Bash(node pw_hamburger.js)"
+      "Bash(node pw_hamburger.js)",
+      "Bash(ls -la /d/ 2>&1 | grep -i eqlion; echo \"---\"; find /d -maxdepth 1 -iname \"*eqlion*\" 2>&1)",
+      "Read(//d//**)",
+      "Bash(cd apps/backend && cat .env 2>/dev/null | grep -i database_url; echo \"---\"; find .. -maxdepth 2 -iname \"docker-compose*.yml\" 2>/dev/null; docker ps 2>&1 | head -20)",
+      "Bash(curl -s -o /dev/null -w \"GET /api/v1/stock-recommendations -> %{http_code}\\\\n\" http://localhost:3010/api/v1/stock-recommendations)",
+      "Bash(curl -s -o /dev/null -w \"GET /api/v1/stocks -> %{http_code}\\\\n\" http://localhost:3010/api/v1/stocks)",
+      "Bash(curl -s -o /dev/null -w \"GET /api/v1/nonexistent -> %{http_code}\\\\n\" http://localhost:3010/api/v1/nonexistent)",
+      "Bash(curl -s -b C:/Users/baps/AppData/Local/Temp/claude/d--finskool-monorepo/8daf1fac-d456-4ad4-9d53-e8f7ec0bbc24/scratchpad/cookies.txt http://localhost:3010/api/v1/stocks?search=tata)",
+      "Bash(curl -s -b C:/Users/baps/AppData/Local/Temp/claude/d--finskool-monorepo/8daf1fac-d456-4ad4-9d53-e8f7ec0bbc24/scratchpad/cookies.txt http://localhost:3010/api/v1/stocks)",
+      "Bash(curl -s -b C:/Users/baps/AppData/Local/Temp/claude/d--finskool-monorepo/8daf1fac-d456-4ad4-9d53-e8f7ec0bbc24/scratchpad/cookies.txt http://localhost:3010/api/v1/stock-recommendations)",
+      "Bash(curl -s -b C:/Users/baps/AppData/Local/Temp/claude/d--finskool-monorepo/8daf1fac-d456-4ad4-9d53-e8f7ec0bbc24/scratchpad/cookies.txt -H 'Content-Type: application/json' -X PATCH -d '{\"targetPrice\":180,\"recommendationNotes\":\"Updated target after strong close\"}' http://localhost:3010/api/v1/stock-recommendations/dccd905c-43eb-4ca6-bb32-82973e50983c)",
+      "Bash(curl -s -b C:/Users/baps/AppData/Local/Temp/claude/d--finskool-monorepo/8daf1fac-d456-4ad4-9d53-e8f7ec0bbc24/scratchpad/cookies.txt http://localhost:3010/api/v1/stock-recommendations?communityId=2d850ab9-18b3-46f4-b271-8bab5cd4fdc1)",
+      "Bash(curl -s -o /dev/null -w 'status: %{http_code}\\\\n' -H 'Content-Type: application/json' -X POST -d '{\"communityId\":\"x\",\"stockId\":\"x\",\"entryPrice\":1,\"targetPrice\":2,\"stopLossPrice\":1,\"actionCall\":\"buy\",\"riskLevel\":\"low\"}' http://localhost:3010/api/v1/stock-recommendations)",
+      "Bash(curl -s -b C:/Users/baps/AppData/Local/Temp/claude/d--finskool-monorepo/8daf1fac-d456-4ad4-9d53-e8f7ec0bbc24/scratchpad/cookies.txt -X DELETE http://localhost:3010/api/v1/stock-recommendations/dccd905c-43eb-4ca6-bb32-82973e50983c)",
+      "Bash(curl -sL -o C:/Users/baps/AppData/Local/Temp/claude/d--finskool-monorepo/8daf1fac-d456-4ad4-9d53-e8f7ec0bbc24/scratchpad/OpenAPIScripMaster.json https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json -w 'HTTP %{http_code}, size %{size_download} bytes\\\\n')",
+      "Bash(node -e ' *)",
+      "Bash(curl -s -c C:/Users/baps/AppData/Local/Temp/claude/d--finskool-monorepo/8daf1fac-d456-4ad4-9d53-e8f7ec0bbc24/scratchpad/cookies.txt -H 'Content-Type: application/json' -d '{\"email\":\"admin@finskool.com\",\"password\":\"Admin@123\"}' http://localhost:3010/api/v1/auth/login -o /dev/null -w 'login status: %{http_code}\\\\n')",
+      "Bash(curl -s -b C:/Users/baps/AppData/Local/Temp/claude/d--finskool-monorepo/8daf1fac-d456-4ad4-9d53-e8f7ec0bbc24/scratchpad/cookies.txt http://localhost:3010/api/v1/stocks?search=reliance)",
+      "Bash(curl -s -b C:/Users/baps/AppData/Local/Temp/claude/d--finskool-monorepo/8daf1fac-d456-4ad4-9d53-e8f7ec0bbc24/scratchpad/cookies.txt http://localhost:3010/api/v1/stocks?search=hdfc)"
     ]
   }
 }

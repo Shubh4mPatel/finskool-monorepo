@@ -99,6 +99,32 @@ async function main() {
     })
     console.log(`[seed] Community ready: ${community.name}`)
   }
+
+  // Tokens resolved from AngelOne's published scrip master
+  // (OpenAPIScripMaster.json), matched on exch_seg "NSE" + the equity
+  // segment (instrumenttype "") entry whose `name` equals our symbol.
+  const stocksSeedData: { name: string; symbol: string; sector: string; token: string | null }[] = [
+    { name: 'Tata Steel Ltd', symbol: 'TATASTEEL', sector: 'Metals', token: '3499' },
+    { name: 'Adani Power Ltd', symbol: 'ADANIPOWER', sector: 'Energy', token: '17388' },
+    { name: 'Infosys Ltd', symbol: 'INFY', sector: 'IT', token: '1594' },
+    // No "TATAMOTORS" entry exists in the scrip master anymore — Tata Motors
+    // demerged its passenger-vehicle business, which now trades separately.
+    // "TMPV" (token 3456) is the best-guess successor by name but is UNCONFIRMED —
+    // verify against AngelOne's docs/support before relying on this for live prices.
+    { name: 'Tata Motors Ltd', symbol: 'TATAMOTORS', sector: 'Auto', token: '3456' },
+    { name: 'ITC Ltd', symbol: 'ITC', sector: 'FMCG', token: '1660' },
+    { name: 'Wipro Ltd', symbol: 'WIPRO', sector: 'IT', token: '3787' },
+    { name: 'Bajaj Finance Ltd', symbol: 'BAJFINANCE', sector: 'NBFC', token: '317' },
+  ]
+
+  for (const s of stocksSeedData) {
+    await prisma.stock.upsert({
+      where: { symbol: s.symbol },
+      update: { name: s.name, sector: s.sector, token: s.token },
+      create: { name: s.name, symbol: s.symbol, sector: s.sector, token: s.token },
+    })
+  }
+  console.log(`[seed] Stocks ready: ${stocksSeedData.length}`)
 }
 
 main()
