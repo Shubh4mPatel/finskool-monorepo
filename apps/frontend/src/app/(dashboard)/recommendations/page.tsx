@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { ChevronDown, LayoutGrid, Search } from "lucide-react";
 import { api } from "@/lib/api";
+import { useStockTick, useMarketStatus } from "@/store/liveStockPrices/hooks";
 
 interface StockRecommendationItem {
   id: string;
@@ -61,9 +62,115 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 }
 
+/** Overlays a live AngelOne tick (if one has arrived over the WS feed) on top of the last REST-fetched cmp/returnPercent for this row. */
+function useLiveCmpAndReturn(row: StockRecommendationItem): { cmp: number | null; returnPercent: number | null; isLive: boolean } {
+  const tick = useStockTick(row.symbol);
+  if (!tick) return { cmp: row.cmp, returnPercent: row.returnPercent, isLive: false };
+
+  const returnPercent = row.entryPrice !== 0
+    ? Number((((tick.ltp - row.entryPrice) / row.entryPrice) * 100).toFixed(2))
+    : null;
+  return { cmp: tick.ltp, returnPercent, isLive: true };
+}
+
+function RecommendationCard({ row }: { row: StockRecommendationItem }) {
+  const { cmp, returnPercent, isLive } = useLiveCmpAndReturn(row);
+
+  return (
+    <div className="rounded-xl border border-divider p-4 transition-shadow duration-300 hover:shadow-card">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold ${avatarColor(row.symbol)}`}>
+            {row.name.slice(0, 1)}
+          </span>
+          <div>
+            <p className="font-semibold text-primary">{row.name}</p>
+            <p className="text-xs text-subtle">{row.sector ?? "Uncategorized"}</p>
+          </div>
+        </div>
+        <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${callStyles[row.actionCall]}`}>
+          {callLabels[row.actionCall]}
+        </span>
+      </div>
+
+      <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
+        <div>
+          <p className="text-xs text-subtle">Entry ₹</p>
+          <p className="font-semibold text-primary">{formatMoney(row.entryPrice)}</p>
+        </div>
+        <div>
+          <p className="flex items-center gap-1 text-xs text-subtle">
+            CMP ₹{isLive && <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />}
+          </p>
+          <p className="font-semibold text-primary">{formatMoney(cmp)}</p>
+        </div>
+        <div>
+          <p className="text-xs text-subtle">Target ₹</p>
+          <p className="font-semibold text-primary">{formatMoney(row.targetPrice)}</p>
+        </div>
+        <div>
+          <p className="text-xs text-subtle">Stop Loss ₹</p>
+          <p className="font-semibold text-primary">{formatMoney(row.stopLossPrice)}</p>
+        </div>
+        <div>
+          <p className="text-xs text-subtle">Return</p>
+          <p className={`font-semibold ${returnPercent != null && returnPercent < 0 ? "text-red-500" : "text-accent"}`}>
+            {formatReturn(returnPercent)}
+          </p>
+        </div>
+        <div>
+          <p className="text-xs text-subtle">Risk</p>
+          <p className={`font-semibold ${riskStyles[row.riskLevel]}`}>{riskLabels[row.riskLevel]}</p>
+        </div>
+      </div>
+
+      <p className="mt-3 text-xs text-subtle">Recommended {formatDate(row.createdAt)}</p>
+    </div>
+  );
+}
+
+function RecommendationTableRow({ row }: { row: StockRecommendationItem }) {
+  const { cmp, returnPercent, isLive } = useLiveCmpAndReturn(row);
+
+  return (
+    <tr className="border-t border-divider transition-colors hover:bg-background">
+      <td className="flex items-center gap-3 px-3 py-3">
+        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-display text-xs font-bold ${avatarColor(row.symbol)}`}>
+          {row.name.slice(0, 1)}
+        </span>
+        <div>
+          <p className="font-semibold text-primary">{row.name}</p>
+          <p className="text-xs text-subtle">{row.symbol}</p>
+        </div>
+      </td>
+      <td className="px-3 py-3 text-muted">{row.sector ?? "—"}</td>
+      <td className="px-3 py-3 text-muted">{formatDate(row.createdAt)}</td>
+      <td className="px-3 py-3 text-muted">{formatMoney(row.entryPrice)}</td>
+      <td className="px-3 py-3 font-semibold text-primary">
+        <span className="flex items-center gap-1.5">
+          {formatMoney(cmp)}
+          {isLive && <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />}
+        </span>
+      </td>
+      <td className="px-3 py-3 text-muted">{formatMoney(row.targetPrice)}</td>
+      <td className="px-3 py-3 text-muted">{formatMoney(row.stopLossPrice)}</td>
+      <td className={`px-3 py-3 font-semibold ${returnPercent != null && returnPercent < 0 ? "text-red-500" : "text-accent"}`}>
+        {formatReturn(returnPercent)}
+      </td>
+      <td className={`px-3 py-3 font-semibold ${riskStyles[row.riskLevel]}`}>{riskLabels[row.riskLevel]}</td>
+      <td className="px-3 py-3">
+        <span className={`rounded-full px-3 py-1 text-xs font-bold ${callStyles[row.actionCall]}`}>
+          {callLabels[row.actionCall]}
+        </span>
+      </td>
+    </tr>
+  );
+}
+
 export default function RecommendationsPage() {
   const [recommendations, setRecommendations] = useState<StockRecommendationItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const marketStatus = useMarketStatus();
 
   useEffect(() => {
     api.get<StockRecommendationItem[]>("/api/v1/stock-recommendations")
@@ -103,8 +210,8 @@ export default function RecommendationsPage() {
             </button>
           </div>
           <span className="flex items-center gap-1.5 text-xs text-subtle">
-            <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
-            Last updated: just now
+            <span className={`h-1.5 w-1.5 rounded-full ${marketStatus.open ? "bg-accent animate-pulse" : "bg-subtle"}`} />
+            {marketStatus.open === null ? "Connecting…" : marketStatus.open ? "Market live" : "Market closed"}
           </span>
         </div>
       </div>
@@ -159,56 +266,7 @@ export default function RecommendationsPage() {
         {!loading && recommendations.length > 0 && (
           <div className="mt-4 flex flex-col gap-3 lg:hidden">
             {recommendations.map((row) => (
-              <div
-                key={row.id}
-                className="rounded-xl border border-divider p-4 transition-shadow duration-300 hover:shadow-card"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold ${avatarColor(row.symbol)}`}>
-                      {row.name.slice(0, 1)}
-                    </span>
-                    <div>
-                      <p className="font-semibold text-primary">{row.name}</p>
-                      <p className="text-xs text-subtle">{row.sector ?? "Uncategorized"}</p>
-                    </div>
-                  </div>
-                  <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${callStyles[row.actionCall]}`}>
-                    {callLabels[row.actionCall]}
-                  </span>
-                </div>
-
-                <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
-                  <div>
-                    <p className="text-xs text-subtle">Entry ₹</p>
-                    <p className="font-semibold text-primary">{formatMoney(row.entryPrice)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-subtle">CMP ₹</p>
-                    <p className="font-semibold text-primary">{formatMoney(row.cmp)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-subtle">Target ₹</p>
-                    <p className="font-semibold text-primary">{formatMoney(row.targetPrice)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-subtle">Stop Loss ₹</p>
-                    <p className="font-semibold text-primary">{formatMoney(row.stopLossPrice)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-subtle">Return</p>
-                    <p className={`font-semibold ${row.returnPercent != null && row.returnPercent < 0 ? "text-red-500" : "text-accent"}`}>
-                      {formatReturn(row.returnPercent)}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-subtle">Risk</p>
-                    <p className={`font-semibold ${riskStyles[row.riskLevel]}`}>{riskLabels[row.riskLevel]}</p>
-                  </div>
-                </div>
-
-                <p className="mt-3 text-xs text-subtle">Recommended {formatDate(row.createdAt)}</p>
-              </div>
+              <RecommendationCard key={row.id} row={row} />
             ))}
           </div>
         )}
@@ -233,32 +291,7 @@ export default function RecommendationsPage() {
               </thead>
               <tbody>
                 {recommendations.map((row) => (
-                  <tr key={row.id} className="border-t border-divider transition-colors hover:bg-background">
-                    <td className="flex items-center gap-3 px-3 py-3">
-                      <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-display text-xs font-bold ${avatarColor(row.symbol)}`}>
-                        {row.name.slice(0, 1)}
-                      </span>
-                      <div>
-                        <p className="font-semibold text-primary">{row.name}</p>
-                        <p className="text-xs text-subtle">{row.symbol}</p>
-                      </div>
-                    </td>
-                    <td className="px-3 py-3 text-muted">{row.sector ?? "—"}</td>
-                    <td className="px-3 py-3 text-muted">{formatDate(row.createdAt)}</td>
-                    <td className="px-3 py-3 text-muted">{formatMoney(row.entryPrice)}</td>
-                    <td className="px-3 py-3 font-semibold text-primary">{formatMoney(row.cmp)}</td>
-                    <td className="px-3 py-3 text-muted">{formatMoney(row.targetPrice)}</td>
-                    <td className="px-3 py-3 text-muted">{formatMoney(row.stopLossPrice)}</td>
-                    <td className={`px-3 py-3 font-semibold ${row.returnPercent != null && row.returnPercent < 0 ? "text-red-500" : "text-accent"}`}>
-                      {formatReturn(row.returnPercent)}
-                    </td>
-                    <td className={`px-3 py-3 font-semibold ${riskStyles[row.riskLevel]}`}>{riskLabels[row.riskLevel]}</td>
-                    <td className="px-3 py-3">
-                      <span className={`rounded-full px-3 py-1 text-xs font-bold ${callStyles[row.actionCall]}`}>
-                        {callLabels[row.actionCall]}
-                      </span>
-                    </td>
-                  </tr>
+                  <RecommendationTableRow key={row.id} row={row} />
                 ))}
               </tbody>
             </table>
