@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Bold, Code, Italic, MoreHorizontal, Pencil, Pin, Plus, Save, Trash2, X } from "lucide-react";
+import { Bold, Calendar, Code, Italic, MoreHorizontal, Pencil, Pin, Plus, Save, Search, Trash2, X } from "lucide-react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
+import { DayPicker } from "react-day-picker";
+import "react-day-picker/style.css";
 import FeedPostCard from "@/components/feed/FeedPostCard";
 import PostImageUploader from "@/components/admin/PostImageUploader";
 import { api, ApiError } from "@/lib/api";
@@ -43,6 +45,15 @@ function formatTimestamp(iso: string | null): string {
     " · " +
     d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true })
   );
+}
+
+// Formats using the date's own calendar fields (not toISOString, which shifts
+// to UTC and can land on the wrong day depending on the browser's timezone).
+function toDateParam(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 // ── Edit Modal ──────────────────────────────────────────────────────────────
@@ -278,22 +289,24 @@ export default function AllPostsPage() {
   const [loading, setLoading] = useState(true);
   const [communities, setCommunities] = useState<Community[]>([]);
   const [communityFilter, setCommunityFilter] = useState("");
+  const [search, setSearch] = useState("");
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [total, setTotal] = useState(0);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingPost, setEditingPost] = useState<FeedPost | null>(null);
   const [pinningId, setPinningId] = useState<string | null>(null);
 
-  const fetchPosts = useCallback(async (pg: number, commId: string) => {
+  const fetchPosts = useCallback(async (pg: number, commId: string, date: Date | undefined) => {
     setLoading(true);
     try {
       const params = new URLSearchParams({ page: String(pg), pageSize: "20" });
       if (commId) params.set("communityId", commId);
+      if (date) params.set("date", toDateParam(date));
       const data = await api.get<ListPostsResponse>(`/api/v1/posts?${params}`);
       setPosts(data.posts);
       setTotalPages(data.totalPages);
-      setTotal(data.total);
 
       const seen = new Map<string, string>();
       data.posts.forEach(p => seen.set(p.communityId, p.communityName));
@@ -312,8 +325,21 @@ export default function AllPostsPage() {
   }, []);
 
   useEffect(() => {
-    fetchPosts(page, communityFilter);
-  }, [fetchPosts, page, communityFilter]);
+    fetchPosts(page, communityFilter, selectedDate);
+  }, [fetchPosts, page, communityFilter, selectedDate]);
+
+  // Reset to page 1 whenever a filter changes
+  useEffect(() => { setPage(1); }, [communityFilter, selectedDate]);
+
+  function handleSelectDate(date: Date | undefined) {
+    setSelectedDate(date);
+    setShowDatePicker(false);
+  }
+
+  function clearDate(e: React.MouseEvent) {
+    e.stopPropagation();
+    setSelectedDate(undefined);
+  }
 
   useEffect(() => {
     api
@@ -334,7 +360,7 @@ export default function AllPostsPage() {
     try {
       await api.patch(`/api/v1/posts/${post.id}/pin`, {});
       toast.success(post.pinOrder !== null ? "Post unpinned." : "Post pinned.");
-      fetchPosts(page, communityFilter);
+      fetchPosts(page, communityFilter, selectedDate);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Failed to update pin");
     } finally {
@@ -354,7 +380,7 @@ export default function AllPostsPage() {
     try {
       await api.delete(`/api/v1/posts/${id}`);
       toast.success("Post deleted.");
-      fetchPosts(page, communityFilter);
+      fetchPosts(page, communityFilter, selectedDate);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Failed to delete post");
     } finally {
@@ -362,46 +388,89 @@ export default function AllPostsPage() {
     }
   }
 
+  const displayed = posts.filter(p =>
+    !search ||
+    p.title.toLowerCase().includes(search.toLowerCase()) ||
+    p.tags.some(t => t.toLowerCase().includes(search.toLowerCase()))
+  );
+
   return (
     <>
       {editingPost && (
         <EditModal
           post={editingPost}
           onClose={() => setEditingPost(null)}
-          onSaved={() => fetchPosts(page, communityFilter)}
+          onSaved={() => fetchPosts(page, communityFilter, selectedDate)}
         />
       )}
 
-      <div className="flex flex-col gap-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <p className="text-xs font-semibold text-accent">Dashboard &rsaquo; All Posts</p>
-            <h1 className="font-display text-2xl font-bold text-primary">All Posts</h1>
-            <p className="mt-1 text-sm text-muted">
-              {loading ? "Loading…" : `${total} published post${total !== 1 ? "s" : ""} across all communities`}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {communities.length > 1 && (
+      <div className="flex max-w-4xl flex-col gap-6">
+        <div>
+          <p className="text-xs font-semibold text-accent">Dashboard &rsaquo; All Posts</p>
+          <div className="mt-1 flex flex-wrap items-center justify-between gap-4">
+            <h1 className="shrink-0 whitespace-nowrap font-display text-2xl font-bold text-primary">All Posts</h1>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2 rounded-full border border-divider bg-white px-4 py-2.5 transition-colors focus-within:border-accent">
+                <Search size={16} className="text-subtle shrink-0" />
+                <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search with Title and hashtags..."
+                  className="w-full bg-transparent text-sm text-primary placeholder:text-subtle focus:outline-none sm:w-52" />
+              </div>
+
               <select
                 value={communityFilter}
-                onChange={e => { setCommunityFilter(e.target.value); setPage(1); }}
-                className="rounded-full border border-divider bg-white px-4 py-2 text-sm font-semibold text-muted focus:outline-none focus:border-accent"
+                onChange={e => setCommunityFilter(e.target.value)}
+                className="shrink-0 rounded-full border border-divider bg-white px-4 py-2.5 text-sm font-semibold text-muted transition-colors hover:border-accent hover:text-primary focus:outline-none"
               >
-                <option value="">All Communities</option>
+                <option value="">All Community</option>
                 {communities.map(c => (
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
-            )}
-            <Link
-              href="/admin/create-post"
-              className="flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-bold text-white shadow-glow transition-transform duration-300 hover:scale-105 active:scale-95"
-            >
-              <Plus size={14} />
-              Create Post
-            </Link>
+
+              <div className="relative shrink-0">
+                <button
+                  onClick={() => setShowDatePicker(v => !v)}
+                  type="button"
+                  className="flex shrink-0 items-center gap-2 rounded-full bg-primary px-4 py-2.5 text-sm font-bold text-white"
+                >
+                  {selectedDate
+                    ? selectedDate.toLocaleDateString("en-IN", { day: "numeric", month: "short" })
+                    : "Date"}
+                  {selectedDate ? (
+                    <X size={14} onClick={clearDate} />
+                  ) : (
+                    <Calendar size={14} />
+                  )}
+                </button>
+
+                {showDatePicker && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowDatePicker(false)} />
+                    <div className="rdp-theme fixed inset-x-4 top-1/2 z-50 -translate-y-1/2 rounded-2xl bg-white p-3 shadow-card-hover sm:absolute sm:inset-x-auto sm:top-full sm:right-0 sm:mt-2 sm:w-auto sm:translate-y-0">
+                      <DayPicker
+                        mode="single"
+                        selected={selectedDate}
+                        onSelect={handleSelectDate}
+                        autoFocus
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <Link
+                href="/admin/create-post"
+                className="flex shrink-0 items-center gap-2 rounded-full px-4 py-2.5 text-sm font-bold text-white shadow-glow transition-transform duration-300 hover:scale-105 active:scale-95"
+                style={{ background: "linear-gradient(to right, #c1f26e, #108b8b)" }}
+              >
+                <Plus size={14} />
+                Create Post
+              </Link>
+            </div>
           </div>
+          <p className="mt-1 text-sm text-muted">
+            Follow the steps to publish a post to your community
+          </p>
         </div>
 
         {loading ? (
@@ -410,7 +479,7 @@ export default function AllPostsPage() {
               <div key={i} className="h-48 animate-pulse rounded-2xl bg-white shadow-card" />
             ))}
           </div>
-        ) : posts.length === 0 ? (
+        ) : displayed.length === 0 ? (
           <div className="flex h-48 flex-col items-center justify-center rounded-2xl bg-white shadow-card">
             <p className="font-display text-base font-semibold text-primary">No published posts yet</p>
             <p className="mt-1 text-sm text-muted">Create and publish a post to see it here.</p>
@@ -424,7 +493,7 @@ export default function AllPostsPage() {
           </div>
         ) : (
           <div className="space-y-5">
-            {posts.map(post => (
+            {displayed.map(post => (
               <FeedPostCard
                 key={post.id}
                 communityName={post.communityName}

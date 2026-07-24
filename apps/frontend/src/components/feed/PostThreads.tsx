@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FiLock, FiSend, FiTrash2, FiCornerDownRight, FiChevronDown, FiChevronUp } from "react-icons/fi";
+import { FiLock, FiSend, FiTrash2, FiCornerDownRight, FiChevronDown, FiChevronUp, FiCheck } from "react-icons/fi";
 import { api, ApiError } from "@/lib/api";
 import { getSession, saveSession } from "@/lib/session";
 
@@ -76,9 +76,17 @@ function buildMemberLabels(comments: Comment[], currentUserId: string): Map<stri
   return map;
 }
 
-function displayName(author: CommentAuthor, currentUserId: string, memberLabels: Map<string, string>): string {
+// Members are anonymised from each other (M1, M2, …) in the member-facing
+// feed, but an admin moderating threads needs to know who actually said what.
+function displayName(
+  author: CommentAuthor,
+  currentUserId: string,
+  memberLabels: Map<string, string>,
+  viewerIsAdmin: boolean,
+): string {
   if (author.id === currentUserId) return "You";
   if (author.role === "admin") return author.name;
+  if (viewerIsAdmin) return author.name;
   return memberLabels.get(author.id) ?? "Member";
 }
 
@@ -106,7 +114,9 @@ function CommentNode({
   const hasReplies = comment.replies.length > 0;
   // Members can only delete their own comment if no one has replied yet; admins can always delete
   const canDelete = isAdmin || (isOwn && !hasReplies);
-  const label = displayName(comment.author, currentUserId, memberLabels);
+  const label = displayName(comment.author, currentUserId, memberLabels, isAdmin);
+  // An admin moderating threads sees everyone's real identity; a member only sees their own.
+  const identityRevealed = isAuthorAdmin || isOwn || isAdmin;
   const isPending = isAdmin && !!comment.notification && !comment.notification.isReplied;
   const memberLabel = memberLabels.get(comment.author.id);
   const memberColorIndex = memberLabel ? (parseInt(memberLabel.slice(1), 10) - 1) % MEMBER_AVATAR_COLORS.length : 0;
@@ -125,7 +135,7 @@ function CommentNode({
               : { background: avatarColor.bg, color: avatarColor.text }
         }
       >
-        {isAuthorAdmin || isOwn ? authorInitials(comment.author.name) : label}
+        {identityRevealed ? authorInitials(comment.author.name) : label}
       </div>
 
       <div className={`flex-1 min-w-0 ${isAuthorAdmin ? "rounded-xl border-l-4 border-[#85cd78] bg-background px-3.5 py-3" : ""}`}>
@@ -167,8 +177,9 @@ function CommentNode({
             <button
               onClick={() => onMarkReplied(comment.notification!.id)}
               disabled={markingRepliedId === comment.notification.id}
-              className="flex items-center gap-1 text-xs font-semibold text-muted hover:text-primary disabled:opacity-50"
+              className="flex items-center gap-1.5 rounded-full border border-divider px-2.5 py-1 text-xs font-semibold text-muted transition-colors hover:border-accent hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
             >
+              <FiCheck size={11} />
               {markingRepliedId === comment.notification.id ? "Marking…" : "Mark Replied"}
             </button>
           )}
