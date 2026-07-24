@@ -141,6 +141,14 @@ export default function CreatePostPage() {
 
   const previewContent = editor?.getText() || "Strong breakout above ₹1,400 resistance with high delivery volumes. Swing setup with defined risk. Enter...";
 
+  function handleContinueToReview() {
+    if (!headline.trim() || !editor?.getText().trim()) {
+      toast.error("Please add a headline and description before continuing.");
+      return;
+    }
+    setStep(3);
+  }
+
   async function handlePublish() {
     if (!selectedCommunity || !headline.trim() || !editor?.getText().trim()) {
       toast.error("Please fill in community, headline and content before publishing.");
@@ -186,11 +194,14 @@ export default function CreatePostPage() {
         <p className="mt-1 text-sm text-muted">Follow the steps to publish a post to your community.</p>
       </div>
 
+      <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
       <div className="rounded-2xl bg-white p-6 shadow-card">
         <StepIndicator current={step} />
+      </div>
 
+      <div className="rounded-2xl bg-white p-6 shadow-card">
         {step === 1 && (
-          <div className="mt-8 flex flex-col gap-4">
+          <div className="flex flex-col gap-4">
             <h2 className="text-base font-semibold text-primary">Which community is this post for?</h2>
             <p className="text-sm text-muted">Members of the other community will not see this post.</p>
             {communities.length === 0 && (
@@ -202,8 +213,8 @@ export default function CreatePostPage() {
                   key={c.id}
                   type="button"
                   onClick={() => setSelectedCommunity(c.id)}
-                  className={`group relative overflow-hidden rounded-2xl border-2 text-left transition-all duration-300 ${
-                    selectedCommunity === c.id ? "border-primary shadow-glow" : "border-transparent hover:border-divider"
+                  className={`group relative overflow-hidden rounded-2xl border-2 bg-white text-left shadow-card transition-all duration-300 hover:shadow-card-hover ${
+                    selectedCommunity === c.id ? "border-primary shadow-glow" : "border-divider hover:border-accent/60"
                   }`}
                 >
                   <div className={`relative flex aspect-video items-center justify-center overflow-hidden ${!c.coverImageUrl ? communityBg(idx) : 'bg-slate-100'}`}>
@@ -248,24 +259,28 @@ export default function CreatePostPage() {
         )}
 
         {step === 2 && (
-          <div className="mt-6 flex flex-col gap-4">
+          <div className="flex flex-col gap-4">
             {/* Admin profile row */}
             {(() => {
               const session = getSession();
               return (
-                <div className="flex items-center gap-3">
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-white">
-                    {session?.userInitials ?? "A"}
+                <div className="flex items-start gap-3">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary text-sm font-bold text-white">
+                    {session?.avatarUrl
+                      ? // eslint-disable-next-line @next/next/no-img-element
+                        <img src={session.avatarUrl} alt={session?.userName ?? "Admin"} className="h-full w-full object-cover" />
+                      : (session?.userInitials ?? "A")
+                    }
                   </div>
-                  <div>
+                  <div className="flex flex-col gap-1">
                     <p className="font-display text-sm font-bold text-primary leading-tight">
                       {session?.userName ?? "Admin"}
                     </p>
                     <p className="text-xs text-muted">Super Admin</p>
+                    <span className="flex w-fit items-center gap-1.5 rounded-full border border-accent/50 px-3 py-1 text-xs font-semibold text-accent">
+                      ⚡ {communities.find((c) => c.id === selectedCommunity)?.name ?? "Community"}
+                    </span>
                   </div>
-                  <span className="flex items-center gap-1.5 rounded-full border border-accent/50 px-3 py-1 text-xs font-semibold text-accent">
-                    ⚡ {communities.find((c) => c.id === selectedCommunity)?.name ?? "Community"}
-                  </span>
                 </div>
               );
             })()}
@@ -320,7 +335,7 @@ export default function CreatePostPage() {
                 className="rounded-full border border-divider px-6 py-2.5 text-sm font-semibold text-muted transition-colors hover:border-subtle hover:text-primary">
                 Cancel
               </button>
-              <button onClick={() => setStep(3)}
+              <button onClick={handleContinueToReview}
                 className="flex items-center gap-2 rounded-full px-6 py-2.5 text-sm font-bold text-white shadow-glow transition-transform hover:scale-105 active:scale-95"
                 style={{ background: "linear-gradient(to right, #c1f26e, #108b8b)" }}>
                 Continue to review →
@@ -334,7 +349,7 @@ export default function CreatePostPage() {
         )}
 
         {step === 3 && (
-          <div className="mt-8 flex flex-col gap-6">
+          <div className="flex flex-col gap-6">
             <div>
               <span className="rounded-full bg-lime/40 px-3 py-1 text-xs font-bold text-primary">Post preview</span>
               <div className="mt-4 rounded-2xl border border-divider p-5">
@@ -404,6 +419,7 @@ export default function CreatePostPage() {
             </div>
           </div>
         )}
+      </div>
       </div>
     </div>
   );

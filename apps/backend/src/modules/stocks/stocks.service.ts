@@ -24,6 +24,7 @@ export class StocksService {
       name: s.name,
       symbol: s.symbol,
       sector: s.sector,
+      exchange: s.exchange,
       cmp: s.cmp !== null ? Number(s.cmp) : null,
     }))
   }

@@ -124,7 +124,7 @@ export class StockRecommendationsService {
     recommendationNotes: string | null
     createdAt: Date
     updatedAt: Date
-    stock: { symbol: string; name: string; sector: string | null; cmp: unknown }
+    stock: { symbol: string; name: string; sector: string | null; exchange: 'nse' | 'bse' | null; cmp: unknown }
   }): StockRecommendationResponseDTO {
     const entryPrice = Number(rec.entryPrice)
     const cmp = rec.stock.cmp !== null ? Number(rec.stock.cmp) : null
@@ -137,6 +137,7 @@ export class StockRecommendationsService {
       symbol: rec.stock.symbol,
       name: rec.stock.name,
       sector: rec.stock.sector,
+      exchange: rec.stock.exchange,
       cmp,
       entryPrice,
       targetPrice: Number(rec.targetPrice),

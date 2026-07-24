@@ -1,18 +1,20 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import { Download, Pencil, Plus, RefreshCw, Search, Trash2, Upload, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { useMarketStatus } from "@/store/liveStockPrices/hooks";
 
-interface Community { id: string; name: string; slug: string }
+interface Community { id: string; name: string; slug: string; memberCount: number }
 
 interface StockOption {
   id: string;
   name: string;
   symbol: string;
   sector: string | null;
+  exchange: "nse" | "bse" | null;
   cmp: number | null;
 }
 
@@ -24,6 +26,7 @@ interface StockRecommendationItem {
   symbol: string;
   name: string;
   sector: string | null;
+  exchange: "nse" | "bse" | null;
   cmp: number | null;
   entryPrice: number;
   targetPrice: number;
@@ -53,12 +56,37 @@ const RISK_LABELS: Record<string, string> = { low: "Low", medium: "Medium", high
 const CALL_STYLES: Record<string, string> = { buy: "bg-accent text-white", hold: "bg-amber-400 text-white", exit: "bg-red-400 text-white" };
 const CALL_LABELS: Record<string, string> = { buy: "BUY", hold: "HOLD", exit: "EXIT" };
 
+const AVATAR_COLORS = [
+  "bg-orange-100 text-orange-600",
+  "bg-blue-100 text-blue-600",
+  "bg-purple-100 text-purple-600",
+  "bg-lime/40 text-primary",
+  "bg-slate-100 text-slate-600",
+];
+
+function avatarColor(symbol: string): string {
+  return AVATAR_COLORS[symbol.charCodeAt(0) % AVATAR_COLORS.length] ?? "bg-divider text-muted";
+}
+
 function formatMoney(n: number | null): string {
   return n == null ? "—" : `₹${n.toLocaleString("en-IN")}`;
 }
 
+function formatReturn(n: number | null): string {
+  return n == null ? "—" : `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
+}
+
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function timeAgo(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min${mins === 1 ? "" : "s"} ago`;
+  const hours = Math.floor(mins / 60);
+  return `${hours} hour${hours === 1 ? "" : "s"} ago`;
 }
 
 const EMPTY_RECOMMENDATION = {
@@ -93,11 +121,16 @@ type ModalType = "add" | "edit" | null;
 export default function AdminStockRecommendationsPage() {
   const toast = useToast();
   const confirm = useConfirm();
+  const marketStatus = useMarketStatus();
 
   const [communities, setCommunities] = useState<Community[]>([]);
   const [recommendations, setRecommendations] = useState<StockRecommendationItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [lastFetchedAt, setLastFetchedAt] = useState<Date | null>(null);
   const [filterCommunity, setFilterCommunity] = useState("");
+  const [search, setSearch] = useState("");
+  const [filterRisk, setFilterRisk] = useState("");
+  const [filterCall, setFilterCall] = useState("");
   const [fetchTrigger, setFetchTrigger] = useState(0);
 
   const [modal, setModal] = useState<ModalType>(null);
@@ -116,6 +149,7 @@ export default function AdminStockRecommendationsPage() {
   const [stockDropdownOpen, setStockDropdownOpen] = useState(false);
   const [stockSearching, setStockSearching] = useState(false);
   const stockFieldRef = useRef<HTMLDivElement>(null);
+  const csvInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     api.get<Community[]>("/api/v1/admin/communities")
@@ -123,17 +157,18 @@ export default function AdminStockRecommendationsPage() {
       .catch(() => {});
   }, []);
 
+  // Fetch every accessible recommendation once — community filtering happens
+  // client-side so the community cards can show every community's own counts
+  // at the same time, regardless of which one is currently selected.
   useEffect(() => {
-    const params = new URLSearchParams();
-    if (filterCommunity) params.set("communityId", filterCommunity);
     setLoading(true);
-    api.get<StockRecommendationItem[]>(`/api/v1/stock-recommendations${params.toString() ? `?${params.toString()}` : ""}`)
-      .then(setRecommendations)
+    api.get<StockRecommendationItem[]>("/api/v1/stock-recommendations")
+      .then(data => { setRecommendations(data); setLastFetchedAt(new Date()); })
       .catch(err => toast.error(err instanceof ApiError ? err.message : "Failed to load recommendations"))
       .finally(() => setLoading(false));
   // toast is a stable context ref
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterCommunity, fetchTrigger]);
+  }, [fetchTrigger]);
 
   // Debounce the company search query
   useEffect(() => {
@@ -309,41 +344,179 @@ export default function AdminStockRecommendationsPage() {
     return communities.find(c => c.id === id)?.name ?? "—";
   }
 
+  function activeCallsFor(communityId: string): number {
+    return recommendations.filter(r => r.communityId === communityId && r.actionCall !== "exit").length;
+  }
+
+  const filtered = recommendations
+    .filter(r => !filterCommunity || r.communityId === filterCommunity)
+    .filter(r => !filterRisk || r.riskLevel === filterRisk)
+    .filter(r => !filterCall || r.actionCall === filterCall)
+    .filter(r => !search || r.name.toLowerCase().includes(search.toLowerCase()) || r.symbol.toLowerCase().includes(search.toLowerCase()));
+
+  const totalCalls = filtered.length;
+  const activeCalls = filtered.filter(r => r.actionCall !== "exit").length;
+  const withReturn = filtered.filter(r => r.returnPercent != null);
+  const avgReturn = withReturn.length > 0
+    ? withReturn.reduce((sum, r) => sum + (r.returnPercent ?? 0), 0) / withReturn.length
+    : null;
+  const winRate = withReturn.length > 0
+    ? (withReturn.filter(r => (r.returnPercent ?? 0) > 0).length / withReturn.length) * 100
+    : null;
+
+  const stats = [
+    { value: String(totalCalls), label: "Total Calls" },
+    { value: String(activeCalls), label: "Active" },
+    { value: avgReturn == null ? "—" : formatReturn(avgReturn), label: "Avg Return", positive: avgReturn != null && avgReturn >= 0 },
+    { value: winRate == null ? "—" : `${winRate.toFixed(0)}%`, label: "Win Rate" },
+  ];
+
+  function exportCSV() {
+    const header = ["Company", "Symbol", "Sector", "Exchange", "Entry", "CMP", "Target", "Stop Loss", "Return %", "Risk", "Call", "Community", "Created On"];
+    const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
+    const rows = filtered.map(r => [
+      r.name,
+      r.symbol,
+      r.sector ?? "",
+      r.exchange ? r.exchange.toUpperCase() : "",
+      String(r.entryPrice),
+      r.cmp != null ? String(r.cmp) : "",
+      String(r.targetPrice),
+      String(r.stopLossPrice),
+      r.returnPercent != null ? String(r.returnPercent) : "",
+      RISK_LABELS[r.riskLevel] ?? r.riskLevel,
+      CALL_LABELS[r.actionCall] ?? r.actionCall,
+      communityName(r.communityId),
+      formatDate(r.createdAt),
+    ]);
+    const csv = "﻿" + [header, ...rows].map(row => row.map(escape).join(",")).join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `stock-recommendations-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   const fieldCls = (err?: string) =>
     `mt-2 w-full rounded-xl border bg-white px-4 py-2.5 text-sm placeholder:text-subtle transition-colors focus:outline-none focus:ring-2 ${
       err ? "border-red-400 focus:ring-red-200" : "border-divider focus:ring-accent/40"
     }`;
+
+  const selectCls = "rounded-full border border-divider bg-white px-4 py-2 text-sm font-semibold text-muted transition-colors hover:border-accent hover:text-primary focus:outline-none";
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-xs font-semibold text-accent">Dashboard &rsaquo; Stock Recommendation</p>
-          <h1 className="font-display text-2xl font-bold text-primary">Stock Recommendation</h1>
-          <p className="mt-1 text-sm text-muted">Add and manage stock calls for your communities.</p>
+          <h1 className="font-display text-2xl font-bold text-primary">Stock Recommendations</h1>
+          <p className="mt-1 text-sm text-muted">Manage active recommendations for each community.</p>
         </div>
-        <button
-          onClick={openAddModal}
-          className="flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-bold text-white shadow-glow transition-transform duration-300 hover:scale-105 active:scale-95"
-        >
-          <Plus size={14} />
-          Add Stock
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={openAddModal}
+            className="flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold text-white shadow-glow transition-transform duration-300 hover:scale-105 active:scale-95"
+            style={{ background: "linear-gradient(to right, #c1f26e, #108b8b)" }}
+          >
+            <Plus size={14} />
+            Add Stock
+          </button>
+          <button
+            onClick={() => csvInputRef.current?.click()}
+            className="flex items-center gap-2 rounded-full border border-divider bg-white px-4 py-2 text-sm font-semibold text-muted transition-colors hover:border-accent hover:text-primary"
+          >
+            <Upload size={14} />
+            Import via CSV
+          </button>
+          <input
+            ref={csvInputRef}
+            type="file"
+            accept=".csv"
+            className="hidden"
+            onChange={e => { toast.info("CSV import for stock recommendations is coming soon."); e.target.value = ""; }}
+          />
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 text-xs text-subtle">
+        <span className={`h-1.5 w-1.5 rounded-full ${marketStatus.open ? "bg-accent animate-pulse" : "bg-subtle"}`} />
+        Live prices via NSE API &middot; {lastFetchedAt ? `Updated ${timeAgo(lastFetchedAt.toISOString())}` : "Loading…"}
+        <button onClick={refresh} className="flex h-5 w-5 items-center justify-center rounded-full text-subtle transition-colors hover:bg-divider/60 hover:text-primary" title="Refresh">
+          <RefreshCw size={12} />
         </button>
       </div>
 
-      <div className="rounded-2xl bg-white p-4 shadow-card sm:p-6">
-        {communities.length > 1 && (
-          <div className="flex items-center gap-3">
-            <select
-              value={filterCommunity}
-              onChange={e => setFilterCommunity(e.target.value)}
-              className="rounded-full border border-divider px-4 py-2 text-sm font-semibold text-muted transition-colors hover:border-accent hover:text-primary focus:outline-none"
-            >
-              <option value="">All Communities</option>
-              {communities.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+      {/* Community cards */}
+      {communities.length > 0 && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {communities.map(c => {
+            const active = filterCommunity === c.id;
+            return (
+              <button
+                key={c.id}
+                onClick={() => setFilterCommunity(prev => (prev === c.id ? "" : c.id))}
+                className={`flex flex-col items-start gap-1 rounded-2xl px-5 py-4 text-left transition-colors ${
+                  active ? "bg-primary text-white shadow-glow" : "border border-divider bg-white text-primary hover:border-accent"
+                }`}
+              >
+                <span className="font-display text-base font-bold">{c.name}</span>
+                <span className={`text-xs ${active ? "text-white/80" : "text-muted"}`}>
+                  {c.memberCount} member{c.memberCount === 1 ? "" : "s"} &middot; {activeCallsFor(c.id)} active call{activeCallsFor(c.id) === 1 ? "" : "s"}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        {stats.map((stat, i) => (
+          <div
+            key={stat.label}
+            className="animate-rise rounded-2xl bg-white p-5 text-center shadow-card transition-all duration-300 hover:-translate-y-1 hover:shadow-card-hover"
+            style={{ animationDelay: `${i * 60}ms` }}
+          >
+            <p className={`font-display text-2xl font-bold ${stat.positive ? "text-accent" : "text-primary"}`}>
+              {stat.value}
+            </p>
+            <p className="mt-1 text-sm text-muted">{stat.label}</p>
           </div>
-        )}
+        ))}
+      </div>
+
+      <div className="rounded-2xl bg-white p-4 shadow-card sm:p-6">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-1 items-center gap-2 rounded-full border border-divider bg-white px-4 py-2 transition-colors focus-within:border-accent sm:flex-none">
+            <Search size={15} className="shrink-0 text-subtle" />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search by company or symbol..."
+              className="w-full bg-transparent text-sm text-primary placeholder:text-subtle focus:outline-none sm:w-52"
+            />
+          </div>
+
+          <select value={filterRisk} onChange={e => setFilterRisk(e.target.value)} className={selectCls}>
+            <option value="">All Risk Levels</option>
+            {RISK_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+          </select>
+
+          <select value={filterCall} onChange={e => setFilterCall(e.target.value)} className={selectCls}>
+            <option value="">All Calls</option>
+            {CALL_OPTIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+          </select>
+
+          <button
+            onClick={exportCSV}
+            disabled={filtered.length === 0}
+            className="ml-auto flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-xs font-bold text-white transition-transform hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Download size={13} />
+            Export CSV
+          </button>
+        </div>
 
         {loading && (
           <div className="mt-8 flex items-center justify-center py-12">
@@ -351,7 +524,7 @@ export default function AdminStockRecommendationsPage() {
           </div>
         )}
 
-        {!loading && recommendations.length === 0 && (
+        {!loading && filtered.length === 0 && (
           <div className="mt-8 flex flex-col items-center justify-center py-12 text-center">
             <p className="font-semibold text-primary">No recommendations yet</p>
             <p className="mt-1 text-sm text-muted">Add your first stock call to get started.</p>
@@ -359,14 +532,21 @@ export default function AdminStockRecommendationsPage() {
         )}
 
         {/* Mobile card list */}
-        {!loading && recommendations.length > 0 && (
+        {!loading && filtered.length > 0 && (
           <div className="mt-4 flex flex-col gap-3 lg:hidden">
-            {recommendations.map(rec => (
+            {filtered.map(rec => (
               <div key={rec.id} className="rounded-xl border border-divider p-4 transition-shadow hover:shadow-card">
                 <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="font-semibold text-primary">{rec.name}</p>
-                    <p className="text-xs text-subtle">{rec.symbol} &middot; {rec.sector ?? "Uncategorized"} &middot; {communityName(rec.communityId)}</p>
+                  <div className="flex items-center gap-3">
+                    <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold ${avatarColor(rec.symbol)}`}>
+                      {rec.name.slice(0, 1)}
+                    </span>
+                    <div>
+                      <p className="font-semibold text-primary">{rec.name}</p>
+                      <p className="text-xs text-subtle">
+                        {rec.symbol}{rec.exchange ? ` · ${rec.exchange.toUpperCase()}` : ""} &middot; {communityName(rec.communityId)}
+                      </p>
+                    </div>
                   </div>
                   <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${CALL_STYLES[rec.actionCall]}`}>
                     {CALL_LABELS[rec.actionCall]}
@@ -380,7 +560,7 @@ export default function AdminStockRecommendationsPage() {
                   <div>
                     <p className="text-xs text-subtle">Return</p>
                     <p className={`font-semibold ${rec.returnPercent == null ? "text-muted" : rec.returnPercent < 0 ? "text-red-500" : "text-accent"}`}>
-                      {rec.returnPercent == null ? "—" : `${rec.returnPercent >= 0 ? "+" : ""}${rec.returnPercent.toFixed(1)}%`}
+                      {formatReturn(rec.returnPercent)}
                     </p>
                   </div>
                   <div><p className="text-xs text-subtle">Risk</p><p className={`font-semibold ${RISK_STYLES[rec.riskLevel]}`}>{RISK_LABELS[rec.riskLevel]}</p></div>
@@ -398,7 +578,7 @@ export default function AdminStockRecommendationsPage() {
         )}
 
         {/* Desktop table */}
-        {!loading && recommendations.length > 0 && (
+        {!loading && filtered.length > 0 && (
           <div className="mt-4 hidden overflow-x-auto lg:block">
             <table className="w-full min-w-225 text-left text-sm">
               <thead>
@@ -416,11 +596,20 @@ export default function AdminStockRecommendationsPage() {
                 </tr>
               </thead>
               <tbody>
-                {recommendations.map(rec => (
+                {filtered.map(rec => (
                   <tr key={rec.id} className="border-t border-divider transition-colors hover:bg-background">
                     <td className="px-3 py-3">
-                      <p className="font-semibold text-primary">{rec.name}</p>
-                      <p className="text-xs text-subtle">{rec.symbol} &middot; {communityName(rec.communityId)}</p>
+                      <div className="flex items-center gap-3">
+                        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-display text-xs font-bold ${avatarColor(rec.symbol)}`}>
+                          {rec.name.slice(0, 1)}
+                        </span>
+                        <div>
+                          <p className="font-semibold text-primary">{rec.name}</p>
+                          <p className="text-xs text-subtle">
+                            {rec.exchange ? rec.exchange.toUpperCase() : rec.symbol} &middot; {communityName(rec.communityId)}
+                          </p>
+                        </div>
+                      </div>
                     </td>
                     <td className="px-3 py-3 text-muted">{rec.sector ?? "—"}</td>
                     <td className="px-3 py-3 text-muted">{formatMoney(rec.entryPrice)}</td>
@@ -428,7 +617,7 @@ export default function AdminStockRecommendationsPage() {
                     <td className="px-3 py-3 text-muted">{formatMoney(rec.targetPrice)}</td>
                     <td className="px-3 py-3 text-muted">{formatMoney(rec.stopLossPrice)}</td>
                     <td className={`px-3 py-3 font-semibold ${rec.returnPercent == null ? "text-muted" : rec.returnPercent < 0 ? "text-red-500" : "text-accent"}`}>
-                      {rec.returnPercent == null ? "—" : `${rec.returnPercent >= 0 ? "+" : ""}${rec.returnPercent.toFixed(1)}%`}
+                      {formatReturn(rec.returnPercent)}
                     </td>
                     <td className={`px-3 py-3 font-semibold ${RISK_STYLES[rec.riskLevel]}`}>{RISK_LABELS[rec.riskLevel]}</td>
                     <td className="px-3 py-3">
