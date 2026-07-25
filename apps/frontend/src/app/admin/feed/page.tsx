@@ -1,9 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bold, Code, ChevronDown, Italic, MoreHorizontal, Pencil, Pin, Save, Search, Trash2, X } from "lucide-react";
+import { Bold, Calendar, Code, ChevronDown, Italic, MoreHorizontal, Pencil, Pin, Save, Search, Trash2, X } from "lucide-react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
+import { DayPicker } from "react-day-picker";
+import "react-day-picker/style.css";
 import FeedPostCard from "@/components/feed/FeedPostCard";
 import PostImageUploader from "@/components/admin/PostImageUploader";
 import MarketTodayWidget from "@/components/MarketTodayWidget";
@@ -11,6 +13,12 @@ import CommunityRulesWidget from "@/components/CommunityRulesWidget";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+
+interface Community {
+  id: string;
+  name: string;
+  slug: string;
+}
 
 interface FeedPost {
   id: string;
@@ -45,6 +53,15 @@ function formatTimestamp(iso: string | null): string {
     " · " +
     d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true })
   );
+}
+
+// Formats using the date's own calendar fields (not toISOString, which shifts
+// to UTC and can land on the wrong day depending on the browser's timezone).
+function toDateParam(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 // ── Edit Modal ───────────────────────────────────────────────────────────────
@@ -186,10 +203,23 @@ export default function AdminFeedPage() {
   const [pinningId, setPinningId] = useState<string | null>(null);
   const [editingPost, setEditingPost] = useState<FeedPost | null>(null);
 
-  const fetchPosts = useCallback(async (pg: number) => {
+  const [communities, setCommunities] = useState<Community[]>([]);
+  const [filterCommunity, setFilterCommunity] = useState("");
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+
+  useEffect(() => {
+    api.get<Community[]>("/api/v1/admin/communities")
+      .then(setCommunities)
+      .catch(() => {});
+  }, []);
+
+  const fetchPosts = useCallback(async (pg: number, communityId: string, date: Date | undefined, order: "asc" | "desc") => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ page: String(pg), pageSize: "20" });
+      const params = new URLSearchParams({ page: String(pg), pageSize: "20", order });
+      if (communityId) params.set("communityId", communityId);
+      if (date) params.set("date", toDateParam(date));
       const data = await api.get<ListPostsResponse>(`/api/v1/posts?${params}`);
       setPosts(data.posts);
       setTotalPages(data.totalPages);
@@ -197,7 +227,22 @@ export default function AdminFeedPage() {
     finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { fetchPosts(page); }, [fetchPosts, page]);
+  useEffect(() => {
+    fetchPosts(page, filterCommunity, selectedDate, sortDesc ? "desc" : "asc");
+  }, [fetchPosts, page, filterCommunity, selectedDate, sortDesc]);
+
+  // Reset to page 1 whenever a filter changes
+  useEffect(() => { setPage(1); }, [filterCommunity, selectedDate]);
+
+  function handleSelectDate(date: Date | undefined) {
+    setSelectedDate(date);
+    setShowDatePicker(false);
+  }
+
+  function clearDate(e: React.MouseEvent) {
+    e.stopPropagation();
+    setSelectedDate(undefined);
+  }
 
   async function handlePin(post: FeedPost) {
     if (pinningId) return;
@@ -205,7 +250,7 @@ export default function AdminFeedPage() {
     try {
       await api.patch(`/api/v1/posts/${post.id}/pin`, {});
       toast.success(post.pinOrder !== null ? "Post unpinned." : "Post pinned.");
-      fetchPosts(page);
+      fetchPosts(page, filterCommunity, selectedDate, sortDesc ? "desc" : "asc");
     } catch (err) { toast.error(err instanceof ApiError ? err.message : "Failed to update pin"); }
     finally { setPinningId(null); }
   }
@@ -222,7 +267,7 @@ export default function AdminFeedPage() {
     try {
       await api.delete(`/api/v1/posts/${id}`);
       toast.success("Post deleted.");
-      fetchPosts(page);
+      fetchPosts(page, filterCommunity, selectedDate, sortDesc ? "desc" : "asc");
     } catch (err) { toast.error(err instanceof ApiError ? err.message : "Failed to delete"); }
     finally { setDeletingId(null); }
   }
@@ -242,29 +287,70 @@ export default function AdminFeedPage() {
   return (
     <>
       {editingPost && (
-        <EditModal post={editingPost} onClose={() => setEditingPost(null)} onSaved={() => fetchPosts(page)} />
+        <EditModal post={editingPost} onClose={() => setEditingPost(null)} onSaved={() => fetchPosts(page, filterCommunity, selectedDate, sortDesc ? "desc" : "asc")} />
       )}
 
-      <div className="flex flex-col gap-6 lg:flex-row">
-        {/* Main feed */}
-        <div className="flex-1 space-y-6">
-          {/* Header */}
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <h1 className="font-display text-2xl font-bold text-primary">Live Feed</h1>
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex flex-1 items-center gap-2 rounded-full border border-divider bg-white px-4 py-2.5 transition-colors focus-within:border-accent sm:flex-none">
-                <Search size={16} className="text-subtle shrink-0" />
-                <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search with Title and hashtags..."
-                  className="w-full bg-transparent text-sm text-primary placeholder:text-subtle focus:outline-none sm:w-52" />
-              </div>
-              <button onClick={() => setSortDesc(p => !p)}
-                className="flex shrink-0 items-center gap-2 rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-white transition-transform duration-300 hover:scale-105 active:scale-95">
-                {sortDesc ? "Latest First" : "Oldest First"}
-                <ChevronDown size={16} className={sortDesc ? "" : "rotate-180"} />
-              </button>
-            </div>
+      {/* Header — spans full width, sits above both the post column and the aside so the aside can start level with the posts below */}
+      <div className="mb-6 flex max-w-4xl flex-wrap items-center justify-between gap-4">
+        <h1 className="shrink-0 whitespace-nowrap font-display text-2xl font-bold text-primary">Live Feed</h1>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-1 items-center gap-2 rounded-full border border-divider bg-white px-4 py-2.5 transition-colors focus-within:border-accent sm:flex-none">
+            <Search size={16} className="text-subtle shrink-0" />
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search with Title and hashtags..."
+              className="w-full bg-transparent text-sm text-primary placeholder:text-subtle focus:outline-none sm:w-52" />
           </div>
 
+          <select
+            value={filterCommunity}
+            onChange={e => setFilterCommunity(e.target.value)}
+            className="shrink-0 rounded-full border border-divider bg-white px-4 py-2.5 text-sm font-semibold text-muted transition-colors hover:border-accent hover:text-primary focus:outline-none"
+          >
+            <option value="">All Community</option>
+            {communities.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+
+          <div className="relative shrink-0">
+            <button
+              onClick={() => setShowDatePicker(v => !v)}
+              type="button"
+              className="flex shrink-0 items-center gap-2 rounded-full bg-primary px-4 py-2.5 text-sm font-bold text-white"
+            >
+              {selectedDate
+                ? selectedDate.toLocaleDateString("en-IN", { day: "numeric", month: "short" })
+                : "Date"}
+              {selectedDate ? (
+                <X size={14} onClick={clearDate} />
+              ) : (
+                <Calendar size={14} />
+              )}
+            </button>
+
+            {showDatePicker && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowDatePicker(false)} />
+                <div className="rdp-theme fixed inset-x-4 top-1/2 z-50 -translate-y-1/2 rounded-2xl bg-white p-3 shadow-card-hover sm:absolute sm:inset-x-auto sm:top-full sm:right-0 sm:mt-2 sm:w-auto sm:translate-y-0">
+                  <DayPicker
+                    mode="single"
+                    selected={selectedDate}
+                    onSelect={handleSelectDate}
+                    autoFocus
+                  />
+                </div>
+              </>
+            )}
+          </div>
+
+          <button onClick={() => setSortDesc(p => !p)}
+            className="flex shrink-0 items-center gap-2 rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-white transition-transform duration-300 hover:scale-105 active:scale-95">
+            {sortDesc ? "Latest First" : "Oldest First"}
+            <ChevronDown size={16} className={sortDesc ? "" : "rotate-180"} />
+          </button>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-8 lg:flex-row">
+        {/* Main feed */}
+        <div className="w-full max-w-4xl space-y-6">
           {/* Posts */}
           {loading ? (
             <div className="space-y-5">{[0, 1, 2].map(i => <div key={i} className="h-48 animate-pulse rounded-2xl bg-white shadow-card" />)}</div>

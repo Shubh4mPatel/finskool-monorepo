@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Check, CheckCheck, ChevronDown, Loader2, Search } from "lucide-react";
+import { Check, CheckCheck, ChevronDown, Loader2 } from "lucide-react";
 import FeedPostCard from "@/components/feed/FeedPostCard";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { api } from "@/lib/api";
@@ -35,7 +35,6 @@ export default function UnresolvedThreadsPage() {
   const [posts, setPosts] = useState<PendingPostThread[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("All");
-  const [search, setSearch] = useState("");
   const [sortDesc, setSortDesc] = useState(false);
   const [markingAll, setMarkingAll] = useState(false);
 
@@ -61,12 +60,6 @@ export default function UnresolvedThreadsPage() {
 
   const filtered = posts
     .filter((p) => activeTab === "All" || p.communityName === activeTab)
-    .filter(
-      (p) =>
-        !search ||
-        p.title.toLowerCase().includes(search.toLowerCase()) ||
-        p.tags.some((t) => t.toLowerCase().includes(search.toLowerCase()))
-    )
     .slice()
     .sort((a, b) => {
       const ta = new Date(a.publishedAt ?? a.createdAt).getTime();
@@ -100,15 +93,17 @@ export default function UnresolvedThreadsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex max-w-4xl flex-col gap-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold text-accent">Dashboard &rsaquo; Unresolved Threads</p>
-          <h1 className="font-display text-2xl font-bold text-primary">Unresolved Threads</h1>
-          <p className="mt-1 text-sm text-muted">Member comments waiting for your response.</p>
+          <p className="text-xs font-semibold text-accent">Dashboard &rsaquo; Unreplied Threads</p>
+          <h1 className="font-display text-2xl font-bold text-primary">Unreplied Threads</h1>
+          <p className="mt-1 text-sm text-muted">
+            Member comments waiting for your response. {sortDesc ? "Latest first." : "Oldest first."}
+          </p>
         </div>
         {pending > 0 && (
-          <span className="mt-1 rounded-full bg-red-100 px-3 py-1 text-sm font-bold text-red-500">
+          <span className="mt-1 text-sm font-bold text-red-500">
             {pending} pending
           </span>
         )}
@@ -129,15 +124,6 @@ export default function UnresolvedThreadsPage() {
           ))}
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2 rounded-full border border-divider bg-white px-4 py-2.5 transition-colors focus-within:border-accent">
-            <Search size={16} className="shrink-0 text-subtle" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search with Title and hashtags..."
-              className="w-40 bg-transparent text-sm text-primary placeholder:text-subtle focus:outline-none sm:w-52"
-            />
-          </div>
           <button
             onClick={() => setSortDesc((v) => !v)}
             className="flex shrink-0 items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-semibold text-muted shadow-card transition-colors hover:bg-divider/60 hover:text-primary"
