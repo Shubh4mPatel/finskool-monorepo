@@ -127,7 +127,16 @@
       "Bash(find /d -maxdepth 2 -iname \"*eqlion*\" -type d)",
       "Bash(find /d -maxdepth 3 -iname \"market-feed\" -type d)",
       "Bash(xargs -I{} wc -l {})",
-      "Bash(python3 -c \"import json; json.load\\(open\\('/home/shubh4m/projects/finskool-monorepo/.claude/settings.json'\\)\\); print\\('valid JSON'\\)\")"
+      "Bash(python3 -c \"import json; json.load\\(open\\('/home/shubh4m/projects/finskool-monorepo/.claude/settings.json'\\)\\); print\\('valid JSON'\\)\")",
+      "Bash(echo \"remaining unmerged: $?\")",
+      "Bash(curl -s http://localhost:3001/health)",
+      "Bash(npm run *)",
+      "Bash(git -C /home/shubh4m/projects/finskool-monorepo log --oneline -3 -- apps/frontend/package-lock.json)",
+      "Bash(git -C /home/shubh4m/projects/finskool-monorepo status --porcelain apps/frontend/package-lock.json)",
+      "Bash(rm /home/shubh4m/projects/finskool-monorepo/apps/frontend/package-lock.json)",
+      "Bash(npm ls *)",
+      "Bash(python3 -c \"import json,sys; v=json.load\\(sys.stdin\\); print\\([x for x in v if x.startswith\\('3.27'\\)]\\)\")",
+      "Bash(echo \"no matches means fixed: exit code $?\")"
     ],
     "additionalDirectories": [
       "/tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/8750fbd9-1edb-4d3f-b623-da0dec31a255/scratchpad/node_modules"

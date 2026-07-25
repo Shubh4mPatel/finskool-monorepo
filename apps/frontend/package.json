@@ -11,7 +11,7 @@
   "dependencies": {
     "@tiptap/extension-link": "^3.27.0",
     "@tiptap/extension-placeholder": "^3.27.0",
-    "@tiptap/extension-text-align": "^3.27.0",
+    "@tiptap/extension-text-align": "3.27.1",
     "@tiptap/pm": "^3.27.0",
     "@tiptap/react": "^3.27.0",
     "@tiptap/starter-kit": "^3.27.0",
