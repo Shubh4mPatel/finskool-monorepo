@@ -103,7 +103,9 @@
       "Bash(node pw_admin_badge.js)",
       "Bash(python3 -c \"import sys,json; print\\('unresolvedThreads now:', json.load\\(sys.stdin\\)['data']['stats']['unresolvedThreads']\\)\")",
       "Bash(rm -rf /tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/8750fbd9-1edb-4d3f-b623-da0dec31a255/scratchpad/node_modules /tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/8750fbd9-1edb-4d3f-b623-da0dec31a255/scratchpad/package*.json *)",
-      "Bash(git pull *)"
+      "Bash(git pull *)",
+      "Bash(git add *)",
+      "Bash(git commit *)"
     ],
     "additionalDirectories": [
       "/tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/8750fbd9-1edb-4d3f-b623-da0dec31a255/scratchpad/node_modules"
