@@ -43,7 +43,10 @@ export default function UnresolvedThreadsPage() {
     setLoading(true);
     api
       .get<PendingPostThread[]>("/api/v1/admin/pending-post-threads")
-      .then(setPosts)
+      .then((data) => {
+        setPosts(data);
+        window.dispatchEvent(new Event("admin-threads:updated"));
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);

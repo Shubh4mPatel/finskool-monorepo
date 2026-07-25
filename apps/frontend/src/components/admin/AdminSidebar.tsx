@@ -48,10 +48,18 @@ function SidebarContent({ onNav }: { onNav?: () => void }) {
   }, []);
 
   useEffect(() => {
-    api
-      .get<{ stats: { unresolvedThreads: number } }>("/api/v1/admin/dashboard")
-      .then((data) => setUnresolvedThreads(data.stats.unresolvedThreads))
-      .catch(() => {});
+    const load = () =>
+      api
+        .get<{ stats: { unresolvedThreads: number } }>("/api/v1/admin/dashboard")
+        .then((data) => setUnresolvedThreads(data.stats.unresolvedThreads))
+        .catch(() => {});
+    load();
+    const interval = setInterval(load, 45_000);
+    window.addEventListener("admin-threads:updated", load);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("admin-threads:updated", load);
+    };
   }, []);
 
   const displayName = session?.userName ?? "Admin";

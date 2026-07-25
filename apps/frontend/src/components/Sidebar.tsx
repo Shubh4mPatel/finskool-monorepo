@@ -19,9 +19,9 @@ import {
 } from "lucide-react";
 
 const navItems = [
-  { href: "/feed", label: "Feed", icon: LayoutGrid, count: 20 },
+  { href: "/feed", label: "Feed", icon: LayoutGrid, count: null },
   { href: "/announcements", label: "Announcements", icon: Megaphone, count: null },
-  { href: "/recommendations", label: "Recommendations", icon: TrendingUp, count: 10 },
+  { href: "/recommendations", label: "Recommendations", icon: TrendingUp, count: null },
   { href: "/replies", label: "My Threads", icon: MessagesSquare, count: null },
 ];
 
