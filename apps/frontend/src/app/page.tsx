@@ -108,7 +108,13 @@ export default function CommunitySelectorPage() {
   useEffect(() => {
     api
       .get<MeResponse>("/api/v1/auth/me")
-      .then(setMeData)
+      .then((data) => {
+        if (data.user.role === "admin") {
+          router.push("/admin/dashboard");
+          return;
+        }
+        setMeData(data);
+      })
       .catch((err) => {
         if (err instanceof ApiError && err.status === 401) {
           router.push("/login");
