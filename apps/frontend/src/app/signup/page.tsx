@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, ArrowRight, ChevronDown, ChevronRight, Lock } from "lucide-react";
+import { AlertCircle, ArrowRight, ChevronRight, Lock } from "lucide-react";
+import { isValidPhoneNumber } from "libphonenumber-js";
 import Link from "next/link";
 import AuthLayout from "@/components/auth/AuthLayout";
 import PasswordInput from "@/components/auth/PasswordInput";
+import PhoneInput from "@/components/ui/PhoneInput";
 import { api, ApiError } from "@/lib/api";
 import { saveSession, initials } from "@/lib/session";
 
@@ -33,10 +35,9 @@ function validate(fields: {
   if (fields.fullName.trim().length < 2)
     errs.fullName = "Full name must be at least 2 characters";
 
-  const digits = fields.phone.replace(/[\s\-]/g, "");
-  if (!digits) errs.phone = "Phone number is required";
-  else if (!/^\d{10}$/.test(digits) && !/^\+[1-9]\d{6,14}$/.test(digits))
-    errs.phone = "Enter a valid 10-digit phone number";
+  if (!fields.phone) errs.phone = "Phone number is required";
+  else if (!isValidPhoneNumber(fields.phone))
+    errs.phone = "Enter a valid phone number";
 
   if (!fields.email) errs.email = "Email is required";
   else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fields.email))
@@ -61,10 +62,8 @@ function validateField(
     case "fullName":
       return value.trim().length < 2 ? "Full name must be at least 2 characters" : undefined;
     case "phone": {
-      const digits = value.replace(/[\s\-]/g, "");
-      if (!digits) return "Phone number is required";
-      if (!/^\d{10}$/.test(digits) && !/^\+[1-9]\d{6,14}$/.test(digits))
-        return "Enter a valid 10-digit phone number";
+      if (!value) return "Phone number is required";
+      if (!isValidPhoneNumber(value)) return "Enter a valid phone number";
       return undefined;
     }
     case "email":
@@ -132,14 +131,12 @@ export default function SignupPage() {
     if (Object.values(allErrs).some(Boolean)) return;
 
     setLoading(true);
-    const raw = phone.replace(/[\s\-]/g, "");
-    const normalised = /^\d{10}$/.test(raw) ? `+91${raw}` : raw;
     setApiError(null);
 
     try {
       const data = await api.post<AuthResponse>("/api/v1/auth/register", {
         fullName,
-        phone: normalised,
+        phone,
         email,
         password,
         confirmPassword,
@@ -209,21 +206,12 @@ export default function SignupPage() {
             {/* Phone Number */}
             <div>
               <label className="text-sm font-semibold text-primary">Phone Number</label>
-              <div
-                className={`mt-2 flex overflow-hidden rounded-xl border transition-colors focus-within:border-accent ${
-                  errors.phone ? "border-red-400" : "border-[#d6d2c8]"
-                }`}
-              >
-                <span className="flex items-center gap-1 bg-primary px-3 text-sm font-bold text-white">
-                  +91 <ChevronDown size={13} />
-                </span>
-                <input
-                  type="tel"
-                  placeholder="Enter your phone number"
+              <div className="mt-2">
+                <PhoneInput
                   value={phone}
-                  onChange={(e) => change("phone", e.target.value)}
+                  onChange={(v) => change("phone", v)}
                   onBlur={() => blur("phone", phone)}
-                  className="w-full border-0 bg-white px-4 py-3 text-sm text-primary placeholder:text-[#b0aba1] focus:outline-none focus:ring-0"
+                  hasError={!!errors.phone}
                 />
               </div>
               {errors.phone && (

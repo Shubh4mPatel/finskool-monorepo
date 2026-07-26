@@ -1,8 +1,14 @@
 import { z } from 'zod'
+import { normalizePhone } from '../../lib/phone.js'
 
-const phoneSchema = z
-  .string()
-  .regex(/^\+[1-9]\d{6,14}$/, 'Phone must be in international format (e.g. +919876543210)')
+const phoneSchema = z.string().transform((val, ctx) => {
+  const normalized = normalizePhone(val)
+  if (!normalized) {
+    ctx.addIssue({ code: 'custom', message: 'Enter a valid phone number' })
+    return z.NEVER
+  }
+  return normalized
+})
 
 export const registerSchema = z
   .object({

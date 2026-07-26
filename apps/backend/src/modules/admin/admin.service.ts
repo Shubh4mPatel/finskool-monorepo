@@ -5,6 +5,7 @@ import { assertSuperAdmin } from '../../lib/community-access.js'
 import { generateUploadUrl } from '../../lib/minio.js'
 import { BadRequestError, ConflictError, NotFoundError, ForbiddenError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
+import { normalizePhone } from '../../lib/phone.js'
 import type {
   DuplicateStrategy,
   ImportSummaryDTO,
@@ -52,12 +53,6 @@ function slugify(raw: string): string {
     .replace(/^-+|-+$/g, '')
 }
 
-function normalizePhone(raw: string): string | null {
-  const digits = raw.replace(/\D/g, '')
-  if (digits.length === 10) return `+91${digits}`
-  if (digits.length === 12 && digits.startsWith('91')) return `+${digits}`
-  return null
-}
 
 function parseDate(raw: string): Date | null {
   if (!raw.trim()) return null
@@ -591,13 +586,9 @@ export class AdminService {
       // Format validations
       if (!row.name?.trim()) errors.push('Name is required')
 
-      const phoneDigits = row.phone.replace(/\D/g, '')
       if (!row.phone?.trim()) {
         errors.push('Phone is required')
-      } else if (
-        !/^\d{10,12}$/.test(phoneDigits) &&
-        !/^\+[1-9]\d{6,14}$/.test(row.phone.trim())
-      ) {
+      } else if (!normalizePhone(row.phone)) {
         errors.push('Invalid phone number')
       }
 
@@ -742,11 +733,8 @@ export class AdminService {
   async createAdmin(requestingAdminId: string, data: CreateAdminDTO): Promise<AdminUserDTO> {
     await assertSuperAdmin(this.db, requestingAdminId)
 
-    const digits = data.phone.replace(/\D/g, '')
-    const phone =
-      digits.length === 10 ? `+91${digits}`
-      : digits.length === 12 && digits.startsWith('91') ? `+${digits}`
-      : data.phone
+    const phone = normalizePhone(data.phone)
+    if (!phone) throw new BadRequestError('Invalid phone number')
 
     if (await this.db.user.findUnique({ where: { phone } })) {
       throw new ConflictError('Phone number already in use', 'PHONE_EXISTS')
@@ -839,11 +827,8 @@ export class AdminService {
   }
 
   async addMember(data: AddMemberDTO, adminId: string): Promise<AddMemberResultDTO> {
-    const digits = data.phone.replace(/\D/g, '')
-    const phone =
-      digits.length === 10 ? `+91${digits}`
-      : digits.length === 12 && digits.startsWith('91') ? `+${digits}`
-      : data.phone
+    const phone = normalizePhone(data.phone)
+    if (!phone) throw new BadRequestError('Invalid phone number')
 
     const community = await this.db.community.findUnique({ where: { id: data.communityId } })
     if (!community) throw new NotFoundError('Community not found')
@@ -1258,11 +1243,8 @@ export class AdminService {
 
     const user = await this.db.user.findUnique({ where: { phone: ap.phone } })
 
-    const digits = data.phone.replace(/\D/g, '')
-    const normalizedPhone =
-      digits.length === 10 ? `+91${digits}`
-      : digits.length === 12 && digits.startsWith('91') ? `+${digits}`
-      : data.phone
+    const normalizedPhone = normalizePhone(data.phone)
+    if (!normalizedPhone) throw new BadRequestError('Invalid phone number')
 
     if (normalizedPhone !== ap.phone) {
       const phoneConflict = await this.db.approvedPhone.findUnique({ where: { phone: normalizedPhone } })

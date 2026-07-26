@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { Ban, Download, Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import { isValidPhoneNumber } from "libphonenumber-js";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import PhoneInput from "@/components/ui/PhoneInput";
 
 interface MemberSubscription {
   id: string;
@@ -88,10 +90,8 @@ type MemberErrors = Partial<Record<MemberField, string>>;
 function validateMember(m: typeof EMPTY_MEMBER): MemberErrors {
   const e: MemberErrors = {};
   if (m.name.trim().length < 2) e.name = "Name must be at least 2 characters";
-  const digits = m.phone.replace(/\D/g, "");
-  if (!digits) e.phone = "Phone is required";
-  else if (digits.length !== 10 && !(digits.length === 12 && digits.startsWith("91")))
-    e.phone = "Enter a valid 10-digit phone number";
+  if (!m.phone) e.phone = "Phone is required";
+  else if (!isValidPhoneNumber(m.phone)) e.phone = "Enter a valid phone number";
   if (!m.email) e.email = "Email is required";
   else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(m.email)) e.email = "Invalid email address";
   if (!m.communityId) e.communityId = "Select a community";
@@ -454,10 +454,8 @@ export default function MembersPage() {
   function validateEditForm() {
     const errs: Partial<Record<string, string>> = {};
     if (editForm.name.trim().length < 2) errs.name = "Name must be at least 2 characters";
-    const digits = editForm.phone.replace(/\D/g, "");
-    if (!digits) errs.phone = "Phone is required";
-    else if (digits.length !== 10 && !(digits.length === 12 && digits.startsWith("91")))
-      errs.phone = "Enter a valid 10-digit phone number";
+    if (!editForm.phone) errs.phone = "Phone is required";
+    else if (!isValidPhoneNumber(editForm.phone)) errs.phone = "Enter a valid phone number";
     if (!editForm.email) errs.email = "Email is required";
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(editForm.email)) errs.email = "Invalid email address";
     if (showAddCom) {
@@ -908,10 +906,12 @@ export default function MembersPage() {
               </div>
               <div>
                 <label className="text-sm font-semibold text-primary">Phone Number</label>
-                <input type="tel" placeholder="10-digit number" value={newMember.phone}
-                  onChange={e => changeMemberField("phone", e.target.value)}
-                  onBlur={() => blurMemberField("phone")}
-                  className={fieldCls(memberErrors.phone)} />
+                <div className="mt-2">
+                  <PhoneInput value={newMember.phone}
+                    onChange={v => changeMemberField("phone", v)}
+                    onBlur={() => blurMemberField("phone")}
+                    hasError={!!memberErrors.phone} />
+                </div>
                 {memberErrors.phone && <p className="mt-1 text-xs text-red-500">{memberErrors.phone}</p>}
               </div>
               <div>
@@ -1057,9 +1057,11 @@ export default function MembersPage() {
               </div>
               <div>
                 <label className="text-sm font-semibold text-primary">Phone Number</label>
-                <input type="tel" value={editForm.phone}
-                  onChange={e => setEditForm(f => ({ ...f, phone: e.target.value }))}
-                  className={fieldCls(editErrors.phone)} placeholder="10-digit number" />
+                <div className="mt-2">
+                  <PhoneInput value={editForm.phone}
+                    onChange={v => setEditForm(f => ({ ...f, phone: v }))}
+                    hasError={!!editErrors.phone} />
+                </div>
                 {editErrors.phone && <p className="mt-1 text-xs text-red-500">{editErrors.phone}</p>}
               </div>
               <div>

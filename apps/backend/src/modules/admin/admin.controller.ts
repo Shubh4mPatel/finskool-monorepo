@@ -7,7 +7,7 @@ import { BadRequestError, ForbiddenError } from '../../shared/errors/index.js'
 import prisma from '../../lib/prisma.js'
 
 const addMemberSchema = z.object({
-  phone: z.string().min(10, 'Phone is required'),
+  phone: z.string().min(1, 'Phone is required'),
   name: z.string().min(2, 'Name must be at least 2 characters'),
   email: z.string().email('Invalid email address'),
   communityId: z.string().uuid('Invalid community'),
@@ -70,7 +70,7 @@ const markAllRepliedSchema = z.object({
 const createAdminSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
   email: z.string().email('Invalid email address'),
-  phone: z.string().min(10, 'Phone is required'),
+  phone: z.string().min(1, 'Phone is required'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
   communityIds: z.array(z.string().uuid('Invalid community ID')).min(1, 'At least one community is required'),
 })
@@ -93,7 +93,7 @@ const communityUploadUrlQuerySchema = z.object({
 
 const updateMemberSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
-  phone: z.string().min(10, 'Phone is required'),
+  phone: z.string().min(1, 'Phone is required'),
   email: z.string().email('Invalid email address'),
   newCommunity: z.object({
     communityId: z.string().uuid('Invalid community'),

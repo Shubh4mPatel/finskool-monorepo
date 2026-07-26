@@ -141,3 +141,32 @@ body {
 .rdp-theme .rdp-day_button:hover:not([disabled]) {
   background-color: var(--rdp-accent-background-color);
 }
+
+/* Maps react-phone-number-input's CSS variables onto the app's palette (see
+   .phone-input-theme usages) instead of pulling in a separate custom stylesheet. */
+.phone-input-theme {
+  --PhoneInput-color--focus: var(--color-accent);
+  --PhoneInputCountryFlag-borderColor: var(--color-divider);
+  --PhoneInputCountryFlag-borderColor--focus: var(--color-accent);
+}
+
+.phone-input-theme .PhoneInputCountry {
+  align-self: stretch;
+  margin-right: 0;
+  padding: 0 0.75rem;
+  background-color: var(--color-primary);
+  border-right: 1px solid var(--color-divider);
+}
+
+.phone-input-theme .PhoneInputInput {
+  border: none;
+  outline: none;
+  background: transparent;
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  color: var(--color-primary);
+}
+
+.phone-input-theme .PhoneInputInput::placeholder {
+  color: #b0aba1;
+}

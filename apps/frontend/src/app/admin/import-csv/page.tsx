@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import { AlertTriangle, CheckCircle, Download, Pencil, Upload, X } from "lucide-react";
+import { isValidPhoneNumber, parsePhoneNumberFromString } from "libphonenumber-js";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 
@@ -35,11 +36,8 @@ const PAGE_SIZE = 10;
 const STEPS = ["Upload File", "Preview & Review", "Confirm Import"];
 
 function normalizePhone(raw: string): string {
-  const digits = raw.replace(/\D/g, "");
-  if (digits.length === 10) return `+91${digits}`;
-  if (digits.length === 12 && digits.startsWith("91")) return `+${digits}`;
-  if (raw.trim().startsWith("+")) return raw.trim().replace(/\s/g, "");
-  return raw.trim();
+  const phone = parsePhoneNumberFromString(raw, "IN");
+  return phone?.isValid() ? phone.number : raw.trim();
 }
 
 function StepBar({ current }: { current: Step }) {
@@ -126,8 +124,7 @@ export default function ImportCSVPage() {
 
         if (!name)    errors.push("Name required");
         if (!phone)   errors.push("Phone required");
-        else if (!/^\d{10,12}$/.test(phone.replace(/\D/g, "")) && !/^\+[1-9]\d{6,14}$/.test(phone))
-          errors.push("Invalid phone");
+        else if (!isValidPhoneNumber(phone, "IN")) errors.push("Invalid phone");
         if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.push("Invalid email");
         if (!service) errors.push("Service required");
         else if (!communityList.includes(service.toLowerCase()))
