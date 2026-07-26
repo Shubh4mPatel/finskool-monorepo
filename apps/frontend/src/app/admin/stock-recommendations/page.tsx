@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, Download, Pencil, Plus, RefreshCw, Search, Trash2, Upload, X } from "lucide-react";
+import { ChevronDown, Pencil, Plus, RefreshCw, Search, Trash2, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
@@ -149,7 +149,6 @@ export default function AdminStockRecommendationsPage() {
   const [stockDropdownOpen, setStockDropdownOpen] = useState(false);
   const [stockSearching, setStockSearching] = useState(false);
   const stockFieldRef = useRef<HTMLDivElement>(null);
-  const csvInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     api.get<Community[]>("/api/v1/admin/communities")
@@ -371,33 +370,6 @@ export default function AdminStockRecommendationsPage() {
     { value: winRate == null ? "—" : `${winRate.toFixed(0)}%`, label: "Win Rate" },
   ];
 
-  function exportCSV() {
-    const header = ["Company", "Symbol", "Sector", "Exchange", "Entry", "CMP", "Target", "Stop Loss", "Return %", "Risk", "Call", "Community", "Created On"];
-    const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
-    const rows = filtered.map(r => [
-      r.name,
-      r.symbol,
-      r.sector ?? "",
-      r.exchange ? r.exchange.toUpperCase() : "",
-      String(r.entryPrice),
-      r.cmp != null ? String(r.cmp) : "",
-      String(r.targetPrice),
-      String(r.stopLossPrice),
-      r.returnPercent != null ? String(r.returnPercent) : "",
-      RISK_LABELS[r.riskLevel] ?? r.riskLevel,
-      CALL_LABELS[r.actionCall] ?? r.actionCall,
-      communityName(r.communityId),
-      formatDate(r.createdAt),
-    ]);
-    const csv = "﻿" + [header, ...rows].map(row => row.map(escape).join(",")).join("\n");
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `stock-recommendations-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
   const fieldCls = (err?: string, isSelect?: boolean) =>
     `mt-2 w-full rounded-xl border bg-white py-2.5 text-sm placeholder:text-subtle transition-colors focus:outline-none focus:ring-2 ${
       isSelect ? "appearance-none cursor-pointer pl-4 pr-9" : "px-4"
@@ -424,20 +396,6 @@ export default function AdminStockRecommendationsPage() {
             <Plus size={14} />
             Add Stock
           </button>
-          <button
-            onClick={() => csvInputRef.current?.click()}
-            className="flex items-center gap-2 rounded-full border border-divider bg-white px-4 py-2 text-sm font-semibold text-muted transition-colors hover:border-accent hover:text-primary"
-          >
-            <Upload size={14} />
-            Import via CSV
-          </button>
-          <input
-            ref={csvInputRef}
-            type="file"
-            accept=".csv"
-            className="hidden"
-            onChange={e => { toast.info("CSV import for stock recommendations is coming soon."); e.target.value = ""; }}
-          />
         </div>
       </div>
 
@@ -516,14 +474,6 @@ export default function AdminStockRecommendationsPage() {
             <ChevronDown size={14} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-subtle" />
           </div>
 
-          <button
-            onClick={exportCSV}
-            disabled={filtered.length === 0}
-            className="ml-auto flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-xs font-bold text-white transition-transform hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <Download size={13} />
-            Export CSV
-          </button>
         </div>
 
         {loading && (
