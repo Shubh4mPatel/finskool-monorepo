@@ -12,6 +12,7 @@ import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 import { getSession } from "@/lib/session";
 import PostImageUploader from "@/components/admin/PostImageUploader";
+import FeedPostCard from "@/components/feed/FeedPostCard";
 
 type Step = 1 | 2 | 3;
 
@@ -139,7 +140,9 @@ export default function CreatePostPage() {
     }
   }, [step, editor]);
 
-  const previewContent = editor?.getText() || "Strong breakout above ₹1,400 resistance with high delivery volumes. Swing setup with defined risk. Enter...";
+  const previewBodyHtml = editor && !editor.isEmpty
+    ? editor.getHTML()
+    : "<p>Strong breakout above ₹1,400 resistance with high delivery volumes. Swing setup with defined risk. Enter...</p>";
 
   function handleContinueToReview() {
     if (!headline.trim() || !editor?.getText().trim()) {
@@ -352,48 +355,23 @@ export default function CreatePostPage() {
           <div className="flex flex-col gap-6">
             <div>
               <span className="rounded-full bg-lime/40 px-3 py-1 text-xs font-bold text-primary">Post preview</span>
-              <div className="mt-4 rounded-2xl border border-divider p-5">
+              <div className="mt-4">
                 {(() => {
                   const session = getSession();
                   return (
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-white">
-                        {session?.userInitials ?? "A"}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-display font-semibold text-primary">{session?.userName ?? "Admin"}</span>
-                          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">ADMIN</span>
-                          <span className="rounded-full bg-lime px-2 py-0.5 text-[10px] font-bold text-primary">
-                            {communities.find((c) => c.id === selectedCommunity)?.name}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
+                    <FeedPostCard
+                      communityName={communities.find((c) => c.id === selectedCommunity)?.name}
+                      authorName={session?.userName ?? "Admin"}
+                      authorAvatarUrl={session?.avatarUrl}
+                      timestamp=""
+                      title={headline || "RELIANCE — Breakout swing setup. Target ₹1,575"}
+                      body=""
+                      bodyHtml={previewBodyHtml}
+                      imageUrls={imageUrls}
+                      tags={tags}
+                    />
                   );
                 })()}
-
-                <h3 className="mt-4 font-display text-lg font-bold text-primary">
-                  {headline || "RELIANCE — Breakout swing setup. Target ₹1,575"}
-                </h3>
-                <p className="mt-2 text-sm leading-relaxed text-muted">{previewContent}</p>
-
-                {imageUrls.length > 0 && (
-                  <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-4">
-                    {imageUrls.map((url, idx) => (
-                      <div key={url} className="overflow-hidden rounded-xl border border-divider">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={url} alt={`Post image ${idx + 1}`} className="h-24 w-full object-cover" />
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {tags.map((tag) => (
-                    <span key={tag} className="rounded-full border border-divider px-3 py-1 text-xs font-medium text-accent">{tag}</span>
-                  ))}
-                </div>
               </div>
             </div>
 

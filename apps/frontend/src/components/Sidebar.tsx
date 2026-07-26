@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 import { getSession, clearSession, type SessionInfo } from "@/lib/session";
 import MarketTodayWidget from "@/components/MarketTodayWidget";
 import CommunityRulesWidget from "@/components/CommunityRulesWidget";
+import { notificationSocketStore } from "@/store/notifications/notificationSocketStore";
 import {
   ArrowLeft,
   LayoutGrid,
@@ -45,11 +46,18 @@ export default function Sidebar() {
         .then((d) => setUnreadCount(d.count))
         .catch(() => {});
     load();
+    // 45s poll stays as a fallback/resync — the live socket below is what
+    // actually drives near-instant updates in the common case.
     const interval = setInterval(load, 45_000);
     window.addEventListener("notifications:updated", load);
+
+    notificationSocketStore.connect();
+    const unsubscribe = notificationSocketStore.subscribe(load);
+
     return () => {
       clearInterval(interval);
       window.removeEventListener("notifications:updated", load);
+      unsubscribe();
     };
   }, []);
 

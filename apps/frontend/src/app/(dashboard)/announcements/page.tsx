@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { RefreshCw, Megaphone, MessagesSquare } from "lucide-react";
 import { api } from "@/lib/api";
 import { getSession } from "@/lib/session";
+import { notificationSocketStore } from "@/store/notifications/notificationSocketStore";
 
 interface Notification {
   id: string;
@@ -93,6 +94,11 @@ export default function AnnouncementsPage() {
     fetchNotifications();
   }, [fetchNotifications]);
 
+  useEffect(() => {
+    notificationSocketStore.connect();
+    return notificationSocketStore.subscribe(() => fetchNotifications());
+  }, [fetchNotifications]);
+
   const handleView = useCallback(async (id: string, type: string, isRead: boolean) => {
     if (!isRead) {
       setNotifications(prev => prev.map(n => (n.id === id ? { ...n, isRead: true } : n)));
@@ -105,6 +111,8 @@ export default function AnnouncementsPage() {
     }
     if (type === "post") {
       router.push("/feed");
+    } else if (type === "recommendation") {
+      router.push("/recommendations");
     }
   }, [router]);
 

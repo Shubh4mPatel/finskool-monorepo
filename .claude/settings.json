@@ -162,7 +162,14 @@
       "Bash(curl -s -o /dev/null -w \"PATCH /communities/:id -> %{http_code}\\\\n\" -X PATCH http://localhost:3001/api/v1/admin/communities/00000000-0000-0000-0000-000000000000)",
       "Bash(curl -s -o /dev/null -w \"DELETE /communities/:id -> %{http_code}\\\\n\" -X DELETE http://localhost:3001/api/v1/admin/communities/00000000-0000-0000-0000-000000000000)",
       "Bash(curl -s -o /dev/null -w \"GET /communities -> %{http_code}\\\\n\" http://localhost:3001/api/v1/admin/communities)",
-      "Bash(curl -s -o /dev/null -w \"PATCH /me/name -> %{http_code}\\\\n\" -X PATCH http://localhost:3001/api/v1/auth/me/name -H \"Content-Type: application/json\" -d '{\"name\":\"Test\"}')"
+      "Bash(curl -s -o /dev/null -w \"PATCH /me/name -> %{http_code}\\\\n\" -X PATCH http://localhost:3001/api/v1/auth/me/name -H \"Content-Type: application/json\" -d '{\"name\":\"Test\"}')",
+      "Bash(timeout 40 bash -c 'until curl -sf http://localhost:3000 >/dev/null 2>&1; do sleep 1; done')",
+      "Bash(CHROMIUM_PATH=/home/shubh4m/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome node preview-check.mjs)",
+      "Bash(CHROMIUM_PATH=/home/shubh4m/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome node live-notif-check2.mjs)",
+      "Bash(curl -s \"http://localhost:8025/api/v2/messages?limit=1\")",
+      "Bash(curl -s -X POST http://localhost:3001/api/v1/auth/login -H \"Content-Type: application/json\" -d '{\"email\":\"admin@finskool.com\",\"password\":\"Admin@123\"}' -c /tmp/admin-cookies.txt -o /dev/null)",
+      "Bash(curl -s http://localhost:3001/api/v1/stocks -b /tmp/admin-cookies.txt)",
+      "Bash(rm -f /tmp/admin-cookies.txt)"
     ],
     "additionalDirectories": [
       "/tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/8750fbd9-1edb-4d3f-b623-da0dec31a255/scratchpad/node_modules"

@@ -8,6 +8,8 @@ import CommunityRulesWidget from "@/components/CommunityRulesWidget";
 import MarketTodayWidget from "@/components/MarketTodayWidget";
 import FeedPostCard from "@/components/feed/FeedPostCard";
 import { api } from "@/lib/api";
+import { getSession } from "@/lib/session";
+import { notificationSocketStore } from "@/store/notifications/notificationSocketStore";
 
 interface FeedPost {
   id: string;
@@ -80,6 +82,17 @@ export default function FeedPage() {
 
   useEffect(() => {
     fetchPosts(page, order, selectedDate);
+  }, [fetchPosts, page, order, selectedDate]);
+
+  // Live-insert: a new post published in the community currently being viewed
+  // shows up without the user needing to refresh.
+  useEffect(() => {
+    notificationSocketStore.connect();
+    return notificationSocketStore.subscribe((event) => {
+      if (event.type !== "post") return;
+      if (event.communityId !== getSession()?.communityId) return;
+      fetchPosts(page, order, selectedDate);
+    });
   }, [fetchPosts, page, order, selectedDate]);
 
   function handleSelectDate(date: Date | undefined) {

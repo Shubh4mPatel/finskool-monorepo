@@ -1,49 +1,52 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowRight, CheckCircle, Clock, MessagesSquare, Plus, Users } from "lucide-react";
+import { ArrowRight, CheckCircle, Clock, MessagesSquare, Users } from "lucide-react";
+// import { Plus } from "lucide-react"; // only used by the commented-out Recent Posts panel below
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { getSession } from "@/lib/session";
 
-interface RecentPost {
-  id: string;
-  title: string;
-  communityName: string;
-  publishedAt: string | null;
-  createdAt: string;
-}
-
-interface ListPostsResponse {
-  posts: RecentPost[];
-}
-
-interface PendingCommentPreview {
-  id: string;
-  createdAt: string;
-  comment: {
-    id: string;
-    content: string;
-    author: { name: string };
-  };
-  post: {
-    id: string;
-    communityName: string;
-  };
-}
-
-interface CommentNotificationList {
-  notifications: PendingCommentPreview[];
-}
-
-function timeAgo(iso: string): string {
-  const diffMs = Date.now() - new Date(iso).getTime();
-  const hrs = Math.round(diffMs / (1000 * 60 * 60));
-  if (hrs < 1) return "just now";
-  if (hrs < 24) return `${hrs} hr${hrs === 1 ? "" : "s"} ago`;
-  const days = Math.round(hrs / 24);
-  return `${days} day${days === 1 ? "" : "s"} ago`;
-}
+// Recent Posts + Unreplied Threads panels are disabled for now (see JSX below) —
+// their supporting types/helpers are commented out too since nothing else uses them.
+// interface RecentPost {
+//   id: string;
+//   title: string;
+//   communityName: string;
+//   publishedAt: string | null;
+//   createdAt: string;
+// }
+//
+// interface ListPostsResponse {
+//   posts: RecentPost[];
+// }
+//
+// interface PendingCommentPreview {
+//   id: string;
+//   createdAt: string;
+//   comment: {
+//     id: string;
+//     content: string;
+//     author: { name: string };
+//   };
+//   post: {
+//     id: string;
+//     communityName: string;
+//   };
+// }
+//
+// interface CommentNotificationList {
+//   notifications: PendingCommentPreview[];
+// }
+//
+// function timeAgo(iso: string): string {
+//   const diffMs = Date.now() - new Date(iso).getTime();
+//   const hrs = Math.round(diffMs / (1000 * 60 * 60));
+//   if (hrs < 1) return "just now";
+//   if (hrs < 24) return `${hrs} hr${hrs === 1 ? "" : "s"} ago`;
+//   const days = Math.round(hrs / 24);
+//   return `${days} day${days === 1 ? "" : "s"} ago`;
+// }
 
 interface DashboardStats {
   totalMembers: number;
@@ -90,9 +93,9 @@ function urgencyClass(days: number): string {
 export default function AdminDashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [recentPosts, setRecentPosts] = useState<RecentPost[]>([]);
-  const [pendingComments, setPendingComments] = useState<PendingCommentPreview[]>([]);
-  const [previewLoading, setPreviewLoading] = useState(true);
+  // const [recentPosts, setRecentPosts] = useState<RecentPost[]>([]);
+  // const [pendingComments, setPendingComments] = useState<PendingCommentPreview[]>([]);
+  // const [previewLoading, setPreviewLoading] = useState(true);
 
   const session = getSession();
   const adminName = session?.userName?.split(" ")[0] ?? "Admin";
@@ -104,18 +107,18 @@ export default function AdminDashboardPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  useEffect(() => {
-    Promise.all([
-      api.get<ListPostsResponse>("/api/v1/posts?page=1&pageSize=4"),
-      api.get<CommentNotificationList>("/api/v1/admin/comment-notifications?isReplied=false&limit=4"),
-    ])
-      .then(([posts, comments]) => {
-        setRecentPosts(posts.posts);
-        setPendingComments(comments.notifications);
-      })
-      .catch(() => {})
-      .finally(() => setPreviewLoading(false));
-  }, []);
+  // useEffect(() => {
+  //   Promise.all([
+  //     api.get<ListPostsResponse>("/api/v1/posts?page=1&pageSize=4"),
+  //     api.get<CommentNotificationList>("/api/v1/admin/comment-notifications?isReplied=false&limit=4"),
+  //   ])
+  //     .then(([posts, comments]) => {
+  //       setRecentPosts(posts.posts);
+  //       setPendingComments(comments.notifications);
+  //     })
+  //     .catch(() => {})
+  //     .finally(() => setPreviewLoading(false));
+  // }, []);
 
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good Morning" : hour < 17 ? "Good Afternoon" : "Good Evening";
@@ -300,10 +303,10 @@ export default function AdminDashboardPage() {
 
       </div>
 
-      {/* Recent Posts + Unreplied Threads preview */}
+      {/* Recent Posts + Unreplied Threads preview — disabled for now, keeping the code for later
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
 
-        {/* Recent Posts */}
+        Recent Posts
         <div className="rounded-2xl bg-white p-6 shadow-card">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-bold text-primary">Recent Posts</h2>
@@ -338,7 +341,7 @@ export default function AdminDashboardPage() {
           )}
         </div>
 
-        {/* Unreplied Threads preview */}
+        Unreplied Threads preview
         <div className="rounded-2xl bg-white p-6 shadow-card">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-bold text-primary">Unreplied Threads</h2>
@@ -382,6 +385,7 @@ export default function AdminDashboardPage() {
         </div>
 
       </div>
+      */}
     </div>
   );
 }

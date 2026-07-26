@@ -13,6 +13,10 @@ export const env = {
     credentials: process.env['CORS_CREDENTIALS'] !== 'false',
   },
 
+  // Used to build absolute links back to the app (e.g. the CTA button in
+  // notification emails) — not the same as CORS_ORIGIN, which can be a list.
+  frontendUrl: process.env['FRONTEND_URL'] ?? 'http://localhost:3000',
+
   database: {
     url: process.env['DATABASE_URL'] ?? '',
   },
@@ -63,6 +67,7 @@ export const env = {
   nodeEnv: 'development' | 'production' | 'test'
   port: number
   cors: { origin: string | string[]; credentials: boolean }
+  frontendUrl: string
   database: { url: string }
   redis: { host: string; port: number; password: string; db: number }
   jwt: { secret: string; accessExpiresIn: string }

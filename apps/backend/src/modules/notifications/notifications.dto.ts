@@ -1,4 +1,4 @@
-export const NotificationType = { Post: 'post', Thread: 'thread' } as const
+export const NotificationType = { Post: 'post', Thread: 'thread', Recommendation: 'recommendation' } as const
 
 export interface NotificationItemDTO {
   id: string

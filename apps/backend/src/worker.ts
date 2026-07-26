@@ -4,6 +4,7 @@ import {
   createBullConnection,
   NOTIFICATIONS_QUEUE_NAME,
   COMMUNITY_POST_JOB,
+  COMMUNITY_RECOMMENDATION_JOB,
   THREAD_REPLY_EMAIL_JOB,
 } from './lib/queue.js'
 import prisma from './lib/prisma.js'
@@ -17,6 +18,7 @@ const worker = new Worker(
   NOTIFICATIONS_QUEUE_NAME,
   async job => {
     if (job.name === COMMUNITY_POST_JOB) return service.fanOutCommunityPost(job.data)
+    if (job.name === COMMUNITY_RECOMMENDATION_JOB) return service.fanOutCommunityRecommendation(job.data)
     if (job.name === THREAD_REPLY_EMAIL_JOB) return service.sendThreadReplyEmail(job.data)
   },
   { connection, concurrency: 5 },

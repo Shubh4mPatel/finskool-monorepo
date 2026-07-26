@@ -1,6 +1,7 @@
 import type { PrismaClient } from '../../generated/prisma/client.js'
 import { assertCommunityAccess } from '../../lib/community-access.js'
 import { liveStockFeed } from '../../lib/live-stock-feed.js'
+import { notificationsQueue, COMMUNITY_RECOMMENDATION_JOB } from '../../lib/queue.js'
 import { NotFoundError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
 import type {
@@ -72,6 +73,29 @@ export class StockRecommendationsService {
     liveStockFeed.ensureSubscribed(data.stockId).catch(err => {
       logger.error({ err, stockId: data.stockId }, 'stock-recommendations.create: failed to subscribe live feed')
     })
+
+    try {
+      await notificationsQueue.add(
+        COMMUNITY_RECOMMENDATION_JOB,
+        {
+          communityId: rec.communityId,
+          recommendationId: rec.id,
+          message: `New recommendation: ${rec.stock.symbol} — ${rec.actionCall.toUpperCase()}`,
+          triggeredByUserId: adminId,
+        },
+        {
+          jobId: `recommendation-created-${rec.id}`,
+          attempts: 5,
+          backoff: { type: 'exponential', delay: 5000 },
+          removeOnComplete: true,
+          removeOnFail: { count: 500 },
+        },
+      )
+    } catch (err) {
+      // Creation already succeeded at the DB level — a queue/Redis outage
+      // shouldn't fail the request.
+      logger.error({ err, recommendationId: rec.id }, 'stock-recommendations.create: failed to enqueue notification job')
+    }
 
     return this.toResponse(rec)
   }
