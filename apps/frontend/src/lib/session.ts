@@ -44,6 +44,14 @@ export function updateSessionAvatar(avatarUrl: string | null): void {
   window.dispatchEvent(new Event('profile:updated'))
 }
 
+export function updateSessionName(userName: string): void {
+  if (typeof window === 'undefined') return
+  const existing = getSession()
+  if (!existing) return
+  saveSession({ ...existing, userName, userInitials: initials(userName) })
+  window.dispatchEvent(new Event('profile:updated'))
+}
+
 export function clearSession(): void {
   if (typeof window === 'undefined') return
   localStorage.removeItem(KEY)

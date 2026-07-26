@@ -26,6 +26,10 @@ export interface UpdateEmailDTO {
   email: string
 }
 
+export interface UpdateNameDTO {
+  name: string
+}
+
 export interface ChangePasswordDTO {
   currentPassword: string
   newPassword: string

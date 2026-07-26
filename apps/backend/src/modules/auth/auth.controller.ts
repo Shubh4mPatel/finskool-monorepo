@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction, CookieOptions } from 'express'
 import { z } from 'zod'
 import type { AuthService } from './auth.service.js'
-import { registerSchema, loginSchema, updateEmailSchema, changePasswordSchema, updateNotificationsSchema, updateAvatarSchema } from './auth.validator.js'
+import { registerSchema, loginSchema, updateEmailSchema, updateNameSchema, changePasswordSchema, updateNotificationsSchema, updateAvatarSchema } from './auth.validator.js'
 import { env } from '../../config/env.js'
 import { UnauthorizedError } from '../../shared/errors/index.js'
 
@@ -110,6 +110,16 @@ export class AuthController {
     try {
       const data = updateEmailSchema.parse(req.body)
       const user = await this.service.updateEmail(req.user!.id, data)
+      res.json({ success: true, data: { user } })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  updateName = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const data = updateNameSchema.parse(req.body)
+      const user = await this.service.updateName(req.user!.id, data)
       res.json({ success: true, data: { user } })
     } catch (err) {
       next(err)

@@ -161,7 +161,8 @@
       "Bash(CHROMIUM_PATH=/home/shubh4m/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome node screenshot-phone3.mjs)",
       "Bash(curl -s -o /dev/null -w \"PATCH /communities/:id -> %{http_code}\\\\n\" -X PATCH http://localhost:3001/api/v1/admin/communities/00000000-0000-0000-0000-000000000000)",
       "Bash(curl -s -o /dev/null -w \"DELETE /communities/:id -> %{http_code}\\\\n\" -X DELETE http://localhost:3001/api/v1/admin/communities/00000000-0000-0000-0000-000000000000)",
-      "Bash(curl -s -o /dev/null -w \"GET /communities -> %{http_code}\\\\n\" http://localhost:3001/api/v1/admin/communities)"
+      "Bash(curl -s -o /dev/null -w \"GET /communities -> %{http_code}\\\\n\" http://localhost:3001/api/v1/admin/communities)",
+      "Bash(curl -s -o /dev/null -w \"PATCH /me/name -> %{http_code}\\\\n\" -X PATCH http://localhost:3001/api/v1/auth/me/name -H \"Content-Type: application/json\" -d '{\"name\":\"Test\"}')"
     ],
     "additionalDirectories": [
       "/tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/8750fbd9-1edb-4d3f-b623-da0dec31a255/scratchpad/node_modules"

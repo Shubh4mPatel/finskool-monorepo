@@ -4,7 +4,7 @@ import { Camera, Lock, Pencil } from "lucide-react";
 import ChangePasswordModal from "@/components/profile/ChangePasswordModal";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
-import { initials, updateSessionAvatar } from "@/lib/session";
+import { initials, updateSessionAvatar, updateSessionName } from "@/lib/session";
 
 interface AdminProfile {
   id: string;
@@ -29,6 +29,7 @@ interface AdminUser {
 
 export default function AdminProfilePage() {
   const [user, setUser] = useState<AdminProfile | null>(null);
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -40,6 +41,7 @@ export default function AdminProfilePage() {
       .get<{ user: AdminProfile }>("/api/v1/auth/me")
       .then((data) => {
         setUser(data.user);
+        setName(data.user.name);
         setEmail(data.user.email);
       })
       .catch(() => {});
@@ -62,8 +64,17 @@ export default function AdminProfilePage() {
     if (saving) return;
     setSaving(true);
     try {
-      const data = await api.patch<{ user: AdminProfile }>("/api/v1/auth/me/email", { email });
-      setUser(data.user);
+      let updatedUser = user;
+      if (user && name.trim() !== user.name) {
+        const data = await api.patch<{ user: AdminProfile }>("/api/v1/auth/me/name", { name: name.trim() });
+        updatedUser = data.user;
+        updateSessionName(data.user.name);
+      }
+      if (user && email !== user.email) {
+        const data = await api.patch<{ user: AdminProfile }>("/api/v1/auth/me/email", { email });
+        updatedUser = data.user;
+      }
+      if (updatedUser) setUser(updatedUser);
       setIsEditing(false);
     } catch {
       // no-op
@@ -168,6 +179,20 @@ export default function AdminProfilePage() {
         <div className="p-6">
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
             <div>
+              <label className="text-sm font-semibold text-primary">Full Name</label>
+              <input
+                type="text"
+                value={name}
+                disabled={!isEditing}
+                onChange={(e) => setName(e.target.value)}
+                className={`mt-2 w-full rounded-xl border px-4 py-3 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-accent/40 ${
+                  isEditing
+                    ? "border-accent/40 bg-white text-primary"
+                    : "border-divider bg-divider/40 text-muted"
+                }`}
+              />
+            </div>
+            <div>
               <label className="text-sm font-semibold text-primary">Phone Number</label>
               <input
                 type="text"
@@ -201,7 +226,7 @@ export default function AdminProfilePage() {
           {isEditing ? (
             <>
               <button
-                onClick={() => { setEmail(user?.email ?? ""); setIsEditing(false); }}
+                onClick={() => { setName(user?.name ?? ""); setEmail(user?.email ?? ""); setIsEditing(false); }}
                 className="flex items-center justify-center gap-2 rounded-full border border-divider px-5 py-2.5 text-sm font-bold text-muted transition-colors hover:bg-divider/60"
               >
                 Cancel

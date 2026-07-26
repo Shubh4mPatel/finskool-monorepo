@@ -5,7 +5,7 @@ import ChangePasswordModal from "@/components/profile/ChangePasswordModal";
 import ToggleSwitch from "@/components/profile/ToggleSwitch";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
-import { initials, updateSessionAvatar } from "@/lib/session";
+import { initials, updateSessionAvatar, updateSessionName } from "@/lib/session";
 
 interface UserProfile {
   id: string;
@@ -17,6 +17,7 @@ interface UserProfile {
 
 export default function ProfilePage() {
   const [user, setUser] = useState<UserProfile | null>(null);
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
@@ -28,6 +29,7 @@ export default function ProfilePage() {
       .get<{ user: UserProfile }>("/api/v1/auth/me")
       .then((data) => {
         setUser(data.user);
+        setName(data.user.name);
         setEmail(data.user.email);
         setNotificationsEnabled(data.user.postNotificationsEnabled);
       })
@@ -46,8 +48,17 @@ export default function ProfilePage() {
     if (saving) return;
     setSaving(true);
     try {
-      const data = await api.patch<{ user: UserProfile }>("/api/v1/auth/me/email", { email });
-      setUser(data.user);
+      let updatedUser = user;
+      if (user && name.trim() !== user.name) {
+        const data = await api.patch<{ user: UserProfile }>("/api/v1/auth/me/name", { name: name.trim() });
+        updatedUser = data.user;
+        updateSessionName(data.user.name);
+      }
+      if (user && email !== user.email) {
+        const data = await api.patch<{ user: UserProfile }>("/api/v1/auth/me/email", { email });
+        updatedUser = data.user;
+      }
+      if (updatedUser) setUser(updatedUser);
       setIsEditing(false);
     } catch {
       // no-op
@@ -57,6 +68,7 @@ export default function ProfilePage() {
   };
 
   const handleCancelEdit = () => {
+    setName(user?.name ?? "");
     setEmail(user?.email ?? "");
     setIsEditing(false);
   };
@@ -190,6 +202,20 @@ export default function ProfilePage() {
         <div className="h-px w-full bg-divider" />
 
         <div className="grid grid-cols-1 gap-6 p-6 sm:grid-cols-2">
+          <div>
+            <label className="text-sm font-semibold text-primary">Full Name</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              disabled={!isEditing}
+              className={`mt-2 w-full rounded-[10px] border px-4 py-3 text-sm text-black placeholder:text-subtle transition-colors focus:outline-none focus:ring-2 focus:ring-accent/40 ${
+                isEditing
+                  ? "border-accent bg-white"
+                  : "border-[#d6d2c8] bg-[#f8f7f5] cursor-default"
+              }`}
+            />
+          </div>
           <div>
             <label className="text-sm font-semibold text-primary">Phone Number</label>
             <input

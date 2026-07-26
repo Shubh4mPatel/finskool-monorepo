@@ -20,6 +20,7 @@ import type {
   PublicUserDTO,
   CommunityInfoDTO,
   RegisterDTO,  UpdateEmailDTO,
+  UpdateNameDTO,
   ChangePasswordDTO,
   UpdateNotificationsDTO,} from "./auth.dto.js";
 import type { JwtPayload } from "../../middlewares/auth.middleware.js";
@@ -337,6 +338,15 @@ export class AuthService {
       data: { email: data.email },
     });
     logger.info({ userId }, 'auth.updateEmail: success');
+    return this.toPublicUser(updated);
+  }
+
+  async updateName(userId: string, data: UpdateNameDTO): Promise<PublicUserDTO> {
+    const updated = await this.db.user.update({
+      where: { id: userId },
+      data: { name: data.name },
+    });
+    logger.info({ userId }, 'auth.updateName: success');
     return this.toPublicUser(updated);
   }
 

@@ -32,6 +32,10 @@ export const updateEmailSchema = z.object({
   email: z.string().email('Invalid email address'),
 })
 
+export const updateNameSchema = z.object({
+  name: z.string().trim().min(2, 'Full name must be at least 2 characters').max(100),
+})
+
 export const changePasswordSchema = z
   .object({
     currentPassword: z.string().min(1, 'Current password is required'),
