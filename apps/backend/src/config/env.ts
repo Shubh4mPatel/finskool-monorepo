@@ -67,6 +67,9 @@ export const env = {
   stockQuoteApi: {
     baseUrl: process.env['STOCK_QUOTE_API_BASE_URL'] ?? '',
     apiKey: process.env['STOCK_QUOTE_API_KEY'] ?? '',
+    // Comma-separated list — not tied to any user account, so who gets the
+    // daily sweep report can be managed independently of admin roles.
+    reportEmails: (process.env['STOCK_REPORT_EMAIL'] ?? '').split(',').map(s => s.trim()).filter(Boolean),
   },
 } as const satisfies {
   nodeEnv: 'development' | 'production' | 'test'
@@ -80,5 +83,5 @@ export const env = {
   minio: { endPoint: string; publicEndPoint: string; port: number; publicPort: number; useSSL: boolean; accessKey: string; secretKey: string; bucket: string }
   smtp: { host: string; port: number; secure: boolean; user: string; password: string; from: string }
   angelone: { apiKey: string; clientCode: string; pin: string; totpSecret: string }
-  stockQuoteApi: { baseUrl: string; apiKey: string }
+  stockQuoteApi: { baseUrl: string; apiKey: string; reportEmails: string[] }
 }

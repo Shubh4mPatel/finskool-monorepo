@@ -6,12 +6,13 @@
 import type { PrismaClient } from '../generated/prisma/client.js'
 import { env } from '../config/env.js'
 import { logger } from '../shared/logger.js'
+import { sendMail } from './mailer.js'
 
 const BATCH_SIZE = 5 // stays under Finedge's 300 req/min (5 req/sec) rate limit
 const BATCH_PAUSE_MS = 1000
 
 interface QuoteData {
-  ltp: number
+  current_price: number
   [key: string]: unknown
 }
 
@@ -47,10 +48,10 @@ export async function refreshAllStockClosePrices(db: PrismaClient): Promise<{ to
     await Promise.all(batch.map(async stock => {
       try {
         const quote = await fetchQuote(stock.symbol)
-        if (typeof quote.ltp !== 'number' || !Number.isFinite(quote.ltp)) {
-          throw new Error(`missing/invalid ltp: ${JSON.stringify(quote.ltp)}`)
+        if (typeof quote.current_price !== 'number' || !Number.isFinite(quote.current_price)) {
+          throw new Error(`missing/invalid current_price: ${JSON.stringify(quote.current_price)}`)
         }
-        await db.stock.update({ where: { id: stock.id }, data: { closePrice: quote.ltp } })
+        await db.stock.update({ where: { id: stock.id }, data: { closePrice: quote.current_price } })
         updated++
       } catch (err) {
         failed++
@@ -62,5 +63,32 @@ export async function refreshAllStockClosePrices(db: PrismaClient): Promise<{ to
   }
 
   logger.info({ total: stocks.length, updated, failed }, 'refreshAllStockClosePrices: sweep complete')
+  await sendReportEmail(stocks.length, updated, failed)
   return { total: stocks.length, updated, failed }
+}
+
+// Best-effort — an SMTP hiccup shouldn't mark the whole sweep job as failed
+// (the price updates above already happened regardless).
+async function sendReportEmail(total: number, updated: number, failed: number): Promise<void> {
+  if (env.stockQuoteApi.reportEmails.length === 0) return
+
+  const dateStr = new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'long', year: 'numeric' })
+  const html = `
+    <p>Daily stock close-price sweep — ${dateStr}</p>
+    <ul>
+      <li>Total active stocks: ${total}</li>
+      <li>Updated: ${updated}</li>
+      <li>Failed: ${failed}</li>
+    </ul>
+  `
+
+  const results = await Promise.allSettled(
+    env.stockQuoteApi.reportEmails.map(to =>
+      sendMail({ to, subject: `Stock close-price report — ${dateStr}`, html }),
+    ),
+  )
+  const failedSends = results.filter(r => r.status === 'rejected')
+  if (failedSends.length > 0) {
+    logger.error({ failed: failedSends.length, total: results.length }, 'refreshAllStockClosePrices: failed to send report email')
+  }
 }
