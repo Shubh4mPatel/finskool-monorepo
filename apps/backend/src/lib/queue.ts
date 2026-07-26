@@ -7,6 +7,12 @@ export const COMMUNITY_POST_JOB = 'community-post'
 export const COMMUNITY_RECOMMENDATION_JOB = 'community-recommendation'
 export const THREAD_REPLY_EMAIL_JOB = 'thread-reply-email'
 
+// Separate from the notifications queue: this is a ~20-minute sweep over every
+// active stock (rate-limited to Finedge's 300 req/min), so it shouldn't
+// compete with time-sensitive notification jobs for worker concurrency slots.
+export const STOCK_CLOSE_PRICE_QUEUE_NAME = 'stock-close-price'
+export const REFRESH_CLOSE_PRICES_JOB = 'refresh-close-prices'
+
 export interface CommunityPostNotificationJobPayload {
   communityId: string
   postId: string
@@ -63,5 +69,10 @@ export function createBullConnection(): ConnectionOptions {
 
 export const notificationsQueue = new Queue<NotificationJobPayload, unknown, string>(
   NOTIFICATIONS_QUEUE_NAME,
+  { connection: createBullConnection() },
+)
+
+export const stockClosePriceQueue = new Queue(
+  STOCK_CLOSE_PRICE_QUEUE_NAME,
   { connection: createBullConnection() },
 )

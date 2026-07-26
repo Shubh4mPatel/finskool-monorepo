@@ -63,6 +63,11 @@ export const env = {
     pin: process.env['ANGELONE_PIN'] ?? '',
     totpSecret: process.env['ANGELONE_TOTP_SECRET'] ?? '',
   },
+
+  stockQuoteApi: {
+    baseUrl: process.env['STOCK_QUOTE_API_BASE_URL'] ?? '',
+    apiKey: process.env['STOCK_QUOTE_API_KEY'] ?? '',
+  },
 } as const satisfies {
   nodeEnv: 'development' | 'production' | 'test'
   port: number
@@ -75,4 +80,5 @@ export const env = {
   minio: { endPoint: string; publicEndPoint: string; port: number; publicPort: number; useSSL: boolean; accessKey: string; secretKey: string; bucket: string }
   smtp: { host: string; port: number; secure: boolean; user: string; password: string; from: string }
   angelone: { apiKey: string; clientCode: string; pin: string; totpSecret: string }
+  stockQuoteApi: { baseUrl: string; apiKey: string }
 }

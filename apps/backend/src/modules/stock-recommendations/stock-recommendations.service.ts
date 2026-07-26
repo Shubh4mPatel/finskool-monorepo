@@ -2,6 +2,7 @@ import type { PrismaClient } from '../../generated/prisma/client.js'
 import { assertCommunityAccess } from '../../lib/community-access.js'
 import { liveStockFeed } from '../../lib/live-stock-feed.js'
 import { notificationsQueue, COMMUNITY_RECOMMENDATION_JOB } from '../../lib/queue.js'
+import { marketStatus } from '../../sockets/angelone/market-status.js'
 import { NotFoundError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
 import type {
@@ -148,10 +149,16 @@ export class StockRecommendationsService {
     recommendationNotes: string | null
     createdAt: Date
     updatedAt: Date
-    stock: { symbol: string; name: string; sector: string | null; exchange: 'nse' | 'bse' | null; cmp: unknown }
+    stock: { symbol: string; name: string; sector: string | null; exchange: 'nse' | 'bse' | null; cmp: unknown; closePrice: unknown }
   }): StockRecommendationResponseDTO {
     const entryPrice = Number(rec.entryPrice)
-    const cmp = rec.stock.cmp !== null ? Number(rec.stock.cmp) : null
+    // While the market's live, prefer the AngelOne tick-fed cmp; once it's
+    // closed, ticks stop and cmp just freezes on whatever it last was, so
+    // prefer the deliberately-fetched daily close instead. Either falls back
+    // to the other if the preferred one hasn't been populated yet.
+    const rawCmp = rec.stock.cmp !== null ? Number(rec.stock.cmp) : null
+    const rawClose = rec.stock.closePrice !== null ? Number(rec.stock.closePrice) : null
+    const cmp = marketStatus.isMarketLive() ? (rawCmp ?? rawClose) : (rawClose ?? rawCmp)
 
     return {
       id: rec.id,

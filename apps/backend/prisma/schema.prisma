@@ -213,6 +213,7 @@ model Stock {
   token     String?  @db.VarChar(50)
   exchange  StockExchange?
   cmp       Decimal? @db.Decimal(10, 2)
+  closePrice Decimal? @map("close_price") @db.Decimal(10, 2)
   isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz

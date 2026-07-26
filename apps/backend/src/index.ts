@@ -9,6 +9,7 @@ import { ensureStocksSeeded } from './lib/stock-import.js'
 import { AngelOneClient } from './sockets/angelone/angelone.client.js'
 import { liveStockFeed } from './lib/live-stock-feed.js'
 import { liveNotificationsFeed } from './lib/live-notifications-feed.js'
+import { stockClosePriceQueue, REFRESH_CLOSE_PRICES_JOB } from './lib/queue.js'
 
 async function bootstrap() {
   await redis.connect()
@@ -28,6 +29,14 @@ async function bootstrap() {
   void ensureStocksSeeded(prisma).catch(err => {
     logger.error({ err }, 'stock-import: automatic import failed')
   })
+
+  // Idempotent — safe to call on every boot, updates the existing schedule
+  // in place rather than creating a duplicate. Mon–Fri, 3:30 PM IST.
+  await stockClosePriceQueue.upsertJobScheduler(
+    'daily-close-price',
+    { pattern: '30 15 * * 1-5', tz: 'Asia/Kolkata' },
+    { name: REFRESH_CLOSE_PRICES_JOB },
+  )
 
   const angelOne = new AngelOneClient()
   liveStockFeed.attach(server, angelOne, prisma)

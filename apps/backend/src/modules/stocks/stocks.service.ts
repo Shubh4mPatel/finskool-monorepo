@@ -1,4 +1,5 @@
 import type { PrismaClient } from '../../generated/prisma/client.js'
+import { marketStatus } from '../../sockets/angelone/market-status.js'
 import type { StockResponseDTO } from './stocks.dto.js'
 
 export class StocksService {
@@ -19,13 +20,18 @@ export class StocksService {
       take: 20,
     })
 
-    return stocks.map(s => ({
-      id: s.id,
-      name: s.name,
-      symbol: s.symbol,
-      sector: s.sector,
-      exchange: s.exchange,
-      cmp: s.cmp !== null ? Number(s.cmp) : null,
-    }))
+    const live = marketStatus.isMarketLive()
+    return stocks.map(s => {
+      const rawCmp = s.cmp !== null ? Number(s.cmp) : null
+      const rawClose = s.closePrice !== null ? Number(s.closePrice) : null
+      return {
+        id: s.id,
+        name: s.name,
+        symbol: s.symbol,
+        sector: s.sector,
+        exchange: s.exchange,
+        cmp: live ? (rawCmp ?? rawClose) : (rawClose ?? rawCmp),
+      }
+    })
   }
 }

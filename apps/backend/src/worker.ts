@@ -6,10 +6,13 @@ import {
   COMMUNITY_POST_JOB,
   COMMUNITY_RECOMMENDATION_JOB,
   THREAD_REPLY_EMAIL_JOB,
+  STOCK_CLOSE_PRICE_QUEUE_NAME,
+  REFRESH_CLOSE_PRICES_JOB,
 } from './lib/queue.js'
 import prisma from './lib/prisma.js'
 import { logger } from './shared/logger.js'
 import { NotificationsService } from './modules/notifications/notifications.service.js'
+import { refreshAllStockClosePrices } from './lib/stock-quote-api.js'
 
 const service = new NotificationsService(prisma)
 const connection = createBullConnection()
@@ -27,9 +30,23 @@ const worker = new Worker(
 worker.on('completed', job => logger.info({ jobId: job.id }, 'notification job completed'))
 worker.on('failed', (job, err) => logger.error({ jobId: job?.id, err }, 'notification job failed'))
 
+// Separate worker/queue: a single daily sweep over every active stock, never
+// run concurrently with itself (concurrency: 1).
+const stockPriceWorker = new Worker(
+  STOCK_CLOSE_PRICE_QUEUE_NAME,
+  async job => {
+    if (job.name === REFRESH_CLOSE_PRICES_JOB) return refreshAllStockClosePrices(prisma)
+  },
+  { connection, concurrency: 1 },
+)
+
+stockPriceWorker.on('completed', job => logger.info({ jobId: job.id, result: job.returnvalue }, 'stock close-price job completed'))
+stockPriceWorker.on('failed', (job, err) => logger.error({ jobId: job?.id, err }, 'stock close-price job failed'))
+
 async function shutdown(signal: string) {
   logger.info(`${signal} received — shutting down worker`)
   await worker.close()
+  await stockPriceWorker.close()
   await prisma.$disconnect()
   process.exit(0)
 }
@@ -37,3 +54,4 @@ process.on('SIGTERM', () => shutdown('SIGTERM'))
 process.on('SIGINT', () => shutdown('SIGINT'))
 
 logger.info('notifications worker started')
+logger.info('stock close-price worker started')

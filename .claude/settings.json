@@ -184,7 +184,9 @@
       "Bash(timeout 60 node verify2.js)",
       "Bash(rm -rf /tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/83cf83cb-b19b-4cbc-a930-4f88e4cf768c/scratchpad/pw/node_modules)",
       "Bash(echo \"EXIT CODE: $?\")",
-      "Bash(echo \"EXIT: $?\")"
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(node -e \"console.log\\(new Date\\(1785146400000\\).toLocaleString\\('en-IN', { timeZone: 'Asia/Kolkata', hour12: true }\\)\\)\")",
+      "Bash(docker exec finskool-backend-dev node -e ' *)"
     ],
     "additionalDirectories": [
       "/tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/8750fbd9-1edb-4d3f-b623-da0dec31a255/scratchpad/node_modules",
