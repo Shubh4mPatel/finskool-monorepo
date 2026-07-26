@@ -29,64 +29,71 @@ export async function middleware(request: NextRequest) {
 
   const isProtected = PROTECTED.some(p => pathname.startsWith(p))
   const isAuthOnly = AUTH_ONLY.some(p => pathname.startsWith(p))
+  if (!isProtected && !isAuthOnly) return NextResponse.next()
 
   const accessToken = request.cookies.get('access_token')?.value
   const refreshToken = request.cookies.get('refresh_token')?.value
 
   // Decode without verifying — backend verifies on every real request
   const payload = accessToken ? decodeJwtPayload(accessToken) : null
-  const tokenValid = payload && !isExpired(payload)
+  let tokenValid = payload && !isExpired(payload)
+  let activePayload = payload
+  let refreshedCookies: string[] = []
 
-  // --- Already logged in → redirect away from /login and /signup ---
-  if (isAuthOnly && tokenValid) {
-    const role = payload?.role
-    return NextResponse.redirect(
-      new URL(role === 'admin' ? '/admin/dashboard' : '/feed', request.url),
-    )
-  }
-
-  if (!isProtected) return NextResponse.next()
-
-  // --- Protected route: token is valid, just check role ---
-  if (tokenValid) {
-    const role = payload?.role
-    if (pathname.startsWith('/admin') && role !== 'admin') {  // admin-only check
-      return NextResponse.redirect(new URL('/', request.url))
-    }
-    return NextResponse.next()
-  }
-
-  // --- Token missing or expired: try silent refresh ---
-  if (refreshToken) {
+  // --- Access token missing or expired: try a silent refresh ---
+  // Applies to auth-only routes too, so a user with just an expired access
+  // token (but a valid refresh token) still counts as logged in.
+  if (!tokenValid && refreshToken) {
     try {
       const refreshRes = await fetch(`${API_URL}/api/v1/auth/refresh`, {
         method: 'GET',
         headers: { Cookie: `refresh_token=${refreshToken}` },
-        credentials: 'include',
       })
 
       if (refreshRes.ok) {
-        // Forward the new access_token cookie the backend set
-        const newCookieHeader = refreshRes.headers.get('set-cookie')
-        const response = NextResponse.next()
-        if (newCookieHeader) {
-          response.headers.set('set-cookie', newCookieHeader)
+        refreshedCookies = refreshRes.headers.getSetCookie()
+        const newAccessToken = refreshedCookies
+          .map(c => c.match(/^access_token=([^;]+)/)?.[1])
+          .find(Boolean)
+        const newPayload = newAccessToken ? decodeJwtPayload(newAccessToken) : null
+        if (newPayload && !isExpired(newPayload)) {
+          tokenValid = true
+          activePayload = newPayload
         }
-
-        // Re-check role from new token for admin routes
-        const newAccessToken = newCookieHeader?.match(/access_token=([^;]+)/)?.[1]
-        if (newAccessToken && pathname.startsWith('/admin')) {
-          const newPayload = decodeJwtPayload(newAccessToken)
-          if (newPayload?.role !== 'admin') {
-            return NextResponse.redirect(new URL('/', request.url))
-          }
-        }
-
-        return response
       }
     } catch {
-      // Refresh failed — fall through to redirect
+      // Refresh failed — treat as unauthenticated
     }
+  }
+
+  // Forward every cookie the backend set — append each one separately so
+  // multiple Set-Cookie headers (e.g. a future rotated refresh_token) don't
+  // get comma-joined and corrupted (Expires itself contains a comma)
+  function withRefreshedCookies(response: NextResponse): NextResponse {
+    for (const cookieStr of refreshedCookies) {
+      response.headers.append('set-cookie', cookieStr)
+    }
+    return response
+  }
+
+  // --- Auth-only routes: only unauthenticated users may see /login and /signup ---
+  if (isAuthOnly) {
+    if (tokenValid) {
+      const role = activePayload?.role
+      return withRefreshedCookies(
+        NextResponse.redirect(new URL(role === 'admin' ? '/admin/dashboard' : '/feed', request.url)),
+      )
+    }
+    return NextResponse.next()
+  }
+
+  // --- Protected route ---
+  if (tokenValid) {
+    const role = activePayload?.role
+    if (pathname.startsWith('/admin') && role !== 'admin') {  // admin-only check
+      return NextResponse.redirect(new URL('/', request.url))
+    }
+    return withRefreshedCookies(NextResponse.next())
   }
 
   // No valid token and refresh failed — redirect to login
