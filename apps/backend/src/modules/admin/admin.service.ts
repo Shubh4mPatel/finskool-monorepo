@@ -24,6 +24,7 @@ import type {
   RevokeSuspensionResultDTO,
   CommunityDTO,
   CreateCommunityDTO,
+  UpdateCommunityDTO,
   AdminUserDTO,
   CreateAdminDTO,
   UpdateAdminAccessDTO,
@@ -684,6 +685,57 @@ export class AdminService {
 
   async getCommunityUploadUrl(filename: string): Promise<{ uploadUrl: string; publicUrl: string }> {
     return generateUploadUrl(filename, 'communities')
+  }
+
+  async updateCommunity(adminId: string, communityId: string, data: UpdateCommunityDTO): Promise<CommunityDTO> {
+    await assertSuperAdmin(this.db, adminId)
+
+    const existing = await this.db.community.findUnique({ where: { id: communityId } })
+    if (!existing || existing.deletedAt) throw new NotFoundError('Community not found')
+
+    const community = await this.db.community.update({
+      where: { id: communityId },
+      data: {
+        name: data.name,
+        description: data.description ?? null,
+        tags: data.tags,
+        coverImageUrl: data.coverImageUrl ?? null,
+      },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        description: true,
+        tags: true,
+        coverImageUrl: true,
+        _count: { select: { subscriptions: { where: { isActive: true } } } },
+      },
+    })
+
+    logger.info({ communityId }, 'admin.updateCommunity: success')
+    const { _count, ...rest } = community
+    return { ...rest, memberCount: _count.subscriptions }
+  }
+
+  async deleteCommunity(adminId: string, communityId: string): Promise<void> {
+    await assertSuperAdmin(this.db, adminId)
+
+    const existing = await this.db.community.findUnique({ where: { id: communityId } })
+    if (!existing || existing.deletedAt) throw new NotFoundError('Community not found')
+
+    // Soft-delete the community and its posts; deactivate (don't delete) members'
+    // accounts — a User can belong to other communities too, so only this
+    // community's membership/subscription is revoked, not the User itself.
+    const now = new Date()
+    await this.db.$transaction([
+      this.db.community.update({ where: { id: communityId }, data: { deletedAt: now } }),
+      this.db.post.updateMany({ where: { communityId, deletedAt: null }, data: { deletedAt: now } }),
+      this.db.subscription.updateMany({ where: { communityId, isActive: true }, data: { isActive: false } }),
+      this.db.communityMember.deleteMany({ where: { communityId } }),
+      this.db.communityAdmin.deleteMany({ where: { communityId } }),
+    ])
+
+    logger.info({ communityId }, 'admin.deleteCommunity: success')
   }
 
   async listAdmins(): Promise<AdminUserDTO[]> {

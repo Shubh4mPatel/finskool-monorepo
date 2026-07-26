@@ -87,6 +87,13 @@ const createCommunitySchema = z.object({
   coverImageUrl: z.string().url('Invalid cover image URL').optional(),
 })
 
+const updateCommunitySchema = z.object({
+  name: z.string().min(1, 'Name is required').max(150),
+  description: z.string().max(2000).optional(),
+  tags: z.array(z.string().min(1).max(50)).default([]),
+  coverImageUrl: z.string().url('Invalid cover image URL').optional(),
+})
+
 const communityUploadUrlQuerySchema = z.object({
   filename: z.string().min(1, 'filename is required'),
 })
@@ -262,6 +269,30 @@ export class AdminController {
       const { filename } = communityUploadUrlQuerySchema.parse(req.query)
       const urls = await this.service.getCommunityUploadUrl(filename)
       res.json({ success: true, data: urls })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  updateCommunity = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const raw = req.params['id']
+      const id = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
+      const parsed = updateCommunitySchema.safeParse(req.body)
+      if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
+      const result = await this.service.updateCommunity(req.user!.id, id, parsed.data)
+      res.json({ success: true, data: result })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  deleteCommunity = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const raw = req.params['id']
+      const id = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
+      await this.service.deleteCommunity(req.user!.id, id)
+      res.json({ success: true, message: 'Community deleted' })
     } catch (err) {
       next(err)
     }

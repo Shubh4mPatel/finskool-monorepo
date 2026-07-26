@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Building2, Plus, X, Check } from "lucide-react";
+import { Building2, Plus, X, Check, Pencil, Trash2 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { getSession } from "@/lib/session";
 import CommunityCoverImageUploader from "@/components/admin/CommunityCoverImageUploader";
 
@@ -177,10 +178,151 @@ function CreateCommunityModal({
   );
 }
 
+function EditCommunityModal({
+  community,
+  onClose,
+  onUpdated,
+}: {
+  community: Community;
+  onClose: () => void;
+  onUpdated: (c: Community) => void;
+}) {
+  const toast = useToast();
+  const [name, setName] = useState(community.name);
+  const [description, setDescription] = useState(community.description ?? "");
+  const [tags, setTags] = useState<string[]>(community.tags);
+  const [tagInput, setTagInput] = useState("");
+  const [coverImageUrl, setCoverImageUrl] = useState<string | null>(community.coverImageUrl);
+  const [saving, setSaving] = useState(false);
+
+  function addTag(e: React.KeyboardEvent) {
+    if (e.key === "Enter" && tagInput.trim()) {
+      e.preventDefault();
+      setTags((prev) => [...prev, tagInput.trim()]);
+      setTagInput("");
+    }
+  }
+
+  async function handleSave() {
+    if (!name.trim()) {
+      toast.error("Name is required.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const updated = await api.patch<Community>(`/api/v1/admin/communities/${community.id}`, {
+        name: name.trim(),
+        description: description.trim() || undefined,
+        tags,
+        coverImageUrl: coverImageUrl ?? undefined,
+      });
+      toast.success("Community updated.");
+      onUpdated(updated);
+      onClose();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to update community");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 flex w-full max-w-lg flex-col gap-5 rounded-2xl bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between">
+          <h2 className="font-display text-lg font-bold text-primary">Edit Community</h2>
+          <button
+            onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center rounded-full text-muted transition-colors hover:bg-divider/60 hover:text-primary"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-semibold text-muted">Name</label>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Swing Alpha"
+            className="w-full rounded-xl border border-divider bg-background px-4 py-2.5 text-sm text-primary placeholder:text-subtle focus:border-accent focus:outline-none"
+          />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-semibold text-muted">Slug</label>
+          <p className="text-sm text-subtle">/{community.slug} — cannot be changed</p>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-semibold text-muted">Description</label>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={3}
+            placeholder="What is this community about?"
+            className="w-full rounded-xl border border-divider bg-background px-4 py-2.5 text-sm text-primary placeholder:text-subtle focus:border-accent focus:outline-none"
+          />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-semibold text-muted">Tags</label>
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-divider bg-background px-3 py-2.5 focus-within:border-accent transition-colors">
+            {tags.map((tag) => (
+              <span key={tag} className="flex items-center gap-1 rounded-full bg-divider/60 px-2.5 py-0.5 text-xs font-semibold text-primary">
+                {tag}
+                <button type="button" onClick={() => setTags((t) => t.filter((x) => x !== tag))} className="text-subtle hover:text-primary">
+                  <X size={9} />
+                </button>
+              </span>
+            ))}
+            <input
+              type="text"
+              value={tagInput}
+              onChange={(e) => setTagInput(e.target.value)}
+              onKeyDown={addTag}
+              placeholder="Add tag…"
+              className="min-w-24 flex-1 bg-transparent text-xs text-subtle focus:outline-none"
+            />
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-semibold text-muted">Cover Image</label>
+          <CommunityCoverImageUploader coverImageUrl={coverImageUrl} onChange={setCoverImageUrl} />
+        </div>
+
+        <div className="flex justify-end gap-3 pt-1">
+          <button
+            onClick={onClose}
+            className="rounded-full border border-divider px-5 py-2 text-sm font-semibold text-muted transition-colors hover:border-subtle hover:text-primary"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="flex items-center gap-2 rounded-full bg-primary px-5 py-2 text-sm font-bold text-white shadow-glow transition-transform duration-300 hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Check size={14} />
+            {saving ? "Saving…" : "Save Changes"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function CommunitiesPage() {
+  const toast = useToast();
+  const confirm = useConfirm();
   const [communities, setCommunities] = useState<Community[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+  const [editingCommunity, setEditingCommunity] = useState<Community | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
 
   useEffect(() => {
@@ -194,6 +336,26 @@ export default function CommunitiesPage() {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  async function handleDelete(c: Community) {
+    const ok = await confirm({
+      title: "Delete Community?",
+      message: `This soft-deletes "${c.name}" and all of its posts. Members will lose access to this community, but their accounts and access to other communities are unaffected. This can't be undone from here.`,
+      confirmLabel: "Yes, Delete",
+      variant: "destructive",
+    });
+    if (!ok) return;
+    setDeletingId(c.id);
+    try {
+      await api.delete(`/api/v1/admin/communities/${c.id}`);
+      toast.success(`${c.name} deleted.`);
+      setCommunities((prev) => prev.filter((x) => x.id !== c.id));
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to delete community");
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -226,12 +388,31 @@ export default function CommunitiesPage() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {communities.map((c) => (
             <div key={c.id} className="overflow-hidden rounded-2xl bg-white shadow-card">
-              <div className="flex aspect-video items-center justify-center overflow-hidden bg-slate-100">
+              <div className="relative flex aspect-video items-center justify-center overflow-hidden bg-slate-100">
                 {c.coverImageUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={c.coverImageUrl} alt={c.name} className="h-full w-full object-cover" />
                 ) : (
                   <Building2 className="text-subtle" size={28} />
+                )}
+                {isSuperAdmin && (
+                  <div className="absolute right-2 top-2 flex gap-1.5">
+                    <button
+                      onClick={() => setEditingCommunity(c)}
+                      title="Edit community"
+                      className="flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-muted shadow-card transition-colors hover:text-accent"
+                    >
+                      <Pencil size={13} />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(c)}
+                      disabled={deletingId === c.id}
+                      title="Delete community"
+                      className="flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-muted shadow-card transition-colors hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
                 )}
               </div>
               <div className="p-4">
@@ -260,6 +441,16 @@ export default function CommunitiesPage() {
         <CreateCommunityModal
           onClose={() => setShowCreate(false)}
           onCreated={(created) => setCommunities((prev) => [created, ...prev])}
+        />
+      )}
+
+      {editingCommunity && (
+        <EditCommunityModal
+          community={editingCommunity}
+          onClose={() => setEditingCommunity(null)}
+          onUpdated={(updated) =>
+            setCommunities((prev) => prev.map((x) => (x.id === updated.id ? updated : x)))
+          }
         />
       )}
     </div>

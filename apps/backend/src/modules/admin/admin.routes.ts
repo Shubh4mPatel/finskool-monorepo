@@ -40,6 +40,8 @@ router.post(
 router.get('/communities', authenticate, requireRole('admin'), controller.listCommunities)
 router.get('/communities/upload-url', authenticate, requireRole('admin'), controller.getCommunityUploadUrl)
 router.post('/communities', authenticate, requireRole('admin'), controller.createCommunity)
+router.patch('/communities/:id', authenticate, requireRole('admin'), controller.updateCommunity)
+router.delete('/communities/:id', authenticate, requireRole('admin'), controller.deleteCommunity)
 
 router.get('/admins', authenticate, requireRole('admin'), controller.listAdmins)
 router.post('/admins', authenticate, requireRole('admin'), controller.createAdmin)

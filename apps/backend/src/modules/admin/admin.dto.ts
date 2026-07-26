@@ -87,6 +87,13 @@ export interface CreateCommunityDTO {
   coverImageUrl?: string | undefined
 }
 
+export interface UpdateCommunityDTO {
+  name: string
+  description?: string | undefined
+  tags: string[]
+  coverImageUrl?: string | undefined
+}
+
 export interface AdminUserDTO {
   id: string
   name: string

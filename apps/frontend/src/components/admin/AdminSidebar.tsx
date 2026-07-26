@@ -24,6 +24,7 @@ import {
 const navItems = [
   { href: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/create-post", label: "Create Post", icon: Pencil },
+  { href: "/admin/communities", label: "Communities", icon: Building2, superAdminOnly: true },
   { href: "/admin/feed", label: "Feed", icon: LayoutGrid },
   { href: "/admin/all-posts", label: "All Posts", icon: List },
   { href: "/admin/unresolved-threads", label: "Unreplied Threads", icon: MessagesSquare, badge: undefined as number | undefined },
@@ -31,7 +32,6 @@ const navItems = [
   { href: "/admin/import-csv", label: "Import CSV", icon: Upload },
   { href: "/admin/stock-recommendations", label: "Stock Recommendation", icon: TrendingUp },
   { href: "/admin/roles-admins", label: "Roles & Admins", icon: ShieldCheck },
-  { href: "/admin/communities", label: "Communities", icon: Building2, superAdminOnly: true },
 ];
 
 function SidebarContent({ onNav }: { onNav?: () => void }) {
