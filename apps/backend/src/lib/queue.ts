@@ -32,10 +32,18 @@ export interface ThreadReplyEmailJobPayload {
   message: string
 }
 
+export const WELCOME_EMAIL_JOB = 'welcome-email'
+
+export interface WelcomeEmailJobPayload {
+  toEmail: string
+  name: string
+}
+
 export type NotificationJobPayload =
   | CommunityPostNotificationJobPayload
   | CommunityRecommendationNotificationJobPayload
   | ThreadReplyEmailJobPayload
+  | WelcomeEmailJobPayload
 
 // Published by NotificationsService (running in the worker process) whenever a
 // new notification row is created, and consumed by lib/live-notifications-feed.ts

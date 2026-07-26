@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs'
 import type { PrismaClient } from '../../generated/prisma/client.js'
 import { assertSuperAdmin } from '../../lib/community-access.js'
 import { generateUploadUrl } from '../../lib/minio.js'
+import { notificationsQueue, WELCOME_EMAIL_JOB } from '../../lib/queue.js'
 import { BadRequestError, ConflictError, NotFoundError, ForbiddenError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
 import { normalizePhone } from '../../lib/phone.js'
@@ -194,6 +195,16 @@ export class AdminService {
           })
         })
         summary.created++
+
+        try {
+          await notificationsQueue.add(
+            WELCOME_EMAIL_JOB,
+            { toEmail: email, name },
+            { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
+          )
+        } catch (err) {
+          logger.error({ err, phone }, 'admin.importUsers: failed to enqueue welcome email job')
+        }
       }
     }
 
@@ -264,6 +275,16 @@ export class AdminService {
             })
           })
           summary.created++
+
+          try {
+            await notificationsQueue.add(
+              WELCOME_EMAIL_JOB,
+              { toEmail: row.email, name: row.name },
+              { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
+            )
+          } catch (err) {
+            logger.error({ err, phone }, 'admin.importUsersFromJSON: failed to enqueue welcome email job')
+          }
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Unknown error'
@@ -919,6 +940,17 @@ export class AdminService {
     })
 
     logger.info({ phone, adminId }, 'admin.addMember: created')
+
+    try {
+      await notificationsQueue.add(
+        WELCOME_EMAIL_JOB,
+        { toEmail: data.email, name: data.name },
+        { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
+      )
+    } catch (err) {
+      logger.error({ err, phone }, 'admin.addMember: failed to enqueue welcome email job')
+    }
+
     return {
       approvedPhoneId: result.ap.id,
       phone: result.user.phone,

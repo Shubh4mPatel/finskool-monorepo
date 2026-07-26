@@ -11,6 +11,7 @@ import type {
   CommunityPostNotificationJobPayload,
   CommunityRecommendationNotificationJobPayload,
   ThreadReplyEmailJobPayload,
+  WelcomeEmailJobPayload,
   LiveNotificationEvent,
 } from '../../lib/queue.js'
 import { NotificationType } from './notifications.dto.js'
@@ -171,6 +172,16 @@ export class NotificationsService {
 
   async sendThreadReplyEmail(payload: ThreadReplyEmailJobPayload): Promise<void> {
     await sendMail({ to: payload.toEmail, subject: payload.message, html: `<p>${payload.message}</p>` })
+  }
+
+  async sendWelcomeEmail(payload: WelcomeEmailJobPayload): Promise<void> {
+    const ctaUrl = `${env.frontendUrl}/signup`
+    const message = `Hi ${payload.name}, you've been added to Finskool. Register your account to get started.`
+    await sendMail({
+      to: payload.toEmail,
+      subject: 'You’ve been added to Finskool',
+      html: notificationEmailHtml(message, ctaUrl, 'Register Now'),
+    })
   }
 
   // Email delivery failures shouldn't fail the job (the in-app rows above already

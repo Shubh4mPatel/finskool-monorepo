@@ -1,6 +1,8 @@
 import type { PrismaClient, UserRole } from '../../generated/prisma/client.js'
 import { assertCommunityAccess } from '../../lib/community-access.js'
-import { notificationsQueue, THREAD_REPLY_EMAIL_JOB } from '../../lib/queue.js'
+import { notificationsQueue, THREAD_REPLY_EMAIL_JOB, NOTIFICATIONS_PUBSUB_CHANNEL } from '../../lib/queue.js'
+import type { LiveNotificationEvent } from '../../lib/queue.js'
+import redis from '../../lib/redis.js'
 import { NotFoundError, ForbiddenError, BadRequestError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
 import type { CreateCommentDTO, CommentTreeDTO, CommentListDTO } from './comments.dto.js'
@@ -135,6 +137,26 @@ export class CommentsService {
         )
       } catch (err) {
         logger.error({ err, commentId: comment.id }, 'comments.create: failed to enqueue reply email job')
+      }
+    }
+
+    // Live push over WebSocket — same mechanism fan-out post/recommendation
+    // notifications use (see live-notifications-feed.ts), so the parent
+    // author's bell updates instantly instead of waiting on the next poll.
+    if (replyMessage && parentAuthorId) {
+      try {
+        await redis.publish(
+          NOTIFICATIONS_PUBSUB_CHANNEL,
+          JSON.stringify({
+            userId: parentAuthorId,
+            type: 'thread',
+            communityId: post.communityId,
+            message: replyMessage,
+            sourceId: comment.id,
+          } satisfies LiveNotificationEvent),
+        )
+      } catch (err) {
+        logger.error({ err, commentId: comment.id }, 'comments.create: failed to publish live reply notification')
       }
     }
 
