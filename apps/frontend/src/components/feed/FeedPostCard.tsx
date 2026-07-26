@@ -3,12 +3,14 @@ import type { ReactNode } from "react";
 import PostThreads from "./PostThreads";
 import PostImageGallery from "./PostImageGallery";
 import { initials } from "@/lib/session";
+import CommunityBadgeIcon from "@/components/CommunityBadgeIcon";
 
 type FeedPostCardProps = {
   postId?: string;
   commentCount?: number;
   badge?: { label: string; icon?: "pin" | "idea" };
   communityName?: string;
+  communityBadgeUrl?: string | null;
   authorName?: string;
   authorAvatarUrl?: string | null;
   timestamp: string;
@@ -35,6 +37,7 @@ export default function FeedPostCard({
   commentCount,
   badge,
   communityName,
+  communityBadgeUrl,
   authorName,
   authorAvatarUrl,
   timestamp,
@@ -72,7 +75,7 @@ export default function FeedPostCard({
               <span className="font-sans text-sm font-bold text-primary">{displayName}</span>
               {communityName && (
                 <span className="flex items-center gap-1 rounded-full border border-accent/50 px-2.5 py-0.5 text-[11px] font-semibold text-accent">
-                  ⚡ {communityName}
+                  <CommunityBadgeIcon badgeUrl={communityBadgeUrl} /> {communityName}
                 </span>
               )}
               {badge && (

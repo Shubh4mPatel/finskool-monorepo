@@ -169,10 +169,26 @@
       "Bash(curl -s \"http://localhost:8025/api/v2/messages?limit=1\")",
       "Bash(curl -s -X POST http://localhost:3001/api/v1/auth/login -H \"Content-Type: application/json\" -d '{\"email\":\"admin@finskool.com\",\"password\":\"Admin@123\"}' -c /tmp/admin-cookies.txt -o /dev/null)",
       "Bash(curl -s http://localhost:3001/api/v1/stocks -b /tmp/admin-cookies.txt)",
-      "Bash(rm -f /tmp/admin-cookies.txt)"
+      "Bash(rm -f /tmp/admin-cookies.txt)",
+      "Bash(node -e \"const l = require\\('/home/shubh4m/projects/finskool-monorepo/node_modules/lucide-react'\\); console.log\\('Image' in l, 'ImagePlus' in l, 'X' in l\\)\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000 --max-time 2)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/admin/members --max-time 5)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/signup --max-time 5)",
+      "Bash(npx --no-install playwright --version)",
+      "Read(//usr/local/bin/**)",
+      "Bash(google-chrome --version)",
+      "Bash(timeout 60 npx --yes puppeteer-core@23 -e \"console.log\\('ok'\\)\")",
+      "Bash(mkdir -p /tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/83cf83cb-b19b-4cbc-a930-4f88e4cf768c/scratchpad/pw)",
+      "Bash(timeout 60 npm install puppeteer-core --no-save)",
+      "Bash(timeout 90 node verify.js)",
+      "Bash(timeout 60 node verify2.js)",
+      "Bash(rm -rf /tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/83cf83cb-b19b-4cbc-a930-4f88e4cf768c/scratchpad/pw/node_modules)",
+      "Bash(echo \"EXIT CODE: $?\")",
+      "Bash(echo \"EXIT: $?\")"
     ],
     "additionalDirectories": [
-      "/tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/8750fbd9-1edb-4d3f-b623-da0dec31a255/scratchpad/node_modules"
+      "/tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/8750fbd9-1edb-4d3f-b623-da0dec31a255/scratchpad/node_modules",
+      "/tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/83cf83cb-b19b-4cbc-a930-4f88e4cf768c/scratchpad/pw/node_modules"
     ]
   }
 }

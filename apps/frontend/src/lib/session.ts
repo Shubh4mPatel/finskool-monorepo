@@ -4,6 +4,7 @@ export interface SessionInfo {
   userInitials: string
   communityName: string
   communityId: string
+  communityBadgeUrl?: string | null
   avatarUrl?: string | null
   isSuperAdmin?: boolean
 }
@@ -19,11 +20,11 @@ export function saveSession(info: SessionInfo): void {
   localStorage.setItem(KEY, JSON.stringify(info))
 }
 
-export function updateSessionCommunity(communityId: string, communityName: string): void {
+export function updateSessionCommunity(communityId: string, communityName: string, communityBadgeUrl?: string | null): void {
   if (typeof window === 'undefined') return
   const existing = getSession()
   if (!existing) return
-  saveSession({ ...existing, communityId, communityName })
+  saveSession({ ...existing, communityId, communityName, communityBadgeUrl: communityBadgeUrl ?? null })
 }
 
 export function getSession(): SessionInfo | null {

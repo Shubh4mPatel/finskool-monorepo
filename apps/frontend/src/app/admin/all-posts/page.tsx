@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Bold, Calendar, Code, Italic, MoreHorizontal, Pencil, Pin, Plus, Save, Search, Trash2, X } from "lucide-react";
+import { Bold, Calendar, ChevronDown, Code, Italic, MoreHorizontal, Pencil, Pin, Plus, Save, Search, Trash2, X } from "lucide-react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { DayPicker } from "react-day-picker";
@@ -18,6 +18,7 @@ interface FeedPost {
   communityId: string;
   communityName: string;
   communitySlug: string;
+  communityBadgeUrl: string | null;
   title: string;
   content: string;
   imageUrls: string[];
@@ -416,16 +417,19 @@ export default function AllPostsPage() {
                   className="w-full bg-transparent text-sm text-primary placeholder:text-subtle focus:outline-none sm:w-52" />
               </div>
 
-              <select
-                value={communityFilter}
-                onChange={e => setCommunityFilter(e.target.value)}
-                className="shrink-0 rounded-full border border-divider bg-white px-4 py-2.5 text-sm font-semibold text-muted transition-colors hover:border-accent hover:text-primary focus:outline-none"
-              >
-                <option value="">All Community</option>
-                {communities.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
+              <div className="relative shrink-0">
+                <select
+                  value={communityFilter}
+                  onChange={e => setCommunityFilter(e.target.value)}
+                  className="appearance-none rounded-full border border-divider bg-white pl-4 pr-9 py-2.5 text-sm font-semibold text-muted transition-colors hover:border-accent hover:text-primary focus:outline-none"
+                >
+                  <option value="">All Community</option>
+                  {communities.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+                <ChevronDown size={14} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-subtle" />
+              </div>
 
               <div className="relative shrink-0">
                 <button
@@ -497,6 +501,7 @@ export default function AllPostsPage() {
               <FeedPostCard
                 key={post.id}
                 communityName={post.communityName}
+                communityBadgeUrl={post.communityBadgeUrl}
                 badge={post.pinOrder !== null ? { label: "PINNED", icon: "pin" } : undefined}
                 timestamp={formatTimestamp(post.publishedAt ?? post.createdAt)}
                 title={post.title}

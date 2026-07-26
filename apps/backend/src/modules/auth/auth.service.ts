@@ -303,6 +303,7 @@ export class AuthService {
             description: true,
             tags: true,
             coverImageUrl: true,
+            badgeUrl: true,
             _count: { select: { subscriptions: { where: { isActive: true } } } },
           },
         },

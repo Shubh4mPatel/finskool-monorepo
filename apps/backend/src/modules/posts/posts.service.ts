@@ -46,7 +46,7 @@ export class PostsService {
       this.db.post.findMany({
         where,
         include: {
-          community: { select: { name: true, slug: true } },
+          community: { select: { name: true, slug: true, badgeUrl: true } },
           author: { select: { name: true, avatarUrl: true } },
           _count: { select: { comments: { where: { deletedAt: null } } } },
         },
@@ -63,6 +63,7 @@ export class PostsService {
         communityId: p.communityId,
         communityName: p.community.name,
         communitySlug: p.community.slug,
+        communityBadgeUrl: p.community.badgeUrl,
         authorName: p.author.name,
         authorAvatarUrl: p.author.avatarUrl,
         title: p.title,
@@ -94,7 +95,7 @@ export class PostsService {
     const posts = await this.db.post.findMany({
       where: { id: { in: grouped.map(g => g.postId) }, deletedAt: null },
       include: {
-        community: { select: { name: true, slug: true } },
+        community: { select: { name: true, slug: true, badgeUrl: true } },
         _count: { select: { comments: { where: { deletedAt: null } } } },
       },
     })
@@ -105,6 +106,7 @@ export class PostsService {
         communityId: p.communityId,
         communityName: p.community.name,
         communitySlug: p.community.slug,
+        communityBadgeUrl: p.community.badgeUrl,
         title: p.title,
         content: p.contentMd,
         imageUrls: p.imageUrls,

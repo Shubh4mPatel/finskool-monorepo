@@ -76,6 +76,7 @@ export interface CommunityDTO {
   description: string | null
   tags: string[]
   coverImageUrl: string | null
+  badgeUrl: string | null
   memberCount: number
 }
 
@@ -85,6 +86,7 @@ export interface CreateCommunityDTO {
   description?: string | undefined
   tags: string[]
   coverImageUrl?: string | undefined
+  badgeUrl?: string | undefined
 }
 
 export interface UpdateCommunityDTO {
@@ -92,6 +94,7 @@ export interface UpdateCommunityDTO {
   description?: string | undefined
   tags: string[]
   coverImageUrl?: string | undefined
+  badgeUrl?: string | undefined
 }
 
 export interface AdminUserDTO {
@@ -247,6 +250,7 @@ export interface PostThreadSummaryDTO {
   createdAt: Date
   communityId: string
   communityName: string
+  communityBadgeUrl: string | null
   totalComments: number
   pendingThreads: number
 }

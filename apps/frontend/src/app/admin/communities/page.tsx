@@ -7,6 +7,8 @@ import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { getSession } from "@/lib/session";
 import CommunityCoverImageUploader from "@/components/admin/CommunityCoverImageUploader";
+import CommunityBadgeUploader from "@/components/admin/CommunityBadgeUploader";
+import CommunityBadgeIcon from "@/components/CommunityBadgeIcon";
 
 interface Community {
   id: string;
@@ -15,6 +17,7 @@ interface Community {
   description: string | null;
   tags: string[];
   coverImageUrl: string | null;
+  badgeUrl: string | null;
   memberCount: number;
 }
 
@@ -41,6 +44,7 @@ function CreateCommunityModal({
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
   const [coverImageUrl, setCoverImageUrl] = useState<string | null>(null);
+  const [badgeUrl, setBadgeUrl] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   function handleNameChange(value: string) {
@@ -69,6 +73,7 @@ function CreateCommunityModal({
         description: description.trim() || undefined,
         tags,
         coverImageUrl: coverImageUrl ?? undefined,
+        badgeUrl: badgeUrl ?? undefined,
       });
       toast.success("Community created.");
       onCreated(created);
@@ -157,6 +162,11 @@ function CreateCommunityModal({
           <CommunityCoverImageUploader coverImageUrl={coverImageUrl} onChange={setCoverImageUrl} />
         </div>
 
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-semibold text-muted">Badge (shown next to community name everywhere)</label>
+          <CommunityBadgeUploader badgeUrl={badgeUrl} onChange={setBadgeUrl} />
+        </div>
+
         <div className="flex justify-end gap-3 pt-1">
           <button
             onClick={onClose}
@@ -193,6 +203,7 @@ function EditCommunityModal({
   const [tags, setTags] = useState<string[]>(community.tags);
   const [tagInput, setTagInput] = useState("");
   const [coverImageUrl, setCoverImageUrl] = useState<string | null>(community.coverImageUrl);
+  const [badgeUrl, setBadgeUrl] = useState<string | null>(community.badgeUrl);
   const [saving, setSaving] = useState(false);
 
   function addTag(e: React.KeyboardEvent) {
@@ -215,6 +226,7 @@ function EditCommunityModal({
         description: description.trim() || undefined,
         tags,
         coverImageUrl: coverImageUrl ?? undefined,
+        badgeUrl: badgeUrl ?? undefined,
       });
       toast.success("Community updated.");
       onUpdated(updated);
@@ -292,6 +304,11 @@ function EditCommunityModal({
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-semibold text-muted">Cover Image</label>
           <CommunityCoverImageUploader coverImageUrl={coverImageUrl} onChange={setCoverImageUrl} />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-semibold text-muted">Badge (shown next to community name everywhere)</label>
+          <CommunityBadgeUploader badgeUrl={badgeUrl} onChange={setBadgeUrl} />
         </div>
 
         <div className="flex justify-end gap-3 pt-1">
@@ -416,7 +433,10 @@ export default function CommunitiesPage() {
                 )}
               </div>
               <div className="p-4">
-                <p className="font-display font-bold text-primary">{c.name}</p>
+                <p className="flex items-center gap-1.5 font-display font-bold text-primary">
+                  <CommunityBadgeIcon badgeUrl={c.badgeUrl} className="inline-block h-4 w-4 shrink-0" />
+                  {c.name}
+                </p>
                 <p className="text-xs text-subtle">/{c.slug}</p>
                 {c.description && <p className="mt-1.5 line-clamp-2 text-xs text-muted">{c.description}</p>}
                 {c.tags.length > 0 && (

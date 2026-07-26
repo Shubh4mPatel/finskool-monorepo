@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 import { getSession, clearSession, type SessionInfo } from "@/lib/session";
 import MarketTodayWidget from "@/components/MarketTodayWidget";
 import CommunityRulesWidget from "@/components/CommunityRulesWidget";
+import CommunityBadgeIcon from "@/components/CommunityBadgeIcon";
 import { notificationSocketStore } from "@/store/notifications/notificationSocketStore";
 import {
   ArrowLeft,
@@ -70,6 +71,7 @@ export default function Sidebar() {
   const displayName = session?.userName ?? "Member";
   const displayInitials = session?.userInitials ?? "M";
   const communityName = session?.communityName ?? "";
+  const communityBadgeUrl = session?.communityBadgeUrl ?? null;
   const avatarUrl = session?.avatarUrl ?? null;
 
   // Re-read session when profile is updated (e.g. avatar change)
@@ -101,7 +103,7 @@ export default function Sidebar() {
           <p className="font-semibold text-primary">{displayName}</p>
           {communityName && (
             <span className="flex items-center gap-1 rounded-full border border-lime bg-lime/10 px-4 py-1 text-xs font-semibold text-primary">
-              ⚡ {communityName}
+              <CommunityBadgeIcon badgeUrl={communityBadgeUrl} /> {communityName}
             </span>
           )}
         </Link>
@@ -120,7 +122,7 @@ export default function Sidebar() {
         </button>
         {communityName && (
           <span className="flex items-center gap-1 rounded-full border border-lime bg-lime/10 px-4 py-1 text-sm font-semibold text-primary">
-            ⚡ {communityName}
+            <CommunityBadgeIcon badgeUrl={communityBadgeUrl} /> {communityName}
           </span>
         )}
         <div className="flex shrink-0 items-center gap-2">
@@ -199,7 +201,7 @@ export default function Sidebar() {
             <div className="flex items-center justify-between pb-4">
               {communityName && (
                 <span className="flex items-center gap-1 rounded-full border border-lime bg-lime/10 px-4 py-1 text-sm font-semibold text-primary">
-                  ⚡ {communityName}
+                  <CommunityBadgeIcon badgeUrl={communityBadgeUrl} /> {communityName}
                 </span>
               )}
               <button

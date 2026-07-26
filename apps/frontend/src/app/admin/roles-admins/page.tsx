@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import { ChevronDown, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
@@ -171,16 +171,19 @@ export default function RolesAdminsPage() {
               className="w-full bg-transparent text-sm text-primary placeholder:text-subtle focus:outline-none"
             />
           </div>
-          <select
-            value={communityFilter}
-            onChange={e => setCommunityFilter(e.target.value)}
-            className="rounded-full border border-divider px-4 py-2 text-sm font-semibold text-muted transition-colors hover:border-accent hover:text-primary focus:outline-none"
-          >
-            <option value="">All Communities</option>
-            {communities.map(c => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
+          <div className="relative shrink-0">
+            <select
+              value={communityFilter}
+              onChange={e => setCommunityFilter(e.target.value)}
+              className="appearance-none rounded-full border border-divider bg-white pl-4 pr-9 py-2 text-sm font-semibold text-muted transition-colors hover:border-accent hover:text-primary focus:outline-none"
+            >
+              <option value="">All Communities</option>
+              {communities.map(c => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+            <ChevronDown size={14} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-subtle" />
+          </div>
         </div>
 
         <div className="mt-4 overflow-x-auto">

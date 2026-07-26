@@ -13,6 +13,7 @@ import { useToast } from "@/components/ui/Toast";
 import { getSession } from "@/lib/session";
 import PostImageUploader from "@/components/admin/PostImageUploader";
 import FeedPostCard from "@/components/feed/FeedPostCard";
+import CommunityBadgeIcon from "@/components/CommunityBadgeIcon";
 
 type Step = 1 | 2 | 3;
 
@@ -22,6 +23,7 @@ interface Community {
   slug: string;
   description: string | null;
   coverImageUrl: string | null;
+  badgeUrl: string | null;
   memberCount: number;
 }
 
@@ -281,7 +283,8 @@ export default function CreatePostPage() {
                     </p>
                     <p className="text-xs text-muted">Super Admin</p>
                     <span className="flex w-fit items-center gap-1.5 rounded-full border border-accent/50 px-3 py-1 text-xs font-semibold text-accent">
-                      ⚡ {communities.find((c) => c.id === selectedCommunity)?.name ?? "Community"}
+                      <CommunityBadgeIcon badgeUrl={communities.find((c) => c.id === selectedCommunity)?.badgeUrl} />{" "}
+                      {communities.find((c) => c.id === selectedCommunity)?.name ?? "Community"}
                     </span>
                   </div>
                 </div>
@@ -361,6 +364,7 @@ export default function CreatePostPage() {
                   return (
                     <FeedPostCard
                       communityName={communities.find((c) => c.id === selectedCommunity)?.name}
+                      communityBadgeUrl={communities.find((c) => c.id === selectedCommunity)?.badgeUrl}
                       authorName={session?.userName ?? "Admin"}
                       authorAvatarUrl={session?.avatarUrl}
                       timestamp=""

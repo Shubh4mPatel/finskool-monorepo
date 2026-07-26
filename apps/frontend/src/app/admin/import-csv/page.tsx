@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import * as XLSX from "xlsx";
-import { AlertTriangle, CheckCircle, Download, Pencil, Upload, X } from "lucide-react";
+import { AlertTriangle, CheckCircle, ChevronDown, Download, Pencil, Upload, X } from "lucide-react";
 import { isValidPhoneNumber, parsePhoneNumberFromString } from "libphonenumber-js";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
@@ -422,13 +422,16 @@ export default function ImportCSVPage() {
                       if (isEditing) {
                         if (field === "service") {
                           return (
-                            <select autoFocus value={editValue}
-                              onChange={e => setEditValue(e.target.value)}
-                              onBlur={commitEdit}
-                              className="w-full rounded border border-accent px-2 py-1 text-xs focus:outline-none">
-                              <option value="">Select community</option>
-                              {communities.map(c => <option key={c} value={c}>{c}</option>)}
-                            </select>
+                            <div className="relative">
+                              <select autoFocus value={editValue}
+                                onChange={e => setEditValue(e.target.value)}
+                                onBlur={commitEdit}
+                                className="w-full appearance-none rounded border border-accent bg-white py-1 pl-2 pr-6 text-xs focus:outline-none">
+                                <option value="">Select community</option>
+                                {communities.map(c => <option key={c} value={c}>{c}</option>)}
+                              </select>
+                              <ChevronDown size={12} className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-subtle" />
+                            </div>
                           );
                         }
                         return (

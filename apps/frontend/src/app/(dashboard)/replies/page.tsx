@@ -10,6 +10,7 @@ interface CommentedPost {
   communityId: string;
   communityName: string;
   communitySlug: string;
+  communityBadgeUrl: string | null;
   title: string;
   content: string;
   imageUrls: string[];
@@ -76,6 +77,7 @@ export default function RepliesPage() {
               postId={post.id}
               commentCount={post.commentCount}
               communityName={post.communityName}
+              communityBadgeUrl={post.communityBadgeUrl}
               timestamp={formatTimestamp(post.lastCommentedAt)}
               title={post.title}
               body=""

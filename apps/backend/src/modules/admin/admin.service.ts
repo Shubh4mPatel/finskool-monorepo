@@ -413,7 +413,7 @@ export class AdminService {
         tags: true,
         publishedAt: true,
         createdAt: true,
-        community: { select: { id: true, name: true } },
+        community: { select: { id: true, name: true, badgeUrl: true } },
         _count: { select: { comments: { where: { deletedAt: null } } } },
       },
     })
@@ -428,6 +428,7 @@ export class AdminService {
       createdAt: p.createdAt,
       communityId: p.community.id,
       communityName: p.community.name,
+      communityBadgeUrl: p.community.badgeUrl,
       totalComments: p._count.comments,
       pendingThreads: pendingCountByPost.get(p.id) ?? 0,
     }))
@@ -644,6 +645,7 @@ export class AdminService {
         description: true,
         tags: true,
         coverImageUrl: true,
+        badgeUrl: true,
         _count: { select: { subscriptions: { where: { isActive: true } } } },
       },
       orderBy: { name: 'asc' },
@@ -675,8 +677,9 @@ export class AdminService {
         description: data.description ?? null,
         tags: data.tags,
         coverImageUrl: data.coverImageUrl ?? null,
+        badgeUrl: data.badgeUrl ?? null,
       },
-      select: { id: true, name: true, slug: true, description: true, tags: true, coverImageUrl: true },
+      select: { id: true, name: true, slug: true, description: true, tags: true, coverImageUrl: true, badgeUrl: true },
     })
 
     logger.info({ communityId: community.id, slug }, 'admin.createCommunity: success')
@@ -700,6 +703,7 @@ export class AdminService {
         description: data.description ?? null,
         tags: data.tags,
         coverImageUrl: data.coverImageUrl ?? null,
+        badgeUrl: data.badgeUrl ?? null,
       },
       select: {
         id: true,
@@ -708,6 +712,7 @@ export class AdminService {
         description: true,
         tags: true,
         coverImageUrl: true,
+        badgeUrl: true,
         _count: { select: { subscriptions: { where: { isActive: true } } } },
       },
     })

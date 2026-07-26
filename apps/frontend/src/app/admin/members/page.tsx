@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Ban, Download, Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import { Ban, ChevronDown, Download, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import { isValidPhoneNumber } from "libphonenumber-js";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
@@ -556,13 +556,15 @@ export default function MembersPage() {
     URL.revokeObjectURL(url);
   }
 
-  const fieldCls = (err?: string) =>
-    `mt-2 w-full rounded-xl border bg-white px-4 py-2.5 text-sm placeholder:text-subtle transition-colors focus:outline-none focus:ring-2 ${
+  const fieldCls = (err?: string, isSelect?: boolean) =>
+    `mt-2 w-full rounded-xl border bg-white py-2.5 text-sm placeholder:text-subtle transition-colors focus:outline-none focus:ring-2 ${
+      isSelect ? "appearance-none cursor-pointer pl-4 pr-9" : "px-4"
+    } ${
       err ? "border-red-400 focus:ring-red-200" : "border-divider focus:ring-accent/40"
     }`;
 
   const dateCls = "rounded-lg border border-divider px-2 py-1.5 text-xs text-primary focus:outline-none focus:ring-1 focus:ring-accent/40 bg-white";
-  const selectCls = "rounded-full border border-divider px-3 py-2 text-xs font-semibold text-muted focus:outline-none focus:ring-1 focus:ring-accent/40 bg-white cursor-pointer";
+  const selectCls = "appearance-none rounded-full border border-divider pl-3 pr-8 py-2 text-xs font-semibold text-muted focus:outline-none focus:ring-1 focus:ring-accent/40 bg-white cursor-pointer";
 
   const summaryStats = [
     { value: String(statsData.total), label: "Total Members" },
@@ -640,18 +642,24 @@ export default function MembersPage() {
             />
           </div>
 
-          <select value={filterCommunity} onChange={e => setFilterCommunity(e.target.value)} className={selectCls}>
-            <option value="">All Communities</option>
-            {communities.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+          <div className="relative shrink-0">
+            <select value={filterCommunity} onChange={e => setFilterCommunity(e.target.value)} className={selectCls}>
+              <option value="">All Communities</option>
+              {communities.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+            <ChevronDown size={13} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-subtle" />
+          </div>
 
-          <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className={selectCls}>
-            <option value="">All Status</option>
-            <option value="registered">Registered</option>
-            <option value="pending">Pending Sign</option>
-            <option value="expired">Expired</option>
-            <option value="suspended">Suspended</option>
-          </select>
+          <div className="relative shrink-0">
+            <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className={selectCls}>
+              <option value="">All Status</option>
+              <option value="registered">Registered</option>
+              <option value="pending">Pending Sign</option>
+              <option value="expired">Expired</option>
+              <option value="suspended">Suspended</option>
+            </select>
+            <ChevronDown size={13} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-subtle" />
+          </div>
 
           <div className="flex items-center gap-1.5">
             <span className="text-xs font-semibold text-muted">Valid Till</span>
@@ -924,13 +932,16 @@ export default function MembersPage() {
               </div>
               <div>
                 <label className="text-sm font-semibold text-primary">Community</label>
-                <select value={newMember.communityId}
-                  onChange={e => changeMemberField("communityId", e.target.value)}
-                  onBlur={() => blurMemberField("communityId")}
-                  className={fieldCls(memberErrors.communityId)}>
-                  <option value="">Select community</option>
-                  {communities.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
+                <div className="relative">
+                  <select value={newMember.communityId}
+                    onChange={e => changeMemberField("communityId", e.target.value)}
+                    onBlur={() => blurMemberField("communityId")}
+                    className={fieldCls(memberErrors.communityId, true)}>
+                    <option value="">Select community</option>
+                    {communities.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                  <ChevronDown size={14} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-subtle" />
+                </div>
                 {memberErrors.communityId && <p className="mt-1 text-xs text-red-500">{memberErrors.communityId}</p>}
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -1100,15 +1111,18 @@ export default function MembersPage() {
                   <div className="mt-3 flex flex-col gap-3">
                     <div>
                       <label className="text-xs font-semibold text-muted">Community</label>
-                      <select value={editNewCom.communityId}
-                        onChange={e => setEditNewCom(c => ({ ...c, communityId: e.target.value }))}
-                        className={fieldCls(editErrors.newCommunityId)}>
-                        <option value="">Select community</option>
-                        {communities
-                          .filter(c => !selectedMember.allSubscriptions.some(s => s.communityId === c.id))
-                          .map(c => <option key={c.id} value={c.id}>{c.name}</option>)
-                        }
-                      </select>
+                      <div className="relative">
+                        <select value={editNewCom.communityId}
+                          onChange={e => setEditNewCom(c => ({ ...c, communityId: e.target.value }))}
+                          className={fieldCls(editErrors.newCommunityId, true)}>
+                          <option value="">Select community</option>
+                          {communities
+                            .filter(c => !selectedMember.allSubscriptions.some(s => s.communityId === c.id))
+                            .map(c => <option key={c.id} value={c.id}>{c.name}</option>)
+                          }
+                        </select>
+                        <ChevronDown size={14} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-subtle" />
+                      </div>
                       {editErrors.newCommunityId && <p className="mt-1 text-xs text-red-500">{editErrors.newCommunityId}</p>}
                     </div>
                     <div className="grid grid-cols-2 gap-3">

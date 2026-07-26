@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Download, Pencil, Plus, RefreshCw, Search, Trash2, Upload, X } from "lucide-react";
+import { ChevronDown, Download, Pencil, Plus, RefreshCw, Search, Trash2, Upload, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
@@ -398,12 +398,14 @@ export default function AdminStockRecommendationsPage() {
     URL.revokeObjectURL(url);
   }
 
-  const fieldCls = (err?: string) =>
-    `mt-2 w-full rounded-xl border bg-white px-4 py-2.5 text-sm placeholder:text-subtle transition-colors focus:outline-none focus:ring-2 ${
+  const fieldCls = (err?: string, isSelect?: boolean) =>
+    `mt-2 w-full rounded-xl border bg-white py-2.5 text-sm placeholder:text-subtle transition-colors focus:outline-none focus:ring-2 ${
+      isSelect ? "appearance-none cursor-pointer pl-4 pr-9" : "px-4"
+    } ${
       err ? "border-red-400 focus:ring-red-200" : "border-divider focus:ring-accent/40"
     }`;
 
-  const selectCls = "rounded-full border border-divider bg-white px-4 py-2 text-sm font-semibold text-muted transition-colors hover:border-accent hover:text-primary focus:outline-none";
+  const selectCls = "appearance-none rounded-full border border-divider bg-white pl-4 pr-9 py-2 text-sm font-semibold text-muted transition-colors hover:border-accent hover:text-primary focus:outline-none";
 
   return (
     <div className="flex flex-col gap-6">
@@ -498,15 +500,21 @@ export default function AdminStockRecommendationsPage() {
             />
           </div>
 
-          <select value={filterRisk} onChange={e => setFilterRisk(e.target.value)} className={selectCls}>
-            <option value="">All Risk Levels</option>
-            {RISK_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-          </select>
+          <div className="relative shrink-0">
+            <select value={filterRisk} onChange={e => setFilterRisk(e.target.value)} className={selectCls}>
+              <option value="">All Risk Levels</option>
+              {RISK_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+            </select>
+            <ChevronDown size={14} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-subtle" />
+          </div>
 
-          <select value={filterCall} onChange={e => setFilterCall(e.target.value)} className={selectCls}>
-            <option value="">All Calls</option>
-            {CALL_OPTIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-          </select>
+          <div className="relative shrink-0">
+            <select value={filterCall} onChange={e => setFilterCall(e.target.value)} className={selectCls}>
+              <option value="">All Calls</option>
+              {CALL_OPTIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
+            <ChevronDown size={14} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-subtle" />
+          </div>
 
           <button
             onClick={exportCSV}
@@ -656,13 +664,16 @@ export default function AdminStockRecommendationsPage() {
               {modal === "add" ? (
                 <div>
                   <label className="text-sm font-semibold text-primary">Community</label>
-                  <select value={form.communityId}
-                    onChange={e => changeField("communityId", e.target.value)}
-                    onBlur={() => blurField("communityId")}
-                    className={fieldCls(errors.communityId)}>
-                    <option value="">Select community</option>
-                    {communities.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
+                  <div className="relative">
+                    <select value={form.communityId}
+                      onChange={e => changeField("communityId", e.target.value)}
+                      onBlur={() => blurField("communityId")}
+                      className={fieldCls(errors.communityId, true)}>
+                      <option value="">Select community</option>
+                      {communities.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                    <ChevronDown size={14} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-subtle" />
+                  </div>
                   {errors.communityId && <p className="mt-1 text-xs text-red-500">{errors.communityId}</p>}
                 </div>
               ) : (
@@ -760,13 +771,16 @@ export default function AdminStockRecommendationsPage() {
 
               <div>
                 <label className="text-sm font-semibold text-primary">Risk Level</label>
-                <select value={form.riskLevel}
-                  onChange={e => changeField("riskLevel", e.target.value)}
-                  onBlur={() => blurField("riskLevel")}
-                  className={fieldCls(errors.riskLevel)}>
-                  <option value="">Select risk level</option>
-                  {RISK_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-                </select>
+                <div className="relative">
+                  <select value={form.riskLevel}
+                    onChange={e => changeField("riskLevel", e.target.value)}
+                    onBlur={() => blurField("riskLevel")}
+                    className={fieldCls(errors.riskLevel, true)}>
+                    <option value="">Select risk level</option>
+                    {RISK_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                  </select>
+                  <ChevronDown size={14} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-subtle" />
+                </div>
                 {errors.riskLevel && <p className="mt-1 text-xs text-red-500">{errors.riskLevel}</p>}
               </div>
 

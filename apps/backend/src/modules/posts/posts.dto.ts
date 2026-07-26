@@ -33,6 +33,7 @@ export interface PostFeedItemDTO {
   communityId: string
   communityName: string
   communitySlug: string
+  communityBadgeUrl: string | null
   authorName: string
   authorAvatarUrl: string | null
   title: string
@@ -58,6 +59,7 @@ export interface CommentedPostItemDTO {
   communityId: string
   communityName: string
   communitySlug: string
+  communityBadgeUrl: string | null
   title: string
   content: string
   imageUrls: string[]

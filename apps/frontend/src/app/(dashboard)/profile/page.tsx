@@ -5,7 +5,8 @@ import ChangePasswordModal from "@/components/profile/ChangePasswordModal";
 import ToggleSwitch from "@/components/profile/ToggleSwitch";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
-import { initials, updateSessionAvatar, updateSessionName } from "@/lib/session";
+import { getSession, initials, updateSessionAvatar, updateSessionName } from "@/lib/session";
+import CommunityBadgeIcon from "@/components/CommunityBadgeIcon";
 
 interface UserProfile {
   id: string;
@@ -22,7 +23,15 @@ export default function ProfilePage() {
   const [isEditing, setIsEditing] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [communityName, setCommunityName] = useState("");
+  const [communityBadgeUrl, setCommunityBadgeUrl] = useState<string | null>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const session = getSession();
+    setCommunityName(session?.communityName ?? "");
+    setCommunityBadgeUrl(session?.communityBadgeUrl ?? null);
+  }, []);
 
   useEffect(() => {
     api
@@ -157,13 +166,17 @@ export default function ProfilePage() {
               <p className="text-xs text-subtle">Member Since</p>
               <p className="font-semibold text-primary">12 May 2026</p>
             </div>
-            <div className="h-10 w-px bg-divider" />
-            <div>
-              <p className="text-xs text-subtle">Community</p>
-              <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-lime bg-lime/10 px-3 py-1 text-xs font-semibold text-primary">
-                ⚡ Swing Alpha
-              </span>
-            </div>
+            {communityName && (
+              <>
+                <div className="h-10 w-px bg-divider" />
+                <div>
+                  <p className="text-xs text-subtle">Community</p>
+                  <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-lime bg-lime/10 px-3 py-1 text-xs font-semibold text-primary">
+                    <CommunityBadgeIcon badgeUrl={communityBadgeUrl} /> {communityName}
+                  </span>
+                </div>
+              </>
+            )}
           </div>
         </div>
 

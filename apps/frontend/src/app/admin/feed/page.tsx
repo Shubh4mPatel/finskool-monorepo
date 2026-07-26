@@ -25,6 +25,7 @@ interface FeedPost {
   communityId: string;
   communityName: string;
   communitySlug: string;
+  communityBadgeUrl: string | null;
   authorName: string;
   authorAvatarUrl: string | null;
   title: string;
@@ -300,14 +301,17 @@ export default function AdminFeedPage() {
               className="w-full bg-transparent text-sm text-primary placeholder:text-subtle focus:outline-none sm:w-52" />
           </div>
 
-          <select
-            value={filterCommunity}
-            onChange={e => setFilterCommunity(e.target.value)}
-            className="shrink-0 rounded-full border border-divider bg-white px-4 py-2.5 text-sm font-semibold text-muted transition-colors hover:border-accent hover:text-primary focus:outline-none"
-          >
-            <option value="">All Community</option>
-            {communities.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+          <div className="relative shrink-0">
+            <select
+              value={filterCommunity}
+              onChange={e => setFilterCommunity(e.target.value)}
+              className="appearance-none rounded-full border border-divider bg-white pl-4 pr-9 py-2.5 text-sm font-semibold text-muted transition-colors hover:border-accent hover:text-primary focus:outline-none"
+            >
+              <option value="">All Community</option>
+              {communities.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+            <ChevronDown size={14} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-subtle" />
+          </div>
 
           <div className="relative shrink-0">
             <button
@@ -367,6 +371,7 @@ export default function AdminFeedPage() {
                   postId={post.id}
                   commentCount={post.commentCount}
                   communityName={post.communityName}
+                  communityBadgeUrl={post.communityBadgeUrl}
                   authorName={post.authorName}
                   authorAvatarUrl={post.authorAvatarUrl}
                   badge={post.pinOrder !== null ? { label: "PINNED", icon: "pin" } : undefined}

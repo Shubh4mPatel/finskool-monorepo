@@ -13,6 +13,7 @@ interface Community {
   description: string | null;
   tags: string[];
   coverImageUrl: string | null;
+  badgeUrl: string | null;
   memberCount: number;
 }
 
@@ -121,7 +122,7 @@ export default function CommunitySelectorPage() {
     try {
       await api.post("/api/v1/auth/select-community", { communityId });
       const comm = meData?.communities.find(c => c.id === communityId);
-      if (comm) updateSessionCommunity(communityId, comm.name);
+      if (comm) updateSessionCommunity(communityId, comm.name, comm.badgeUrl);
       router.push("/feed");
     } catch {
       setError("Failed to select community. Please try again.");
