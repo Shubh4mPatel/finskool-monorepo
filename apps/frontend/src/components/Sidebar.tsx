@@ -87,9 +87,9 @@ export default function Sidebar() {
       <div className="hidden pb-5 lg:flex lg:flex-col">
         <button
           type="button"
-          onClick={() => router.back()}
+          onClick={() => router.push("/")}
           className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-white transition-colors hover:bg-primary/80"
-          aria-label="Go back"
+          aria-label="Back to community selection"
         >
           <ArrowLeft size={15} />
         </button>
