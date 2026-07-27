@@ -53,7 +53,12 @@ class LiveStockPricesStore {
   }
 
   private wsUrl(): string {
-    return (process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:3010") + WS_PATH;
+    // Same convention as notificationSocketStore: derive from NEXT_PUBLIC_API_URL
+    // (http→ws / https→wss). In production that's "" (same-origin, proxied by
+    // Nginx), so this resolves relative — never hardcode a specific host/port,
+    // that only works for a developer's own machine.
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+    return apiUrl.replace(/^http/, "ws") + WS_PATH;
   }
 
   private openSocket(): void {
