@@ -7,6 +7,7 @@ import { refreshTokenKey, selectedCommunityKey } from "../../lib/redis.js";
 import { env } from "../../config/env.js";
 import { logger } from "../../shared/logger.js";
 import { generateUploadUrl, deleteFile } from "../../lib/minio.js";
+import { getAccessibleCommunityIds } from "../../lib/community-access.js";
 import {
   ConflictError,
   UnauthorizedError,
@@ -194,15 +195,10 @@ export class AuthService {
           ? (communityIds[0] ?? null)
           : null;
 
-    const accessToken = this.signToken(
-      {
-        sub: user.id,
-        role: user.role as "admin" | "member",
-        type: "access",
-        communityIds,
-        selectedCommunityId,
-      },
-      env.jwt.accessExpiresIn,
+    const accessToken = await this.signAccessToken(
+      { id: user.id, role: user.role as "admin" | "member" },
+      communityIds,
+      selectedCommunityId,
     );
     return { accessToken };
   }
@@ -243,15 +239,10 @@ export class AuthService {
     const user = await this.db.user.findUnique({ where: { id: userId } });
     if (!user) throw new UnauthorizedError("User not found");
 
-    return this.signToken(
-      {
-        sub: userId,
-        role: user.role as "admin" | "member",
-        type: "access",
-        communityIds,
-        selectedCommunityId: communityId,
-      },
-      env.jwt.accessExpiresIn,
+    return this.signAccessToken(
+      { id: userId, role: user.role as "admin" | "member" },
+      communityIds,
+      communityId,
     );
   }
 
@@ -267,10 +258,7 @@ export class AuthService {
       await this.redis.set(selectedCommunityKey(user.id), selectedCommunityId);
     }
 
-    const accessToken = this.signToken(
-      { sub: user.id, role, type: "access", communityIds, selectedCommunityId },
-      env.jwt.accessExpiresIn,
-    );
+    const accessToken = await this.signAccessToken({ id: user.id, role }, communityIds, selectedCommunityId);
     // Refresh token has no expiry in the JWT — Redis presence is the sole validity gate
     const refreshToken = jwt.sign(
       { sub: user.id, role, type: "refresh" } as object,
@@ -326,6 +314,36 @@ export class AuthService {
     return jwt.sign(payload as object, env.jwt.secret, {
       expiresIn,
     } as jwt.SignOptions);
+  }
+
+  private async computeAccessibleCommunityIds(
+    userId: string,
+    role: string,
+  ): Promise<string[] | null> {
+    // Members have no admin-scoped community grants. [] (not null) so this
+    // field can never be misread as "unrestricted" if ever consulted without
+    // an accompanying role check.
+    if (role !== "admin") return [];
+    return getAccessibleCommunityIds(this.db, userId);
+  }
+
+  private async signAccessToken(
+    user: { id: string; role: "admin" | "member" },
+    communityIds: string[],
+    selectedCommunityId: string | null,
+  ): Promise<string> {
+    const accessibleCommunityIds = await this.computeAccessibleCommunityIds(user.id, user.role);
+    return this.signToken(
+      {
+        sub: user.id,
+        role: user.role,
+        type: "access",
+        communityIds,
+        selectedCommunityId,
+        accessibleCommunityIds,
+      },
+      env.jwt.accessExpiresIn,
+    );
   }
 
   async updateEmail(userId: string, data: UpdateEmailDTO): Promise<PublicUserDTO> {

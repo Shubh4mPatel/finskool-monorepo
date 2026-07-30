@@ -1,5 +1,5 @@
 import type { PrismaClient } from '../../generated/prisma/client.js'
-import { assertCommunityAccess } from '../../lib/community-access.js'
+import { assertCommunityAccessFromToken } from '../../lib/community-access.js'
 import { liveStockFeed } from '../../lib/live-stock-feed.js'
 import { notificationsQueue, COMMUNITY_RECOMMENDATION_JOB } from '../../lib/queue.js'
 import { marketStatus } from '../../sockets/angelone/market-status.js'
@@ -41,13 +41,14 @@ export class StockRecommendationsService {
 
   async createRecommendation(
     adminId: string,
+    accessibleCommunityIds: string[] | null,
     data: CreateStockRecommendationDTO,
   ): Promise<StockRecommendationResponseDTO> {
     const community = await this.db.community.findUnique({
       where: { id: data.communityId, deletedAt: null },
     })
     if (!community) throw new NotFoundError('Community not found')
-    await assertCommunityAccess(this.db, adminId, data.communityId)
+    assertCommunityAccessFromToken(accessibleCommunityIds, data.communityId)
 
     const stock = await this.db.stock.findUnique({ where: { id: data.stockId } })
     if (!stock) throw new NotFoundError('Stock not found')
@@ -104,11 +105,12 @@ export class StockRecommendationsService {
   async updateRecommendation(
     id: string,
     adminId: string,
+    accessibleCommunityIds: string[] | null,
     data: UpdateStockRecommendationDTO,
   ): Promise<StockRecommendationResponseDTO> {
     const rec = await this.db.stockRecommendation.findUnique({ where: { id, deletedAt: null } })
     if (!rec) throw new NotFoundError('Recommendation not found')
-    await assertCommunityAccess(this.db, adminId, rec.communityId)
+    assertCommunityAccessFromToken(accessibleCommunityIds, rec.communityId)
 
     const updated = await this.db.stockRecommendation.update({
       where: { id },
@@ -127,10 +129,14 @@ export class StockRecommendationsService {
     return this.toResponse(updated)
   }
 
-  async deleteRecommendation(id: string, adminId: string): Promise<void> {
+  async deleteRecommendation(
+    id: string,
+    adminId: string,
+    accessibleCommunityIds: string[] | null,
+  ): Promise<void> {
     const rec = await this.db.stockRecommendation.findUnique({ where: { id, deletedAt: null } })
     if (!rec) throw new NotFoundError('Recommendation not found')
-    await assertCommunityAccess(this.db, adminId, rec.communityId)
+    assertCommunityAccessFromToken(accessibleCommunityIds, rec.communityId)
 
     await this.db.stockRecommendation.update({ where: { id }, data: { deletedAt: new Date() } })
     logger.info({ recommendationId: id }, 'stock-recommendations.delete: soft deleted')

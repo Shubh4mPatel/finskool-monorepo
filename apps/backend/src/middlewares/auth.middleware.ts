@@ -10,12 +10,19 @@ export interface JwtPayload {
   type: 'access' | 'refresh'
   communityIds: string[]
   selectedCommunityId: string | null
+  accessibleCommunityIds: string[] | null
 }
 
 declare global {
   namespace Express {
     interface Request {
-      user?: { id: string; role: UserRole; communityIds: string[]; selectedCommunityId: string | null }
+      user?: {
+        id: string
+        role: UserRole
+        communityIds: string[]
+        selectedCommunityId: string | null
+        accessibleCommunityIds: string[] | null
+      }
     }
   }
 }
@@ -39,6 +46,7 @@ export function authenticate(req: Request, _res: Response, next: NextFunction): 
       role: payload.role,
       communityIds: payload.communityIds ?? [],
       selectedCommunityId: payload.selectedCommunityId ?? null,
+      accessibleCommunityIds: payload.accessibleCommunityIds ?? [],
     }
     next()
   } catch {

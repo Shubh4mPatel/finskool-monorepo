@@ -2,9 +2,8 @@ import type { Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
 import type { AdminService } from './admin.service.js'
 import type { MemberListFilters } from './admin.dto.js'
-import { getAccessibleCommunityIds, assertCommunityAccess } from '../../lib/community-access.js'
+import { assertCommunityAccessFromToken } from '../../lib/community-access.js'
 import { BadRequestError, ForbiddenError } from '../../shared/errors/index.js'
-import prisma from '../../lib/prisma.js'
 
 const addMemberSchema = z.object({
   phone: z.string().min(1, 'Phone is required'),
@@ -217,7 +216,7 @@ export class AdminController {
       const parsed = schema.safeParse(req.query)
       if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Invalid query')
 
-      const accessible = await getAccessibleCommunityIds(prisma, req.user!.id)
+      const accessible = req.user!.accessibleCommunityIds
       let filters: MemberListFilters = parsed.data
       if (accessible !== null) {
         if (filters.communityId) {
@@ -248,7 +247,7 @@ export class AdminController {
 
   listCommunities = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const result = await this.service.listCommunities()
+      const result = await this.service.listCommunities(req.user!.accessibleCommunityIds)
       res.json({ success: true, data: result })
     } catch (err) {
       next(err)
@@ -339,7 +338,7 @@ export class AdminController {
     try {
       const parsed = addMemberSchema.safeParse(req.body)
       if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
-      await assertCommunityAccess(prisma, req.user!.id, parsed.data.communityId)
+      assertCommunityAccessFromToken(req.user!.accessibleCommunityIds, parsed.data.communityId)
       const result = await this.service.addMember(parsed.data, req.user!.id)
       res.status(201).json({ success: true, data: result })
     } catch (err) {

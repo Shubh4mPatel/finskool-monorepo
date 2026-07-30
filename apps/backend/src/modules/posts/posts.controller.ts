@@ -3,9 +3,7 @@ import { z } from 'zod'
 import type { PostsService } from './posts.service.js'
 import { createPostSchema, updatePostSchema } from './posts.validator.js'
 import { generateUploadUrl } from '../../lib/minio.js'
-import { getAccessibleCommunityIds } from '../../lib/community-access.js'
 import { ForbiddenError } from '../../shared/errors/index.js'
-import prisma from '../../lib/prisma.js'
 
 const uploadUrlQuerySchema = z.object({
   filename: z.string().min(1, 'filename is required'),
@@ -45,7 +43,7 @@ export class PostsController {
       const dateParam = date !== undefined ? { date } : {}
 
       if (user.role === 'admin') {
-        const accessible = await getAccessibleCommunityIds(prisma, user.id)
+        const accessible = user.accessibleCommunityIds
         if (accessible === null) {
           // Super admin: use client-provided query param (can see all communities)
           listParams = { page, pageSize, order, ...dateParam, ...(communityId !== undefined && { communityId }) }
@@ -97,7 +95,7 @@ export class PostsController {
   create = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const data = createPostSchema.parse(req.body)
-      const post = await this.service.createPost(req.user!.id, data)
+      const post = await this.service.createPost(req.user!.id, req.user!.accessibleCommunityIds, data)
       res.status(201).json({ success: true, data: post })
     } catch (err) {
       next(err)
@@ -107,7 +105,12 @@ export class PostsController {
   update = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const data = updatePostSchema.parse(req.body)
-      const post = await this.service.updatePost(getParam(req, 'id'), req.user!.id, data)
+      const post = await this.service.updatePost(
+        getParam(req, 'id'),
+        req.user!.id,
+        req.user!.accessibleCommunityIds,
+        data,
+      )
       res.json({ success: true, data: post })
     } catch (err) {
       next(err)
@@ -116,7 +119,7 @@ export class PostsController {
 
   delete = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      await this.service.deletePost(getParam(req, 'id'), req.user!.id)
+      await this.service.deletePost(getParam(req, 'id'), req.user!.id, req.user!.accessibleCommunityIds)
       res.json({ success: true, message: 'Post deleted' })
     } catch (err) {
       next(err)
@@ -125,7 +128,11 @@ export class PostsController {
 
   publish = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const post = await this.service.publishPost(getParam(req, 'id'), req.user!.id)
+      const post = await this.service.publishPost(
+        getParam(req, 'id'),
+        req.user!.id,
+        req.user!.accessibleCommunityIds,
+      )
       res.json({ success: true, data: post })
     } catch (err) {
       next(err)
@@ -134,7 +141,7 @@ export class PostsController {
 
   pin = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const post = await this.service.pinPost(getParam(req, 'id'), req.user!.id)
+      const post = await this.service.pinPost(getParam(req, 'id'), req.user!.id, req.user!.accessibleCommunityIds)
       res.json({ success: true, data: post })
     } catch (err) {
       next(err)

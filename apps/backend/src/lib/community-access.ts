@@ -23,6 +23,22 @@ export async function assertCommunityAccess(db: PrismaClient, adminId: string, c
   }
 }
 
+/** Synchronous, token-based equivalent of getAccessibleCommunityIds — reads the
+ *  JWT-derived accessibleCommunityIds instead of hitting the DB. */
+export function hasCommunityAccess(accessibleCommunityIds: string[] | null, communityId: string): boolean {
+  return accessibleCommunityIds === null || accessibleCommunityIds.includes(communityId)
+}
+
+/** Synchronous, token-based equivalent of assertCommunityAccess — no DB round-trip. */
+export function assertCommunityAccessFromToken(
+  accessibleCommunityIds: string[] | null,
+  communityId: string,
+): void {
+  if (!hasCommunityAccess(accessibleCommunityIds, communityId)) {
+    throw new ForbiddenError('You do not have access to this community', 'COMMUNITY_ACCESS_DENIED')
+  }
+}
+
 export async function assertSuperAdmin(db: PrismaClient, adminId: string): Promise<void> {
   if (!(await isSuperAdmin(db, adminId))) {
     throw new ForbiddenError('Super admin access required', 'SUPER_ADMIN_REQUIRED')

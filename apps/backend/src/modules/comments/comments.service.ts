@@ -1,5 +1,5 @@
 import type { PrismaClient, UserRole } from '../../generated/prisma/client.js'
-import { assertCommunityAccess } from '../../lib/community-access.js'
+import { assertCommunityAccessFromToken } from '../../lib/community-access.js'
 import { notificationsQueue, THREAD_REPLY_EMAIL_JOB, NOTIFICATIONS_PUBSUB_CHANNEL } from '../../lib/queue.js'
 import type { LiveNotificationEvent } from '../../lib/queue.js'
 import redis from '../../lib/redis.js'
@@ -13,6 +13,7 @@ export class CommentsService {
   async createComment(
     userId: string,
     userRole: UserRole,
+    accessibleCommunityIds: string[] | null,
     postId: string,
     data: CreateCommentDTO,
   ): Promise<CommentTreeDTO> {
@@ -23,7 +24,7 @@ export class CommentsService {
     if (!post) throw new NotFoundError('Post not found or not published')
 
     if (userRole === 'admin') {
-      await assertCommunityAccess(this.db, userId, post.communityId)
+      assertCommunityAccessFromToken(accessibleCommunityIds, post.communityId)
     }
 
     if (userRole !== 'admin') {
@@ -164,12 +165,21 @@ export class CommentsService {
     return { ...comment, notification: null, replies: [] }
   }
 
-  async listComments(postId: string, cursor: string | undefined, limit: number): Promise<CommentListDTO> {
+  async listComments(
+    userRole: UserRole,
+    accessibleCommunityIds: string[] | null,
+    postId: string,
+    cursor: string | undefined,
+    limit: number,
+  ): Promise<CommentListDTO> {
     const post = await this.db.post.findUnique({
       where: { id: postId, deletedAt: null },
-      select: { id: true },
+      select: { id: true, communityId: true },
     })
     if (!post) throw new NotFoundError('Post not found')
+    if (userRole === 'admin') {
+      assertCommunityAccessFromToken(accessibleCommunityIds, post.communityId)
+    }
 
     // fetch one extra to determine hasMore
     const topLevel = await this.db.comment.findMany({
@@ -247,12 +257,26 @@ export class CommentsService {
     }
   }
 
-  async deleteComment(commentId: string, userId: string, userRole: UserRole): Promise<void> {
+  async deleteComment(
+    commentId: string,
+    userId: string,
+    userRole: UserRole,
+    accessibleCommunityIds: string[] | null,
+  ): Promise<void> {
     const comment = await this.db.comment.findUnique({
       where: { id: commentId, deletedAt: null },
-      select: { id: true, authorId: true, path: true, postId: true },
+      select: {
+        id: true,
+        authorId: true,
+        path: true,
+        postId: true,
+        post: { select: { communityId: true } },
+      },
     })
     if (!comment) throw new NotFoundError('Comment not found')
+    if (userRole === 'admin') {
+      assertCommunityAccessFromToken(accessibleCommunityIds, comment.post.communityId)
+    }
     if (userRole !== 'admin' && comment.authorId !== userId) {
       throw new ForbiddenError('You can only delete your own comments')
     }

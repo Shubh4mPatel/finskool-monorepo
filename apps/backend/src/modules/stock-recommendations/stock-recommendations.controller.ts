@@ -5,9 +5,7 @@ import {
   createStockRecommendationSchema,
   updateStockRecommendationSchema,
 } from './stock-recommendations.validator.js'
-import { getAccessibleCommunityIds } from '../../lib/community-access.js'
 import { ForbiddenError } from '../../shared/errors/index.js'
-import prisma from '../../lib/prisma.js'
 
 const listQuerySchema = z.object({
   communityId: z.string().uuid().optional(),
@@ -30,7 +28,7 @@ export class StockRecommendationsController {
       let listParams: { communityId?: string; communityIds?: string[] }
 
       if (user.role === 'admin') {
-        const accessible = await getAccessibleCommunityIds(prisma, user.id)
+        const accessible = user.accessibleCommunityIds
         if (accessible === null) {
           // Super admin: use client-provided query param (can see all communities)
           listParams = { ...(communityId !== undefined && { communityId }) }
@@ -63,7 +61,7 @@ export class StockRecommendationsController {
   create = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const data = createStockRecommendationSchema.parse(req.body)
-      const rec = await this.service.createRecommendation(req.user!.id, data)
+      const rec = await this.service.createRecommendation(req.user!.id, req.user!.accessibleCommunityIds, data)
       res.status(201).json({ success: true, data: rec })
     } catch (err) {
       next(err)
@@ -73,7 +71,12 @@ export class StockRecommendationsController {
   update = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const data = updateStockRecommendationSchema.parse(req.body)
-      const rec = await this.service.updateRecommendation(getParam(req, 'id'), req.user!.id, data)
+      const rec = await this.service.updateRecommendation(
+        getParam(req, 'id'),
+        req.user!.id,
+        req.user!.accessibleCommunityIds,
+        data,
+      )
       res.json({ success: true, data: rec })
     } catch (err) {
       next(err)
@@ -82,7 +85,11 @@ export class StockRecommendationsController {
 
   delete = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      await this.service.deleteRecommendation(getParam(req, 'id'), req.user!.id)
+      await this.service.deleteRecommendation(
+        getParam(req, 'id'),
+        req.user!.id,
+        req.user!.accessibleCommunityIds,
+      )
       res.json({ success: true, message: 'Recommendation deleted' })
     } catch (err) {
       next(err)

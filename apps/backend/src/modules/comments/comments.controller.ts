@@ -16,6 +16,7 @@ export class CommentsController {
       const comment = await this.service.createComment(
         req.user!.id,
         req.user!.role,
+        req.user!.accessibleCommunityIds,
         getParam(req, 'postId'),
         data,
       )
@@ -28,7 +29,13 @@ export class CommentsController {
   list = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const { cursor, limit } = listCommentsSchema.parse(req.query)
-      const result = await this.service.listComments(getParam(req, 'postId'), cursor, limit)
+      const result = await this.service.listComments(
+        req.user!.role,
+        req.user!.accessibleCommunityIds,
+        getParam(req, 'postId'),
+        cursor,
+        limit,
+      )
       res.json({ success: true, data: result })
     } catch (err) {
       next(err)
@@ -37,7 +44,12 @@ export class CommentsController {
 
   delete = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      await this.service.deleteComment(getParam(req, 'id'), req.user!.id, req.user!.role)
+      await this.service.deleteComment(
+        getParam(req, 'id'),
+        req.user!.id,
+        req.user!.role,
+        req.user!.accessibleCommunityIds,
+      )
       res.json({ success: true, message: 'Comment deleted' })
     } catch (err) {
       next(err)
