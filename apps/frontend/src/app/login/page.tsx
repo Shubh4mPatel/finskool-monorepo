@@ -68,14 +68,14 @@ export default function LoginPage() {
       });
 
       if (data.user.role === "admin") {
-        saveSession({ userId: data.user.id, userName: data.user.name, userInitials: initials(data.user.name), communityName: "", communityId: "", avatarUrl: data.user.avatarUrl ?? null, isSuperAdmin: data.user.isSuperAdmin });
+        saveSession({ userId: data.user.id, userName: data.user.name, userInitials: initials(data.user.name), communityName: "", communityId: "", avatarUrl: data.user.avatarUrl ?? null, role: data.user.role, isSuperAdmin: data.user.isSuperAdmin });
         router.push("/admin/dashboard");
       } else if (data.communities.length === 1) {
         const comm = data.communities[0]!;
-        saveSession({ userId: data.user.id, userName: data.user.name, userInitials: initials(data.user.name), communityName: comm.name, communityId: comm.id, communityBadgeUrl: comm.badgeUrl, avatarUrl: data.user.avatarUrl ?? null, isSuperAdmin: data.user.isSuperAdmin });
+        saveSession({ userId: data.user.id, userName: data.user.name, userInitials: initials(data.user.name), communityName: comm.name, communityId: comm.id, communityBadgeUrl: comm.badgeUrl, avatarUrl: data.user.avatarUrl ?? null, role: data.user.role, isSuperAdmin: data.user.isSuperAdmin });
         router.push("/feed");
       } else {
-        saveSession({ userId: data.user.id, userName: data.user.name, userInitials: initials(data.user.name), communityName: "", communityId: "", avatarUrl: data.user.avatarUrl ?? null, isSuperAdmin: data.user.isSuperAdmin });
+        saveSession({ userId: data.user.id, userName: data.user.name, userInitials: initials(data.user.name), communityName: "", communityId: "", avatarUrl: data.user.avatarUrl ?? null, role: data.user.role, isSuperAdmin: data.user.isSuperAdmin });
         router.push("/");
       }
     } catch (err) {

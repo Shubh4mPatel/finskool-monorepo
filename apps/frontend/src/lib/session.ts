@@ -6,6 +6,7 @@ export interface SessionInfo {
   communityId: string
   communityBadgeUrl?: string | null
   avatarUrl?: string | null
+  role?: string
   isSuperAdmin?: boolean
 }
 

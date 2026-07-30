@@ -31,7 +31,7 @@ const navItems = [
   { href: "/admin/members", label: "Members", icon: Users },
   { href: "/admin/import-csv", label: "Import CSV", icon: Upload },
   { href: "/admin/stock-recommendations", label: "Stock Recommendation", icon: TrendingUp },
-  { href: "/admin/roles-admins", label: "Roles & Admins", icon: ShieldCheck },
+  { href: "/admin/roles-admins", label: "Roles & Admins", icon: ShieldCheck, superAdminOnly: true },
 ];
 
 function SidebarContent({ onNav }: { onNav?: () => void }) {

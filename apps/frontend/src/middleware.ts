@@ -7,7 +7,9 @@ const PROTECTED = ['/feed', '/announcements', '/profile', '/recommendations', '/
 // Routes only for unauthenticated users (redirect away if already logged in)
 const AUTH_ONLY = ['/login', '/signup']
 
-function decodeJwtPayload(token: string): { exp?: number; role?: string } | null {
+function decodeJwtPayload(
+  token: string,
+): { exp?: number; role?: string; accessibleCommunityIds?: string[] | null } | null {
   try {
     const part = token.split('.')[1]
     if (!part) return null
@@ -92,6 +94,11 @@ export async function middleware(request: NextRequest) {
     const role = activePayload?.role
     if (pathname.startsWith('/admin') && role !== 'admin') {  // admin-only check
       return NextResponse.redirect(new URL('/', request.url))
+    }
+    // Roles & Admins management is super-admin only — accessibleCommunityIds is
+    // null exclusively for super admins (scoped admins get an explicit array).
+    if (pathname.startsWith('/admin/roles-admins') && activePayload?.accessibleCommunityIds !== null) {
+      return withRefreshedCookies(NextResponse.redirect(new URL('/admin/dashboard', request.url)))
     }
     return withRefreshedCookies(NextResponse.next())
   }
