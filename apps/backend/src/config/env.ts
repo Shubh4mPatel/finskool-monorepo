@@ -57,6 +57,13 @@ export const env = {
     from: process.env['SMTP_FROM'] ?? 'Finskool <notifications@finskool.local>',
   },
 
+  email: {
+    // Every template's header/footer <img> references {logo_url}, injected
+    // automatically by renderEmail — change this one var to swap the logo
+    // everywhere without touching template files or send-email call sites.
+    logoUrl: process.env['EMAIL_LOGO_URL'] ?? 'http://157.173.220.80:8081/logo.svg',
+  },
+
   angelone: {
     apiKey: process.env['ANGELONE_API_KEY'] ?? '',
     clientCode: process.env['ANGELONE_CLIENT_CODE'] ?? '',
@@ -82,6 +89,7 @@ export const env = {
   cookie: { secure: boolean }
   minio: { endPoint: string; publicEndPoint: string; port: number; publicPort: number; useSSL: boolean; accessKey: string; secretKey: string; bucket: string }
   smtp: { host: string; port: number; secure: boolean; user: string; password: string; from: string }
+  email: { logoUrl: string }
   angelone: { apiKey: string; clientCode: string; pin: string; totpSecret: string }
   stockQuoteApi: { baseUrl: string; apiKey: string; reportEmails: string[] }
 }

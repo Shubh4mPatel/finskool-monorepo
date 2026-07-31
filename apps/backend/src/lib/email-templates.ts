@@ -1,5 +1,6 @@
 import { readFileSync } from 'fs'
 import path from 'path'
+import { env } from '../config/env.js'
 
 export type EmailTemplateId =
   | 'welcome'
@@ -73,9 +74,12 @@ function substitute(template: string, data: Record<string, string>, escape: bool
 
 export function renderEmail(templateId: EmailTemplateId, data: Record<string, string>): { subject: string; html: string } {
   const def = TEMPLATE_REGISTRY[templateId]
+  // Every template references {logo_url} in its header/footer — inject it here so
+  // callers never need to pass it themselves, and swapping the logo is a one-env-var change.
+  const withDefaults = { logo_url: env.email.logoUrl, ...data }
   return {
-    subject: substitute(def.subject, data, false),
-    html: substitute(loadTemplate(templateId), data, true),
+    subject: substitute(def.subject, withDefaults, false),
+    html: substitute(loadTemplate(templateId), withDefaults, true),
   }
 }
 
