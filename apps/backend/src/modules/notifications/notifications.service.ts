@@ -4,6 +4,7 @@ import { logger } from '../../shared/logger.js'
 import { sendMail } from '../../lib/mailer.js'
 import redis from '../../lib/redis.js'
 import { env } from '../../config/env.js'
+import { renderEmail, firstNameOf, formatEmailDate, formatEmailAmount } from '../../lib/email-templates.js'
 import {
   NOTIFICATIONS_PUBSUB_CHANNEL,
 } from '../../lib/queue.js'
@@ -12,17 +13,16 @@ import type {
   CommunityRecommendationNotificationJobPayload,
   ThreadReplyEmailJobPayload,
   WelcomeEmailJobPayload,
+  SubscriptionExtendedEmailJobPayload,
+  CommunityAddedEmailJobPayload,
+  CommunityAccessRemovedEmailJobPayload,
+  NewMemberRegisteredEmailJobPayload,
   LiveNotificationEvent,
 } from '../../lib/queue.js'
 import { NotificationType } from './notifications.dto.js'
 import type { ListNotificationsResponseDTO } from './notifications.dto.js'
 
 const FAN_OUT_CHUNK_SIZE = 500
-
-const CTA_PATH_BY_TYPE: Record<string, string> = {
-  [NotificationType.Post]: '/feed',
-  [NotificationType.Recommendation]: '/recommendations',
-}
 
 function startOfToday(): Date {
   const today = new Date()
@@ -98,22 +98,32 @@ export class NotificationsService {
   }
 
   async fanOutCommunityPost(payload: CommunityPostNotificationJobPayload): Promise<{ created: number }> {
+    const community = await this.db.community.findUnique({ where: { id: payload.communityId }, select: { name: true } })
+    const { subject, html } = renderEmail('new-announcement', {
+      community_name: community?.name ?? '',
+      post_title: payload.postTitle,
+      post_excerpt: payload.postExcerpt,
+      frontend_url: env.frontendUrl,
+    })
     return this.fanOutCommunity({
       communityId: payload.communityId,
       sourceId: payload.postId,
       message: payload.message,
       triggeredByUserId: payload.triggeredByUserId,
       type: NotificationType.Post,
+      email: { subject, html },
     })
   }
 
   async fanOutCommunityRecommendation(payload: CommunityRecommendationNotificationJobPayload): Promise<{ created: number }> {
+    const html = notificationEmailHtml(payload.message, `${env.frontendUrl}/recommendations`, 'View Recommendation')
     return this.fanOutCommunity({
       communityId: payload.communityId,
       sourceId: payload.recommendationId,
       message: payload.message,
       triggeredByUserId: payload.triggeredByUserId,
       type: NotificationType.Recommendation,
+      email: { subject: payload.message, html },
     })
   }
 
@@ -123,8 +133,9 @@ export class NotificationsService {
     message: string
     triggeredByUserId: string
     type: string
+    email: { subject: string; html: string }
   }): Promise<{ created: number }> {
-    const { communityId, sourceId, message, triggeredByUserId, type } = params
+    const { communityId, sourceId, message, triggeredByUserId, type, email } = params
 
     const subs = await this.db.subscription.findMany({
       where: { communityId, isActive: true, validUntil: { gte: startOfToday() } },
@@ -136,11 +147,6 @@ export class NotificationsService {
       .filter(s => s.userId !== triggeredByUserId && s.user.postNotificationsEnabled)
       .map(s => ({ userId: s.userId, email: s.user.email }))
     if (recipients.length === 0) return { created: 0 }
-
-    const ctaPath = CTA_PATH_BY_TYPE[type] ?? '/feed'
-    const ctaUrl = `${env.frontendUrl}${ctaPath}`
-    const ctaLabel = type === NotificationType.Recommendation ? 'View Recommendation' : 'View in Feed'
-    const emailHtml = notificationEmailHtml(message, ctaUrl, ctaLabel)
 
     let created = 0
     for (let i = 0; i < recipients.length; i += FAN_OUT_CHUNK_SIZE) {
@@ -158,7 +164,7 @@ export class NotificationsService {
       created += result.count
 
       await Promise.all([
-        this.sendEmailBatch(chunk.map(r => r.email), message, emailHtml),
+        this.sendEmailBatch(chunk.map(r => r.email), email.subject, email.html),
         this.publishLiveBatch(chunk.map(r => r.userId), { type, communityId, message, sourceId }),
       ])
     }
@@ -171,17 +177,67 @@ export class NotificationsService {
   }
 
   async sendThreadReplyEmail(payload: ThreadReplyEmailJobPayload): Promise<void> {
-    await sendMail({ to: payload.toEmail, subject: payload.message, html: `<p>${payload.message}</p>` })
+    const { subject, html } = renderEmail('thread-reply', {
+      first_name: firstNameOf(payload.recipientName),
+      admin_name: payload.adminName,
+      post_title: payload.postTitle,
+      reply_excerpt: payload.replyExcerpt,
+      frontend_url: env.frontendUrl,
+    })
+    await sendMail({ to: payload.toEmail, subject, html })
   }
 
   async sendWelcomeEmail(payload: WelcomeEmailJobPayload): Promise<void> {
-    const ctaUrl = `${env.frontendUrl}/signup`
-    const message = `Hi ${payload.name}, you've been added to Finskool. Register your account to get started.`
-    await sendMail({
-      to: payload.toEmail,
-      subject: 'You’ve been added to Finskool',
-      html: notificationEmailHtml(message, ctaUrl, 'Register Now'),
+    const { subject, html } = renderEmail('welcome', {
+      first_name: firstNameOf(payload.name),
+      phone: payload.phone,
+      community_name: payload.communityName,
+      valid_till: formatEmailDate(payload.validTill),
+      frontend_url: env.frontendUrl,
     })
+    await sendMail({ to: payload.toEmail, subject, html })
+  }
+
+  async sendSubscriptionExtendedEmail(payload: SubscriptionExtendedEmailJobPayload): Promise<void> {
+    const { subject, html } = renderEmail('subscription-extended', {
+      first_name: firstNameOf(payload.name),
+      community_name: payload.communityName,
+      valid_till: formatEmailDate(payload.validTill),
+      amount: formatEmailAmount(payload.amount),
+      paid_on: formatEmailDate(payload.paidOn),
+      frontend_url: env.frontendUrl,
+    })
+    await sendMail({ to: payload.toEmail, subject, html })
+  }
+
+  async sendCommunityAddedEmail(payload: CommunityAddedEmailJobPayload): Promise<void> {
+    const { subject, html } = renderEmail('community-added', {
+      first_name: firstNameOf(payload.name),
+      community_name: payload.communityName,
+      valid_till: formatEmailDate(payload.validTill),
+      frontend_url: env.frontendUrl,
+    })
+    await sendMail({ to: payload.toEmail, subject, html })
+  }
+
+  async sendCommunityAccessRemovedEmail(payload: CommunityAccessRemovedEmailJobPayload): Promise<void> {
+    const { subject, html } = renderEmail('community-access-removed', {
+      first_name: firstNameOf(payload.name),
+      community_name: payload.communityName,
+    })
+    await sendMail({ to: payload.toEmail, subject, html })
+  }
+
+  async sendNewMemberRegisteredEmail(payload: NewMemberRegisteredEmailJobPayload): Promise<void> {
+    const { subject, html } = renderEmail('admin-new-member', {
+      admin_name: firstNameOf(payload.adminName),
+      member_name: payload.memberName,
+      phone: payload.phone,
+      community_name: payload.communityName,
+      registered_date: formatEmailDate(payload.registeredDate),
+      frontend_url: env.frontendUrl,
+    })
+    await sendMail({ to: payload.adminEmail, subject, html })
   }
 
   // Email delivery failures shouldn't fail the job (the in-app rows above already

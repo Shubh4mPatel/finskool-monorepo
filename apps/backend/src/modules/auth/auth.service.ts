@@ -8,6 +8,7 @@ import { env } from "../../config/env.js";
 import { logger } from "../../shared/logger.js";
 import { generateUploadUrl, deleteFile } from "../../lib/minio.js";
 import { getAccessibleCommunityIds } from "../../lib/community-access.js";
+import { notificationsQueue, NEW_MEMBER_REGISTERED_EMAIL_JOB } from "../../lib/queue.js";
 import {
   ConflictError,
   UnauthorizedError,
@@ -106,6 +107,36 @@ export class AuthService {
       where: { phone: data.phone },
       data: { isRegistered: true },
     });
+
+    const communities = await this.fetchUserCommunities(updated.id);
+    const approvedPhone = await this.db.approvedPhone.findUnique({
+      where: { phone: data.phone },
+      select: { addedBy: true },
+    });
+    const addedByAdmin = approvedPhone?.addedBy
+      ? await this.db.user.findUnique({ where: { id: approvedPhone.addedBy }, select: { name: true, email: true } })
+      : null;
+
+    if (addedByAdmin) {
+      for (const community of communities) {
+        try {
+          await notificationsQueue.add(
+            NEW_MEMBER_REGISTERED_EMAIL_JOB,
+            {
+              adminEmail: addedByAdmin.email,
+              adminName: addedByAdmin.name,
+              memberName: updated.name,
+              phone: updated.phone,
+              communityName: community.name,
+              registeredDate: new Date().toISOString(),
+            },
+            { attempts: 3, backoff: { type: "exponential", delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
+          );
+        } catch (err) {
+          logger.error({ err, userId: updated.id, communityId: community.id }, "auth.register: failed to enqueue new-member-registered email job");
+        }
+      }
+    }
 
     logger.info({ userId: updated.id }, "auth.register: success");
     return this.issueTokens(updated);

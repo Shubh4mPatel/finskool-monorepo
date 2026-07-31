@@ -18,6 +18,8 @@ export interface CommunityPostNotificationJobPayload {
   postId: string
   message: string
   triggeredByUserId: string
+  postTitle: string
+  postExcerpt: string
 }
 
 export interface CommunityRecommendationNotificationJobPayload {
@@ -29,7 +31,10 @@ export interface CommunityRecommendationNotificationJobPayload {
 
 export interface ThreadReplyEmailJobPayload {
   toEmail: string
-  message: string
+  recipientName: string
+  adminName: string
+  postTitle: string
+  replyExcerpt: string
 }
 
 export const WELCOME_EMAIL_JOB = 'welcome-email'
@@ -37,6 +42,48 @@ export const WELCOME_EMAIL_JOB = 'welcome-email'
 export interface WelcomeEmailJobPayload {
   toEmail: string
   name: string
+  phone: string
+  communityName: string
+  validTill: string
+}
+
+export const SUBSCRIPTION_EXTENDED_EMAIL_JOB = 'subscription-extended-email'
+
+export interface SubscriptionExtendedEmailJobPayload {
+  toEmail: string
+  name: string
+  communityName: string
+  validTill: string
+  amount: number
+  paidOn: string
+}
+
+export const COMMUNITY_ADDED_EMAIL_JOB = 'community-added-email'
+
+export interface CommunityAddedEmailJobPayload {
+  toEmail: string
+  name: string
+  communityName: string
+  validTill: string
+}
+
+export const COMMUNITY_ACCESS_REMOVED_EMAIL_JOB = 'community-access-removed-email'
+
+export interface CommunityAccessRemovedEmailJobPayload {
+  toEmail: string
+  name: string
+  communityName: string
+}
+
+export const NEW_MEMBER_REGISTERED_EMAIL_JOB = 'new-member-registered-email'
+
+export interface NewMemberRegisteredEmailJobPayload {
+  adminEmail: string
+  adminName: string
+  memberName: string
+  phone: string
+  communityName: string
+  registeredDate: string
 }
 
 export type NotificationJobPayload =
@@ -44,6 +91,10 @@ export type NotificationJobPayload =
   | CommunityRecommendationNotificationJobPayload
   | ThreadReplyEmailJobPayload
   | WelcomeEmailJobPayload
+  | SubscriptionExtendedEmailJobPayload
+  | CommunityAddedEmailJobPayload
+  | CommunityAccessRemovedEmailJobPayload
+  | NewMemberRegisteredEmailJobPayload
 
 // Published by NotificationsService (running in the worker process) whenever a
 // new notification row is created, and consumed by lib/live-notifications-feed.ts

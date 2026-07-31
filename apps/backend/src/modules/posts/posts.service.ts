@@ -2,6 +2,7 @@ import type { PrismaClient, Prisma } from '../../generated/prisma/client.js'
 import { uploadFile, deleteFile } from '../../lib/minio.js'
 import { notificationsQueue, COMMUNITY_POST_JOB } from '../../lib/queue.js'
 import { assertCommunityAccessFromToken } from '../../lib/community-access.js'
+import { truncateText } from '../../lib/email-templates.js'
 import { NotFoundError, BadRequestError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
 import type {
@@ -225,6 +226,8 @@ export class PostsService {
           postId: updated.id,
           message: `New post: "${updated.title}"`,
           triggeredByUserId: updated.authorId,
+          postTitle: updated.title,
+          postExcerpt: truncateText(updated.contentMd),
         },
         {
           jobId: `post-published-${updated.id}`,

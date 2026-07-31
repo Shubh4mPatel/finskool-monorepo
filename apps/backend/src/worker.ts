@@ -7,6 +7,10 @@ import {
   COMMUNITY_RECOMMENDATION_JOB,
   THREAD_REPLY_EMAIL_JOB,
   WELCOME_EMAIL_JOB,
+  SUBSCRIPTION_EXTENDED_EMAIL_JOB,
+  COMMUNITY_ADDED_EMAIL_JOB,
+  COMMUNITY_ACCESS_REMOVED_EMAIL_JOB,
+  NEW_MEMBER_REGISTERED_EMAIL_JOB,
   STOCK_CLOSE_PRICE_QUEUE_NAME,
   REFRESH_CLOSE_PRICES_JOB,
 } from './lib/queue.js'
@@ -25,6 +29,10 @@ const worker = new Worker(
     if (job.name === COMMUNITY_RECOMMENDATION_JOB) return service.fanOutCommunityRecommendation(job.data)
     if (job.name === THREAD_REPLY_EMAIL_JOB) return service.sendThreadReplyEmail(job.data)
     if (job.name === WELCOME_EMAIL_JOB) return service.sendWelcomeEmail(job.data)
+    if (job.name === SUBSCRIPTION_EXTENDED_EMAIL_JOB) return service.sendSubscriptionExtendedEmail(job.data)
+    if (job.name === COMMUNITY_ADDED_EMAIL_JOB) return service.sendCommunityAddedEmail(job.data)
+    if (job.name === COMMUNITY_ACCESS_REMOVED_EMAIL_JOB) return service.sendCommunityAccessRemovedEmail(job.data)
+    if (job.name === NEW_MEMBER_REGISTERED_EMAIL_JOB) return service.sendNewMemberRegisteredEmail(job.data)
   },
   { connection, concurrency: 5 },
 )

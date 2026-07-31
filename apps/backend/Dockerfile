@@ -13,6 +13,7 @@ WORKDIR /app
 ENV NODE_ENV=development
 COPY tsconfig.json prisma.config.ts ./
 COPY prisma ./prisma
+COPY email-template ./email-template
 COPY src ./src
 RUN npx prisma generate
 EXPOSE 3001
@@ -39,6 +40,7 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/src/generated ./src/generated
 COPY prisma ./prisma
 COPY prisma.config.ts ./
+COPY email-template ./email-template
 COPY docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh
 EXPOSE 3001

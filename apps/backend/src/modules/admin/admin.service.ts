@@ -3,7 +3,13 @@ import bcrypt from 'bcryptjs'
 import type { PrismaClient } from '../../generated/prisma/client.js'
 import { assertSuperAdmin } from '../../lib/community-access.js'
 import { generateUploadUrl } from '../../lib/minio.js'
-import { notificationsQueue, WELCOME_EMAIL_JOB } from '../../lib/queue.js'
+import {
+  notificationsQueue,
+  WELCOME_EMAIL_JOB,
+  SUBSCRIPTION_EXTENDED_EMAIL_JOB,
+  COMMUNITY_ADDED_EMAIL_JOB,
+  COMMUNITY_ACCESS_REMOVED_EMAIL_JOB,
+} from '../../lib/queue.js'
 import { BadRequestError, ConflictError, NotFoundError, ForbiddenError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
 import { normalizePhone } from '../../lib/phone.js'
@@ -199,7 +205,7 @@ export class AdminService {
         try {
           await notificationsQueue.add(
             WELCOME_EMAIL_JOB,
-            { toEmail: email, name },
+            { toEmail: email, name, phone, communityName: community.name, validTill: validUntil.toISOString() },
             { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
           )
         } catch (err) {
@@ -279,7 +285,7 @@ export class AdminService {
           try {
             await notificationsQueue.add(
               WELCOME_EMAIL_JOB,
-              { toEmail: row.email, name: row.name },
+              { toEmail: row.email, name: row.name, phone, communityName: community.name, validTill: validUntil.toISOString() },
               { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
             )
           } catch (err) {
@@ -947,7 +953,7 @@ export class AdminService {
     try {
       await notificationsQueue.add(
         WELCOME_EMAIL_JOB,
-        { toEmail: data.email, name: data.name },
+        { toEmail: data.email, name: data.name, phone, communityName: community.name, validTill: new Date(data.validUntil).toISOString() },
         { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
       )
     } catch (err) {
@@ -965,7 +971,10 @@ export class AdminService {
   }
 
   async extendSubscription(subscriptionId: string, data: ExtendSubscriptionDTO): Promise<ExtendSubscriptionResultDTO> {
-    const current = await this.db.subscription.findUnique({ where: { id: subscriptionId } })
+    const current = await this.db.subscription.findUnique({
+      where: { id: subscriptionId },
+      include: { user: { select: { name: true, email: true } }, community: { select: { name: true } } },
+    })
     if (!current) throw new NotFoundError('Subscription not found')
 
     const paidOn = data.paidOn ? new Date(data.paidOn) : new Date()
@@ -995,6 +1004,24 @@ export class AdminService {
       { previousSubscriptionId: current.id, newSubscriptionId: created.id, userId: current.userId },
       'admin.extendSubscription: extended',
     )
+
+    try {
+      await notificationsQueue.add(
+        SUBSCRIPTION_EXTENDED_EMAIL_JOB,
+        {
+          toEmail: current.user.email,
+          name: current.user.name,
+          communityName: current.community.name,
+          validTill: created.validUntil.toISOString(),
+          amount: Number(created.payment),
+          paidOn: (created.paidOn ?? paidOn).toISOString(),
+        },
+        { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
+      )
+    } catch (err) {
+      logger.error({ err, subscriptionId: created.id }, 'admin.extendSubscription: failed to enqueue subscription-extended email job')
+    }
+
     return {
       id: created.id,
       userId: created.userId,
@@ -1349,11 +1376,13 @@ export class AdminService {
       }
     }
 
+    let addedCommunityName: string | null = null
     if (data.newCommunity) {
       const community = await this.db.community.findUnique({
         where: { id: data.newCommunity.communityId, deletedAt: null },
       })
       if (!community) throw new NotFoundError('Community not found')
+      addedCommunityName = community.name
       if (user) {
         const alreadyIn = await this.db.subscription.findFirst({
           where: { userId: user.id, communityId: data.newCommunity.communityId, isActive: true },
@@ -1389,6 +1418,23 @@ export class AdminService {
       }
     })
 
+    if (data.newCommunity && user && addedCommunityName) {
+      try {
+        await notificationsQueue.add(
+          COMMUNITY_ADDED_EMAIL_JOB,
+          {
+            toEmail: data.email,
+            name: data.name,
+            communityName: addedCommunityName,
+            validTill: new Date(data.newCommunity.validUntil).toISOString(),
+          },
+          { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
+        )
+      } catch (err) {
+        logger.error({ err, approvedPhoneId }, 'admin.updateMember: failed to enqueue community-added email job')
+      }
+    }
+
     logger.info({ approvedPhoneId }, 'admin.updateMember: success')
     return this.fetchMemberDTO(approvedPhoneId)
   }
@@ -1405,6 +1451,8 @@ export class AdminService {
     })
     if (!sub) throw new NotFoundError('Active subscription not found for this community')
 
+    const community = await this.db.community.findUnique({ where: { id: communityId }, select: { name: true } })
+
     await this.db.subscription.update({ where: { id: sub.id }, data: { isActive: false } })
 
     const remaining = await this.db.subscription.count({ where: { userId: user.id, isActive: true } })
@@ -1413,6 +1461,16 @@ export class AdminService {
         await tx.approvedPhone.update({ where: { id: approvedPhoneId }, data: { isActive: false } })
         await tx.user.update({ where: { id: user.id }, data: { isActive: false } })
       })
+    }
+
+    try {
+      await notificationsQueue.add(
+        COMMUNITY_ACCESS_REMOVED_EMAIL_JOB,
+        { toEmail: user.email, name: user.name, communityName: community?.name ?? '' },
+        { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
+      )
+    } catch (err) {
+      logger.error({ err, approvedPhoneId, communityId }, 'admin.revokeMemberCommunity: failed to enqueue access-removed email job')
     }
 
     logger.info({ approvedPhoneId, communityId, remaining }, 'admin.revokeMemberCommunity: success')

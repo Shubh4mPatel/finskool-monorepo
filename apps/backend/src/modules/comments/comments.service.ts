@@ -3,6 +3,7 @@ import { assertCommunityAccessFromToken } from '../../lib/community-access.js'
 import { notificationsQueue, THREAD_REPLY_EMAIL_JOB, NOTIFICATIONS_PUBSUB_CHANNEL } from '../../lib/queue.js'
 import type { LiveNotificationEvent } from '../../lib/queue.js'
 import redis from '../../lib/redis.js'
+import { truncateText } from '../../lib/email-templates.js'
 import { NotFoundError, ForbiddenError, BadRequestError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
 import type { CreateCommentDTO, CommentTreeDTO, CommentListDTO } from './comments.dto.js'
@@ -42,6 +43,7 @@ export class CommentsService {
     let parentAuthorId: string | null = null
     let parentAuthorEmail: string | null = null
     let parentAuthorRole: string | null = null
+    let parentAuthorName: string | null = null
 
     if (data.parentCommentId) {
       const parent = await this.db.comment.findUnique({
@@ -52,7 +54,7 @@ export class CommentsService {
           authorId: true,
           depth: true,
           path: true,
-          author: { select: { role: true, email: true } },
+          author: { select: { role: true, email: true, name: true } },
         },
       })
       if (!parent) throw new NotFoundError('Parent comment not found')
@@ -65,6 +67,7 @@ export class CommentsService {
       parentAuthorId = parent.authorId
       parentAuthorEmail = parent.author.email
       parentAuthorRole = parent.author.role
+      parentAuthorName = parent.author.name
     }
 
     // Notify admin when: commenter is not admin AND (top-level comment OR reply to admin's comment)
@@ -129,11 +132,17 @@ export class CommentsService {
     // Enqueued after the transaction commits (not inside it) — email delivery
     // is a side effect that shouldn't be tied to the DB transaction, and the
     // API response shouldn't wait on an SMTP round-trip for a reply notification.
-    if (replyMessage && parentAuthorEmail) {
+    if (replyMessage && parentAuthorEmail && parentAuthorName && replyNotifyTarget) {
       try {
         await notificationsQueue.add(
           THREAD_REPLY_EMAIL_JOB,
-          { toEmail: parentAuthorEmail, message: replyMessage },
+          {
+            toEmail: parentAuthorEmail,
+            recipientName: parentAuthorName,
+            adminName: replyNotifyTarget.name,
+            postTitle: post.title,
+            replyExcerpt: truncateText(data.content),
+          },
           { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
         )
       } catch (err) {
