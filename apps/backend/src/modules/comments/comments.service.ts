@@ -1,11 +1,12 @@
 import type { PrismaClient, UserRole } from '../../generated/prisma/client.js'
-import { assertCommunityAccessFromToken } from '../../lib/community-access.js'
+import { assertCommunityAccessFromToken, getCommunityAdminIds } from '../../lib/community-access.js'
 import { notificationsQueue, THREAD_REPLY_EMAIL_JOB, NOTIFICATIONS_PUBSUB_CHANNEL } from '../../lib/queue.js'
 import type { LiveNotificationEvent } from '../../lib/queue.js'
 import redis from '../../lib/redis.js'
 import { truncateText } from '../../lib/email-templates.js'
 import { NotFoundError, ForbiddenError, BadRequestError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
+import { NotificationType } from '../notifications/notifications.dto.js'
 import type { CreateCommentDTO, CommentTreeDTO, CommentListDTO } from './comments.dto.js'
 
 export class CommentsService {
@@ -20,7 +21,7 @@ export class CommentsService {
   ): Promise<CommentTreeDTO> {
     const post = await this.db.post.findUnique({
       where: { id: postId, deletedAt: null, status: 'published' },
-      select: { id: true, communityId: true, title: true },
+      select: { id: true, communityId: true, title: true, community: { select: { name: true } } },
     })
     if (!post) throw new NotFoundError('Post not found or not published')
 
@@ -82,6 +83,16 @@ export class CommentsService {
       ? `${replyNotifyTarget.name} replied to your comment on "${post.title}"`
       : null
 
+    // Commenter's own name, needed for the admin fan-out notification below.
+    // replyNotifyTarget already looked this same user up in the reply-to-admin
+    // case, so only re-query for the top-level-comment case (replyNotifyTarget
+    // is always null there since there's no parentId).
+    const commenterName = shouldNotify
+      ? (replyNotifyTarget?.name ?? (await this.db.user.findUnique({ where: { id: userId }, select: { name: true } }))?.name ?? null)
+      : null
+
+    const communityAdminIds = shouldNotify ? await getCommunityAdminIds(this.db, post.communityId) : []
+
     // create with temp path, then update with real path (needs the new id)
     const comment = await this.db.$transaction(async tx => {
       const created = await tx.comment.create({
@@ -92,6 +103,20 @@ export class CommentsService {
 
       if (shouldNotify) {
         await tx.commentNotification.create({ data: { commentId: created.id, postId } })
+
+        if (communityAdminIds.length > 0 && commenterName) {
+          await tx.notification.createMany({
+            data: communityAdminIds.map(adminId => ({
+              communityId: post.communityId,
+              userId: adminId,
+              type: NotificationType.NewMemberReply,
+              sourceId: created.id,
+              title: `New thread on ${post.title}`,
+              message: `${commenterName} asked a question in ${post.community.name}.`,
+            })),
+            skipDuplicates: true,
+          })
+        }
       }
 
       // When admin replies to a notified comment, auto-mark that notification as replied
@@ -109,8 +134,9 @@ export class CommentsService {
           data: {
             communityId: post.communityId,
             userId: parentAuthorId,
-            type: 'thread',
+            type: NotificationType.Thread,
             sourceId: created.id,
+            title: `${replyNotifyTarget!.name} replied to you`,
             message: replyMessage,
           },
         })
@@ -167,6 +193,28 @@ export class CommentsService {
         )
       } catch (err) {
         logger.error({ err, commentId: comment.id }, 'comments.create: failed to publish live reply notification')
+      }
+    }
+
+    if (shouldNotify && communityAdminIds.length > 0 && commenterName) {
+      try {
+        const message = `${commenterName} asked a question in ${post.community.name}.`
+        await Promise.all(
+          communityAdminIds.map(adminId =>
+            redis.publish(
+              NOTIFICATIONS_PUBSUB_CHANNEL,
+              JSON.stringify({
+                userId: adminId,
+                type: NotificationType.NewMemberReply,
+                communityId: post.communityId,
+                message,
+                sourceId: comment.id,
+              } satisfies LiveNotificationEvent),
+            ),
+          ),
+        )
+      } catch (err) {
+        logger.error({ err, commentId: comment.id }, 'comments.create: failed to publish live new-member-reply notifications')
       }
     }
 

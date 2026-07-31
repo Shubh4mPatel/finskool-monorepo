@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { clearSession, getSession, type SessionInfo } from "@/lib/session";
+import { notificationSocketStore } from "@/store/notifications/notificationSocketStore";
 import {
   LayoutDashboard,
   Pencil,
@@ -16,6 +17,7 @@ import {
   TrendingUp,
   ShieldCheck,
   Building2,
+  Bell,
   LogOut,
   Menu,
   X,
@@ -23,6 +25,7 @@ import {
 
 const navItems = [
   { href: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/admin/notifications", label: "Notifications", icon: Bell, badge: undefined as number | undefined },
   { href: "/admin/create-post", label: "Create Post", icon: Pencil },
   { href: "/admin/communities", label: "Communities", icon: Building2, superAdminOnly: true },
   { href: "/admin/feed", label: "Feed", icon: LayoutGrid },
@@ -38,6 +41,7 @@ function SidebarContent({ onNav }: { onNav?: () => void }) {
   const pathname = usePathname();
   const router = useRouter();
   const [unresolvedThreads, setUnresolvedThreads] = useState<number | undefined>(undefined);
+  const [unreadNotifications, setUnreadNotifications] = useState<number | undefined>(undefined);
   const [session, setSession] = useState<SessionInfo | null>(null);
 
   useEffect(() => {
@@ -59,6 +63,26 @@ function SidebarContent({ onNav }: { onNav?: () => void }) {
     return () => {
       clearInterval(interval);
       window.removeEventListener("admin-threads:updated", load);
+    };
+  }, []);
+
+  useEffect(() => {
+    const load = () =>
+      api
+        .get<{ count: number }>("/api/v1/notifications/unread-count")
+        .then((d) => setUnreadNotifications(d.count))
+        .catch(() => {});
+    load();
+    const interval = setInterval(load, 45_000);
+    window.addEventListener("notifications:updated", load);
+
+    notificationSocketStore.connect();
+    const unsubscribe = notificationSocketStore.subscribe(load);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("notifications:updated", load);
+      unsubscribe();
     };
   }, []);
 
@@ -93,7 +117,9 @@ function SidebarContent({ onNav }: { onNav?: () => void }) {
         {navItems.filter((item) => !item.superAdminOnly || session?.isSuperAdmin).map((item) => {
           const isActive = pathname?.startsWith(item.href);
           const Icon = item.icon;
-          const badge = item.href === "/admin/unresolved-threads" ? unresolvedThreads : item.badge;
+          const badge = item.href === "/admin/unresolved-threads" ? unresolvedThreads
+            : item.href === "/admin/notifications" ? unreadNotifications
+            : item.badge;
           return (
             <Link
               key={item.href}

@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { RefreshCw } from "lucide-react";
 import { api } from "@/lib/api";
-import { getSession } from "@/lib/session";
 import { notificationSocketStore } from "@/store/notifications/notificationSocketStore";
 import {
   NotificationCard,
@@ -12,18 +11,17 @@ import {
   type ListNotificationsResponse,
 } from "@/components/NotificationCard";
 
-// Same type -> route mapping this page used before title/link were added —
-// every route here is a fixed function of the notification's type, so no
-// per-notification link needs to be stored server-side.
+// type -> route mapping for the admin side. "thread" lands here (not on the
+// member map) because an admin can be the direct target of a reply too, when
+// a member replies to the admin's own comment.
 const ROUTE_BY_TYPE: Record<string, string> = {
-  post: "/feed",
-  recommendation: "/recommendations",
-  thread: "/feed",
-  "subscription-extended": "/feed",
-  "community-added": "/feed",
+  thread: "/admin/feed",
+  "new-member-registered": "/admin/members",
+  "import-complete": "/admin/import-csv",
+  "new-member-reply": "/admin/unresolved-threads",
 };
 
-export default function AnnouncementsPage() {
+export default function AdminNotificationsPage() {
   const router = useRouter();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
@@ -31,12 +29,7 @@ export default function AnnouncementsPage() {
   const fetchNotifications = useCallback(async () => {
     setLoading(true);
     try {
-      const session = getSession();
-      const communityId = session?.communityId;
-      const url = communityId
-        ? `/api/v1/notifications?page=1&pageSize=20&communityId=${communityId}`
-        : `/api/v1/notifications?page=1&pageSize=20`;
-      const data = await api.get<ListNotificationsResponse>(url);
+      const data = await api.get<ListNotificationsResponse>("/api/v1/notifications?page=1&pageSize=20");
       setNotifications(data.notifications);
     } catch {
       setNotifications([]);
@@ -77,7 +70,10 @@ export default function AnnouncementsPage() {
     <div className="flex flex-col gap-6">
       {/* Top bar */}
       <div className="flex items-center justify-between gap-4">
-        <h1 className="font-display text-xl font-semibold text-primary">Announcement</h1>
+        <div>
+          <p className="text-xs font-semibold text-accent">Dashboard &rsaquo; Notifications</p>
+          <h1 className="font-display text-2xl font-bold text-primary">Notifications</h1>
+        </div>
         <button
           onClick={fetchNotifications}
           type="button"

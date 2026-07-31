@@ -65,6 +65,7 @@ export class NotificationsService {
         id: n.id,
         communityId: n.communityId,
         type: n.type,
+        title: n.title,
         message: n.message,
         isRead: n.isRead,
         createdAt: n.createdAt,
@@ -108,6 +109,7 @@ export class NotificationsService {
     return this.fanOutCommunity({
       communityId: payload.communityId,
       sourceId: payload.postId,
+      title: subject,
       message: payload.message,
       triggeredByUserId: payload.triggeredByUserId,
       type: NotificationType.Post,
@@ -120,6 +122,7 @@ export class NotificationsService {
     return this.fanOutCommunity({
       communityId: payload.communityId,
       sourceId: payload.recommendationId,
+      title: `New recommendation — ${payload.stockSymbol}`,
       message: payload.message,
       triggeredByUserId: payload.triggeredByUserId,
       type: NotificationType.Recommendation,
@@ -130,12 +133,13 @@ export class NotificationsService {
   private async fanOutCommunity(params: {
     communityId: string
     sourceId: string
+    title: string
     message: string
     triggeredByUserId: string
     type: string
     email: { subject: string; html: string }
   }): Promise<{ created: number }> {
-    const { communityId, sourceId, message, triggeredByUserId, type, email } = params
+    const { communityId, sourceId, title, message, triggeredByUserId, type, email } = params
 
     const subs = await this.db.subscription.findMany({
       where: { communityId, isActive: true, validUntil: { gte: startOfToday() } },
@@ -157,6 +161,7 @@ export class NotificationsService {
           userId: r.userId,
           type,
           sourceId,
+          title,
           message,
         })),
         skipDuplicates: true,

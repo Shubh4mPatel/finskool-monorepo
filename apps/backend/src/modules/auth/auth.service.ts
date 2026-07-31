@@ -8,7 +8,10 @@ import { env } from "../../config/env.js";
 import { logger } from "../../shared/logger.js";
 import { generateUploadUrl, deleteFile } from "../../lib/minio.js";
 import { getAccessibleCommunityIds } from "../../lib/community-access.js";
-import { notificationsQueue, NEW_MEMBER_REGISTERED_EMAIL_JOB } from "../../lib/queue.js";
+import { notificationsQueue, NEW_MEMBER_REGISTERED_EMAIL_JOB, NOTIFICATIONS_PUBSUB_CHANNEL } from "../../lib/queue.js";
+import type { LiveNotificationEvent } from "../../lib/queue.js";
+import { formatEmailDate } from "../../lib/email-templates.js";
+import { NotificationType } from "../notifications/notifications.dto.js";
 import {
   ConflictError,
   UnauthorizedError,
@@ -114,10 +117,15 @@ export class AuthService {
       select: { addedBy: true },
     });
     const addedByAdmin = approvedPhone?.addedBy
-      ? await this.db.user.findUnique({ where: { id: approvedPhone.addedBy }, select: { name: true, email: true } })
+      ? await this.db.user.findUnique({ where: { id: approvedPhone.addedBy }, select: { id: true, name: true, email: true } })
       : null;
 
     if (addedByAdmin) {
+      const activeSubscriptions = await this.db.subscription.findMany({
+        where: { userId: updated.id, isActive: true, validUntil: { gte: startOfToday() } },
+        select: { id: true, communityId: true },
+      });
+
       for (const community of communities) {
         try {
           await notificationsQueue.add(
@@ -134,6 +142,36 @@ export class AuthService {
           );
         } catch (err) {
           logger.error({ err, userId: updated.id, communityId: community.id }, "auth.register: failed to enqueue new-member-registered email job");
+        }
+
+        const subscriptionId = activeSubscriptions.find(s => s.communityId === community.id)?.id;
+        if (subscriptionId) {
+          const registeredDate = new Date();
+          const message = `Joined ${community.name} on ${formatEmailDate(registeredDate)}.`;
+          try {
+            await this.db.notification.create({
+              data: {
+                communityId: community.id,
+                userId: addedByAdmin.id,
+                type: NotificationType.NewMemberRegistered,
+                sourceId: subscriptionId,
+                title: `${updated.name} has registered`,
+                message,
+              },
+            });
+            await this.redis.publish(
+              NOTIFICATIONS_PUBSUB_CHANNEL,
+              JSON.stringify({
+                userId: addedByAdmin.id,
+                type: NotificationType.NewMemberRegistered,
+                communityId: community.id,
+                message,
+                sourceId: subscriptionId,
+              } satisfies LiveNotificationEvent),
+            );
+          } catch (err) {
+            logger.error({ err, userId: updated.id, communityId: community.id }, "auth.register: failed to create new-member-registered notification");
+          }
         }
       }
     }

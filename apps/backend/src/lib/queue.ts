@@ -27,6 +27,7 @@ export interface CommunityRecommendationNotificationJobPayload {
   recommendationId: string
   message: string
   triggeredByUserId: string
+  stockSymbol: string
 }
 
 export interface ThreadReplyEmailJobPayload {

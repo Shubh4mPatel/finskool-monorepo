@@ -84,6 +84,7 @@ export class StockRecommendationsService {
           recommendationId: rec.id,
           message: `New recommendation: ${rec.stock.symbol} — ${rec.actionCall.toUpperCase()}`,
           triggeredByUserId: adminId,
+          stockSymbol: rec.stock.symbol,
         },
         {
           jobId: `recommendation-created-${rec.id}`,

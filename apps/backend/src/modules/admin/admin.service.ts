@@ -1,4 +1,5 @@
 import { createRequire } from 'module'
+import { randomUUID } from 'crypto'
 import bcrypt from 'bcryptjs'
 import type { PrismaClient } from '../../generated/prisma/client.js'
 import { assertSuperAdmin } from '../../lib/community-access.js'
@@ -9,10 +10,15 @@ import {
   SUBSCRIPTION_EXTENDED_EMAIL_JOB,
   COMMUNITY_ADDED_EMAIL_JOB,
   COMMUNITY_ACCESS_REMOVED_EMAIL_JOB,
+  NOTIFICATIONS_PUBSUB_CHANNEL,
 } from '../../lib/queue.js'
+import type { LiveNotificationEvent } from '../../lib/queue.js'
 import { BadRequestError, ConflictError, NotFoundError, ForbiddenError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
 import { normalizePhone } from '../../lib/phone.js'
+import { formatEmailDate } from '../../lib/email-templates.js'
+import { NotificationType } from '../notifications/notifications.dto.js'
+import redis from '../../lib/redis.js'
 import type {
   DuplicateStrategy,
   ImportSummaryDTO,
@@ -104,6 +110,7 @@ export class AdminService {
     const communities = await this.db.community.findMany({
       select: { id: true, name: true },
     })
+    let notifyCommunityId: string | null = null
 
     // use entries() so we get index + element without noUncheckedIndexedAccess issues
     for (const [i, row] of rows.entries()) {
@@ -178,6 +185,7 @@ export class AdminService {
           }
         })
         summary.updated++
+        if (!notifyCommunityId) notifyCommunityId = community.id
       } else if (existingUser && existingAp) {
         // User exists but NOT subscribed to this community yet — add subscription only
         await this.db.subscription.create({
@@ -191,6 +199,7 @@ export class AdminService {
           },
         })
         summary.created++
+        if (!notifyCommunityId) notifyCommunityId = community.id
       } else {
         // Brand new user — create User + ApprovedPhone + Subscription in one transaction
         await this.db.$transaction(async tx => {
@@ -201,6 +210,7 @@ export class AdminService {
           })
         })
         summary.created++
+        if (!notifyCommunityId) notifyCommunityId = community.id
 
         try {
           await notificationsQueue.add(
@@ -212,6 +222,13 @@ export class AdminService {
           logger.error({ err, phone }, 'admin.importUsers: failed to enqueue welcome email job')
         }
       }
+    }
+
+    const targetCommunityId = notifyCommunityId ?? communities[0]?.id ?? null
+    if (targetCommunityId) {
+      await this.notifyImportComplete(adminId, targetCommunityId, summary)
+    } else {
+      logger.warn({ adminId }, 'admin.importUsers: no community available for import-complete notification — skipped')
     }
 
     logger.info(summary, 'admin.importUsers: complete')
@@ -226,6 +243,7 @@ export class AdminService {
     const summary: ImportSummaryDTO = { total: rows.length, created: 0, updated: 0, skipped: 0, errors: [] }
 
     const communities = await this.db.community.findMany({ select: { id: true, name: true } })
+    let notifyCommunityId: string | null = null
 
     for (const [i, row] of rows.entries()) {
       const rowNum = i + 1
@@ -267,11 +285,13 @@ export class AdminService {
             }
           })
           summary.updated++
+          if (!notifyCommunityId) notifyCommunityId = community.id
         } else if (existingUser && existingAp) {
           await this.db.subscription.create({
             data: { userId: existingUser.id, approvedPhoneId: existingAp.id, communityId: community.id, payment, paidOn, validUntil },
           })
           summary.created++
+          if (!notifyCommunityId) notifyCommunityId = community.id
         } else {
           await this.db.$transaction(async tx => {
             const user = await tx.user.create({ data: { phone, name: row.name, email: row.email } })
@@ -281,6 +301,7 @@ export class AdminService {
             })
           })
           summary.created++
+          if (!notifyCommunityId) notifyCommunityId = community.id
 
           try {
             await notificationsQueue.add(
@@ -298,8 +319,38 @@ export class AdminService {
       }
     }
 
+    const targetCommunityId = notifyCommunityId ?? communities[0]?.id ?? null
+    if (targetCommunityId) {
+      await this.notifyImportComplete(adminId, targetCommunityId, summary)
+    } else {
+      logger.warn({ adminId }, 'admin.importUsersFromJSON: no community available for import-complete notification — skipped')
+    }
+
     logger.info(summary, 'admin.importUsersFromJSON: complete')
     return summary
+  }
+
+  private async notifyImportComplete(adminId: string, communityId: string, summary: ImportSummaryDTO): Promise<void> {
+    const sourceId = randomUUID()
+    const message = `${summary.errors.length} rows skipped. Review the error list.`
+    try {
+      await this.db.notification.create({
+        data: {
+          communityId,
+          userId: adminId,
+          type: NotificationType.ImportComplete,
+          sourceId,
+          title: `Import complete — ${summary.created} members added`,
+          message,
+        },
+      })
+      await redis.publish(
+        NOTIFICATIONS_PUBSUB_CHANNEL,
+        JSON.stringify({ userId: adminId, type: NotificationType.ImportComplete, communityId, message, sourceId } satisfies LiveNotificationEvent),
+      )
+    } catch (err) {
+      logger.error({ err, adminId }, 'admin.notifyImportComplete: failed')
+    }
   }
 
   async listCommentNotifications(
@@ -986,7 +1037,7 @@ export class AdminService {
     const created = await this.db.$transaction(async tx => {
       // Keep the old period as history — only the newest row is the active subscription
       await tx.subscription.update({ where: { id: current.id }, data: { isActive: false } })
-      return tx.subscription.create({
+      const sub = await tx.subscription.create({
         data: {
           userId: current.userId,
           approvedPhoneId: current.approvedPhoneId,
@@ -998,6 +1049,17 @@ export class AdminService {
           createdAt: paidOn,
         },
       })
+      await tx.notification.create({
+        data: {
+          communityId: current.communityId,
+          userId: current.userId,
+          type: NotificationType.SubscriptionExtended,
+          sourceId: sub.id,
+          title: 'Access extended',
+          message: `You're active until ${formatEmailDate(sub.validUntil)}.`,
+        },
+      })
+      return sub
     })
 
     logger.info(
@@ -1020,6 +1082,21 @@ export class AdminService {
       )
     } catch (err) {
       logger.error({ err, subscriptionId: created.id }, 'admin.extendSubscription: failed to enqueue subscription-extended email job')
+    }
+
+    try {
+      await redis.publish(
+        NOTIFICATIONS_PUBSUB_CHANNEL,
+        JSON.stringify({
+          userId: current.userId,
+          type: NotificationType.SubscriptionExtended,
+          communityId: current.communityId,
+          message: `You're active until ${formatEmailDate(created.validUntil)}.`,
+          sourceId: created.id,
+        } satisfies LiveNotificationEvent),
+      )
+    } catch (err) {
+      logger.error({ err, subscriptionId: created.id }, 'admin.extendSubscription: failed to publish live notification')
     }
 
     return {
@@ -1391,7 +1468,7 @@ export class AdminService {
       }
     }
 
-    await this.db.$transaction(async tx => {
+    const newSubscriptionId = await this.db.$transaction(async tx => {
       await tx.approvedPhone.update({
         where: { id: approvedPhoneId },
         data: { name: data.name, phone: normalizedPhone, email: data.email },
@@ -1402,20 +1479,33 @@ export class AdminService {
           data: { name: data.name, phone: normalizedPhone, email: data.email },
         })
       }
-      if (data.newCommunity && user) {
+      if (data.newCommunity && user && addedCommunityName) {
         const paidOn = data.newCommunity.paidOn ? new Date(data.newCommunity.paidOn) : new Date()
-        await tx.subscription.create({
+        const validUntil = new Date(data.newCommunity.validUntil)
+        const sub = await tx.subscription.create({
           data: {
             userId: user.id,
             approvedPhoneId,
             communityId: data.newCommunity.communityId,
             payment: data.newCommunity.payment,
             paidOn,
-            validUntil: new Date(data.newCommunity.validUntil),
+            validUntil,
             isActive: true,
           },
         })
+        await tx.notification.create({
+          data: {
+            communityId: data.newCommunity.communityId,
+            userId: user.id,
+            type: NotificationType.CommunityAdded,
+            sourceId: sub.id,
+            title: `You've been added to ${addedCommunityName}`,
+            message: `Active until ${formatEmailDate(validUntil)}.`,
+          },
+        })
+        return sub.id
       }
+      return null
     })
 
     if (data.newCommunity && user && addedCommunityName) {
@@ -1432,6 +1522,23 @@ export class AdminService {
         )
       } catch (err) {
         logger.error({ err, approvedPhoneId }, 'admin.updateMember: failed to enqueue community-added email job')
+      }
+
+      if (newSubscriptionId) {
+        try {
+          await redis.publish(
+            NOTIFICATIONS_PUBSUB_CHANNEL,
+            JSON.stringify({
+              userId: user.id,
+              type: NotificationType.CommunityAdded,
+              communityId: data.newCommunity.communityId,
+              message: `Active until ${formatEmailDate(new Date(data.newCommunity.validUntil))}.`,
+              sourceId: newSubscriptionId,
+            } satisfies LiveNotificationEvent),
+          )
+        } catch (err) {
+          logger.error({ err, approvedPhoneId }, 'admin.updateMember: failed to publish live notification')
+        }
       }
     }
 

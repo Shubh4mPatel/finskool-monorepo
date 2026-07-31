@@ -311,6 +311,7 @@ model Notification {
   userId      String   @map("user_id") @db.Uuid
   type        String   @db.VarChar(50)
   sourceId    String   @map("source_id") @db.Uuid
+  title       String   @db.Text
   message     String   @db.Text
   isRead      Boolean  @default(false) @map("is_read")
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
