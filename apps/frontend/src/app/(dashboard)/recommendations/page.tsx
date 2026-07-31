@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { ChevronDown, LayoutGrid, Search } from "lucide-react";
 import { api } from "@/lib/api";
-import { useStockTick, useMarketStatus } from "@/store/liveStockPrices/hooks";
+import { useMarketStatus, useLiveCmpAndReturn } from "@/store/liveStockPrices/hooks";
 
 interface StockRecommendationItem {
   id: string;
@@ -60,17 +60,6 @@ function formatReturn(n: number | null): string {
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
-}
-
-/** Overlays a live AngelOne tick (if one has arrived over the WS feed) on top of the last REST-fetched cmp/returnPercent for this row. */
-function useLiveCmpAndReturn(row: StockRecommendationItem): { cmp: number | null; returnPercent: number | null; isLive: boolean } {
-  const tick = useStockTick(row.symbol);
-  if (!tick) return { cmp: row.cmp, returnPercent: row.returnPercent, isLive: false };
-
-  const returnPercent = row.entryPrice !== 0
-    ? Number((((tick.ltp - row.entryPrice) / row.entryPrice) * 100).toFixed(2))
-    : null;
-  return { cmp: tick.ltp, returnPercent, isLive: true };
 }
 
 function RecommendationCard({ row }: { row: StockRecommendationItem }) {

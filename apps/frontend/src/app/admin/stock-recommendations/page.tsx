@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, Pencil, Plus, RefreshCw, Search, Trash2, X } from "lucide-react";
+import { ChevronDown, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
-import { useMarketStatus } from "@/store/liveStockPrices/hooks";
+import { useMarketStatus, useLiveCmpAndReturn } from "@/store/liveStockPrices/hooks";
 
 interface Community { id: string; name: string; slug: string; memberCount: number }
 
@@ -80,15 +80,6 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 }
 
-function timeAgo(iso: string): string {
-  const diffMs = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diffMs / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins} min${mins === 1 ? "" : "s"} ago`;
-  const hours = Math.floor(mins / 60);
-  return `${hours} hour${hours === 1 ? "" : "s"} ago`;
-}
-
 const EMPTY_RECOMMENDATION = {
   communityId: "",
   stockId: "",
@@ -118,6 +109,113 @@ function validateRecommendation(f: typeof EMPTY_RECOMMENDATION): RecommendationE
 
 type ModalType = "add" | "edit" | null;
 
+interface RecommendationRowProps {
+  rec: StockRecommendationItem;
+  communityName: string;
+  onEdit: (rec: StockRecommendationItem) => void;
+  onDelete: (rec: StockRecommendationItem) => void;
+  deletingId: string | null;
+}
+
+function AdminRecommendationCard({ rec, communityName, onEdit, onDelete, deletingId }: RecommendationRowProps) {
+  const { cmp, returnPercent, isLive } = useLiveCmpAndReturn(rec);
+
+  return (
+    <div className="rounded-xl border border-divider p-4 transition-shadow hover:shadow-card">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold ${avatarColor(rec.symbol)}`}>
+            {rec.name.slice(0, 1)}
+          </span>
+          <div>
+            <p className="font-semibold text-primary">{rec.name}</p>
+            <p className="text-xs text-subtle">
+              {rec.symbol}{rec.exchange ? ` · ${rec.exchange.toUpperCase()}` : ""} &middot; {communityName}
+            </p>
+          </div>
+        </div>
+        <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${CALL_STYLES[rec.actionCall]}`}>
+          {CALL_LABELS[rec.actionCall]}
+        </span>
+      </div>
+      <div className="mt-3 grid grid-cols-3 gap-3 text-sm">
+        <div><p className="text-xs text-subtle">Entry ₹</p><p className="font-semibold text-primary">{formatMoney(rec.entryPrice)}</p></div>
+        <div>
+          <p className="flex items-center gap-1 text-xs text-subtle">
+            CMP ₹{isLive && <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />}
+          </p>
+          <p className="font-semibold text-primary">{formatMoney(cmp)}</p>
+        </div>
+        <div><p className="text-xs text-subtle">Target ₹</p><p className="font-semibold text-primary">{formatMoney(rec.targetPrice)}</p></div>
+        <div><p className="text-xs text-subtle">Stop Loss ₹</p><p className="font-semibold text-primary">{formatMoney(rec.stopLossPrice)}</p></div>
+        <div>
+          <p className="text-xs text-subtle">Return</p>
+          <p className={`font-semibold ${returnPercent == null ? "text-muted" : returnPercent < 0 ? "text-red-500" : "text-accent"}`}>
+            {formatReturn(returnPercent)}
+          </p>
+        </div>
+        <div><p className="text-xs text-subtle">Risk</p><p className={`font-semibold ${RISK_STYLES[rec.riskLevel]}`}>{RISK_LABELS[rec.riskLevel]}</p></div>
+      </div>
+      <div className="mt-3 flex items-center justify-between border-t border-divider pt-3">
+        <p className="text-xs text-subtle">Recommended {formatDate(rec.createdAt)}</p>
+        <div className="flex items-center gap-1">
+          <button onClick={() => onEdit(rec)} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-divider/60 hover:text-accent" title="Edit"><Pencil size={13} /></button>
+          <button onClick={() => onDelete(rec)} disabled={deletingId === rec.id} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-red-50 hover:text-red-500" title="Delete"><Trash2 size={13} /></button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdminRecommendationRow({ rec, communityName, onEdit, onDelete, deletingId }: RecommendationRowProps) {
+  const { cmp, returnPercent, isLive } = useLiveCmpAndReturn(rec);
+
+  return (
+    <tr className="border-t border-divider transition-colors hover:bg-background">
+      <td className="px-3 py-3">
+        <div className="flex items-center gap-3">
+          <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-display text-xs font-bold ${avatarColor(rec.symbol)}`}>
+            {rec.name.slice(0, 1)}
+          </span>
+          <div>
+            <p className="font-semibold text-primary">{rec.name}</p>
+            <p className="text-xs text-subtle">
+              {rec.exchange ? rec.exchange.toUpperCase() : rec.symbol} &middot; {communityName}
+            </p>
+          </div>
+        </div>
+      </td>
+      <td className="px-3 py-3 text-muted">{rec.sector ?? "—"}</td>
+      <td className="px-3 py-3 text-muted">{formatMoney(rec.entryPrice)}</td>
+      <td className="px-3 py-3 font-semibold text-primary">
+        <span className="flex items-center gap-1.5">
+          {formatMoney(cmp)}
+          {isLive && <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />}
+        </span>
+      </td>
+      <td className="px-3 py-3 text-muted">{formatMoney(rec.targetPrice)}</td>
+      <td className="px-3 py-3 text-muted">{formatMoney(rec.stopLossPrice)}</td>
+      <td className={`px-3 py-3 font-semibold ${returnPercent == null ? "text-muted" : returnPercent < 0 ? "text-red-500" : "text-accent"}`}>
+        {formatReturn(returnPercent)}
+      </td>
+      <td className={`px-3 py-3 font-semibold ${RISK_STYLES[rec.riskLevel]}`}>{RISK_LABELS[rec.riskLevel]}</td>
+      <td className="px-3 py-3">
+        <span className={`rounded-full px-3 py-1 text-xs font-bold ${CALL_STYLES[rec.actionCall]}`}>{CALL_LABELS[rec.actionCall]}</span>
+      </td>
+      <td className="px-3 py-3">
+        <div className="flex items-center gap-1">
+          <button onClick={() => onEdit(rec)} title="Edit" className="flex h-8 w-8 items-center justify-center rounded-full text-muted transition-colors hover:bg-divider/60 hover:text-accent">
+            <Pencil size={14} />
+          </button>
+          <button onClick={() => onDelete(rec)} disabled={deletingId === rec.id} title="Delete" className="flex h-8 w-8 items-center justify-center rounded-full text-muted transition-colors hover:bg-red-50 hover:text-red-500">
+            <Trash2 size={14} />
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
 export default function AdminStockRecommendationsPage() {
   const toast = useToast();
   const confirm = useConfirm();
@@ -126,7 +224,6 @@ export default function AdminStockRecommendationsPage() {
   const [communities, setCommunities] = useState<Community[]>([]);
   const [recommendations, setRecommendations] = useState<StockRecommendationItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [lastFetchedAt, setLastFetchedAt] = useState<Date | null>(null);
   const [filterCommunity, setFilterCommunity] = useState("");
   const [search, setSearch] = useState("");
   const [filterRisk, setFilterRisk] = useState("");
@@ -162,7 +259,7 @@ export default function AdminStockRecommendationsPage() {
   useEffect(() => {
     setLoading(true);
     api.get<StockRecommendationItem[]>("/api/v1/stock-recommendations")
-      .then(data => { setRecommendations(data); setLastFetchedAt(new Date()); })
+      .then(setRecommendations)
       .catch(err => toast.error(err instanceof ApiError ? err.message : "Failed to load recommendations"))
       .finally(() => setLoading(false));
   // toast is a stable context ref
@@ -401,10 +498,7 @@ export default function AdminStockRecommendationsPage() {
 
       <div className="flex flex-wrap items-center gap-2 text-xs text-subtle">
         <span className={`h-1.5 w-1.5 rounded-full ${marketStatus.open ? "bg-accent animate-pulse" : "bg-subtle"}`} />
-        Live prices via NSE API &middot; {lastFetchedAt ? `Updated ${timeAgo(lastFetchedAt.toISOString())}` : "Loading…"}
-        <button onClick={refresh} className="flex h-5 w-5 items-center justify-center rounded-full text-subtle transition-colors hover:bg-divider/60 hover:text-primary" title="Refresh">
-          <RefreshCw size={12} />
-        </button>
+        {marketStatus.open === null ? "Connecting…" : marketStatus.open ? "Market live — CMP updates in real time" : "Market closed"}
       </div>
 
       {/* Community cards */}
@@ -493,44 +587,14 @@ export default function AdminStockRecommendationsPage() {
         {!loading && filtered.length > 0 && (
           <div className="mt-4 flex flex-col gap-3 lg:hidden">
             {filtered.map(rec => (
-              <div key={rec.id} className="rounded-xl border border-divider p-4 transition-shadow hover:shadow-card">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold ${avatarColor(rec.symbol)}`}>
-                      {rec.name.slice(0, 1)}
-                    </span>
-                    <div>
-                      <p className="font-semibold text-primary">{rec.name}</p>
-                      <p className="text-xs text-subtle">
-                        {rec.symbol}{rec.exchange ? ` · ${rec.exchange.toUpperCase()}` : ""} &middot; {communityName(rec.communityId)}
-                      </p>
-                    </div>
-                  </div>
-                  <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${CALL_STYLES[rec.actionCall]}`}>
-                    {CALL_LABELS[rec.actionCall]}
-                  </span>
-                </div>
-                <div className="mt-3 grid grid-cols-3 gap-3 text-sm">
-                  <div><p className="text-xs text-subtle">Entry ₹</p><p className="font-semibold text-primary">{formatMoney(rec.entryPrice)}</p></div>
-                  <div><p className="text-xs text-subtle">CMP ₹</p><p className="font-semibold text-primary">{formatMoney(rec.cmp)}</p></div>
-                  <div><p className="text-xs text-subtle">Target ₹</p><p className="font-semibold text-primary">{formatMoney(rec.targetPrice)}</p></div>
-                  <div><p className="text-xs text-subtle">Stop Loss ₹</p><p className="font-semibold text-primary">{formatMoney(rec.stopLossPrice)}</p></div>
-                  <div>
-                    <p className="text-xs text-subtle">Return</p>
-                    <p className={`font-semibold ${rec.returnPercent == null ? "text-muted" : rec.returnPercent < 0 ? "text-red-500" : "text-accent"}`}>
-                      {formatReturn(rec.returnPercent)}
-                    </p>
-                  </div>
-                  <div><p className="text-xs text-subtle">Risk</p><p className={`font-semibold ${RISK_STYLES[rec.riskLevel]}`}>{RISK_LABELS[rec.riskLevel]}</p></div>
-                </div>
-                <div className="mt-3 flex items-center justify-between border-t border-divider pt-3">
-                  <p className="text-xs text-subtle">Recommended {formatDate(rec.createdAt)}</p>
-                  <div className="flex items-center gap-1">
-                    <button onClick={() => openEditModal(rec)} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-divider/60 hover:text-accent" title="Edit"><Pencil size={13} /></button>
-                    <button onClick={() => handleDeleteRecommendation(rec)} disabled={deletingId === rec.id} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-red-50 hover:text-red-500" title="Delete"><Trash2 size={13} /></button>
-                  </div>
-                </div>
-              </div>
+              <AdminRecommendationCard
+                key={rec.id}
+                rec={rec}
+                communityName={communityName(rec.communityId)}
+                onEdit={openEditModal}
+                onDelete={handleDeleteRecommendation}
+                deletingId={deletingId}
+              />
             ))}
           </div>
         )}
@@ -555,43 +619,14 @@ export default function AdminStockRecommendationsPage() {
               </thead>
               <tbody>
                 {filtered.map(rec => (
-                  <tr key={rec.id} className="border-t border-divider transition-colors hover:bg-background">
-                    <td className="px-3 py-3">
-                      <div className="flex items-center gap-3">
-                        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-display text-xs font-bold ${avatarColor(rec.symbol)}`}>
-                          {rec.name.slice(0, 1)}
-                        </span>
-                        <div>
-                          <p className="font-semibold text-primary">{rec.name}</p>
-                          <p className="text-xs text-subtle">
-                            {rec.exchange ? rec.exchange.toUpperCase() : rec.symbol} &middot; {communityName(rec.communityId)}
-                          </p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-3 py-3 text-muted">{rec.sector ?? "—"}</td>
-                    <td className="px-3 py-3 text-muted">{formatMoney(rec.entryPrice)}</td>
-                    <td className="px-3 py-3 font-semibold text-primary">{formatMoney(rec.cmp)}</td>
-                    <td className="px-3 py-3 text-muted">{formatMoney(rec.targetPrice)}</td>
-                    <td className="px-3 py-3 text-muted">{formatMoney(rec.stopLossPrice)}</td>
-                    <td className={`px-3 py-3 font-semibold ${rec.returnPercent == null ? "text-muted" : rec.returnPercent < 0 ? "text-red-500" : "text-accent"}`}>
-                      {formatReturn(rec.returnPercent)}
-                    </td>
-                    <td className={`px-3 py-3 font-semibold ${RISK_STYLES[rec.riskLevel]}`}>{RISK_LABELS[rec.riskLevel]}</td>
-                    <td className="px-3 py-3">
-                      <span className={`rounded-full px-3 py-1 text-xs font-bold ${CALL_STYLES[rec.actionCall]}`}>{CALL_LABELS[rec.actionCall]}</span>
-                    </td>
-                    <td className="px-3 py-3">
-                      <div className="flex items-center gap-1">
-                        <button onClick={() => openEditModal(rec)} title="Edit" className="flex h-8 w-8 items-center justify-center rounded-full text-muted transition-colors hover:bg-divider/60 hover:text-accent">
-                          <Pencil size={14} />
-                        </button>
-                        <button onClick={() => handleDeleteRecommendation(rec)} disabled={deletingId === rec.id} title="Delete" className="flex h-8 w-8 items-center justify-center rounded-full text-muted transition-colors hover:bg-red-50 hover:text-red-500">
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
+                  <AdminRecommendationRow
+                    key={rec.id}
+                    rec={rec}
+                    communityName={communityName(rec.communityId)}
+                    onEdit={openEditModal}
+                    onDelete={handleDeleteRecommendation}
+                    deletingId={deletingId}
+                  />
                 ))}
               </tbody>
             </table>
