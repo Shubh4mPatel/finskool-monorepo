@@ -94,6 +94,40 @@ services:
       redis:
         condition: service_healthy
 
+  # ── Cron (scheduled digests + stock close-price sweep) ────────────────────
+  # A third standalone consumer of the same image: registers AND executes all
+  # scheduled/cron work (subscription-expiry reminders, admin digests, the
+  # daily stock close-price refresh) independent of finskool-backend and
+  # finskool-worker — depends_on below only orders startup, it does not create
+  # a runtime dependency, so this keeps running scheduled jobs even if either
+  # of those two are stopped.
+  finskool-cron:
+    image: finskool-backend:latest
+    container_name: finskool-cron
+    restart: unless-stopped
+    env_file:
+      - ../apps/backend/.env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      # SMTP_* comes from .env (env_file above) — see the note on finskool-backend.
+      # No MINIO_* overrides: cron.ts only reads/writes Postgres, sends email
+      # via SMTP, and talks to Redis (BullMQ + the live-notification pubsub
+      # channel) — none of its jobs touch file storage.
+    command: ["node", "dist/cron.js"]
+    volumes:
+      # Shares the seed-flag volume with finskool-backend/finskool-worker —
+      # see the comment on finskool-worker's volumes: above for why this
+      # matters (avoids re-running seed.ts's non-idempotent MinIO re-uploads).
+      - finskool-seed-flag:/data/seed
+    depends_on:
+      finskool-backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   # ── Frontend (Next.js) ─────────────────────────────────────────────────────
   finskool-frontend:
     build:

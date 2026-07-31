@@ -13,6 +13,18 @@ export const THREAD_REPLY_EMAIL_JOB = 'thread-reply-email'
 export const STOCK_CLOSE_PRICE_QUEUE_NAME = 'stock-close-price'
 export const REFRESH_CLOSE_PRICES_JOB = 'refresh-close-prices'
 
+// Also separate from the other two queues: houses cron.ts's own periodic
+// digest/lifecycle jobs (subscription expiry reminders, admin digests). These
+// are scheduler-driven (upsertJobScheduler), not triggered by API requests —
+// cron.ts is both the sole producer (registers the schedulers) and sole
+// consumer (runs the Worker) of this queue, unlike NOTIFICATIONS_QUEUE_NAME
+// which the API process produces and worker.ts consumes.
+export const DIGEST_QUEUE_NAME = 'digest'
+export const SUBSCRIPTION_LIFECYCLE_SWEEP_JOB = 'subscription-lifecycle-sweep'
+export const ADMIN_UNREPLIED_DIGEST_JOB = 'admin-unreplied-digest'
+export const ADMIN_EXPIRY_DIGEST_JOB = 'admin-expiry-report'
+export const EXPIRE_SUBSCRIPTIONS_JOB = 'expire-subscriptions'
+
 export interface CommunityPostNotificationJobPayload {
   communityId: string
   postId: string
@@ -134,5 +146,10 @@ export const notificationsQueue = new Queue<NotificationJobPayload, unknown, str
 
 export const stockClosePriceQueue = new Queue(
   STOCK_CLOSE_PRICE_QUEUE_NAME,
+  { connection: createBullConnection() },
+)
+
+export const digestQueue = new Queue(
+  DIGEST_QUEUE_NAME,
   { connection: createBullConnection() },
 )

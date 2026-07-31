@@ -7,6 +7,11 @@ export const NotificationType = {
   NewMemberRegistered: 'new-member-registered',
   ImportComplete: 'import-complete',
   NewMemberReply: 'new-member-reply',
+  SubscriptionExpiring7Days: 'subscription-expiring-7-days',
+  SubscriptionExpiring1Day: 'subscription-expiring-1-day',
+  SubscriptionExpired: 'subscription-expired',
+  AdminUnrepliedDigest: 'admin-unreplied-digest',
+  AdminExpiryReport: 'admin-expiry-report',
 } as const
 
 export interface NotificationItemDTO {

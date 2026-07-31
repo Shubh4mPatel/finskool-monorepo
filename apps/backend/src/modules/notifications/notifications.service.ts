@@ -4,7 +4,7 @@ import { logger } from '../../shared/logger.js'
 import { sendMail } from '../../lib/mailer.js'
 import redis from '../../lib/redis.js'
 import { env } from '../../config/env.js'
-import { renderEmail, firstNameOf, formatEmailDate, formatEmailAmount } from '../../lib/email-templates.js'
+import { renderEmail, firstNameOf, formatEmailDate, formatEmailAmount, buildEmailRows } from '../../lib/email-templates.js'
 import {
   NOTIFICATIONS_PUBSUB_CHANNEL,
 } from '../../lib/queue.js'
@@ -42,6 +42,32 @@ function notificationEmailHtml(message: string, ctaUrl: string, ctaLabel: string
       </a>
     </div>
   `
+}
+
+export interface SubscriptionExpiringEmailPayload {
+  toEmail: string
+  name: string
+  phone: string
+  communityName: string
+  validTill: string
+}
+
+export interface AdminUnrepliedDigestEmailPayload {
+  toEmail: string
+  adminName: string
+  count: number
+  days: number
+  communityName: string
+  rows: { label: string; value: string }[]
+}
+
+export interface AdminExpiryDigestEmailPayload {
+  toEmail: string
+  adminName: string
+  count: number
+  dateFrom: string
+  dateTo: string
+  rows: { label: string; value: string }[]
 }
 
 export class NotificationsService {
@@ -243,6 +269,65 @@ export class NotificationsService {
       frontend_url: env.frontendUrl,
     })
     await sendMail({ to: payload.adminEmail, subject, html })
+  }
+
+  async sendSubscriptionExpiring7DaysEmail(payload: SubscriptionExpiringEmailPayload): Promise<void> {
+    const { subject, html } = renderEmail('subscription-expiring-7-days', {
+      first_name: firstNameOf(payload.name),
+      community_name: payload.communityName,
+      valid_till: formatEmailDate(payload.validTill),
+      phone: payload.phone,
+      community_name_urlenc: encodeURIComponent(payload.communityName),
+    })
+    await sendMail({ to: payload.toEmail, subject, html })
+  }
+
+  async sendSubscriptionExpiring1DayEmail(payload: SubscriptionExpiringEmailPayload): Promise<void> {
+    const { subject, html } = renderEmail('subscription-expiring-1-day', {
+      first_name: firstNameOf(payload.name),
+      community_name: payload.communityName,
+      valid_till: formatEmailDate(payload.validTill),
+      phone: payload.phone,
+      community_name_urlenc: encodeURIComponent(payload.communityName),
+    })
+    await sendMail({ to: payload.toEmail, subject, html })
+  }
+
+  async sendSubscriptionExpiredEmail(payload: SubscriptionExpiringEmailPayload): Promise<void> {
+    const { subject, html } = renderEmail('subscription-expired', {
+      first_name: firstNameOf(payload.name),
+      community_name: payload.communityName,
+      valid_till: formatEmailDate(payload.validTill),
+      phone: payload.phone,
+    })
+    await sendMail({ to: payload.toEmail, subject, html })
+  }
+
+  async sendAdminUnrepliedDigestEmail(payload: AdminUnrepliedDigestEmailPayload): Promise<void> {
+    const { subject, html } = renderEmail('admin-unreplied-digest', {
+      admin_name: firstNameOf(payload.adminName),
+      count: String(payload.count),
+      days: String(payload.days),
+      community_name: payload.communityName,
+      rows_html: buildEmailRows(payload.rows),
+      frontend_url: env.frontendUrl,
+    })
+    await sendMail({ to: payload.toEmail, subject, html })
+  }
+
+  async sendAdminExpiryDigestEmail(payload: AdminExpiryDigestEmailPayload): Promise<void> {
+    const dateFrom = formatEmailDate(payload.dateFrom)
+    const dateTo = formatEmailDate(payload.dateTo)
+    const { subject, html } = renderEmail('admin-expiry-report', {
+      admin_name: firstNameOf(payload.adminName),
+      count: String(payload.count),
+      date_from: dateFrom,
+      date_to: dateTo,
+      date_range: `${dateFrom} – ${dateTo}`,
+      rows_html: buildEmailRows(payload.rows),
+      frontend_url: env.frontendUrl,
+    })
+    await sendMail({ to: payload.toEmail, subject, html })
   }
 
   // Email delivery failures shouldn't fail the job (the in-app rows above already

@@ -1207,11 +1207,14 @@ export class AdminService {
     today.setHours(0, 0, 0, 0)
 
     // Build subscription sub-filter — a member can have multiple historical (renewed)
-    // subscription rows per community, so only the current active one should count here.
-    // hasSubFilter tracks whether a subscription-level filter is actually requested — a
-    // deactivated member has zero active subscriptions, and `some` on an always-present
-    // isActive:true would otherwise exclude them from the list entirely (e.g. status=suspended).
-    const subWhere: Record<string, unknown> = { isActive: true }
+    // subscription rows per community, so only the current one should count here.
+    // "Current" = most recently created row per (member, community), not isActive:true —
+    // see getCurrentSubscriptionIds for why. hasSubFilter tracks whether a subscription-level
+    // filter is actually requested — a deactivated member has zero current subscriptions in
+    // scope, and `some` on an always-present id-in-list would otherwise exclude them entirely
+    // (e.g. status=suspended).
+    const currentSubIds = await this.getCurrentSubscriptionIds()
+    const subWhere: Record<string, unknown> = { id: { in: currentSubIds } }
     let hasSubFilter = false
     if (communityId) { subWhere['communityId'] = communityId; hasSubFilter = true }
     else if (communityIds) { subWhere['communityId'] = { in: communityIds }; hasSubFilter = true }
@@ -1273,12 +1276,16 @@ export class AdminService {
       apWhere['isRegistered'] = true
       apWhere['isActive'] = true
       if (suspendedUserPhones.length > 0) andClauses.push({ phone: { notIn: suspendedUserPhones } })
+      subWhere['isActive'] = true
       subWhere['validUntil'] = { ...((subWhere['validUntil'] as object) ?? {}), gte: today }
       hasSubFilter = true
     } else if (status === 'expired') {
       apWhere['isActive'] = true
       if (suspendedUserPhones.length > 0) andClauses.push({ phone: { notIn: suspendedUserPhones } })
-      subWhere['validUntil'] = { lt: today }
+      // Either naturally lapsed (validUntil passed — isActive may still be true within
+      // expireLapsedSubscriptions' buffer window, or already false past it) or manually
+      // revoked (isActive false regardless of validUntil) — both read as "expired" here.
+      subWhere['OR'] = [{ isActive: false }, { validUntil: { lt: today } }]
       hasSubFilter = true
     }
 
@@ -1298,7 +1305,7 @@ export class AdminService {
         take: pageSize,
         include: {
           subscriptions: {
-            where: { isActive: true },
+            where: { id: { in: currentSubIds } },
             include: { community: { select: { id: true, name: true } } },
             orderBy: { createdAt: 'desc' },
           },
@@ -1325,7 +1332,7 @@ export class AdminService {
         derivedStatus = 'suspended'
       } else if (!ap.isRegistered) {
         derivedStatus = 'pending'
-      } else if (sub && new Date(sub.validUntil) < today) {
+      } else if (sub && (!sub.isActive || new Date(sub.validUntil) < today)) {
         derivedStatus = 'expired'
       } else {
         derivedStatus = 'registered'
@@ -1367,6 +1374,35 @@ export class AdminService {
     return { members, total, page, pageSize, totalPages: Math.ceil(total / pageSize) }
   }
 
+  // "Current" subscription per community = most recently created row, not
+  // isActive:true — expireLapsedSubscriptions (subscription-lifecycle.ts) now
+  // flips isActive false on natural expiry too, on top of the pre-existing
+  // renewal/revoke cases, so isActive alone no longer identifies "the row
+  // admin should see" for a member+community. A superseding renewal is always
+  // created after the row it replaces, so ordering by createdAt already
+  // excludes superseded rows without needing isActive at all.
+  private async getCurrentSubscriptionIds(): Promise<string[]> {
+    // Prisma's query builder can't express "top 1 row per group" declaratively
+    // (no DISTINCT ON / no id-of-groupBy-max) — a raw query is the direct fit.
+    const rows = await this.db.$queryRaw<{ id: string }[]>`
+      SELECT DISTINCT ON (approved_phone_id, community_id) id
+      FROM subscriptions
+      ORDER BY approved_phone_id, community_id, created_at DESC
+    `
+    return rows.map(r => r.id)
+  }
+
+  private latestSubscriptionPerCommunity<T extends { communityId: string; createdAt: Date }>(subs: T[]): T[] {
+    const seen = new Set<string>()
+    const result: T[] = []
+    for (const s of [...subs].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())) {
+      if (seen.has(s.communityId)) continue
+      seen.add(s.communityId)
+      result.push(s)
+    }
+    return result
+  }
+
   private buildSubDTO(s: {
     id: string
     communityId: string
@@ -1395,7 +1431,6 @@ export class AdminService {
       where: { id: approvedPhoneId },
       include: {
         subscriptions: {
-          where: { isActive: true },
           include: { community: { select: { id: true, name: true } } },
           orderBy: { createdAt: 'desc' },
         },
@@ -1408,14 +1443,16 @@ export class AdminService {
       select: { isActive: true, suspensionReason: true },
     })
 
-    const allSubs = ap.subscriptions
+    // "Current" per community = most recently created row, not isActive:true — see
+    // getCurrentSubscriptionIds's comment on listMembers for why.
+    const allSubs = this.latestSubscriptionPerCommunity(ap.subscriptions)
     const sub = allSubs[0] ?? null
     const suspendedByUser = user ? !user.isActive : false
 
     let status: MemberStatus
     if (!ap.isActive || suspendedByUser) status = 'suspended'
     else if (!ap.isRegistered) status = 'pending'
-    else if (sub && new Date(sub.validUntil) < today) status = 'expired'
+    else if (sub && (!sub.isActive || new Date(sub.validUntil) < today)) status = 'expired'
     else status = 'registered'
 
     return {
