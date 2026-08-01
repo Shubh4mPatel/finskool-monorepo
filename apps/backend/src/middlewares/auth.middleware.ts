@@ -11,6 +11,9 @@ export interface JwtPayload {
   communityIds: string[]
   selectedCommunityId: string | null
   accessibleCommunityIds: string[] | null
+  // Optional: tokens issued before this field existed won't carry it — authenticate()
+  // below defaults it to false. Max staleness is one access-token lifetime.
+  isSuperAdmin?: boolean
 }
 
 declare global {
@@ -22,6 +25,7 @@ declare global {
         communityIds: string[]
         selectedCommunityId: string | null
         accessibleCommunityIds: string[] | null
+        isSuperAdmin: boolean
       }
     }
   }
@@ -47,6 +51,7 @@ export function authenticate(req: Request, _res: Response, next: NextFunction): 
       communityIds: payload.communityIds ?? [],
       selectedCommunityId: payload.selectedCommunityId ?? null,
       accessibleCommunityIds: payload.accessibleCommunityIds ?? [],
+      isSuperAdmin: payload.isSuperAdmin ?? false,
     }
     next()
   } catch {

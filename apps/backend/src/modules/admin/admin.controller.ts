@@ -301,7 +301,7 @@ export class AdminController {
 
   listAdmins = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const result = await this.service.listAdmins()
+      const result = await this.service.listAdmins(req.user!.id)
       res.json({ success: true, data: result })
     } catch (err) {
       next(err)

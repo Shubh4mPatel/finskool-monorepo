@@ -265,7 +265,7 @@ export class AuthService {
           : null;
 
     const accessToken = await this.signAccessToken(
-      { id: user.id, role: user.role as "admin" | "member" },
+      { id: user.id, role: user.role as "admin" | "member", isSuperAdmin: user.isSuperAdmin },
       communityIds,
       selectedCommunityId,
     );
@@ -309,7 +309,7 @@ export class AuthService {
     if (!user) throw new UnauthorizedError("User not found");
 
     return this.signAccessToken(
-      { id: userId, role: user.role as "admin" | "member" },
+      { id: userId, role: user.role as "admin" | "member", isSuperAdmin: user.isSuperAdmin },
       communityIds,
       communityId,
     );
@@ -327,7 +327,7 @@ export class AuthService {
       await this.redis.set(selectedCommunityKey(user.id), selectedCommunityId);
     }
 
-    const accessToken = await this.signAccessToken({ id: user.id, role }, communityIds, selectedCommunityId);
+    const accessToken = await this.signAccessToken({ id: user.id, role, isSuperAdmin: user.isSuperAdmin }, communityIds, selectedCommunityId);
     // Refresh token has no expiry in the JWT — Redis presence is the sole validity gate
     const refreshToken = jwt.sign(
       { sub: user.id, role, type: "refresh" } as object,
@@ -397,7 +397,7 @@ export class AuthService {
   }
 
   private async signAccessToken(
-    user: { id: string; role: "admin" | "member" },
+    user: { id: string; role: "admin" | "member"; isSuperAdmin: boolean },
     communityIds: string[],
     selectedCommunityId: string | null,
   ): Promise<string> {
@@ -410,6 +410,7 @@ export class AuthService {
         communityIds,
         selectedCommunityId,
         accessibleCommunityIds,
+        isSuperAdmin: user.isSuperAdmin,
       },
       env.jwt.accessExpiresIn,
     );

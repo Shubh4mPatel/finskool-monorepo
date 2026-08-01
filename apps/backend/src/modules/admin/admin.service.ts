@@ -824,7 +824,8 @@ export class AdminService {
     logger.info({ communityId }, 'admin.deleteCommunity: success')
   }
 
-  async listAdmins(): Promise<AdminUserDTO[]> {
+  async listAdmins(requestingAdminId: string): Promise<AdminUserDTO[]> {
+    await assertSuperAdmin(this.db, requestingAdminId)
     const admins = await this.db.user.findMany({
       where: { role: 'admin', deletedAt: null },
       select: {

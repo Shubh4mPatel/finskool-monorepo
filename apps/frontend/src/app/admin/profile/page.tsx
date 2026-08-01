@@ -103,7 +103,7 @@ export default function AdminProfilePage() {
 
   const displayName = user?.name ?? "";
   const displayInitials = user ? initials(user.name) : "";
-  const roleLabel = user?.role === "super_admin" ? "Super Admin" : "Admin";
+  const roleLabel = user?.isSuperAdmin ? "Super Admin" : "Admin";
 
   return (
     <div className="flex flex-col gap-6">

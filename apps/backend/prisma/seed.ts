@@ -51,6 +51,7 @@ async function main() {
       phone: '+910000000000',
       passwordHash,
       role: 'admin',
+      isSuperAdmin: true,
     },
   })
 
