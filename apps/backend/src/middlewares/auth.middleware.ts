@@ -50,7 +50,10 @@ export function authenticate(req: Request, _res: Response, next: NextFunction): 
       role: payload.role,
       communityIds: payload.communityIds ?? [],
       selectedCommunityId: payload.selectedCommunityId ?? null,
-      accessibleCommunityIds: payload.accessibleCommunityIds ?? [],
+      // `?? []` would be wrong here: null is a meaningful value (super admin,
+      // unrestricted) distinct from undefined (claim missing on a token issued
+      // before this field existed) — only the latter should fall back to [].
+      accessibleCommunityIds: payload.accessibleCommunityIds === undefined ? [] : payload.accessibleCommunityIds,
       isSuperAdmin: payload.isSuperAdmin ?? false,
     }
     next()
