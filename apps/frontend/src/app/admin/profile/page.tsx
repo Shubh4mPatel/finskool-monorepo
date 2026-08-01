@@ -13,18 +13,13 @@ interface AdminProfile {
   email: string;
   role: string;
   avatarUrl: string | null;
+  isSuperAdmin: boolean;
 }
 
 interface Community {
   id: string;
   name: string;
   slug: string;
-}
-
-interface AdminUser {
-  id: string;
-  isSuperAdmin: boolean;
-  communityAccess: Community[];
 }
 
 export default function AdminProfilePage() {
@@ -49,14 +44,12 @@ export default function AdminProfilePage() {
 
   useEffect(() => {
     if (!user) return;
-    Promise.all([
-      api.get<AdminUser[]>("/api/v1/admin/admins"),
-      api.get<Community[]>("/api/v1/admin/communities"),
-    ])
-      .then(([admins, communities]) => {
-        const self = admins.find((a) => a.id === user.id);
-        setCommunityAccess(self?.isSuperAdmin ? communities : self?.communityAccess ?? []);
-      })
+    // /api/v1/admin/communities is already scoped server-side to what this admin can
+    // access (every community for a super admin, only granted ones for a scoped admin)
+    // — no need to cross-reference the full admin roster to figure that out ourselves.
+    api
+      .get<Community[]>("/api/v1/admin/communities")
+      .then(setCommunityAccess)
       .catch(() => {});
   }, [user]);
 
