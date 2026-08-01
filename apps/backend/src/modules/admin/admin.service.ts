@@ -2,7 +2,7 @@ import { createRequire } from 'module'
 import { randomUUID } from 'crypto'
 import bcrypt from 'bcryptjs'
 import type { PrismaClient } from '../../generated/prisma/client.js'
-import { assertSuperAdmin } from '../../lib/community-access.js'
+import { assertSuperAdmin, assertCommunityAccessFromToken } from '../../lib/community-access.js'
 import { generateUploadUrl } from '../../lib/minio.js'
 import {
   notificationsQueue,
@@ -354,11 +354,15 @@ export class AdminService {
   }
 
   async listCommentNotifications(
+    accessibleCommunityIds: string[] | null,
     isReplied: boolean | undefined,
     cursor: string | undefined,
     limit: number,
   ): Promise<CommentNotificationListDTO> {
-    const where = isReplied !== undefined ? { isReplied } : {}
+    const where = {
+      ...(isReplied !== undefined ? { isReplied } : {}),
+      ...(accessibleCommunityIds !== null ? { post: { communityId: { in: accessibleCommunityIds } } } : {}),
+    }
 
     const rows = await this.db.commentNotification.findMany({
       where,
@@ -403,12 +407,13 @@ export class AdminService {
     return { notifications, nextCursor: hasMore && last ? last.id : null, hasMore }
   }
 
-  async markNotificationReplied(notificationId: string): Promise<CommentNotificationItemDTO> {
+  async markNotificationReplied(accessibleCommunityIds: string[] | null, notificationId: string): Promise<CommentNotificationItemDTO> {
     const existing = await this.db.commentNotification.findUnique({
       where: { id: notificationId },
-      select: { id: true, isReplied: true },
+      select: { id: true, isReplied: true, post: { select: { communityId: true } } },
     })
     if (!existing) throw new NotFoundError('Notification not found')
+    assertCommunityAccessFromToken(accessibleCommunityIds, existing.post.communityId)
     if (existing.isReplied) throw new BadRequestError('Notification already marked as replied')
 
     const updated = await this.db.commentNotification.update({
@@ -447,11 +452,22 @@ export class AdminService {
     }
   }
 
-  async markAllNotificationsReplied(communityId: string | undefined): Promise<MarkAllRepliedDTO> {
+  async markAllNotificationsReplied(
+    accessibleCommunityIds: string[] | null,
+    communityId: string | undefined,
+  ): Promise<MarkAllRepliedDTO> {
+    if (communityId) assertCommunityAccessFromToken(accessibleCommunityIds, communityId)
+
+    const postFilter = communityId
+      ? { communityId }
+      : accessibleCommunityIds !== null
+        ? { communityId: { in: accessibleCommunityIds } }
+        : undefined
+
     const result = await this.db.commentNotification.updateMany({
       where: {
         isReplied: false,
-        ...(communityId ? { post: { communityId } } : {}),
+        ...(postFilter ? { post: postFilter } : {}),
       },
       data: { isReplied: true, repliedAt: new Date() },
     })
@@ -460,12 +476,24 @@ export class AdminService {
     return { count: result.count }
   }
 
-  async listPendingPostThreads(communityId: string | undefined, search: string | undefined): Promise<PostThreadSummaryDTO[]> {
+  async listPendingPostThreads(
+    accessibleCommunityIds: string[] | null,
+    communityId: string | undefined,
+    search: string | undefined,
+  ): Promise<PostThreadSummaryDTO[]> {
+    if (communityId) assertCommunityAccessFromToken(accessibleCommunityIds, communityId)
+
+    const postFilter = communityId
+      ? { communityId }
+      : accessibleCommunityIds !== null
+        ? { communityId: { in: accessibleCommunityIds } }
+        : undefined
+
     const grouped = await this.db.commentNotification.groupBy({
       by: ['postId'],
       where: {
         isReplied: false,
-        ...(communityId ? { post: { communityId } } : {}),
+        ...(postFilter ? { post: postFilter } : {}),
       },
       _count: { _all: true },
     })

@@ -157,7 +157,7 @@ export class AdminController {
   listCommentNotifications = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const { isReplied, cursor, limit } = listNotificationsSchema.parse(req.query)
-      const result = await this.service.listCommentNotifications(isReplied, cursor, limit)
+      const result = await this.service.listCommentNotifications(req.user!.accessibleCommunityIds, isReplied, cursor, limit)
       res.json({ success: true, data: result })
     } catch (err) {
       next(err)
@@ -168,7 +168,7 @@ export class AdminController {
     try {
       const raw = req.params['id']
       const id = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
-      const result = await this.service.markNotificationReplied(id)
+      const result = await this.service.markNotificationReplied(req.user!.accessibleCommunityIds, id)
       res.json({ success: true, data: result })
     } catch (err) {
       next(err)
@@ -178,7 +178,7 @@ export class AdminController {
   markAllNotificationsReplied = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const { communityId } = markAllRepliedSchema.parse(req.body)
-      const result = await this.service.markAllNotificationsReplied(communityId)
+      const result = await this.service.markAllNotificationsReplied(req.user!.accessibleCommunityIds, communityId)
       res.json({ success: true, data: result })
     } catch (err) {
       next(err)
@@ -193,7 +193,7 @@ export class AdminController {
       })
       const parsed = schema.safeParse(req.query)
       if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Invalid query')
-      const result = await this.service.listPendingPostThreads(parsed.data.communityId, parsed.data.search)
+      const result = await this.service.listPendingPostThreads(req.user!.accessibleCommunityIds, parsed.data.communityId, parsed.data.search)
       res.json({ success: true, data: result })
     } catch (err) {
       next(err)
