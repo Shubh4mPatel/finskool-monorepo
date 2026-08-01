@@ -42,7 +42,11 @@ export const env = {
     publicEndPoint: process.env['MINIO_PUBLIC_ENDPOINT'] ?? process.env['MINIO_ENDPOINT'] ?? 'localhost',
     port: Number(process.env['MINIO_PORT'] ?? 9000),
     publicPort: Number(process.env['MINIO_PUBLIC_PORT'] ?? process.env['MINIO_PORT'] ?? 9000),
+    // Internal container-to-container connection — the "minio" service has no TLS of its own.
     useSSL: process.env['MINIO_USE_SSL'] === 'true',
+    // Scheme used for browser-facing URLs (presigned + public), proxied through nginx at
+    // /assets/ — independent of useSSL above since nginx terminates TLS, not MinIO itself.
+    publicUseSSL: process.env['MINIO_PUBLIC_USE_SSL'] === 'true',
     accessKey: process.env['MINIO_ACCESS_KEY'] ?? '',
     secretKey: process.env['MINIO_SECRET_KEY'] ?? '',
     bucket: process.env['MINIO_BUCKET'] ?? 'finskool',
@@ -61,7 +65,7 @@ export const env = {
     // Every template's header/footer <img> references {logo_url}, injected
     // automatically by renderEmail — change this one var to swap the logo
     // everywhere without touching template files or send-email call sites.
-    logoUrl: process.env['EMAIL_LOGO_URL'] ?? 'http://157.173.220.80:8081/logo.svg',
+    logoUrl: process.env['EMAIL_LOGO_URL'] ?? 'https://community.finskool21.in/logo.svg',
   },
 
   angelone: {
@@ -87,7 +91,7 @@ export const env = {
   redis: { host: string; port: number; password: string; db: number }
   jwt: { secret: string; accessExpiresIn: string }
   cookie: { secure: boolean }
-  minio: { endPoint: string; publicEndPoint: string; port: number; publicPort: number; useSSL: boolean; accessKey: string; secretKey: string; bucket: string }
+  minio: { endPoint: string; publicEndPoint: string; port: number; publicPort: number; useSSL: boolean; publicUseSSL: boolean; accessKey: string; secretKey: string; bucket: string }
   smtp: { host: string; port: number; secure: boolean; user: string; password: string; from: string }
   email: { logoUrl: string }
   angelone: { apiKey: string; clientCode: string; pin: string; totpSecret: string }

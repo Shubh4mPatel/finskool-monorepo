@@ -32,10 +32,11 @@ async function uploadSeedImage(filename: string): Promise<string> {
   await minioClient.putObject(bucket, objectName, buffer, buffer.length, {
     'Content-Type': 'image/png',
   })
-  const protocol = process.env['MINIO_USE_SSL'] === 'true' ? 'https' : 'http'
+  const protocol = process.env['MINIO_PUBLIC_USE_SSL'] === 'true' ? 'https' : 'http'
   const publicEndpoint = process.env['MINIO_PUBLIC_ENDPOINT'] ?? process.env['MINIO_ENDPOINT'] ?? 'localhost'
   const port = process.env['MINIO_PUBLIC_PORT'] ?? process.env['MINIO_PORT'] ?? '9000'
-  return `${protocol}://${publicEndpoint}:${port}/${bucket}/${objectName}`
+  // Same "/assets" prefix nginx expects — see the toPublicUrl comment in src/lib/minio.ts.
+  return `${protocol}://${publicEndpoint}:${port}/assets/${bucket}/${objectName}`
 }
 
 async function main() {

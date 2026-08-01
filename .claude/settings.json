@@ -190,7 +190,8 @@
       "Bash(timeout 1800 docker logs finskool-worker-dev -f)",
       "Bash(timeout 1800 docker logs finskool-worker-dev -f --since 1s)",
       "Bash(git -C /home/shubh4m/projects/finskool-monorepo log --oneline -3 -- apps/backend/src/modules/comments/comments.service.ts apps/backend/src/modules/notifications/notifications.service.ts)",
-      "Bash(docker run *)"
+      "Bash(docker run *)",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" --max-time 5 https://fonts.gstatic.com/s/nunito/v32/XRXV3I6Li01BKofINeaBTMnFcQ.woff2)"
     ],
     "additionalDirectories": [
       "/tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/8750fbd9-1edb-4d3f-b623-da0dec31a255/scratchpad/node_modules",
