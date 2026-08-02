@@ -25,7 +25,7 @@ interface MemberItem {
   email: string;
   isActive: boolean;
   isRegistered: boolean;
-  status: "registered" | "pending" | "expired" | "suspended";
+  status: "registered" | "pending" | "expired" | "suspended" | "deleted";
   createdAt: string;
   suspensionReason: string | null;
   subscription: MemberSubscription | null;
@@ -45,6 +45,7 @@ const STATUS_STYLES: Record<string, string> = {
   pending: "bg-amber-100 text-amber-600",
   expired: "bg-red-100 text-red-500",
   suspended: "bg-gray-100 text-gray-500",
+  deleted: "bg-gray-200 text-gray-600",
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -52,6 +53,7 @@ const STATUS_LABELS: Record<string, string> = {
   pending: "Pending Sign",
   expired: "Expired",
   suspended: "Suspended",
+  deleted: "Deleted",
 };
 
 function getInitials(name: string): string {
@@ -653,6 +655,7 @@ export default function MembersPage() {
               <option value="pending">Pending Sign</option>
               <option value="expired">Expired</option>
               <option value="suspended">Suspended</option>
+              <option value="deleted">Deleted</option>
             </select>
             <ChevronDown size={13} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-subtle" />
           </div>
@@ -740,7 +743,9 @@ export default function MembersPage() {
                     <Plus size={10} /> Extend
                   </button>
                   <button onClick={() => openEditModal(m)} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-divider/60 hover:text-accent" title="Edit member"><Pencil size={13} /></button>
-                  <button onClick={() => (m.status === "suspended" ? handleRevokeSuspension(m) : openSuspendModal(m))} disabled={revoking} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-amber-50 hover:text-amber-500"><Ban size={13} /></button>
+                  {m.status !== "deleted" && (
+                    <button onClick={() => (m.status === "suspended" ? handleRevokeSuspension(m) : openSuspendModal(m))} disabled={revoking} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-amber-50 hover:text-amber-500"><Ban size={13} /></button>
+                  )}
                   <button
                     onClick={() => sub ? handleRevokeCommunity(m, sub.communityId, sub.communityName) : handleDeleteMember(m)}
                     disabled={deleting || revokingCommunity}
@@ -834,9 +839,11 @@ export default function MembersPage() {
                         <button onClick={() => openEditModal(m)} title="Edit member" className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-divider/60 hover:text-accent">
                           <Pencil size={13} />
                         </button>
-                        <button onClick={() => (m.status === "suspended" ? handleRevokeSuspension(m) : openSuspendModal(m))} disabled={revoking} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-amber-50 hover:text-amber-500">
-                          <Ban size={13} />
-                        </button>
+                        {m.status !== "deleted" && (
+                          <button onClick={() => (m.status === "suspended" ? handleRevokeSuspension(m) : openSuspendModal(m))} disabled={revoking} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-amber-50 hover:text-amber-500">
+                            <Ban size={13} />
+                          </button>
+                        )}
                         <button
                           onClick={() => sub ? handleRevokeCommunity(m, sub.communityId, sub.communityName) : handleDeleteMember(m)}
                     disabled={deleting || revokingCommunity}

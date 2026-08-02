@@ -204,7 +204,7 @@ export class AdminController {
     try {
       const schema = z.object({
         communityId: z.string().uuid().optional(),
-        status: z.enum(['registered', 'pending', 'expired', 'suspended']).optional(),
+        status: z.enum(['registered', 'pending', 'expired', 'suspended', 'deleted']).optional(),
         validFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
         validTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
         paidFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -241,7 +241,7 @@ export class AdminController {
     try {
       const schema = z.object({
         communityId: z.string().uuid().optional(),
-        status: z.enum(['registered', 'pending', 'expired', 'suspended']).optional(),
+        status: z.enum(['registered', 'pending', 'expired', 'suspended', 'deleted']).optional(),
         validFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
         validTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
         paidFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),

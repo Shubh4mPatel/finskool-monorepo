@@ -118,7 +118,7 @@ export interface UpdateAdminAccessDTO {
 }
 
 // Status is derived, not stored
-export type MemberStatus = 'registered' | 'pending' | 'expired' | 'suspended'
+export type MemberStatus = 'registered' | 'pending' | 'expired' | 'suspended' | 'deleted'
 
 export interface MemberListFilters {
   communityId?: string | undefined

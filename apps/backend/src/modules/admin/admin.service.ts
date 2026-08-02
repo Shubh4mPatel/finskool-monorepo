@@ -1,7 +1,7 @@
 import { createRequire } from 'module'
 import { randomUUID } from 'crypto'
 import bcrypt from 'bcryptjs'
-import type { PrismaClient } from '../../generated/prisma/client.js'
+import type { PrismaClient, Prisma } from '../../generated/prisma/client.js'
 import { assertSuperAdmin, assertCommunityAccessFromToken } from '../../lib/community-access.js'
 import { generateUploadUrl } from '../../lib/minio.js'
 import {
@@ -187,6 +187,27 @@ export class AdminService {
         })
         summary.updated++
         if (!notifyCommunityId) notifyCommunityId = community.id
+      } else if (existingUser && existingAp && !existingAp.isActive) {
+        // A previously-deleted member coming back — revive them (overwrite name/email,
+        // reset registration state) rather than just quietly re-subscribing a dead account.
+        await this.db.$transaction(async tx => {
+          await this.reviveMember(tx, existingUser, phone, name, email, adminId)
+          await tx.subscription.create({
+            data: { userId: existingUser.id, approvedPhoneId: existingAp.id, communityId: community.id, payment, paidOn, validUntil },
+          })
+        })
+        summary.created++
+        if (!notifyCommunityId) notifyCommunityId = community.id
+
+        try {
+          await notificationsQueue.add(
+            WELCOME_EMAIL_JOB,
+            { toEmail: email, name, phone, communityName: community.name, validTill: validUntil.toISOString() },
+            { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
+          )
+        } catch (err) {
+          logger.error({ err, phone }, 'admin.importUsers: failed to enqueue welcome email job')
+        }
       } else if (existingUser && existingAp) {
         // User exists but NOT subscribed to this community yet — add subscription only
         await this.db.subscription.create({
@@ -287,6 +308,27 @@ export class AdminService {
           })
           summary.updated++
           if (!notifyCommunityId) notifyCommunityId = community.id
+        } else if (existingUser && existingAp && !existingAp.isActive) {
+          // A previously-deleted member coming back — revive them (overwrite name/email,
+          // reset registration state) rather than just quietly re-subscribing a dead account.
+          await this.db.$transaction(async tx => {
+            await this.reviveMember(tx, existingUser, phone, row.name, row.email, adminId)
+            await tx.subscription.create({
+              data: { userId: existingUser.id, approvedPhoneId: existingAp.id, communityId: community.id, payment, paidOn, validUntil },
+            })
+          })
+          summary.created++
+          if (!notifyCommunityId) notifyCommunityId = community.id
+
+          try {
+            await notificationsQueue.add(
+              WELCOME_EMAIL_JOB,
+              { toEmail: row.email, name: row.name, phone, communityName: community.name, validTill: validUntil.toISOString() },
+              { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
+            )
+          } catch (err) {
+            logger.error({ err, phone }, 'admin.importUsersFromJSON: failed to enqueue welcome email job')
+          }
         } else if (existingUser && existingAp) {
           await this.db.subscription.create({
             data: { userId: existingUser.id, approvedPhoneId: existingAp.id, communityId: community.id, payment, paidOn, validUntil },
@@ -1004,32 +1046,46 @@ export class AdminService {
     const community = await this.db.community.findUnique({ where: { id: data.communityId } })
     if (!community) throw new NotFoundError('Community not found')
 
-    if (await this.db.user.findUnique({ where: { phone } })) {
+    const existingUser = await this.db.user.findUnique({ where: { phone } })
+    // A deleted member's User row is still there (isActive: false) — only a genuinely
+    // active phone is a real conflict; an inactive one falls through to the revive path below.
+    if (existingUser?.isActive) {
       throw new ConflictError('This phone number is already registered', 'PHONE_EXISTS')
     }
-    if (await this.db.user.findUnique({ where: { email: data.email } })) {
+    const emailOwner = await this.db.user.findUnique({ where: { email: data.email } })
+    if (emailOwner && emailOwner.phone !== phone) {
       throw new ConflictError('This email address is already registered', 'EMAIL_EXISTS')
     }
 
     const result = await this.db.$transaction(async tx => {
-      // Create User without password — user will set it when they register
-      const user = await tx.user.create({
-        data: { phone, name: data.name, email: data.email },
-      })
-      const ap = await tx.approvedPhone.create({
-        data: { phone, name: data.name, email: data.email, addedBy: adminId },
-      })
+      let userId: string
+      let approvedPhoneId: string
+      if (existingUser) {
+        const revived = await this.reviveMember(tx, existingUser, phone, data.name, data.email, adminId)
+        userId = revived.userId
+        approvedPhoneId = revived.approvedPhoneId
+      } else {
+        // Create User without password — user will set it when they register
+        const user = await tx.user.create({
+          data: { phone, name: data.name, email: data.email },
+        })
+        const ap = await tx.approvedPhone.create({
+          data: { phone, name: data.name, email: data.email, addedBy: adminId },
+        })
+        userId = user.id
+        approvedPhoneId = ap.id
+      }
       await tx.subscription.create({
         data: {
-          userId: user.id,
-          approvedPhoneId: ap.id,
+          userId,
+          approvedPhoneId,
           communityId: data.communityId,
           payment: data.payment,
           paidOn: new Date(),
           validUntil: new Date(data.validUntil),
         },
       })
-      return { user, ap }
+      return { approvedPhoneId }
     })
 
     logger.info({ phone, adminId }, 'admin.addMember: created')
@@ -1045,10 +1101,10 @@ export class AdminService {
     }
 
     return {
-      approvedPhoneId: result.ap.id,
-      phone: result.user.phone,
-      name: result.user.name,
-      email: result.user.email,
+      approvedPhoneId: result.approvedPhoneId,
+      phone,
+      name: data.name,
+      email: data.email,
       communityId: data.communityId,
       validUntil: data.validUntil,
     }
@@ -1289,7 +1345,9 @@ export class AdminService {
       const suspendedByUser = user ? !user.isActive : false
 
       let derivedStatus: MemberStatus
-      if (!ap.isActive || suspendedByUser) {
+      if (!ap.isActive) {
+        derivedStatus = 'deleted'
+      } else if (suspendedByUser) {
         derivedStatus = 'suspended'
       } else if (!ap.isRegistered) {
         derivedStatus = 'pending'
@@ -1341,6 +1399,7 @@ export class AdminService {
       pending: 'Pending Sign',
       expired: 'Expired',
       suspended: 'Suspended',
+      deleted: 'Deleted',
     }
     const formatCurrency = (n: number) => `₹${n.toLocaleString('en-IN')}`
     const formatDate = (iso: string | null | undefined) =>
@@ -1363,6 +1422,30 @@ export class AdminService {
       ])
 
     return '﻿' + [header, ...rows].map(r => r.map(escape).join(',')).join('\n')
+  }
+
+  // Brings a soft-deleted member (ApprovedPhone.isActive/User.isActive both false, per
+  // deleteMember) back to life: overwrites their name/email with the freshly-submitted
+  // values, and resets passwordHash + isRegistered so they go through register() again
+  // exactly like a brand-new signup — deliberate, since deleteMember doesn't clear any of
+  // this, so a revived member must not silently inherit their old password/session state.
+  private async reviveMember(
+    tx: Prisma.TransactionClient,
+    existingUser: { id: string },
+    phone: string,
+    name: string,
+    email: string,
+    adminId: string,
+  ): Promise<{ userId: string; approvedPhoneId: string }> {
+    await tx.user.update({
+      where: { id: existingUser.id },
+      data: { name, email, passwordHash: null, isActive: true, suspensionReason: null },
+    })
+    const ap = await tx.approvedPhone.update({
+      where: { phone },
+      data: { name, email, isActive: true, isRegistered: false, addedBy: adminId },
+    })
+    return { userId: existingUser.id, approvedPhoneId: ap.id }
   }
 
   private async buildMemberWhere(
@@ -1432,8 +1515,11 @@ export class AdminService {
 
     // Status maps to DB fields
     const apWhere: Record<string, unknown> = {}
-    if (status === 'suspended') {
-      andClauses.push({ OR: [{ isActive: false }, { phone: { in: suspendedUserPhones } }] })
+    if (status === 'deleted') {
+      apWhere['isActive'] = false
+    } else if (status === 'suspended') {
+      apWhere['isActive'] = true
+      andClauses.push({ phone: { in: suspendedUserPhones } })
     } else if (status === 'pending') {
       apWhere['isRegistered'] = false
       apWhere['isActive'] = true
@@ -1541,7 +1627,8 @@ export class AdminService {
     const suspendedByUser = user ? !user.isActive : false
 
     let status: MemberStatus
-    if (!ap.isActive || suspendedByUser) status = 'suspended'
+    if (!ap.isActive) status = 'deleted'
+    else if (suspendedByUser) status = 'suspended'
     else if (!ap.isRegistered) status = 'pending'
     else if (sub && (!sub.isActive || new Date(sub.validUntil) < today)) status = 'expired'
     else status = 'registered'
