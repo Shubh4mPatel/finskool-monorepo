@@ -43,64 +43,77 @@ export class StockRecommendationsService {
     adminId: string,
     accessibleCommunityIds: string[] | null,
     data: CreateStockRecommendationDTO,
-  ): Promise<StockRecommendationResponseDTO> {
-    const community = await this.db.community.findUnique({
-      where: { id: data.communityId, deletedAt: null },
+  ): Promise<StockRecommendationResponseDTO[]> {
+    const communities = await this.db.community.findMany({
+      where: { id: { in: data.communityIds }, deletedAt: null },
     })
-    if (!community) throw new NotFoundError('Community not found')
-    assertCommunityAccessFromToken(accessibleCommunityIds, data.communityId)
+    if (communities.length !== data.communityIds.length) throw new NotFoundError('Community not found')
+    for (const communityId of data.communityIds) {
+      assertCommunityAccessFromToken(accessibleCommunityIds, communityId)
+    }
 
     const stock = await this.db.stock.findUnique({ where: { id: data.stockId } })
     if (!stock) throw new NotFoundError('Stock not found')
 
-    const rec = await this.db.stockRecommendation.create({
-      data: {
-        communityId: data.communityId,
-        recommendedBy: adminId,
-        stockId: data.stockId,
-        entryPrice: data.entryPrice,
-        targetPrice: data.targetPrice,
-        stopLossPrice: data.stopLossPrice,
-        actionCall: data.actionCall,
-        riskLevel: data.riskLevel,
-        recommendationNotes: data.recommendationNotes ?? null,
-      },
-      ...withStock,
-    })
+    // One row per selected community — StockRecommendation stays single-community per row,
+    // so reads (listRecommendations) need no changes; this just creates several rows atomically.
+    const recs = await this.db.$transaction(
+      data.communityIds.map(communityId =>
+        this.db.stockRecommendation.create({
+          data: {
+            communityId,
+            recommendedBy: adminId,
+            stockId: data.stockId,
+            entryPrice: data.entryPrice,
+            targetPrice: data.targetPrice,
+            stopLossPrice: data.stopLossPrice,
+            actionCall: data.actionCall,
+            riskLevel: data.riskLevel,
+            recommendationNotes: data.recommendationNotes ?? null,
+          },
+          ...withStock,
+        }),
+      ),
+    )
 
-    logger.info({ recommendationId: rec.id }, 'stock-recommendations.create: success')
+    logger.info({ recommendationIds: recs.map(r => r.id), count: recs.length }, 'stock-recommendations.create: success')
 
     // Fire-and-forget: start streaming live price ticks for this stock right
     // away rather than waiting for the next AngelOne reconnect to pick it up.
+    // Stock-level, not community-level — only needs to happen once regardless of fan-out.
     liveStockFeed.ensureSubscribed(data.stockId).catch(err => {
       logger.error({ err, stockId: data.stockId }, 'stock-recommendations.create: failed to subscribe live feed')
     })
 
-    try {
-      await notificationsQueue.add(
-        COMMUNITY_RECOMMENDATION_JOB,
-        {
-          communityId: rec.communityId,
-          recommendationId: rec.id,
-          message: `New recommendation: ${rec.stock.symbol} — ${rec.actionCall.toUpperCase()}`,
-          triggeredByUserId: adminId,
-          stockSymbol: rec.stock.symbol,
-        },
-        {
-          jobId: `recommendation-created-${rec.id}`,
-          attempts: 5,
-          backoff: { type: 'exponential', delay: 5000 },
-          removeOnComplete: true,
-          removeOnFail: { count: 500 },
-        },
-      )
-    } catch (err) {
-      // Creation already succeeded at the DB level — a queue/Redis outage
-      // shouldn't fail the request.
-      logger.error({ err, recommendationId: rec.id }, 'stock-recommendations.create: failed to enqueue notification job')
-    }
+    // Each community gets its own notification job — a failure on one shouldn't drop the
+    // others, so each is caught independently rather than one try/catch around the batch.
+    await Promise.all(
+      recs.map(rec =>
+        notificationsQueue.add(
+          COMMUNITY_RECOMMENDATION_JOB,
+          {
+            communityId: rec.communityId,
+            recommendationId: rec.id,
+            message: `New recommendation: ${rec.stock.symbol} — ${rec.actionCall.toUpperCase()}`,
+            triggeredByUserId: adminId,
+            stockSymbol: rec.stock.symbol,
+          },
+          {
+            jobId: `recommendation-created-${rec.id}`,
+            attempts: 5,
+            backoff: { type: 'exponential', delay: 5000 },
+            removeOnComplete: true,
+            removeOnFail: { count: 500 },
+          },
+        ).catch(err => {
+          // Creation already succeeded at the DB level — a queue/Redis outage
+          // shouldn't fail the request.
+          logger.error({ err, recommendationId: rec.id }, 'stock-recommendations.create: failed to enqueue notification job')
+        }),
+      ),
+    )
 
-    return this.toResponse(rec)
+    return recs.map(rec => this.toResponse(rec))
   }
 
   async updateRecommendation(

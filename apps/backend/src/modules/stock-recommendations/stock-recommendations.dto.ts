@@ -1,5 +1,5 @@
 export interface CreateStockRecommendationDTO {
-  communityId: string
+  communityIds: string[]
   stockId: string
   entryPrice: number
   targetPrice: number

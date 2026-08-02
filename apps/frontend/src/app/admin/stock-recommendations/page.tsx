@@ -81,7 +81,7 @@ function formatDate(iso: string): string {
 }
 
 const EMPTY_RECOMMENDATION = {
-  communityId: "",
+  communityIds: [] as string[],
   stockId: "",
   entryPrice: "",
   targetPrice: "",
@@ -95,7 +95,7 @@ type RecommendationErrors = Partial<Record<RecommendationField, string>>;
 
 function validateRecommendation(f: typeof EMPTY_RECOMMENDATION): RecommendationErrors {
   const e: RecommendationErrors = {};
-  if (!f.communityId) e.communityId = "Select a community";
+  if (f.communityIds.length === 0) e.communityIds = "Select at least one community";
   if (!f.stockId) e.stockId = "Search and select a company";
   const entry = parseFloat(f.entryPrice);
   if (!f.entryPrice || isNaN(entry) || entry <= 0) e.entryPrice = "Enter a valid entry price";
@@ -319,7 +319,7 @@ export default function AdminStockRecommendationsPage() {
   function openEditModal(rec: StockRecommendationItem) {
     setSelectedRecommendation(rec);
     setForm({
-      communityId: rec.communityId,
+      communityIds: [rec.communityId],
       stockId: rec.stockId,
       entryPrice: String(rec.entryPrice),
       targetPrice: String(rec.targetPrice),
@@ -344,6 +344,15 @@ export default function AdminStockRecommendationsPage() {
     if (touched[field]) setErrors(e => ({ ...e, [field]: validateRecommendation(updated)[field] }));
   }
 
+  function toggleCommunity(id: string) {
+    const communityIds = form.communityIds.includes(id)
+      ? form.communityIds.filter(c => c !== id)
+      : [...form.communityIds, id];
+    const updated = { ...form, communityIds };
+    setForm(updated);
+    if (touched.communityIds) setErrors(e => ({ ...e, communityIds: validateRecommendation(updated).communityIds }));
+  }
+
   function changeStockQuery(value: string) {
     setStockQuery(value);
     setStockDropdownOpen(true);
@@ -361,14 +370,14 @@ export default function AdminStockRecommendationsPage() {
 
   async function handleAddRecommendation() {
     const errs = validateRecommendation(form);
-    setTouched({ communityId: true, stockId: true, entryPrice: true, targetPrice: true, stopLossPrice: true, riskLevel: true });
+    setTouched({ communityIds: true, stockId: true, entryPrice: true, targetPrice: true, stopLossPrice: true, riskLevel: true });
     setErrors(errs);
     if (Object.values(errs).some(Boolean)) return;
 
     setSubmitting(true);
     try {
       await api.post("/api/v1/stock-recommendations", {
-        communityId: form.communityId,
+        communityIds: form.communityIds,
         stockId: form.stockId,
         entryPrice: parseFloat(form.entryPrice),
         targetPrice: parseFloat(form.targetPrice),
@@ -390,7 +399,7 @@ export default function AdminStockRecommendationsPage() {
   async function handleUpdateRecommendation() {
     if (!selectedRecommendation) return;
     const errs = validateRecommendation(form);
-    delete errs.communityId;
+    delete errs.communityIds;
     delete errs.stockId;
     setTouched(t => ({ ...t, entryPrice: true, targetPrice: true, stopLossPrice: true, riskLevel: true }));
     setErrors(errs);
@@ -648,24 +657,27 @@ export default function AdminStockRecommendationsPage() {
             <div className="mt-5 flex max-h-[70vh] flex-col gap-4 overflow-y-auto pr-1">
               {modal === "add" ? (
                 <div>
-                  <label className="text-sm font-semibold text-primary">Community</label>
-                  <div className="relative">
-                    <select value={form.communityId}
-                      onChange={e => changeField("communityId", e.target.value)}
-                      onBlur={() => blurField("communityId")}
-                      className={fieldCls(errors.communityId, true)}>
-                      <option value="">Select community</option>
-                      {communities.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
-                    <ChevronDown size={14} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-subtle" />
+                  <label className="text-sm font-semibold text-primary">Communities</label>
+                  <div className="mt-2 flex flex-wrap gap-2" onBlur={() => blurField("communityIds")}>
+                    {communities.map(c => (
+                      <button key={c.id} type="button"
+                        onClick={() => toggleCommunity(c.id)}
+                        className={`rounded-full border px-3 py-1.5 text-xs font-bold transition-colors ${
+                          form.communityIds.includes(c.id)
+                            ? "border-accent bg-accent/10 text-accent"
+                            : "border-divider text-muted hover:border-accent hover:text-accent"
+                        }`}>
+                        {c.name}
+                      </button>
+                    ))}
                   </div>
-                  {errors.communityId && <p className="mt-1 text-xs text-red-500">{errors.communityId}</p>}
+                  {errors.communityIds && <p className="mt-1 text-xs text-red-500">{errors.communityIds}</p>}
                 </div>
               ) : (
                 <div>
                   <label className="text-sm font-semibold text-primary">Community</label>
                   <p className="mt-2 inline-block rounded-full bg-accent/10 px-3 py-1 text-xs font-bold text-accent">
-                    {communityName(form.communityId)}
+                    {communityName(form.communityIds[0] ?? "")}
                   </p>
                 </div>
               )}

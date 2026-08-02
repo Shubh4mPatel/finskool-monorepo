@@ -61,8 +61,8 @@ export class StockRecommendationsController {
   create = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const data = createStockRecommendationSchema.parse(req.body)
-      const rec = await this.service.createRecommendation(req.user!.id, req.user!.accessibleCommunityIds, data)
-      res.status(201).json({ success: true, data: rec })
+      const recs = await this.service.createRecommendation(req.user!.id, req.user!.accessibleCommunityIds, data)
+      res.status(201).json({ success: true, data: recs })
     } catch (err) {
       next(err)
     }

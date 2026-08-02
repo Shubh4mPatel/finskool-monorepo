@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 export const createStockRecommendationSchema = z.object({
-  communityId: z.string().uuid('Invalid community ID'),
+  communityIds: z.array(z.string().uuid('Invalid community ID')).min(1, 'At least one community is required'),
   stockId: z.string().uuid('Invalid stock'),
   entryPrice: z.number().positive('Entry price must be a positive number'),
   targetPrice: z.number().positive('Target price must be a positive number'),
