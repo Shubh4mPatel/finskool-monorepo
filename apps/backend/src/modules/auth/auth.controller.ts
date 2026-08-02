@@ -16,7 +16,7 @@ const avatarUploadUrlQuerySchema = z.object({
 const COOKIE_BASE: CookieOptions = {
   httpOnly: true,
   secure: env.cookie.secure,
-  sameSite: 'strict',
+  sameSite: 'lax',
   path: '/',
 }
 
