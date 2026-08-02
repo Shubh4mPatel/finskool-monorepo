@@ -247,6 +247,10 @@ export default function AdminStockRecommendationsPage() {
   const [stockSearching, setStockSearching] = useState(false);
   const stockFieldRef = useRef<HTMLDivElement>(null);
 
+  // Community multi-select (Add mode only)
+  const [communityDropdownOpen, setCommunityDropdownOpen] = useState(false);
+  const communityFieldRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     api.get<Community[]>("/api/v1/admin/communities")
       .then(setCommunities)
@@ -282,11 +286,14 @@ export default function AdminStockRecommendationsPage() {
       .finally(() => setStockSearching(false));
   }, [debouncedStockQuery, stockDropdownOpen, modal]);
 
-  // Close the suggestion dropdown on outside click
+  // Close the suggestion/community dropdowns on outside click
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (stockFieldRef.current && !stockFieldRef.current.contains(e.target as Node)) {
         setStockDropdownOpen(false);
+      }
+      if (communityFieldRef.current && !communityFieldRef.current.contains(e.target as Node)) {
+        setCommunityDropdownOpen(false);
       }
     }
     document.addEventListener("mousedown", handleClick);
@@ -658,18 +665,28 @@ export default function AdminStockRecommendationsPage() {
               {modal === "add" ? (
                 <div>
                   <label className="text-sm font-semibold text-primary">Communities</label>
-                  <div className="mt-2 flex flex-wrap gap-2" onBlur={() => blurField("communityIds")}>
-                    {communities.map(c => (
-                      <button key={c.id} type="button"
-                        onClick={() => toggleCommunity(c.id)}
-                        className={`rounded-full border px-3 py-1.5 text-xs font-bold transition-colors ${
-                          form.communityIds.includes(c.id)
-                            ? "border-accent bg-accent/10 text-accent"
-                            : "border-divider text-muted hover:border-accent hover:text-accent"
-                        }`}>
-                        {c.name}
-                      </button>
-                    ))}
+                  <div ref={communityFieldRef} className="relative">
+                    <button type="button"
+                      onClick={() => { setCommunityDropdownOpen(v => !v); blurField("communityIds"); }}
+                      className={`${fieldCls(errors.communityIds, true)} text-left`}>
+                      {form.communityIds.length === 0
+                        ? <span className="text-subtle">Select community</span>
+                        : communities.filter(c => form.communityIds.includes(c.id)).map(c => c.name).join(", ")}
+                    </button>
+                    <ChevronDown size={14} className={`pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-subtle transition-transform ${communityDropdownOpen ? "rotate-180" : ""}`} />
+                    {communityDropdownOpen && (
+                      <div className="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded-xl border border-divider bg-white p-2 shadow-card-hover">
+                        {communities.map(c => (
+                          <label key={c.id} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-primary transition-colors hover:bg-divider/40">
+                            <input type="checkbox"
+                              checked={form.communityIds.includes(c.id)}
+                              onChange={() => toggleCommunity(c.id)}
+                              className="h-4 w-4 rounded border-divider text-accent focus:ring-accent/40" />
+                            {c.name}
+                          </label>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   {errors.communityIds && <p className="mt-1 text-xs text-red-500">{errors.communityIds}</p>}
                 </div>
