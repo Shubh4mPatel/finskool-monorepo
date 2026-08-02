@@ -247,7 +247,7 @@ export default function MemberDetailPage() {
         <div className="relative h-16 bg-accent">
           <button
             type="button"
-            onClick={() => router.push("/admin/members")}
+            onClick={() => (window.history.length > 1 ? router.back() : router.push("/admin/members"))}
             aria-label="Back to members"
             className="absolute left-4 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-black/15 text-white transition-colors hover:bg-black/25"
           >
@@ -276,15 +276,6 @@ export default function MemberDetailPage() {
                   />
                 ) : (
                   <p className="font-display text-lg font-bold text-primary">{member.name}</p>
-                )}
-                {!isEditing && (
-                  <button
-                    type="button"
-                    onClick={() => setIsEditing(true)}
-                    className="flex items-center gap-1 rounded-full bg-divider px-2 py-0.5 text-xs font-semibold text-muted transition-colors hover:bg-divider/70"
-                  >
-                    <Pencil size={10} /> Edit
-                  </button>
                 )}
               </div>
               {errors.name && <p className="mt-1 text-xs text-red-500">{errors.name}</p>}
