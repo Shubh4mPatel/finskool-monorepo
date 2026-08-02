@@ -42,6 +42,7 @@ import type {
   CreateAdminDTO,
   UpdateAdminAccessDTO,
   MemberListFilters,
+  MemberExportFilters,
   MemberListDTO,
   MemberItemDTO,
   MemberSubscriptionDTO,
@@ -1234,7 +1235,140 @@ export class AdminService {
   }
 
   async listMembers(filters: MemberListFilters): Promise<MemberListDTO> {
-    const { communityId, communityIds, status, validFrom, validTo, paidFrom, paidTo, search, page, pageSize } = filters
+    const { page, pageSize, ...whereFilters } = filters
+    const { apWhere, currentSubIds } = await this.buildMemberWhere(whereFilters)
+    const { members, total } = await this.queryMembers(apWhere, currentSubIds, { skip: (page - 1) * pageSize, take: pageSize })
+    return { members, total, page, pageSize, totalPages: Math.ceil(total / pageSize) }
+  }
+
+  async exportMembersCsv(filters: MemberExportFilters): Promise<string> {
+    const { apWhere, currentSubIds } = await this.buildMemberWhere(filters)
+    const { members } = await this.queryMembers(apWhere, currentSubIds)
+    return this.membersToCsv(members)
+  }
+
+  // Shared by listMembers (paginated) and exportMembersCsv (unpaginated — omit `pagination`
+  // to fetch every matching row). When unpaginated, `total` is just `members.length` — no
+  // separate count() query needed since the fetched rows already are the full result set.
+  private async queryMembers(
+    apWhere: Record<string, unknown>,
+    currentSubIds: string[],
+    pagination?: { skip: number; take: number },
+  ): Promise<{ members: MemberItemDTO[]; total: number }> {
+    const [total, rows] = await Promise.all([
+      pagination ? this.db.approvedPhone.count({ where: apWhere }) : Promise.resolve(null),
+      this.db.approvedPhone.findMany({
+        where: apWhere,
+        orderBy: { createdAt: 'desc' },
+        ...pagination,
+        include: {
+          subscriptions: {
+            where: { id: { in: currentSubIds } },
+            include: { community: { select: { id: true, name: true } } },
+            orderBy: { createdAt: 'desc' },
+          },
+        },
+      }),
+    ])
+
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    // Batch-fetch linked Users (isActive/suspensionReason) for these rows — ApprovedPhone
+    // and User have no formal relation, only the shared phone string, same pattern as elsewhere.
+    const users = await this.db.user.findMany({
+      where: { phone: { in: rows.map(ap => ap.phone) } },
+      select: { phone: true, isActive: true, suspensionReason: true },
+    })
+    const userByPhone = new Map(users.map(u => [u.phone, u]))
+
+    const members: MemberItemDTO[] = rows.map(ap => {
+      const allSubs = ap.subscriptions
+      const sub = allSubs[0] ?? null
+      const user = userByPhone.get(ap.phone)
+      const suspendedByUser = user ? !user.isActive : false
+
+      let derivedStatus: MemberStatus
+      if (!ap.isActive || suspendedByUser) {
+        derivedStatus = 'suspended'
+      } else if (!ap.isRegistered) {
+        derivedStatus = 'pending'
+      } else if (sub && (!sub.isActive || new Date(sub.validUntil) < today)) {
+        derivedStatus = 'expired'
+      } else {
+        derivedStatus = 'registered'
+      }
+
+      return {
+        id: ap.id,
+        name: ap.name ?? '',
+        phone: ap.phone,
+        email: ap.email ?? '',
+        isActive: ap.isActive && !suspendedByUser,
+        isRegistered: ap.isRegistered,
+        status: derivedStatus,
+        createdAt: ap.createdAt.toISOString(),
+        suspensionReason: suspendedByUser ? (user?.suspensionReason ?? null) : null,
+        subscription: sub
+          ? {
+              id: sub.id,
+              communityId: sub.communityId,
+              communityName: sub.community.name,
+              payment: Number(sub.payment),
+              paidOn: sub.paidOn ? sub.paidOn.toISOString().split('T')[0]! : null,
+              validUntil: sub.validUntil.toISOString().split('T')[0]!,
+              isActive: sub.isActive,
+            }
+          : null,
+        allSubscriptions: allSubs.map(s => ({
+          id: s.id,
+          communityId: s.communityId,
+          communityName: s.community.name,
+          payment: Number(s.payment),
+          paidOn: s.paidOn ? s.paidOn.toISOString().split('T')[0]! : null,
+          validUntil: s.validUntil.toISOString().split('T')[0]!,
+          isActive: s.isActive,
+        })),
+      }
+    })
+
+    return { members, total: total ?? members.length }
+  }
+
+  private membersToCsv(members: MemberItemDTO[]): string {
+    const STATUS_LABELS: Record<MemberStatus, string> = {
+      registered: 'Registered',
+      pending: 'Pending Sign',
+      expired: 'Expired',
+      suspended: 'Suspended',
+    }
+    const formatCurrency = (n: number) => `₹${n.toLocaleString('en-IN')}`
+    const formatDate = (iso: string | null | undefined) =>
+      iso ? new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'
+    const escape = (v: string) => `"${v.replace(/"/g, '""')}"`
+
+    const header = ['Name', 'Phone', 'Email', 'Community', 'Payment', 'Paid On', 'Valid Till', 'Status', 'Added On']
+    const rows = members
+      .flatMap(m => (m.allSubscriptions.length > 0 ? m.allSubscriptions.map(sub => ({ m, sub })) : [{ m, sub: null as MemberSubscriptionDTO | null }]))
+      .map(({ m, sub }) => [
+        m.name,
+        m.phone,
+        m.email,
+        sub?.communityName ?? '—',
+        sub ? formatCurrency(sub.payment) : '—',
+        formatDate(sub?.paidOn),
+        formatDate(sub?.validUntil),
+        STATUS_LABELS[m.status] ?? m.status,
+        formatDate(m.createdAt),
+      ])
+
+    return '﻿' + [header, ...rows].map(r => r.map(escape).join(',')).join('\n')
+  }
+
+  private async buildMemberWhere(
+    filters: MemberExportFilters,
+  ): Promise<{ apWhere: Record<string, unknown>; currentSubIds: string[] }> {
+    const { communityId, communityIds, status, validFrom, validTo, paidFrom, paidTo, search } = filters
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
@@ -1328,82 +1462,7 @@ export class AdminService {
       apWhere['AND'] = andClauses
     }
 
-    const [total, rows] = await Promise.all([
-      this.db.approvedPhone.count({ where: apWhere }),
-      this.db.approvedPhone.findMany({
-        where: apWhere,
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-        include: {
-          subscriptions: {
-            where: { id: { in: currentSubIds } },
-            include: { community: { select: { id: true, name: true } } },
-            orderBy: { createdAt: 'desc' },
-          },
-        },
-      }),
-    ])
-
-    // Batch-fetch linked Users (isActive/suspensionReason) for this page's rows — ApprovedPhone
-    // and User have no formal relation, only the shared phone string, same pattern as elsewhere.
-    const users = await this.db.user.findMany({
-      where: { phone: { in: rows.map(ap => ap.phone) } },
-      select: { phone: true, isActive: true, suspensionReason: true },
-    })
-    const userByPhone = new Map(users.map(u => [u.phone, u]))
-
-    const members: MemberItemDTO[] = rows.map(ap => {
-      const allSubs = ap.subscriptions
-      const sub = allSubs[0] ?? null
-      const user = userByPhone.get(ap.phone)
-      const suspendedByUser = user ? !user.isActive : false
-
-      let derivedStatus: MemberStatus
-      if (!ap.isActive || suspendedByUser) {
-        derivedStatus = 'suspended'
-      } else if (!ap.isRegistered) {
-        derivedStatus = 'pending'
-      } else if (sub && (!sub.isActive || new Date(sub.validUntil) < today)) {
-        derivedStatus = 'expired'
-      } else {
-        derivedStatus = 'registered'
-      }
-
-      return {
-        id: ap.id,
-        name: ap.name ?? '',
-        phone: ap.phone,
-        email: ap.email ?? '',
-        isActive: ap.isActive && !suspendedByUser,
-        isRegistered: ap.isRegistered,
-        status: derivedStatus,
-        createdAt: ap.createdAt.toISOString(),
-        suspensionReason: suspendedByUser ? (user?.suspensionReason ?? null) : null,
-        subscription: sub
-          ? {
-              id: sub.id,
-              communityId: sub.communityId,
-              communityName: sub.community.name,
-              payment: Number(sub.payment),
-              paidOn: sub.paidOn ? sub.paidOn.toISOString().split('T')[0]! : null,
-              validUntil: sub.validUntil.toISOString().split('T')[0]!,
-              isActive: sub.isActive,
-            }
-          : null,
-        allSubscriptions: allSubs.map(s => ({
-          id: s.id,
-          communityId: s.communityId,
-          communityName: s.community.name,
-          payment: Number(s.payment),
-          paidOn: s.paidOn ? s.paidOn.toISOString().split('T')[0]! : null,
-          validUntil: s.validUntil.toISOString().split('T')[0]!,
-          isActive: s.isActive,
-        })),
-      }
-    })
-
-    return { members, total, page, pageSize, totalPages: Math.ceil(total / pageSize) }
+    return { apWhere, currentSubIds }
   }
 
   // "Current" subscription per community = most recently created row, not

@@ -55,6 +55,7 @@ router.delete(
   controller.revokeCommunityAccess,
 )
 router.get('/members', authenticate, requireRole('admin'), controller.listMembers)
+router.get('/members/export', authenticate, requireRole('admin'), controller.exportMembersCsv)
 router.post('/members', authenticate, requireRole('admin'), controller.addMember)
 router.patch('/members/:id', authenticate, requireRole('admin'), controller.updateMember)
 router.post('/members/bulk-delete', authenticate, requireRole('admin'), controller.bulkDeleteMembers)

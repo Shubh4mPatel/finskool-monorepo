@@ -133,6 +133,8 @@ export interface MemberListFilters {
   pageSize: number
 }
 
+export type MemberExportFilters = Omit<MemberListFilters, 'page' | 'pageSize'>
+
 export interface MemberSubscriptionDTO {
   id: string
   communityId: string

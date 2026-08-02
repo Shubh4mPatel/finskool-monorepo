@@ -54,6 +54,22 @@ async function request<T>(path: string, init: RequestInit = {}, isRetry = false)
   return json.data as T
 }
 
+async function requestBlob(path: string, isRetry = false): Promise<Blob> {
+  const res = await fetch(`${API_URL}${path}`, { credentials: 'include' })
+
+  if (res.status === 401 && !isRetry) {
+    const refreshed = await refreshAccessToken()
+    if (refreshed) return requestBlob(path, true)
+  }
+
+  if (!res.ok) {
+    const json = await res.json().catch(() => ({ message: 'Request failed' }))
+    throw new ApiError(res.status, json.message ?? 'Request failed', json.code)
+  }
+
+  return res.blob()
+}
+
 export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body: unknown) =>
@@ -67,4 +83,5 @@ export const api = {
       body: form,
       headers: {},  // let browser set multipart boundary
     }),
+  getBlob: (path: string) => requestBlob(path),
 }

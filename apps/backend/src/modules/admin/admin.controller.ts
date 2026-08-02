@@ -235,6 +235,31 @@ export class AdminController {
     }
   }
 
+  // Deliberately no accessibleCommunityIds scoping here (unlike listMembers above) — any
+  // admin, scoped or super, can export members across every community, by product decision.
+  exportMembersCsv = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const schema = z.object({
+        communityId: z.string().uuid().optional(),
+        status: z.enum(['registered', 'pending', 'expired', 'suspended']).optional(),
+        validFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        validTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        paidFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        paidTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        search: z.string().max(100).optional(),
+      })
+      const parsed = schema.safeParse(req.query)
+      if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Invalid query')
+
+      const csv = await this.service.exportMembersCsv(parsed.data)
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+      res.setHeader('Content-Disposition', `attachment; filename="members-export-${new Date().toISOString().slice(0, 10)}.csv"`)
+      res.status(200).send(csv)
+    } catch (err) {
+      next(err)
+    }
+  }
+
   validateImport = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const { rows } = validateImportSchema.parse(req.body)

@@ -138,6 +138,7 @@ export default function MembersPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
   const [fetchTrigger, setFetchTrigger] = useState(0);
+  const [exporting, setExporting] = useState(false);
 
   // Stats (independent of filters)
   const [statsData, setStatsData] = useState({ total: 0, registered: 0, pending: 0 });
@@ -173,14 +174,21 @@ export default function MembersPage() {
     setPage(1);
   }, [filterCommunity, filterStatus, validDate, paidDate, debouncedSearch]);
 
-  // Fetch members list
-  useEffect(() => {
-    const params = new URLSearchParams({ page: String(page), pageSize: "8" });
+  function buildMemberFilterParams(): URLSearchParams {
+    const params = new URLSearchParams();
     if (debouncedSearch) params.set("search", debouncedSearch);
     if (filterCommunity) params.set("communityId", filterCommunity);
     if (filterStatus) params.set("status", filterStatus);
     if (validDate) params.set("validTo", validDate);
     if (paidDate) { params.set("paidFrom", paidDate); params.set("paidTo", paidDate); }
+    return params;
+  }
+
+  // Fetch members list
+  useEffect(() => {
+    const params = buildMemberFilterParams();
+    params.set("page", String(page));
+    params.set("pageSize", "8");
 
     setLoading(true);
     setSelectedIds(new Set());
@@ -527,33 +535,21 @@ export default function MembersPage() {
     }
   }
 
-  function exportMembersCSV() {
-    const header = ["Name", "Phone", "Email", "Community", "Payment", "Paid On", "Valid Till", "Status", "Added On"];
-    const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
-    const rows = members
-      .flatMap(m =>
-        m.allSubscriptions.length > 0
-          ? m.allSubscriptions.map(sub => ({ m, sub }))
-          : [{ m, sub: null as MemberSubscription | null }]
-      )
-      .map(({ m, sub }) => [
-        m.name,
-        m.phone,
-        m.email,
-        sub?.communityName ?? "—",
-        sub ? formatCurrency(sub.payment) : "—",
-        formatDate(sub?.paidOn),
-        formatDate(sub?.validUntil),
-        STATUS_LABELS[m.status] ?? m.status,
-        formatDate(m.createdAt),
-      ]);
-    const csv = "﻿" + [header, ...rows].map(r => r.map(escape).join(",")).join("\n");
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `members-export-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+  async function exportMembersCSV() {
+    setExporting(true);
+    try {
+      const blob = await api.getBlob(`/api/v1/admin/members/export?${buildMemberFilterParams().toString()}`);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `members-export-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to export members");
+    } finally {
+      setExporting(false);
+    }
   }
 
   const fieldCls = (err?: string, isSelect?: boolean) =>
@@ -673,11 +669,11 @@ export default function MembersPage() {
 
           <button
             onClick={exportMembersCSV}
-            disabled={members.length === 0}
+            disabled={total === 0 || exporting}
             className="flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-xs font-bold text-white transition-transform hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Download size={13} />
-            Export CSV
+            {exporting ? "Exporting…" : "Export CSV"}
           </button>
         </div>
 
