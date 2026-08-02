@@ -381,6 +381,7 @@ export default function AdminFeedPage() {
                   bodyHtml={post.content}
                   imageUrls={post.imageUrls}
                   tags={post.tags}
+                  isAdmin
                   actions={
                     <PostMenu
                       post={post}

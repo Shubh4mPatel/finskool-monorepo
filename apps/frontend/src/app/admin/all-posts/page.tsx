@@ -502,6 +502,7 @@ export default function AllPostsPage() {
             {displayed.map(post => (
               <FeedPostCard
                 key={post.id}
+                postId={post.id}
                 communityName={post.communityName}
                 communityBadgeUrl={post.communityBadgeUrl}
                 authorName={post.authorName}
@@ -513,6 +514,7 @@ export default function AllPostsPage() {
                 bodyHtml={post.content}
                 imageUrls={post.imageUrls}
                 tags={post.tags}
+                isAdmin
                 actions={
                   <PostMenu
                     post={post}
