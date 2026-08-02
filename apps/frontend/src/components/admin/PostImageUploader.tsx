@@ -70,9 +70,9 @@ export default function PostImageUploader({
 
       <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
         {imageUrls.map((url, idx) => (
-          <div key={url} className="relative aspect-square overflow-hidden rounded-xl border border-divider">
+          <div key={url} className="relative aspect-square overflow-hidden rounded-xl border border-divider bg-divider/20">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={url} alt={`Post image ${idx + 1}`} className="h-full w-full object-cover" />
+            <img src={url} alt={`Post image ${idx + 1}`} className="h-full w-full object-contain" />
             <button
               type="button"
               onClick={() => removeAt(idx)}

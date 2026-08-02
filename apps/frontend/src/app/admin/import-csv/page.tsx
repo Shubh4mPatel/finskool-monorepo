@@ -75,6 +75,7 @@ export default function ImportCSVPage() {
   const strategy: Strategy = "overwrite";
   const [rows, setRows] = useState<ParsedRow[]>([]);
   const [communities, setCommunities] = useState<string[]>([]);
+  const [communityNames, setCommunityNames] = useState<string[]>([]);
   const [previewPage, setPreviewPage] = useState(1);
   const [importing, setImporting] = useState(false);
   const [validating, setValidating] = useState(false);
@@ -86,7 +87,10 @@ export default function ImportCSVPage() {
 
   useEffect(() => {
     api.get<{ id: string; name: string }[]>("/api/v1/admin/communities")
-      .then(cs => setCommunities(cs.map(c => c.name.toLowerCase())))
+      .then(cs => {
+        setCommunities(cs.map(c => c.name.toLowerCase()));
+        setCommunityNames(cs.map(c => c.name));
+      })
       .catch(() => {});
   }, []);
 
@@ -221,7 +225,21 @@ export default function ImportCSVPage() {
   }
 
   function downloadSample() {
-    const csv = `Name,Contact Number,Payment,Paid on,Valid,Service,Email\nAmit Sharma,9876543201,999,2026-01-05,2026-12-31,Swing Alpha Community,amit@example.com\nPriya Verma,9876543202,1499,2026-01-06,2026-12-31,Investor Community,priya@example.com`;
+    // One example row per real community — using a fixed/placeholder community name here would
+    // just fail the importer's own "Service" validation against actual community names.
+    const header = ["Name", "Contact Number", "Payment", "Paid on", "Valid", "Service", "Email"];
+    const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
+    const sources = communityNames.length > 0 ? communityNames : ["Your Community Name"];
+    const rows = sources.map((name, i) => [
+      `Sample Member ${i + 1}`,
+      `98765432${String(i).padStart(2, "0")}`,
+      "999",
+      "2026-01-05",
+      "2026-12-31",
+      name,
+      `sample${i + 1}@example.com`,
+    ]);
+    const csv = [header, ...rows].map(r => r.map(escape).join(",")).join("\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
     const a = document.createElement("a");
     a.href = url; a.download = "sample-import.csv"; a.click();
