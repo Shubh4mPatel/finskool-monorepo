@@ -198,7 +198,13 @@
       "Bash(curl -sS -b cookies.txt https://community.finskool21.in/api/v1/admin/communities -w \"\\\\nHTTP_STATUS:%{http_code}\\\\n\")",
       "Bash(cd /home/shubh4m/projects/finskool-monorepo/apps/backend && npx tsc --noEmit 2>&1 | tail -10 && echo \"---frontend---\" && cd ../frontend && npx tsc --noEmit 2>&1 | tail -10)",
       "Read(//home/shubh4m/projects/**)",
-      "Bash(cd /home/shubh4m/projects/finskool-monorepo/apps/backend && npx tsc --noEmit 2>&1 | tail -20 && echo \"---frontend---\" && cd ../frontend && npx tsc --noEmit 2>&1 | tail -20)"
+      "Bash(cd /home/shubh4m/projects/finskool-monorepo/apps/backend && npx tsc --noEmit 2>&1 | tail -20 && echo \"---frontend---\" && cd ../frontend && npx tsc --noEmit 2>&1 | tail -20)",
+      "Bash(command -v chromium-cli)",
+      "Bash(npx --no-install chromium-cli --help)",
+      "Read(//tmp/claude-1000/bundled-skills/2.1.220/**)",
+      "Bash(node -e \"require.resolve\\('playwright'\\)\")",
+      "Bash(npm root *)",
+      "Bash(ls \"$\\(npm root -g\\)/playwright\")"
     ],
     "additionalDirectories": [
       "/tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/8750fbd9-1edb-4d3f-b623-da0dec31a255/scratchpad/node_modules",

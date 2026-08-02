@@ -135,17 +135,7 @@ export default function AdminProfilePage() {
               />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <p className="font-display text-lg font-bold text-primary">{displayName}</p>
-                <button
-                  type="button"
-                  onClick={() => setIsEditing(true)}
-                  className="flex items-center gap-1 rounded-full bg-primary/15 px-3 py-1 text-xs font-semibold text-primary transition-colors hover:bg-primary/25"
-                >
-                  <Pencil size={11} />
-                  Edit
-                </button>
-              </div>
+              <p className="font-display text-lg font-bold text-primary">{displayName}</p>
               <span className="mt-1 inline-block rounded-full bg-lime px-3 py-0.5 text-xs font-bold text-primary">{roleLabel}</span>
             </div>
           </div>
