@@ -111,6 +111,10 @@ const updateMemberSchema = z.object({
   }).optional(),
 })
 
+const resetMemberPasswordSchema = z.object({
+  newPassword: z.string().min(8, 'Password must be at least 8 characters'),
+})
+
 const listNotificationsSchema = z.object({
   isReplied: z
     .enum(['true', 'false'])
@@ -472,6 +476,30 @@ export class AdminController {
       const parsed = updateMemberSchema.safeParse(req.body)
       if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
       const result = await this.service.updateMember(id, parsed.data)
+      res.json({ success: true, data: result })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  getMember = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const raw = req.params['id']
+      const id = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
+      const result = await this.service.getMemberById(id)
+      res.json({ success: true, data: result })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  resetMemberPassword = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const raw = req.params['id']
+      const id = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
+      const parsed = resetMemberPasswordSchema.safeParse(req.body)
+      if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
+      const result = await this.service.resetMemberPassword(id, parsed.data.newPassword)
       res.json({ success: true, data: result })
     } catch (err) {
       next(err)

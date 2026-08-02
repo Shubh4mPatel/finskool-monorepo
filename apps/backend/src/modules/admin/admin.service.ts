@@ -1600,6 +1600,24 @@ export class AdminService {
     }
   }
 
+  async getMemberById(id: string): Promise<MemberItemDTO> {
+    return this.fetchMemberDTO(id)
+  }
+
+  async resetMemberPassword(approvedPhoneId: string, newPassword: string): Promise<MemberItemDTO> {
+    const ap = await this.db.approvedPhone.findUnique({ where: { id: approvedPhoneId } })
+    if (!ap) throw new NotFoundError('Member not found')
+
+    const user = await this.db.user.findUnique({ where: { phone: ap.phone } })
+    if (!user) throw new NotFoundError('Member not found')
+
+    const passwordHash = await bcrypt.hash(newPassword, 12)
+    await this.db.user.update({ where: { id: user.id }, data: { passwordHash } })
+
+    logger.info({ approvedPhoneId }, 'admin.resetMemberPassword: password reset')
+    return this.fetchMemberDTO(approvedPhoneId)
+  }
+
   private async fetchMemberDTO(approvedPhoneId: string): Promise<MemberItemDTO> {
     const today = new Date()
     today.setHours(0, 0, 0, 0)

@@ -1,36 +1,23 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Ban, ChevronDown, Download, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import { isValidPhoneNumber } from "libphonenumber-js";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import PhoneInput from "@/components/ui/PhoneInput";
-
-interface MemberSubscription {
-  id: string;
-  communityId: string;
-  communityName: string;
-  payment: number;
-  paidOn: string | null;
-  validUntil: string;
-  isActive: boolean;
-}
-
-interface MemberItem {
-  id: string;
-  name: string;
-  phone: string;
-  email: string;
-  isActive: boolean;
-  isRegistered: boolean;
-  status: "registered" | "pending" | "expired" | "suspended" | "deleted";
-  createdAt: string;
-  suspensionReason: string | null;
-  subscription: MemberSubscription | null;
-  allSubscriptions: MemberSubscription[];
-}
+import {
+  type MemberSubscription,
+  type MemberItem,
+  STATUS_STYLES,
+  STATUS_LABELS,
+  getInitials,
+  formatCurrency,
+  formatDate,
+  communityBadge,
+} from "@/lib/memberFormat";
 
 interface MemberList {
   members: MemberItem[];
@@ -38,40 +25,6 @@ interface MemberList {
   page: number;
   pageSize: number;
   totalPages: number;
-}
-
-const STATUS_STYLES: Record<string, string> = {
-  registered: "bg-accent/10 text-accent",
-  pending: "bg-amber-100 text-amber-600",
-  expired: "bg-red-100 text-red-500",
-  suspended: "bg-gray-100 text-gray-500",
-  deleted: "bg-gray-200 text-gray-600",
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  registered: "Registered",
-  pending: "Pending Sign",
-  expired: "Expired",
-  suspended: "Suspended",
-  deleted: "Deleted",
-};
-
-function getInitials(name: string): string {
-  return name.split(" ").map(w => w[0] ?? "").join("").toUpperCase().slice(0, 2) || "?";
-}
-
-function formatCurrency(amount: number): string {
-  return `₹${amount.toLocaleString("en-IN")}`;
-}
-
-function formatDate(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
-}
-
-function communityBadge(name: string): string {
-  const colors = ["bg-lime/40 text-primary", "bg-accent/10 text-accent", "bg-amber-100 text-amber-600"];
-  return colors[name.charCodeAt(0) % colors.length] ?? "bg-divider text-muted";
 }
 
 function getPaginationPages(current: number, total: number): (number | null)[] {
@@ -104,6 +57,7 @@ function validateMember(m: typeof EMPTY_MEMBER): MemberErrors {
 }
 
 export default function MembersPage() {
+  const router = useRouter();
   const toast = useToast();
   const confirm = useConfirm();
   const [modal, setModal] = useState<ModalType>(null);
@@ -715,13 +669,19 @@ export default function MembersPage() {
                         aria-label={`Select ${m.name}`}
                       />
                     )}
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-white">
-                      {getInitials(m.name)}
-                    </div>
-                    <div>
-                      <p className="font-semibold text-primary">{m.name}</p>
-                      <p className="text-xs text-subtle">{m.phone}</p>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => router.push(`/admin/members/${m.id}`)}
+                      className="flex items-center gap-3 text-left"
+                    >
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-white">
+                        {getInitials(m.name)}
+                      </div>
+                      <div>
+                        <p className="font-semibold text-primary hover:underline">{m.name}</p>
+                        <p className="text-xs text-subtle">{m.phone}</p>
+                      </div>
+                    </button>
                   </div>
                   <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${STATUS_STYLES[m.status] ?? ""}`}>
                     {STATUS_LABELS[m.status] ?? m.status}
@@ -808,12 +768,16 @@ export default function MembersPage() {
                     )}
                     <td className="py-3 pl-2 pr-3 text-xs text-subtle">{(page - 1) * 8 + rowIdx + 1}</td>
                     <td className="px-3 py-3">
-                      <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => router.push(`/admin/members/${m.id}`)}
+                        className="flex items-center gap-2 text-left"
+                      >
                         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-white">
                           {getInitials(m.name)}
                         </div>
-                        <span className="font-semibold text-primary">{m.name}</span>
-                      </div>
+                        <span className="font-semibold text-primary hover:underline">{m.name}</span>
+                      </button>
                     </td>
                     <td className="px-3 py-3 text-muted">{m.phone}</td>
                     <td className="px-3 py-3 font-semibold text-primary">{sub ? formatCurrency(sub.payment) : "—"}</td>
