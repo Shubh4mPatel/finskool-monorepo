@@ -256,14 +256,38 @@ export default function MemberDetailPage() {
         </div>
 
         <div className="flex flex-wrap items-start justify-between gap-6 px-6 pb-6">
-          <div className="-mt-8 flex items-center gap-4">
-            <div className="relative shrink-0">
+          <div className="flex items-center gap-4">
+            {/* position:relative (not a margin on the flex row) so only the avatar visually
+                overlaps the header bar — a shared -mt-8 on the row would drag the name/email
+                text up into the bar too, since align-items:center centers siblings together. */}
+            <div className="relative -top-8 shrink-0">
               <div className="flex h-17 w-17 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-accent to-primary text-xl font-bold text-lime ring-4 ring-white">
                 {displayInitials}
               </div>
             </div>
             <div>
-              <p className="font-display text-lg font-bold text-primary">{member.name}</p>
+              <div className="flex items-center gap-2">
+                {isEditing ? (
+                  <input
+                    type="text"
+                    value={form.name}
+                    onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                    className="rounded-lg border border-accent bg-white px-2 py-1 font-display text-lg font-bold text-primary focus:outline-none focus:ring-2 focus:ring-accent/40"
+                  />
+                ) : (
+                  <p className="font-display text-lg font-bold text-primary">{member.name}</p>
+                )}
+                {!isEditing && (
+                  <button
+                    type="button"
+                    onClick={() => setIsEditing(true)}
+                    className="flex items-center gap-1 rounded-full bg-divider px-2 py-0.5 text-xs font-semibold text-muted transition-colors hover:bg-divider/70"
+                  >
+                    <Pencil size={10} /> Edit
+                  </button>
+                )}
+              </div>
+              {errors.name && <p className="mt-1 text-xs text-red-500">{errors.name}</p>}
               <p className="text-sm text-subtle">{member.email}</p>
             </div>
           </div>
@@ -307,37 +331,47 @@ export default function MemberDetailPage() {
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="text-sm font-bold text-accent">{daysRemaining(sub.validUntil)} days remaining</span>
-                  <button
-                    type="button"
-                    onClick={openExtendModal}
-                    className="rounded-full border border-accent bg-white px-3 py-1.5 text-xs font-bold text-accent transition-colors hover:bg-accent/5"
-                  >
-                    + Extend
-                  </button>
                 </div>
               </>
             ) : (
               <p className="text-sm text-muted">No active subscription</p>
             )}
+
+            <div className="flex shrink-0 items-center gap-2">
+              <button
+                type="button"
+                onClick={openExtendModal}
+                disabled={!sub}
+                className="rounded-full border border-accent bg-white px-3 py-1.5 text-xs font-bold text-accent transition-colors hover:bg-accent/5 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                + Extend
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsEditing(true)}
+                aria-label="Edit member"
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-muted transition-colors hover:bg-divider/60 hover:text-accent"
+              >
+                <Pencil size={14} />
+              </button>
+              {member.status !== "deleted" && (
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  aria-label="Deactivate member"
+                  className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-red-400 transition-colors hover:bg-red-50 hover:text-red-500 disabled:opacity-60"
+                >
+                  <Trash2 size={14} />
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
         <div className="h-px w-full bg-divider" />
 
         <div className="grid grid-cols-1 gap-6 p-6 sm:grid-cols-2">
-          <div>
-            <label className="text-sm font-semibold text-primary">Full Name</label>
-            <input
-              type="text"
-              value={form.name}
-              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-              disabled={!isEditing}
-              className={`mt-2 w-full rounded-[10px] border px-4 py-3 text-sm text-black placeholder:text-subtle transition-colors focus:outline-none focus:ring-2 focus:ring-accent/40 ${
-                isEditing ? "border-accent bg-white" : "cursor-default border-[#d6d2c8] bg-[#f8f7f5]"
-              }`}
-            />
-            {errors.name && <p className="mt-1 text-xs text-red-500">{errors.name}</p>}
-          </div>
           <div>
             <label className="text-sm font-semibold text-primary">Phone Number</label>
             {isEditing ? (
@@ -361,6 +395,14 @@ export default function MemberDetailPage() {
               }`}
             />
             {errors.email && <p className="mt-1 text-xs text-red-500">{errors.email}</p>}
+          </div>
+          <div>
+            <label className="text-sm font-semibold text-primary">Paid On</label>
+            <input type="text" value={formatDate(sub?.paidOn)} disabled className="mt-2 w-full rounded-[10px] border border-[#d6d2c8] bg-[#f8f7f5] px-4 py-3 text-sm text-black" />
+          </div>
+          <div>
+            <label className="text-sm font-semibold text-primary">Registered</label>
+            <input type="text" value={member.isRegistered ? "Yes" : "Not yet"} disabled className="mt-2 w-full rounded-[10px] border border-[#d6d2c8] bg-[#f8f7f5] px-4 py-3 text-sm text-black" />
           </div>
         </div>
 
@@ -389,24 +431,11 @@ export default function MemberDetailPage() {
               <button
                 type="button"
                 onClick={() => setSuspendModalOpen(true)}
-                className="flex items-center justify-center gap-2 rounded-full border border-red-300 px-5 py-2.5 text-sm font-bold text-red-500 transition-colors hover:bg-red-50"
+                className="flex items-center justify-center gap-2 rounded-full bg-red-500 px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-red-600"
               >
-                <Ban size={14} />
-                Suspend User
+                Suspend user
               </button>
             ))}
-
-          {member.status !== "deleted" && (
-            <button
-              type="button"
-              onClick={handleDelete}
-              disabled={deleting}
-              className="flex items-center justify-center gap-2 rounded-full border border-red-300 px-5 py-2.5 text-sm font-bold text-red-500 transition-colors hover:bg-red-50 disabled:opacity-60"
-            >
-              <Trash2 size={14} />
-              Deactivate
-            </button>
-          )}
 
           {isEditing ? (
             <>
@@ -427,16 +456,7 @@ export default function MemberDetailPage() {
                 {saving ? "Saving..." : "Save"}
               </button>
             </>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setIsEditing(true)}
-              className="flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-lime to-accent px-5 py-2.5 text-sm font-bold text-white shadow-glow transition-transform duration-300 hover:scale-105 active:scale-95"
-            >
-              <Pencil size={14} />
-              Edit Details
-            </button>
-          )}
+          ) : null}
         </div>
       </div>
 
