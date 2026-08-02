@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Ban, Key, Pencil, Trash2 } from "lucide-react";
+import { ArrowLeft, Crown, Pencil, Trash2 } from "lucide-react";
 import { isValidPhoneNumber } from "libphonenumber-js";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
@@ -11,15 +11,16 @@ import PhoneInput from "@/components/ui/PhoneInput";
 import PasswordInput from "@/components/auth/PasswordInput";
 import {
   type MemberItem,
-  STATUS_STYLES,
-  STATUS_LABELS,
   getInitials,
-  formatCurrency,
   formatDate,
-  communityBadge,
 } from "@/lib/memberFormat";
 
 type FormErrors = Partial<Record<"name" | "phone" | "email", string>>;
+
+function daysRemaining(validUntil: string): number {
+  const ms = new Date(validUntil).getTime() - new Date().setHours(0, 0, 0, 0);
+  return Math.max(0, Math.ceil(ms / (1000 * 60 * 60 * 24)));
+}
 
 export default function MemberDetailPage() {
   const params = useParams<{ id: string }>();
@@ -40,6 +41,12 @@ export default function MemberDetailPage() {
   const [deleting, setDeleting] = useState(false);
   const [suspendModalOpen, setSuspendModalOpen] = useState(false);
   const [suspendReason, setSuspendReason] = useState("");
+
+  const [extendModalOpen, setExtendModalOpen] = useState(false);
+  const [extendPayment, setExtendPayment] = useState("");
+  const [extendDate, setExtendDate] = useState("");
+  const [extendErrors, setExtendErrors] = useState<{ payment?: string; extendDate?: string }>({});
+  const [extending, setExtending] = useState(false);
 
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [newPassword, setNewPassword] = useState("");
@@ -91,6 +98,47 @@ export default function MemberDetailPage() {
       toast.error(err instanceof ApiError ? err.message : "Failed to update member");
     } finally {
       setSaving(false);
+    }
+  }
+
+  function openExtendModal() {
+    if (!member?.subscription) {
+      toast.error("This member has no subscription to extend");
+      return;
+    }
+    setExtendPayment(String(member.subscription.payment));
+    setExtendDate("");
+    setExtendErrors({});
+    setExtendModalOpen(true);
+  }
+
+  function validateExtend(): { payment?: string; extendDate?: string } {
+    const errs: { payment?: string; extendDate?: string } = {};
+    const amt = parseFloat(extendPayment);
+    if (!extendPayment || isNaN(amt) || amt <= 0) errs.payment = "Enter a valid payment amount";
+    if (!extendDate) errs.extendDate = "Extend date is required";
+    else if (new Date(extendDate) <= new Date()) errs.extendDate = "Extend date must be in the future";
+    return errs;
+  }
+
+  async function handleExtend() {
+    if (!member?.subscription) return;
+    const errs = validateExtend();
+    setExtendErrors(errs);
+    if (Object.values(errs).some(Boolean)) return;
+    setExtending(true);
+    try {
+      await api.post(`/api/v1/admin/subscriptions/${member.subscription.id}/extend`, {
+        validUntil: extendDate,
+        payment: parseFloat(extendPayment),
+      });
+      toast.success({ title: "Subscription extended", message: `${member.name}'s subscription is now valid until ${formatDate(extendDate)}` });
+      setExtendModalOpen(false);
+      load();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to extend subscription");
+    } finally {
+      setExtending(false);
     }
   }
 
@@ -181,16 +229,12 @@ export default function MemberDetailPage() {
   }
 
   const fieldCls = (err?: string) =>
-    `mt-2 w-full rounded-xl border px-4 py-3 text-sm transition-colors focus:outline-none focus:ring-2 ${
-      err
-        ? "border-red-400 focus:ring-red-200"
-        : isEditing
-          ? "border-accent/40 bg-white text-primary focus:ring-accent/40"
-          : "border-divider bg-divider/40 text-muted"
+    `mt-2 w-full rounded-[10px] border px-4 py-3 text-sm text-black placeholder:text-subtle transition-colors focus:outline-none focus:ring-2 focus:ring-accent/40 ${
+      err ? "border-red-400 focus:ring-red-200" : isEditing ? "border-accent bg-white" : "cursor-default border-[#d6d2c8] bg-[#f8f7f5]"
     }`;
 
   if (loading) {
-    return <div className="h-72 animate-pulse rounded-2xl bg-white shadow-card" />;
+    return <div className="h-96 animate-pulse rounded-2xl bg-white shadow-card" />;
   }
   if (!member) {
     return <p className="text-sm text-muted">Member not found.</p>;
@@ -200,43 +244,53 @@ export default function MemberDetailPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <button onClick={() => router.push("/admin/members")} className="text-xs font-semibold text-accent hover:underline">
-          &larr; Back to Members
-        </button>
-        <h1 className="mt-1 font-display text-2xl font-bold text-primary">Member Profile</h1>
-      </div>
+      <div className="animate-rise overflow-hidden rounded-2xl bg-white shadow-card">
+        <div className="relative h-16 bg-gradient-to-r from-primary via-accent to-lime">
+          <button
+            type="button"
+            onClick={() => router.push("/admin/members")}
+            aria-label="Back to members"
+            className="absolute left-4 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-black/20 text-white transition-colors hover:bg-black/30"
+          >
+            <ArrowLeft size={16} />
+          </button>
+        </div>
 
-      <div className="animate-rise rounded-2xl bg-white shadow-card">
-        <div className="h-3 rounded-t-2xl bg-gradient-to-r from-primary via-accent to-lime" />
-
-        <div className="flex flex-wrap items-center justify-between gap-6 p-6">
-          <div className="flex items-center gap-4">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-accent to-primary text-xl font-bold text-lime ring-2 ring-lime/50 ring-offset-2 ring-offset-white">
+        <div className="flex flex-wrap items-start justify-between gap-6 px-6 pb-6">
+          <div className="-mt-8 flex items-center gap-4">
+            <div className="flex h-17 w-17 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-accent to-primary text-xl font-bold text-lime ring-4 ring-white">
               {getInitials(member.name)}
             </div>
             <div>
-              <p className="font-display text-lg font-bold text-primary">{member.name}</p>
-              <span className={`mt-1 inline-block rounded-full px-3 py-0.5 text-xs font-bold ${STATUS_STYLES[member.status] ?? ""}`}>
-                {STATUS_LABELS[member.status] ?? member.status}
-              </span>
+              <div className="flex items-center gap-2">
+                <p className="font-display text-lg font-bold text-primary">{member.name}</p>
+                <button
+                  type="button"
+                  onClick={() => setIsEditing(true)}
+                  className="flex items-center gap-1 rounded-full bg-divider px-2 py-0.5 text-xs font-semibold text-muted transition-colors hover:bg-divider/70"
+                >
+                  <Pencil size={10} /> Edit
+                </button>
+              </div>
+              <p className="text-sm text-subtle">{member.email}</p>
             </div>
           </div>
 
-          <div className="flex flex-col items-end gap-2">
-            {member.allSubscriptions.length > 0 && (
-              <div className="flex flex-wrap justify-end gap-2">
-                {member.allSubscriptions.map((s) => (
-                  <span key={s.id} className={`rounded-full px-3 py-1 text-xs font-bold ${communityBadge(s.communityName)}`}>
-                    {s.communityName}
-                  </span>
-                ))}
-              </div>
-            )}
+          <div className="mt-2 flex items-center gap-8">
+            <div>
+              <p className="text-xs text-subtle">Member Since</p>
+              <p className="font-semibold text-primary">{formatDate(member.createdAt)}</p>
+            </div>
             {sub && (
-              <p className="text-xs text-subtle">
-                {formatCurrency(sub.payment)} &middot; Valid till {formatDate(sub.validUntil)}
-              </p>
+              <>
+                <div className="h-10 w-px bg-divider" />
+                <div>
+                  <p className="text-xs text-subtle">Community</p>
+                  <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-lime bg-lime/10 px-3 py-1 text-xs font-semibold text-primary">
+                    ⚡ {sub.communityName}
+                  </span>
+                </div>
+              </>
             )}
           </div>
         </div>
@@ -244,123 +298,216 @@ export default function MemberDetailPage() {
         <div className="h-px w-full bg-divider" />
 
         <div className="p-6">
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-            <div>
-              <label className="text-sm font-semibold text-primary">Full Name</label>
-              <input
-                type="text"
-                value={form.name}
-                disabled={!isEditing}
-                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                className={fieldCls(errors.name)}
-              />
-              {errors.name && <p className="mt-1 text-xs text-red-500">{errors.name}</p>}
-            </div>
-            <div>
-              <label className="text-sm font-semibold text-primary">Phone Number</label>
-              {isEditing ? (
-                <div className="mt-2">
-                  <PhoneInput value={form.phone} onChange={(v) => setForm((f) => ({ ...f, phone: v ?? "" }))} hasError={!!errors.phone} />
+          <div className="flex flex-wrap items-center gap-4">
+            {sub ? (
+              <div className="flex flex-1 flex-wrap items-center justify-between gap-4 rounded-xl bg-[#edfad4] px-5 py-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-lime">
+                    <Crown size={18} />
+                  </div>
+                  <div>
+                    <p className="flex items-center gap-2 text-sm font-semibold text-primary">
+                      <span className="h-2 w-2 rounded-full bg-[#4caf50]" />
+                      Active Subscription
+                    </p>
+                    <p className="text-xs text-[#5a7a50]">Expires: {formatDate(sub.validUntil)}</p>
+                  </div>
                 </div>
-              ) : (
-                <input type="text" value={form.phone} disabled className={fieldCls()} />
+                <span className="text-sm font-bold text-accent">{daysRemaining(sub.validUntil)} days remaining</span>
+              </div>
+            ) : (
+              <div className="flex-1 rounded-xl bg-divider/30 px-5 py-4 text-sm text-muted">No active subscription</div>
+            )}
+
+            <div className="flex shrink-0 items-center gap-2">
+              <button
+                type="button"
+                onClick={openExtendModal}
+                disabled={!sub}
+                className="rounded-full border border-accent px-3 py-1.5 text-xs font-bold text-accent transition-colors hover:bg-accent/5 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                + Extend
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsEditing(true)}
+                aria-label="Edit member"
+                className="flex h-8 w-8 items-center justify-center rounded-full text-muted transition-colors hover:bg-divider/60 hover:text-accent"
+              >
+                <Pencil size={14} />
+              </button>
+              {member.status !== "deleted" && (
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  aria-label="Deactivate member"
+                  className="flex h-8 w-8 items-center justify-center rounded-full text-red-400 transition-colors hover:bg-red-50 hover:text-red-500 disabled:opacity-60"
+                >
+                  <Trash2 size={14} />
+                </button>
               )}
-              {errors.phone && <p className="mt-1 text-xs text-red-500">{errors.phone}</p>}
-            </div>
-            <div>
-              <label className="text-sm font-semibold text-primary">E-mail Address</label>
-              <input
-                type="email"
-                value={form.email}
-                disabled={!isEditing}
-                onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-                className={fieldCls(errors.email)}
-              />
-              {errors.email && <p className="mt-1 text-xs text-red-500">{errors.email}</p>}
-            </div>
-            <div>
-              <label className="text-sm font-semibold text-primary">Paid On</label>
-              <input type="text" value={formatDate(sub?.paidOn)} disabled className={fieldCls()} />
-            </div>
-            <div>
-              <label className="text-sm font-semibold text-primary">Registered</label>
-              <input type="text" value={member.isRegistered ? "Yes" : "Not yet"} disabled className={fieldCls()} />
-            </div>
-            <div>
-              <label className="text-sm font-semibold text-primary">Member Since</label>
-              <input type="text" value={formatDate(member.createdAt)} disabled className={fieldCls()} />
             </div>
           </div>
         </div>
 
         <div className="h-px w-full bg-divider" />
 
-        <div className="flex flex-wrap items-center justify-between gap-3 p-6">
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={() => setPasswordModalOpen(true)}
-              className="flex items-center justify-center gap-2 rounded-full border border-accent px-5 py-2.5 text-sm font-bold text-accent transition-all duration-300 hover:bg-accent/5"
-            >
-              <Key size={14} /> Change Password
-            </button>
-            {member.status !== "deleted" &&
-              (member.status === "suspended" ? (
-                <button
-                  onClick={handleRevoke}
-                  disabled={revoking}
-                  className="flex items-center justify-center gap-2 rounded-full border border-divider px-5 py-2.5 text-sm font-bold text-muted transition-colors hover:bg-divider/60 disabled:opacity-60"
-                >
-                  <Ban size={14} /> Revoke Suspension
-                </button>
-              ) : (
-                <button
-                  onClick={() => setSuspendModalOpen(true)}
-                  className="flex items-center justify-center gap-2 rounded-full border border-amber-400 px-5 py-2.5 text-sm font-bold text-amber-600 transition-colors hover:bg-amber-50"
-                >
-                  <Ban size={14} /> Suspend User
-                </button>
-              ))}
-            {member.status !== "deleted" && (
-              <button
-                onClick={handleDelete}
-                disabled={deleting}
-                className="flex items-center justify-center gap-2 rounded-full border border-red-300 px-5 py-2.5 text-sm font-bold text-red-500 transition-colors hover:bg-red-50 disabled:opacity-60"
-              >
-                <Trash2 size={14} /> Deactivate
-              </button>
+        <div className="grid grid-cols-1 gap-6 p-6 sm:grid-cols-2">
+          <div>
+            <label className="text-sm font-semibold text-primary">Phone Number</label>
+            {isEditing ? (
+              <div className="mt-2">
+                <PhoneInput value={form.phone} onChange={(v) => setForm((f) => ({ ...f, phone: v ?? "" }))} hasError={!!errors.phone} />
+              </div>
+            ) : (
+              <input type="text" value={form.phone} disabled className={fieldCls()} />
             )}
+            {errors.phone && <p className="mt-1 text-xs text-red-500">{errors.phone}</p>}
           </div>
+          <div>
+            <label className="text-sm font-semibold text-primary">E-mail Address</label>
+            <input
+              type="email"
+              value={form.email}
+              disabled={!isEditing}
+              onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+              className={fieldCls(errors.email)}
+            />
+            {errors.email && <p className="mt-1 text-xs text-red-500">{errors.email}</p>}
+          </div>
+          <div>
+            <label className="text-sm font-semibold text-primary">Paid On</label>
+            <input type="text" value={formatDate(sub?.paidOn)} disabled className={fieldCls()} />
+          </div>
+          <div>
+            <label className="text-sm font-semibold text-primary">Registered</label>
+            <input type="text" value={member.isRegistered ? "Yes" : "Not yet"} disabled className={fieldCls()} />
+          </div>
+          {isEditing && (
+            <div className="sm:col-span-2">
+              <label className="text-sm font-semibold text-primary">Full Name</label>
+              <input
+                type="text"
+                value={form.name}
+                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                className={fieldCls(errors.name)}
+              />
+              {errors.name && <p className="mt-1 text-xs text-red-500">{errors.name}</p>}
+            </div>
+          )}
+        </div>
 
-          {isEditing ? (
-            <div className="flex items-center gap-3">
+        <div className="flex flex-col gap-3 rounded-b-2xl bg-[#f8f7f5] p-6 sm:flex-row sm:justify-end">
+          {isEditing && (
+            <>
               <button
+                type="button"
                 onClick={() => {
                   setForm({ name: member.name, phone: member.phone, email: member.email });
                   setErrors({});
                   setIsEditing(false);
                 }}
-                className="flex items-center justify-center gap-2 rounded-full border border-divider px-5 py-2.5 text-sm font-bold text-muted transition-colors hover:bg-divider/60"
+                className="flex items-center justify-center gap-2 rounded-full border border-divider px-5 py-2.5 text-sm font-bold text-muted transition-colors hover:border-subtle hover:text-primary"
               >
                 Cancel
               </button>
               <button
+                type="button"
                 onClick={handleSave}
                 disabled={saving}
-                className="flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-accent to-primary px-5 py-2.5 text-sm font-bold text-white shadow-glow transition-transform duration-300 hover:scale-105 active:scale-95 disabled:opacity-60"
+                className="flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-lime to-accent px-5 py-2.5 text-sm font-bold text-white shadow-glow transition-transform duration-300 hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {saving ? "Saving…" : "Save"}
+                <Pencil size={14} />
+                {saving ? "Saving..." : "Save"}
               </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => setIsEditing(true)}
-              className="flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-accent to-primary px-5 py-2.5 text-sm font-bold text-white shadow-glow transition-transform duration-300 hover:scale-105 active:scale-95"
-            >
-              <Pencil size={14} /> Edit Details
-            </button>
+            </>
           )}
+          <button
+            type="button"
+            onClick={() => setPasswordModalOpen(true)}
+            className="flex items-center justify-center gap-2 rounded-full border border-accent px-5 py-2.5 text-sm font-bold text-accent transition-all duration-300 hover:bg-accent/5 hover:shadow-card"
+          >
+            Change Password
+          </button>
+          {member.status !== "deleted" &&
+            (member.status === "suspended" ? (
+              <button
+                type="button"
+                onClick={handleRevoke}
+                disabled={revoking}
+                className="flex items-center justify-center gap-2 rounded-full border border-divider px-5 py-2.5 text-sm font-bold text-muted transition-colors hover:bg-divider/60 disabled:opacity-60"
+              >
+                Revoke Suspension
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setSuspendModalOpen(true)}
+                className="flex items-center justify-center gap-2 rounded-full bg-red-500 px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-red-600"
+              >
+                Suspend user
+              </button>
+            ))}
         </div>
       </div>
+
+      {extendModalOpen && member.subscription && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-primary/40 p-4 backdrop-blur-sm">
+          <div className="animate-rise w-full max-w-sm rounded-2xl bg-white p-6 shadow-card-hover">
+            <h3 className="font-display text-lg font-bold text-primary">Extend Subscription</h3>
+            <p className="mt-1 text-sm text-muted">Extend {member.name}&rsquo;s subscription to {member.subscription.communityName}.</p>
+            <div className="mt-5 flex flex-col gap-4">
+              <div>
+                <label className="text-sm font-semibold text-primary">Current Date</label>
+                <input
+                  type="text"
+                  value={new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                  disabled
+                  className="mt-2 w-full rounded-xl border border-divider bg-divider/40 px-4 py-3 text-sm text-muted"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-semibold text-primary">Payment (₹)</label>
+                <input
+                  type="number"
+                  placeholder="4000"
+                  value={extendPayment}
+                  onChange={(e) => setExtendPayment(e.target.value)}
+                  className="mt-2 w-full rounded-xl border border-divider bg-white px-4 py-3 text-sm text-primary transition-colors focus:outline-none focus:ring-2 focus:ring-accent/40"
+                />
+                {extendErrors.payment && <p className="mt-1 text-xs text-red-500">{extendErrors.payment}</p>}
+              </div>
+              <div>
+                <label className="text-sm font-semibold text-primary">Extend Date</label>
+                <input
+                  type="date"
+                  value={extendDate}
+                  onChange={(e) => setExtendDate(e.target.value)}
+                  className="mt-2 w-full rounded-xl border border-divider bg-white px-4 py-3 text-sm text-primary transition-colors focus:outline-none focus:ring-2 focus:ring-accent/40"
+                />
+                {extendErrors.extendDate && <p className="mt-1 text-xs text-red-500">{extendErrors.extendDate}</p>}
+              </div>
+            </div>
+            <div className="mt-6 flex items-center gap-3">
+              <button
+                onClick={() => setExtendModalOpen(false)}
+                disabled={extending}
+                className="flex-1 rounded-full border border-divider px-5 py-2.5 text-sm font-bold text-muted transition-colors hover:border-subtle hover:text-primary disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleExtend}
+                disabled={extending}
+                className="flex-1 rounded-full bg-primary px-5 py-2.5 text-sm font-bold text-white transition-transform hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {extending ? "Extending…" : "Extend Subscription"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {suspendModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-primary/40 p-4 backdrop-blur-sm">
