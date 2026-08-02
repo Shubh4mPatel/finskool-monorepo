@@ -82,7 +82,7 @@ export default function Sidebar() {
   }, []);
 
   return (
-    <aside className="flex w-full flex-col gap-4 rounded-2xl bg-white p-4 shadow-card lg:sticky lg:top-8 lg:self-start lg:w-67.25 lg:gap-0 lg:p-6">
+    <aside className="flex w-full flex-col gap-4 p-4 lg:sticky lg:top-8 lg:self-start lg:w-67.25 lg:gap-0 lg:rounded-2xl lg:bg-white lg:p-6 lg:shadow-card">
       {/* Desktop header: back arrow + centered avatar / name / chip */}
       <div className="hidden pb-5 lg:flex lg:flex-col">
         <button
@@ -116,7 +116,7 @@ export default function Sidebar() {
           onClick={() => setOpen((v) => !v)}
           aria-label={open ? "Close menu" : "Open menu"}
           aria-expanded={open}
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-primary transition-colors hover:bg-divider/60"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-primary shadow-card transition-colors hover:bg-divider/60"
         >
           {open ? <X size={20} /> : <Menu size={20} />}
         </button>
@@ -129,7 +129,7 @@ export default function Sidebar() {
           <Link
             href="/profile"
             onClick={() => setOpen(false)}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-white overflow-hidden"
+            className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary text-sm font-bold text-white ring-2 ring-white"
           >
             {avatarUrl
               ? <img src={avatarUrl} alt={displayName} className="h-full w-full object-cover" />
