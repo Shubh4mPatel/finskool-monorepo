@@ -13,9 +13,9 @@ export default function PostImageGallery({ imageUrls }: { imageUrls: string[] })
 
   return (
     <div className="mt-4">
-      <div className="relative overflow-hidden rounded-xl">
+      <div className="relative aspect-video w-full overflow-hidden rounded-xl">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={imageUrls[index]} alt={`Post image ${index + 1}`} className="w-full h-auto" />
+        <img src={imageUrls[index]} alt={`Post image ${index + 1}`} className="h-full w-full object-cover" />
         {hasMultiple && (
           <>
             <button
