@@ -251,6 +251,8 @@ export interface PostThreadSummaryDTO {
   communityId: string
   communityName: string
   communityBadgeUrl: string | null
+  authorName: string
+  authorAvatarUrl: string | null
   totalComments: number
   pendingThreads: number
 }

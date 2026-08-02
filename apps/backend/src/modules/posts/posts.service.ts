@@ -97,6 +97,7 @@ export class PostsService {
       where: { id: { in: grouped.map(g => g.postId) }, deletedAt: null },
       include: {
         community: { select: { name: true, slug: true, badgeUrl: true } },
+        author: { select: { name: true, avatarUrl: true } },
         _count: { select: { comments: { where: { deletedAt: null } } } },
       },
     })
@@ -108,6 +109,8 @@ export class PostsService {
         communityName: p.community.name,
         communitySlug: p.community.slug,
         communityBadgeUrl: p.community.badgeUrl,
+        authorName: p.author.name,
+        authorAvatarUrl: p.author.avatarUrl,
         title: p.title,
         content: p.contentMd,
         imageUrls: p.imageUrls,

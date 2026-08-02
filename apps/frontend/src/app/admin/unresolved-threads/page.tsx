@@ -17,6 +17,8 @@ interface PendingPostThread {
   communityId: string;
   communityName: string;
   communityBadgeUrl: string | null;
+  authorName: string;
+  authorAvatarUrl: string | null;
   totalComments: number;
   pendingThreads: number;
 }
@@ -166,6 +168,8 @@ export default function UnresolvedThreadsPage() {
               commentCount={post.totalComments}
               communityName={post.communityName}
               communityBadgeUrl={post.communityBadgeUrl}
+              authorName={post.authorName}
+              authorAvatarUrl={post.authorAvatarUrl}
               badge={{ label: `${post.pendingThreads} pending` }}
               timestamp={formatTimestamp(post.publishedAt ?? post.createdAt)}
               title={post.title}

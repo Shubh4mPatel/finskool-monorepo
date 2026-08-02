@@ -520,6 +520,7 @@ export class AdminService {
         publishedAt: true,
         createdAt: true,
         community: { select: { id: true, name: true, badgeUrl: true } },
+        author: { select: { name: true, avatarUrl: true } },
         _count: { select: { comments: { where: { deletedAt: null } } } },
       },
     })
@@ -535,6 +536,8 @@ export class AdminService {
       communityId: p.community.id,
       communityName: p.community.name,
       communityBadgeUrl: p.community.badgeUrl,
+      authorName: p.author.name,
+      authorAvatarUrl: p.author.avatarUrl,
       totalComments: p._count.comments,
       pendingThreads: pendingCountByPost.get(p.id) ?? 0,
     }))

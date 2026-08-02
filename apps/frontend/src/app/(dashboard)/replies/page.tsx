@@ -11,6 +11,8 @@ interface CommentedPost {
   communityName: string;
   communitySlug: string;
   communityBadgeUrl: string | null;
+  authorName: string;
+  authorAvatarUrl: string | null;
   title: string;
   content: string;
   imageUrls: string[];
@@ -78,6 +80,8 @@ export default function RepliesPage() {
               commentCount={post.commentCount}
               communityName={post.communityName}
               communityBadgeUrl={post.communityBadgeUrl}
+              authorName={post.authorName}
+              authorAvatarUrl={post.authorAvatarUrl}
               timestamp={formatTimestamp(post.lastCommentedAt)}
               title={post.title}
               body=""

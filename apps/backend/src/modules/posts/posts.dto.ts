@@ -60,6 +60,8 @@ export interface CommentedPostItemDTO {
   communityName: string
   communitySlug: string
   communityBadgeUrl: string | null
+  authorName: string
+  authorAvatarUrl: string | null
   title: string
   content: string
   imageUrls: string[]

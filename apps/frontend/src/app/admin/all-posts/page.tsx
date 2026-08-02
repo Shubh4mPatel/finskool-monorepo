@@ -19,6 +19,8 @@ interface FeedPost {
   communityName: string;
   communitySlug: string;
   communityBadgeUrl: string | null;
+  authorName: string;
+  authorAvatarUrl: string | null;
   title: string;
   content: string;
   imageUrls: string[];
@@ -502,6 +504,8 @@ export default function AllPostsPage() {
                 key={post.id}
                 communityName={post.communityName}
                 communityBadgeUrl={post.communityBadgeUrl}
+                authorName={post.authorName}
+                authorAvatarUrl={post.authorAvatarUrl}
                 badge={post.pinOrder !== null ? { label: "PINNED", icon: "pin" } : undefined}
                 timestamp={formatTimestamp(post.publishedAt ?? post.createdAt)}
                 title={post.title}
