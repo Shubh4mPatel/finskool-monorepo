@@ -99,10 +99,17 @@ export function formatEmailAmount(n: number): string {
   return n.toLocaleString('en-IN', { maximumFractionDigits: 0 })
 }
 
-// Strips common markdown punctuation and collapses whitespace before truncating —
-// used to build post/reply excerpts for email bodies from raw markdown content.
+// Strips HTML tags (Post.contentMd is actually Tiptap-generated HTML despite the
+// name, not markdown) and leftover markdown punctuation, collapses whitespace, then
+// truncates — used to build post/reply excerpts for email bodies. Tags must be
+// stripped before the punctuation pass, or a lone `>` from a partially-stripped tag
+// gets deleted too, leaving mangled fragments like `<pSome text</p` behind.
 export function truncateText(raw: string, maxLen = 160): string {
-  const plain = raw.replace(/[#*_`>~-]/g, '').replace(/\s+/g, ' ').trim()
+  const plain = raw
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/[#*_`>~-]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
   if (plain.length <= maxLen) return plain
   return `${plain.slice(0, maxLen - 1).trimEnd()}…`
 }
