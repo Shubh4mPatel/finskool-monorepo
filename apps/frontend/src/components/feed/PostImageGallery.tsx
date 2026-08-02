@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import ImageLightbox from "./ImageLightbox";
 
 export default function PostImageGallery({ imageUrls }: { imageUrls: string[] }) {
   const [index, setIndex] = useState(0);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   if (imageUrls.length === 0) return null;
 
@@ -15,7 +17,12 @@ export default function PostImageGallery({ imageUrls }: { imageUrls: string[] })
     <div className="mt-4">
       <div className="relative aspect-video w-full overflow-hidden rounded-xl">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={imageUrls[index]} alt={`Post image ${index + 1}`} className="h-full w-full object-cover" />
+        <img
+          src={imageUrls[index]}
+          alt={`Post image ${index + 1}`}
+          className="h-full w-full cursor-pointer object-cover"
+          onClick={() => setLightboxOpen(true)}
+        />
         {hasMultiple && (
           <>
             <button
@@ -66,6 +73,15 @@ export default function PostImageGallery({ imageUrls }: { imageUrls: string[] })
             </button>
           ))}
         </div>
+      )}
+
+      {lightboxOpen && (
+        <ImageLightbox
+          imageUrls={imageUrls}
+          index={index}
+          onIndexChange={setIndex}
+          onClose={() => setLightboxOpen(false)}
+        />
       )}
     </div>
   );
