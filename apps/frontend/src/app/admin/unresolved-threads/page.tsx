@@ -36,7 +36,7 @@ export default function UnresolvedThreadsPage() {
   const [posts, setPosts] = useState<PendingPostThread[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("All");
-  const [sortDesc, setSortDesc] = useState(false);
+  const [sortDesc, setSortDesc] = useState(true);
   const [markingAll, setMarkingAll] = useState(false);
 
   const load = useCallback(() => {

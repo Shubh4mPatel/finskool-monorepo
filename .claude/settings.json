@@ -195,7 +195,9 @@
       "Bash(python3 -c \"import yaml; d=yaml.safe_load\\(open\\('/home/shubh4m/projects/finskool-monorepo/docker/docker-compose.production.yml'\\)\\); print\\('valid'\\); print\\(list\\(d['services'].keys\\(\\)\\)\\); print\\(d['networks']\\)\")",
       "Bash(curl -sS -o /dev/null -w \"HTTP %{http_code} in %{time_total}s\\\\n\" --max-time 10 https://community.finskool21.in/)",
       "Bash(curl -sS -c cookies.txt -X POST https://community.finskool21.in/api/v1/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"admin@finskool.com\",\"password\":\"Admin@123\"}' -w '\\\\nHTTP_STATUS:%{http_code}\\\\n')",
-      "Bash(curl -sS -b cookies.txt https://community.finskool21.in/api/v1/admin/communities -w \"\\\\nHTTP_STATUS:%{http_code}\\\\n\")"
+      "Bash(curl -sS -b cookies.txt https://community.finskool21.in/api/v1/admin/communities -w \"\\\\nHTTP_STATUS:%{http_code}\\\\n\")",
+      "Bash(cd /home/shubh4m/projects/finskool-monorepo/apps/backend && npx tsc --noEmit 2>&1 | tail -10 && echo \"---frontend---\" && cd ../frontend && npx tsc --noEmit 2>&1 | tail -10)",
+      "Read(//home/shubh4m/projects/**)"
     ],
     "additionalDirectories": [
       "/tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/8750fbd9-1edb-4d3f-b623-da0dec31a255/scratchpad/node_modules",

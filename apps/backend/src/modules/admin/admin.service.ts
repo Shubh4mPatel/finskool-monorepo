@@ -510,7 +510,7 @@ export class AdminService {
           ? { OR: [{ title: { contains: term, mode: 'insensitive' } }, { tags: { hasSome: [term, `#${term}`] } }] }
           : {}),
       },
-      orderBy: { publishedAt: 'asc' },
+      orderBy: { publishedAt: 'desc' },
       select: {
         id: true,
         title: true,
