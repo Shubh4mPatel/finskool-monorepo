@@ -101,6 +101,7 @@ export interface AdminUserDTO {
   id: string
   name: string
   email: string
+  avatarUrl: string | null
   isSuperAdmin: boolean
   communityAccess: { id: string; name: string; slug: string }[]
 }

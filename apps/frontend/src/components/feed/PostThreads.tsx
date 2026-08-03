@@ -126,7 +126,7 @@ function CommentNode({
     <div className={`flex gap-3 ${comment.depth > 0 ? "ml-7 border-l-2 pl-4 pt-1 border-[#85cd78]/50" : ""}`}>
       {/* Avatar */}
       <div
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold"
+        className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full text-xs font-bold"
         style={
           isAuthorAdmin
             ? { background: "#153d3a", color: "#ffffff" }
@@ -135,7 +135,9 @@ function CommentNode({
               : { background: avatarColor.bg, color: avatarColor.text }
         }
       >
-        {identityRevealed ? authorInitials(comment.author.name) : label}
+        {identityRevealed && comment.author.avatarUrl
+          ? <img src={comment.author.avatarUrl} alt={comment.author.name} className="h-full w-full object-cover" />
+          : identityRevealed ? authorInitials(comment.author.name) : label}
       </div>
 
       <div className={`flex-1 min-w-0 ${isAuthorAdmin ? "rounded-xl border-l-4 border-[#85cd78] bg-background px-3.5 py-3" : ""}`}>

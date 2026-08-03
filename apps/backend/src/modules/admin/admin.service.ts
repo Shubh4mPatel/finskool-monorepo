@@ -906,6 +906,7 @@ export class AdminService {
         id: true,
         name: true,
         email: true,
+        avatarUrl: true,
         isSuperAdmin: true,
         communityAccess: { select: { community: { select: { id: true, name: true, slug: true } } } },
       },
@@ -915,6 +916,7 @@ export class AdminService {
       id: a.id,
       name: a.name,
       email: a.email,
+      avatarUrl: a.avatarUrl,
       isSuperAdmin: a.isSuperAdmin,
       communityAccess: a.communityAccess.map(ca => ca.community),
     }))
@@ -981,6 +983,7 @@ export class AdminService {
       id: created.id,
       name: created.name,
       email: created.email,
+      avatarUrl: created.avatarUrl,
       isSuperAdmin: false,
       communityAccess: communities,
     }
@@ -1018,6 +1021,7 @@ export class AdminService {
       id: target.id,
       name: target.name,
       email: target.email,
+      avatarUrl: target.avatarUrl,
       isSuperAdmin: target.isSuperAdmin,
       communityAccess: communities,
     }

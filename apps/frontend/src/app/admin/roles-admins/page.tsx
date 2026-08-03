@@ -17,6 +17,7 @@ interface AdminUser {
   id: string;
   name: string;
   email: string;
+  avatarUrl: string | null;
   isSuperAdmin: boolean;
   communityAccess: { id: string; name: string; slug: string }[];
 }
@@ -211,8 +212,11 @@ export default function RolesAdminsPage() {
                     <tr key={a.id} className="border-t border-divider transition-colors hover:bg-background">
                       <td className="px-3 py-3">
                         <div className="flex items-center gap-3">
-                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-accent to-primary text-xs font-bold text-lime">
-                            {getInitials(a.name)}
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-linear-to-br from-accent to-primary text-xs font-bold text-lime">
+                            {a.avatarUrl
+                              ? <img src={a.avatarUrl} alt={a.name} className="h-full w-full object-cover" />
+                              : getInitials(a.name)
+                            }
                           </div>
                           <div>
                             <p className="font-semibold text-primary">{a.name}</p>
