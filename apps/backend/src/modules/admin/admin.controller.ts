@@ -493,6 +493,17 @@ export class AdminController {
     }
   }
 
+  getMemberByUserId = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const raw = req.params['userId']
+      const userId = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
+      const result = await this.service.getApprovedPhoneIdForUser(userId)
+      res.json({ success: true, data: result })
+    } catch (err) {
+      next(err)
+    }
+  }
+
   resetMemberPassword = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const raw = req.params['id']

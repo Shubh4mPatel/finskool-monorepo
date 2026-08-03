@@ -1386,7 +1386,7 @@ export class AdminService {
     // and User have no formal relation, only the shared phone string, same pattern as elsewhere.
     const users = await this.db.user.findMany({
       where: { phone: { in: rows.map(ap => ap.phone) } },
-      select: { phone: true, isActive: true, suspensionReason: true },
+      select: { phone: true, isActive: true, suspensionReason: true, avatarUrl: true },
     })
     const userByPhone = new Map(users.map(u => [u.phone, u]))
 
@@ -1414,6 +1414,7 @@ export class AdminService {
         name: ap.name ?? '',
         phone: ap.phone,
         email: ap.email ?? '',
+        avatarUrl: user?.avatarUrl ?? null,
         isActive: ap.isActive && !suspendedByUser,
         isRegistered: ap.isRegistered,
         status: derivedStatus,
@@ -1656,6 +1657,19 @@ export class AdminService {
     return this.fetchMemberDTO(id)
   }
 
+  // Resolves a comment/post author's User.id to the ApprovedPhone.id their member
+  // profile page is keyed by — same phone-matching idiom used everywhere else in
+  // this file, since User and ApprovedPhone have no formal Prisma relation.
+  async getApprovedPhoneIdForUser(userId: string): Promise<{ approvedPhoneId: string }> {
+    const user = await this.db.user.findUnique({ where: { id: userId }, select: { phone: true, role: true } })
+    if (!user || user.role === 'admin') throw new NotFoundError('Member not found')
+
+    const ap = await this.db.approvedPhone.findUnique({ where: { phone: user.phone }, select: { id: true } })
+    if (!ap) throw new NotFoundError('Member not found')
+
+    return { approvedPhoneId: ap.id }
+  }
+
   async resetMemberPassword(approvedPhoneId: string, newPassword: string): Promise<MemberItemDTO> {
     const ap = await this.db.approvedPhone.findUnique({ where: { id: approvedPhoneId } })
     if (!ap) throw new NotFoundError('Member not found')
@@ -1687,7 +1701,7 @@ export class AdminService {
 
     const user = await this.db.user.findUnique({
       where: { phone: ap.phone },
-      select: { isActive: true, suspensionReason: true },
+      select: { isActive: true, suspensionReason: true, avatarUrl: true },
     })
 
     // "Current" per community = most recently created row, not isActive:true — see
@@ -1708,6 +1722,7 @@ export class AdminService {
       name: ap.name ?? '',
       phone: ap.phone,
       email: ap.email ?? '',
+      avatarUrl: user?.avatarUrl ?? null,
       isActive: ap.isActive && !suspendedByUser,
       isRegistered: ap.isRegistered,
       status,

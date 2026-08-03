@@ -151,6 +151,7 @@ export interface MemberItemDTO {
   name: string
   phone: string
   email: string
+  avatarUrl: string | null
   isActive: boolean
   isRegistered: boolean
   status: MemberStatus

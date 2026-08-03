@@ -674,8 +674,11 @@ export default function MembersPage() {
                       onClick={() => router.push(`/admin/members/${m.id}`)}
                       className="flex items-center gap-3 text-left"
                     >
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-white">
-                        {getInitials(m.name)}
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary text-xs font-bold text-white">
+                        {m.avatarUrl
+                          ? <img src={m.avatarUrl} alt={m.name} className="h-full w-full object-cover" />
+                          : getInitials(m.name)
+                        }
                       </div>
                       <div>
                         <p className="font-semibold text-primary hover:underline">{m.name}</p>
@@ -773,8 +776,11 @@ export default function MembersPage() {
                         onClick={() => router.push(`/admin/members/${m.id}`)}
                         className="flex items-center gap-2 text-left"
                       >
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-white">
-                          {getInitials(m.name)}
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary text-xs font-bold text-white">
+                          {m.avatarUrl
+                            ? <img src={m.avatarUrl} alt={m.name} className="h-full w-full object-cover" />
+                            : getInitials(m.name)
+                          }
                         </div>
                         <span className="font-semibold text-primary hover:underline">{m.name}</span>
                       </button>

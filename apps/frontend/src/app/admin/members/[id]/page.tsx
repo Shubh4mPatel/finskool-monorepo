@@ -262,7 +262,10 @@ export default function MemberDetailPage() {
                   text up into the bar too, since align-items:center centers siblings together. */}
               <div className="relative -top-8 shrink-0">
                 <div className="flex h-17 w-17 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-accent to-primary text-xl font-bold text-lime ring-4 ring-white">
-                  {displayInitials}
+                  {member.avatarUrl
+                    ? <img src={member.avatarUrl} alt={member.name} className="h-full w-full object-cover" />
+                    : displayInitials
+                  }
                 </div>
               </div>
               <div>

@@ -13,6 +13,7 @@ export interface MemberItem {
   name: string;
   phone: string;
   email: string;
+  avatarUrl: string | null;
   isActive: boolean;
   isRegistered: boolean;
   status: "registered" | "pending" | "expired" | "suspended" | "deleted";

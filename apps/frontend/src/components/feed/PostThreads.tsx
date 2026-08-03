@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { FiLock, FiSend, FiTrash2, FiCornerDownRight, FiChevronDown, FiChevronUp, FiCheck } from "react-icons/fi";
 import { api, ApiError } from "@/lib/api";
 import { getSession, saveSession } from "@/lib/session";
@@ -110,6 +111,7 @@ function CommentNode({
   onMarkReplied?: (notificationId: string) => void;
   markingRepliedId?: string | null;
 }) {
+  const router = useRouter();
   const isAuthorAdmin = comment.author.role === "admin";
   const isOwn = comment.author.id === currentUserId;
   const hasReplies = comment.replies.length > 0;
@@ -122,6 +124,20 @@ function CommentNode({
   const memberLabel = memberLabels.get(comment.author.id);
   const memberColorIndex = memberLabel ? (parseInt(memberLabel.slice(1), 10) - 1) % MEMBER_AVATAR_COLORS.length : 0;
   const avatarColor = MEMBER_AVATAR_COLORS[memberColorIndex]!;
+  // Only admins can open a member's profile, and only for member-authored comments —
+  // admins don't have a /admin/members profile to link to.
+  const canOpenProfile = isAdmin && !isAuthorAdmin;
+
+  async function handleAuthorClick() {
+    try {
+      const { approvedPhoneId } = await api.get<{ approvedPhoneId: string }>(
+        `/api/v1/admin/members/by-user/${comment.author.id}`,
+      );
+      router.push(`/admin/members/${approvedPhoneId}`);
+    } catch {
+      alert("Could not open this member's profile");
+    }
+  }
 
   return (
     <div className={`flex gap-3 ${comment.depth > 0 ? "ml-7 border-l-2 pl-4 pt-1 border-[#85cd78]/50" : ""}`}>
@@ -144,7 +160,17 @@ function CommentNode({
       <div className={`flex-1 min-w-0 ${isAuthorAdmin ? "rounded-xl border-l-4 border-[#85cd78] bg-background px-3.5 py-3" : ""}`}>
         {/* Header */}
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-sm font-semibold text-primary">{label}</span>
+          {canOpenProfile ? (
+            <button
+              type="button"
+              onClick={handleAuthorClick}
+              className="text-sm font-semibold text-primary hover:underline"
+            >
+              {label}
+            </button>
+          ) : (
+            <span className="text-sm font-semibold text-primary">{label}</span>
+          )}
           {isAuthorAdmin && (
             <span className="rounded-full bg-lime px-2 py-0.5 text-[10px] font-bold text-primary">ADMIN</span>
           )}
