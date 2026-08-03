@@ -3,6 +3,7 @@ export interface LiveNotificationEvent {
   communityId: string;
   message: string;
   sourceId: string;
+  postId?: string;
 }
 
 const WS_PATH = "/ws/notifications";

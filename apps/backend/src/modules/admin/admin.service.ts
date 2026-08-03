@@ -2,7 +2,7 @@ import { createRequire } from 'module'
 import { randomUUID } from 'crypto'
 import bcrypt from 'bcryptjs'
 import type { PrismaClient, Prisma } from '../../generated/prisma/client.js'
-import { assertSuperAdmin, assertCommunityAccessFromToken } from '../../lib/community-access.js'
+import { assertSuperAdmin, assertCommunityAccessFromToken, getCommunityAdminIds } from '../../lib/community-access.js'
 import { generateUploadUrl } from '../../lib/minio.js'
 import {
   notificationsQueue,
@@ -482,6 +482,30 @@ export class AdminService {
     })
 
     logger.info({ notificationId }, 'admin.markNotificationReplied')
+
+    // Let other admins with this thread open on Unresolved Threads know it's
+    // resolved, so they don't reply to something already handled.
+    try {
+      const adminIds = await getCommunityAdminIds(this.db, updated.post.community.id)
+      await Promise.all(
+        adminIds.map(adminId =>
+          redis.publish(
+            NOTIFICATIONS_PUBSUB_CHANNEL,
+            JSON.stringify({
+              userId: adminId,
+              type: 'thread-resolved',
+              communityId: updated.post.community.id,
+              message: 'Thread marked as replied',
+              sourceId: notificationId,
+              postId: updated.post.id,
+            } satisfies LiveNotificationEvent),
+          ),
+        ),
+      )
+    } catch (err) {
+      logger.error({ err, notificationId }, 'admin.markNotificationReplied: failed to publish live thread-resolved notification')
+    }
+
     return {
       id: updated.id,
       isReplied: updated.isReplied,

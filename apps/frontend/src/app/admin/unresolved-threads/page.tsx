@@ -5,6 +5,7 @@ import { Check, CheckCheck, ChevronDown, Loader2 } from "lucide-react";
 import FeedPostCard from "@/components/feed/FeedPostCard";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { api } from "@/lib/api";
+import { notificationSocketStore } from "@/store/notifications/notificationSocketStore";
 
 interface PendingPostThread {
   id: string;
@@ -55,6 +56,16 @@ export default function UnresolvedThreadsPage() {
 
   useEffect(() => {
     load();
+  }, [load]);
+
+  // Live updates: a new member comment (needs attention) or a thread being
+  // resolved by another admin both refresh this list without a manual reload.
+  useEffect(() => {
+    notificationSocketStore.connect();
+    return notificationSocketStore.subscribe((event) => {
+      if (event.type !== "new-member-reply" && event.type !== "thread-resolved") return;
+      load();
+    });
   }, [load]);
 
   const communityMap = new Map<string, string>();

@@ -138,6 +138,10 @@ export interface LiveNotificationEvent {
   communityId: string
   message: string
   sourceId: string
+  // Set for comment-related events ('thread', 'new-member-reply',
+  // 'thread-resolved') so the frontend can target the specific post's open
+  // PostThreads instance instead of blindly refetching every open thread.
+  postId?: string
 }
 
 // BullMQ requires maxRetriesPerRequest: null on any Redis connection it manages —

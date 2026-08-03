@@ -93,6 +93,10 @@ export class CommentsService {
 
     const communityAdminIds = shouldNotify ? await getCommunityAdminIds(this.db, post.communityId) : []
 
+    // Set when an admin's reply auto-resolves the parent's pending notification —
+    // used after the transaction to broadcast a 'thread-resolved' live event.
+    let autoResolvedCount = 0
+
     // create with temp path, then update with real path (needs the new id)
     const comment = await this.db.$transaction(async tx => {
       const created = await tx.comment.create({
@@ -121,10 +125,11 @@ export class CommentsService {
 
       // When admin replies to a notified comment, auto-mark that notification as replied
       if (userRole === 'admin' && parentId) {
-        await tx.commentNotification.updateMany({
+        const result = await tx.commentNotification.updateMany({
           where: { commentId: parentId, isReplied: false },
           data: { isReplied: true, repliedAt: new Date() },
         })
+        autoResolvedCount = result.count
       }
 
       // Notify the parent comment's author on reply — synchronous (single row),
@@ -189,6 +194,7 @@ export class CommentsService {
             communityId: post.communityId,
             message: replyMessage,
             sourceId: comment.id,
+            postId,
           } satisfies LiveNotificationEvent),
         )
       } catch (err) {
@@ -209,12 +215,39 @@ export class CommentsService {
                 communityId: post.communityId,
                 message,
                 sourceId: comment.id,
+                postId,
               } satisfies LiveNotificationEvent),
             ),
           ),
         )
       } catch (err) {
         logger.error({ err, commentId: comment.id }, 'comments.create: failed to publish live new-member-reply notifications')
+      }
+    }
+
+    // When an admin's reply auto-resolved the parent's pending notification,
+    // let other admins with this thread open know it's no longer pending —
+    // otherwise a second admin could reply to something already handled.
+    if (autoResolvedCount > 0 && parentId) {
+      try {
+        const adminIds = (await getCommunityAdminIds(this.db, post.communityId)).filter(id => id !== userId)
+        await Promise.all(
+          adminIds.map(adminId =>
+            redis.publish(
+              NOTIFICATIONS_PUBSUB_CHANNEL,
+              JSON.stringify({
+                userId: adminId,
+                type: 'thread-resolved',
+                communityId: post.communityId,
+                message: 'Thread marked as replied',
+                sourceId: parentId,
+                postId,
+              } satisfies LiveNotificationEvent),
+            ),
+          ),
+        )
+      } catch (err) {
+        logger.error({ err, commentId: comment.id }, 'comments.create: failed to publish live thread-resolved notification')
       }
     }
 

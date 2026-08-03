@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { FiLock, FiSend, FiTrash2, FiCornerDownRight, FiChevronDown, FiChevronUp, FiCheck } from "react-icons/fi";
 import { api, ApiError } from "@/lib/api";
 import { getSession, saveSession } from "@/lib/session";
+import { notificationSocketStore } from "@/store/notifications/notificationSocketStore";
 
 interface CommentAuthor {
   id: string;
@@ -345,6 +346,18 @@ export default function PostThreads({
   useEffect(() => {
     if (open && comments.length === 0) fetchComments();
   }, [open]);
+
+  // Live updates: a new comment/reply on this post, or another admin
+  // resolving a thread here, refreshes the tree without a manual refresh.
+  useEffect(() => {
+    notificationSocketStore.connect();
+    return notificationSocketStore.subscribe((event) => {
+      if (event.postId !== postId) return;
+      if (event.type !== "thread" && event.type !== "new-member-reply" && event.type !== "thread-resolved") return;
+      setComments([]);
+      fetchComments();
+    });
+  }, [postId]);
 
   function handleReply(id: string, name: string) {
     setReplyingTo({ id, name });
