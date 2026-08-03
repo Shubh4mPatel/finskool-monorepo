@@ -99,6 +99,21 @@ export interface NewMemberRegisteredEmailJobPayload {
   registeredDate: string
 }
 
+export const MEMBER_SUSPENDED_EMAIL_JOB = 'member-suspended-email'
+
+export interface MemberSuspendedEmailJobPayload {
+  toEmail: string
+  name: string
+  reason: string
+}
+
+export const MEMBER_REINSTATED_EMAIL_JOB = 'member-reinstated-email'
+
+export interface MemberReinstatedEmailJobPayload {
+  toEmail: string
+  name: string
+}
+
 export type NotificationJobPayload =
   | CommunityPostNotificationJobPayload
   | CommunityRecommendationNotificationJobPayload
@@ -108,6 +123,8 @@ export type NotificationJobPayload =
   | CommunityAddedEmailJobPayload
   | CommunityAccessRemovedEmailJobPayload
   | NewMemberRegisteredEmailJobPayload
+  | MemberSuspendedEmailJobPayload
+  | MemberReinstatedEmailJobPayload
 
 // Published by NotificationsService (running in the worker process) whenever a
 // new notification row is created, and consumed by lib/live-notifications-feed.ts

@@ -15,6 +15,8 @@ export type EmailTemplateId =
   | 'admin-unreplied-digest'
   | 'admin-expiry-report'
   | 'admin-new-member'
+  | 'member-suspended'
+  | 'member-reinstated'
 
 interface TemplateDef {
   file: string
@@ -35,6 +37,8 @@ const TEMPLATE_REGISTRY: Record<EmailTemplateId, TemplateDef> = {
   'admin-unreplied-digest': { file: 'admin-unreplied-digest.html', subject: '{count} member questions are waiting for a reply' },
   'admin-expiry-report': { file: 'admin-expiry-report.html', subject: '{count} subscriptions expiring this week' },
   'admin-new-member': { file: 'admin-new-member.html', subject: '{member_name} has registered' },
+  'member-suspended': { file: 'member-suspended.html', subject: 'Your Finskool21 access has been suspended' },
+  'member-reinstated': { file: 'member-reinstated.html', subject: 'Your Finskool21 access has been restored' },
 }
 
 const htmlCache = new Map<EmailTemplateId, string>()

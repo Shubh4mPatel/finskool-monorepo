@@ -17,6 +17,8 @@ import type {
   CommunityAddedEmailJobPayload,
   CommunityAccessRemovedEmailJobPayload,
   NewMemberRegisteredEmailJobPayload,
+  MemberSuspendedEmailJobPayload,
+  MemberReinstatedEmailJobPayload,
   LiveNotificationEvent,
 } from '../../lib/queue.js'
 import { NotificationType } from './notifications.dto.js'
@@ -269,6 +271,22 @@ export class NotificationsService {
       frontend_url: env.frontendUrl,
     })
     await sendMail({ to: payload.adminEmail, subject, html })
+  }
+
+  async sendMemberSuspendedEmail(payload: MemberSuspendedEmailJobPayload): Promise<void> {
+    const { subject, html } = renderEmail('member-suspended', {
+      first_name: firstNameOf(payload.name),
+      reason: payload.reason,
+    })
+    await sendMail({ to: payload.toEmail, subject, html })
+  }
+
+  async sendMemberReinstatedEmail(payload: MemberReinstatedEmailJobPayload): Promise<void> {
+    const { subject, html } = renderEmail('member-reinstated', {
+      first_name: firstNameOf(payload.name),
+      frontend_url: env.frontendUrl,
+    })
+    await sendMail({ to: payload.toEmail, subject, html })
   }
 
   async sendSubscriptionExpiring7DaysEmail(payload: SubscriptionExpiringEmailPayload): Promise<void> {
