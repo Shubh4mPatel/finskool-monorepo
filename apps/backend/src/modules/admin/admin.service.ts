@@ -1271,6 +1271,17 @@ export class AdminService {
     })
 
     logger.info({ approvedPhoneId: ap.id, userId: user.id }, 'admin.suspendMember: suspended')
+
+    try {
+      await notificationsQueue.add(
+        MEMBER_SUSPENDED_EMAIL_JOB,
+        { toEmail: user.email, name: user.name, reason },
+        { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
+      )
+    } catch (err) {
+      logger.error({ err, approvedPhoneId }, 'admin.suspendMember: failed to enqueue suspension email job')
+    }
+
     return {
       approvedPhoneId: ap.id,
       userId: updated.id,
@@ -1293,6 +1304,17 @@ export class AdminService {
     })
 
     logger.info({ approvedPhoneId: ap.id, userId: user.id }, 'admin.revokeSuspension: revoked')
+
+    try {
+      await notificationsQueue.add(
+        MEMBER_REINSTATED_EMAIL_JOB,
+        { toEmail: user.email, name: user.name },
+        { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
+      )
+    } catch (err) {
+      logger.error({ err, approvedPhoneId }, 'admin.revokeSuspension: failed to enqueue reinstated email job')
+    }
+
     return { approvedPhoneId: ap.id, userId: updated.id, isActive: updated.isActive }
   }
 
