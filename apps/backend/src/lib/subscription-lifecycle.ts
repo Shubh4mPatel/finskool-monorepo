@@ -40,7 +40,7 @@ export async function runSubscriptionLifecycleSweep(
       communityId: true,
       validUntil: true,
       user: { select: { id: true, name: true, phone: true, email: true } },
-      community: { select: { name: true } },
+      community: { select: { name: true, paymentLink: true } },
     },
   })
 
@@ -82,6 +82,7 @@ export async function runSubscriptionLifecycleSweep(
       phone: sub.user.phone,
       communityName: sub.community.name,
       validTill: sub.validUntil.toISOString(),
+      paymentLink: sub.community.paymentLink,
     }
     try {
       if (bucket === 'expiring-7') await notifications.sendSubscriptionExpiring7DaysEmail(emailPayload)

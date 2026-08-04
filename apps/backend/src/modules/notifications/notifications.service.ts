@@ -4,7 +4,7 @@ import { logger } from '../../shared/logger.js'
 import { sendMail } from '../../lib/mailer.js'
 import redis from '../../lib/redis.js'
 import { env } from '../../config/env.js'
-import { renderEmail, firstNameOf, formatEmailDate, formatEmailAmount, buildEmailRows } from '../../lib/email-templates.js'
+import { renderEmail, firstNameOf, formatEmailDate, formatEmailAmount, buildEmailRows, buildRenewalCta } from '../../lib/email-templates.js'
 import {
   NOTIFICATIONS_PUBSUB_CHANNEL,
 } from '../../lib/queue.js'
@@ -52,6 +52,7 @@ export interface SubscriptionExpiringEmailPayload {
   phone: string
   communityName: string
   validTill: string
+  paymentLink: string | null
 }
 
 export interface AdminUnrepliedDigestEmailPayload {
@@ -290,23 +291,25 @@ export class NotificationsService {
   }
 
   async sendSubscriptionExpiring7DaysEmail(payload: SubscriptionExpiringEmailPayload): Promise<void> {
+    const mailtoHref = `mailto:support@finskool21.com?subject=Renewal%20request%20-%20${encodeURIComponent(payload.communityName)}&amp;body=Registered%20number%3A%20${encodeURIComponent(payload.phone)}`
     const { subject, html } = renderEmail('subscription-expiring-7-days', {
       first_name: firstNameOf(payload.name),
       community_name: payload.communityName,
       valid_till: formatEmailDate(payload.validTill),
       phone: payload.phone,
-      community_name_urlenc: encodeURIComponent(payload.communityName),
+      cta_html: buildRenewalCta(payload.paymentLink, mailtoHref),
     })
     await sendMail({ to: payload.toEmail, subject, html })
   }
 
   async sendSubscriptionExpiring1DayEmail(payload: SubscriptionExpiringEmailPayload): Promise<void> {
+    const mailtoHref = `mailto:support@finskool21.com?subject=Urgent%20renewal%20-%20${encodeURIComponent(payload.communityName)}&amp;body=Registered%20number%3A%20${encodeURIComponent(payload.phone)}`
     const { subject, html } = renderEmail('subscription-expiring-1-day', {
       first_name: firstNameOf(payload.name),
       community_name: payload.communityName,
       valid_till: formatEmailDate(payload.validTill),
       phone: payload.phone,
-      community_name_urlenc: encodeURIComponent(payload.communityName),
+      cta_html: buildRenewalCta(payload.paymentLink, mailtoHref),
     })
     await sendMail({ to: payload.toEmail, subject, html })
   }

@@ -18,6 +18,7 @@ interface Community {
   tags: string[];
   coverImageUrl: string | null;
   badgeUrl: string | null;
+  paymentLink: string | null;
   memberCount: number;
 }
 
@@ -45,6 +46,7 @@ function CreateCommunityModal({
   const [tagInput, setTagInput] = useState("");
   const [coverImageUrl, setCoverImageUrl] = useState<string | null>(null);
   const [badgeUrl, setBadgeUrl] = useState<string | null>(null);
+  const [paymentLink, setPaymentLink] = useState("");
   const [saving, setSaving] = useState(false);
 
   function handleNameChange(value: string) {
@@ -74,6 +76,7 @@ function CreateCommunityModal({
         tags,
         coverImageUrl: coverImageUrl ?? undefined,
         badgeUrl: badgeUrl ?? undefined,
+        paymentLink: paymentLink.trim() || undefined,
       });
       toast.success("Community created.");
       onCreated(created);
@@ -158,6 +161,17 @@ function CreateCommunityModal({
         </div>
 
         <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-semibold text-muted">Payment Link</label>
+          <input
+            type="url"
+            value={paymentLink}
+            onChange={(e) => setPaymentLink(e.target.value)}
+            placeholder="https://razorpay.me/@yourcommunity"
+            className="w-full rounded-xl border border-divider bg-background px-4 py-2.5 text-sm text-primary placeholder:text-subtle focus:border-accent focus:outline-none"
+          />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
           <label className="text-xs font-semibold text-muted">Cover Image</label>
           <CommunityCoverImageUploader coverImageUrl={coverImageUrl} onChange={setCoverImageUrl} />
         </div>
@@ -204,6 +218,7 @@ function EditCommunityModal({
   const [tagInput, setTagInput] = useState("");
   const [coverImageUrl, setCoverImageUrl] = useState<string | null>(community.coverImageUrl);
   const [badgeUrl, setBadgeUrl] = useState<string | null>(community.badgeUrl);
+  const [paymentLink, setPaymentLink] = useState(community.paymentLink ?? "");
   const [saving, setSaving] = useState(false);
 
   function addTag(e: React.KeyboardEvent) {
@@ -227,6 +242,7 @@ function EditCommunityModal({
         tags,
         coverImageUrl: coverImageUrl ?? undefined,
         badgeUrl: badgeUrl ?? undefined,
+        paymentLink: paymentLink.trim() || undefined,
       });
       toast.success("Community updated.");
       onUpdated(updated);
@@ -299,6 +315,17 @@ function EditCommunityModal({
               className="min-w-24 flex-1 bg-transparent text-xs text-subtle focus:outline-none"
             />
           </div>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-semibold text-muted">Payment Link</label>
+          <input
+            type="url"
+            value={paymentLink}
+            onChange={(e) => setPaymentLink(e.target.value)}
+            placeholder="https://razorpay.me/@yourcommunity"
+            className="w-full rounded-xl border border-divider bg-background px-4 py-2.5 text-sm text-primary placeholder:text-subtle focus:border-accent focus:outline-none"
+          />
         </div>
 
         <div className="flex flex-col gap-1.5">

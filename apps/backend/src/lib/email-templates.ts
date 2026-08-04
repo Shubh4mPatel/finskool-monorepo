@@ -118,6 +118,53 @@ export function truncateText(raw: string, maxLen = 160): string {
   return `${plain.slice(0, maxLen - 1).trimEnd()}…`
 }
 
+// Builds the `{cta_html}` slot for the subscription-expiring-7-days / -1-day
+// templates. Without a payment link the output is byte-identical to the
+// button those templates used to hardcode, so communities that haven't set
+// one see no change. With a payment link, it becomes the primary action and
+// the mailto fallback drops to a smaller link underneath it.
+export function buildRenewalCta(paymentLink: string | null | undefined, mailtoHref: string): string {
+  const supportButtonRow = `
+    <tr>
+      <td class="px" align="center" style="padding:30px 32px 0 32px;">
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0">
+          <tr>
+            <td align="center" bgcolor="#1D9E75" style="border-radius:28px; background-image:linear-gradient(90deg, #C1F26E 0%, #1D9E75 55%, #108B8B 100%); background-color:#1D9E75;">
+              <a class="btn btn-a" href="${mailtoHref}" target="_blank" style="display:inline-block; padding:15px 42px; font-family:'Poppins', Arial, Helvetica, sans-serif; font-size:15px; font-weight:600; color:#FFFFFF; border-radius:28px; text-decoration:none;">
+                Email support to renew
+              </a>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>`
+
+  if (!paymentLink) return supportButtonRow
+
+  const safeLink = escapeHtml(paymentLink)
+  return `
+    <tr>
+      <td class="px" align="center" style="padding:30px 32px 0 32px;">
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0">
+          <tr>
+            <td align="center" bgcolor="#1D9E75" style="border-radius:28px; background-image:linear-gradient(90deg, #C1F26E 0%, #1D9E75 55%, #108B8B 100%); background-color:#1D9E75;">
+              <a class="btn btn-a" href="${safeLink}" target="_blank" style="display:inline-block; padding:15px 42px; font-family:'Poppins', Arial, Helvetica, sans-serif; font-size:15px; font-weight:600; color:#FFFFFF; border-radius:28px; text-decoration:none;">
+                Pay now to continue
+              </a>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+    <tr>
+      <td class="px" align="center" style="padding:12px 32px 0 32px;">
+        <a href="${mailtoHref}" target="_blank" style="font-family:'Nunito', Arial, Helvetica, sans-serif; font-size:12px; font-weight:700; color:#108B8B;">
+          Or email support to renew
+        </a>
+      </td>
+    </tr>`
+}
+
 // Row-template convention for the `{rows_html}` slot in the (currently unwired)
 // admin-unreplied-digest / admin-expiry-report templates.
 export function buildEmailRows(rows: { label: string; value: string }[]): string {

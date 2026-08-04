@@ -77,6 +77,7 @@ export interface CommunityDTO {
   tags: string[]
   coverImageUrl: string | null
   badgeUrl: string | null
+  paymentLink: string | null
   memberCount: number
 }
 
@@ -87,6 +88,7 @@ export interface CreateCommunityDTO {
   tags: string[]
   coverImageUrl?: string | undefined
   badgeUrl?: string | undefined
+  paymentLink?: string | undefined
 }
 
 export interface UpdateCommunityDTO {
@@ -95,6 +97,7 @@ export interface UpdateCommunityDTO {
   tags: string[]
   coverImageUrl?: string | undefined
   badgeUrl?: string | undefined
+  paymentLink?: string | undefined
 }
 
 export interface AdminUserDTO {

@@ -827,6 +827,7 @@ export class AdminService {
         tags: true,
         coverImageUrl: true,
         badgeUrl: true,
+        paymentLink: true,
         _count: { select: { subscriptions: { where: { isActive: true } } } },
       },
       orderBy: { name: 'asc' },
@@ -859,8 +860,9 @@ export class AdminService {
         tags: data.tags,
         coverImageUrl: data.coverImageUrl ?? null,
         badgeUrl: data.badgeUrl ?? null,
+        paymentLink: data.paymentLink ?? null,
       },
-      select: { id: true, name: true, slug: true, description: true, tags: true, coverImageUrl: true, badgeUrl: true },
+      select: { id: true, name: true, slug: true, description: true, tags: true, coverImageUrl: true, badgeUrl: true, paymentLink: true },
     })
 
     logger.info({ communityId: community.id, slug }, 'admin.createCommunity: success')
@@ -885,6 +887,7 @@ export class AdminService {
         tags: data.tags,
         coverImageUrl: data.coverImageUrl ?? null,
         badgeUrl: data.badgeUrl ?? null,
+        paymentLink: data.paymentLink ?? null,
       },
       select: {
         id: true,
@@ -894,6 +897,7 @@ export class AdminService {
         tags: true,
         coverImageUrl: true,
         badgeUrl: true,
+        paymentLink: true,
         _count: { select: { subscriptions: { where: { isActive: true } } } },
       },
     })

@@ -85,6 +85,7 @@ const createCommunitySchema = z.object({
   tags: z.array(z.string().min(1).max(50)).default([]),
   coverImageUrl: z.string().url('Invalid cover image URL').optional(),
   badgeUrl: z.string().url('Invalid badge URL').optional(),
+  paymentLink: z.string().url('Invalid payment link').optional(),
 })
 
 const updateCommunitySchema = z.object({
@@ -93,6 +94,7 @@ const updateCommunitySchema = z.object({
   tags: z.array(z.string().min(1).max(50)).default([]),
   coverImageUrl: z.string().url('Invalid cover image URL').optional(),
   badgeUrl: z.string().url('Invalid badge URL').optional(),
+  paymentLink: z.string().url('Invalid payment link').optional(),
 })
 
 const communityUploadUrlQuerySchema = z.object({

@@ -124,6 +124,7 @@ model Community {
   tags          String[]
   coverImageUrl String?   @map("cover_image_url") @db.VarChar(500)
   badgeUrl      String?   @map("badge_url") @db.VarChar(500)
+  paymentLink   String?   @map("payment_link") @db.VarChar(500)
   createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
   deletedAt     DateTime? @map("deleted_at") @db.Timestamptz
 
