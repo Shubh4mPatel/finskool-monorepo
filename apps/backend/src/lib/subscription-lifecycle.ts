@@ -99,24 +99,72 @@ export async function runSubscriptionLifecycleSweep(
   return { processed: subs.length, notified }
 }
 
-// Flips isActive false for subscriptions that lapsed more than 7 days ago.
-// Deliberately stays clear of the reminder sweep's own [-7,-1] day "expired"
-// window (bucketFor above) — that job's query filters on isActive: true, so
-// this one must never flip a row inactive while the reminder sweep still has
-// a chance to send its one-time "access paused" notification for it. Once a
-// subscription falls outside that window it's no longer of interest to the
-// reminder sweep either way, so it's safe to retire here.
-export async function expireLapsedSubscriptions(db: PrismaClient): Promise<{ expired: number }> {
+// Flips isActive false for subscriptions the day immediately after their last
+// valid day — no grace period. This is safe against the reminder sweep's own
+// [0,1] day "expiring-1" bucket without any ordering/scheduling coordination
+// between the two jobs: that bucket only ever fires the day before or on the
+// day of expiry (validUntil >= today), while this job only ever acts starting
+// the day after (validUntil < today) — the two windows never overlap.
+//
+// Also flips the member's persisted ApprovedPhone.status to 'expired' (only
+// out of 'registered' — a member who's already suspended/deleted keeps that
+// status) and sends the "your access has ended" notification. That email uses
+// the exact same notifyOnce dedup key — (userId, SubscriptionExpired,
+// subscriptionId) — as the reminder sweep's own (still-untouched) 'expired'
+// bucket, so whichever job reaches a given subscription first sends it and the
+// other is a no-op. Under normal operation this job always gets there first
+// (the sweep's [-7,-1] window only starts a full day later); the sweep's
+// branch is left in place purely as a backstop for when this job misses a run.
+export async function expireLapsedSubscriptions(
+  db: PrismaClient,
+  notifications: NotificationsService,
+): Promise<{ expired: number }> {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
-  const cutoff = new Date(today)
-  cutoff.setDate(today.getDate() - 7)
 
-  const result = await db.subscription.updateMany({
-    where: { isActive: true, validUntil: { lt: cutoff } },
-    data: { isActive: false },
+  const subs = await db.subscription.findMany({
+    where: { isActive: true, validUntil: { lt: today } },
+    select: {
+      id: true,
+      communityId: true,
+      approvedPhoneId: true,
+      validUntil: true,
+      user: { select: { id: true, name: true, phone: true, email: true } },
+      community: { select: { name: true, paymentLink: true } },
+    },
   })
 
-  logger.info({ expired: result.count }, 'expireLapsedSubscriptions: done')
-  return { expired: result.count }
+  for (const sub of subs) {
+    await db.$transaction([
+      db.subscription.update({ where: { id: sub.id }, data: { isActive: false } }),
+      db.approvedPhone.updateMany({
+        where: { id: sub.approvedPhoneId, status: 'registered' },
+        data: { status: 'expired' },
+      }),
+    ])
+
+    const createdId = await notifyOnce({
+      db, communityId: sub.communityId, userId: sub.user.id,
+      type: NotificationType.SubscriptionExpired, sourceId: sub.id,
+      title: 'Access paused',
+      message: `Email support@finskool21.com to restore your ${sub.community.name} access.`,
+    })
+    if (createdId === null) continue // reminder sweep already notified for this subscription
+
+    try {
+      await notifications.sendSubscriptionExpiredEmail({
+        toEmail: sub.user.email,
+        name: sub.user.name,
+        phone: sub.user.phone,
+        communityName: sub.community.name,
+        validTill: sub.validUntil.toISOString(),
+        paymentLink: sub.community.paymentLink,
+      })
+    } catch (err) {
+      logger.error({ err, subscriptionId: sub.id }, 'expireLapsedSubscriptions: email send failed')
+    }
+  }
+
+  logger.info({ expired: subs.length }, 'expireLapsedSubscriptions: done')
+  return { expired: subs.length }
 }

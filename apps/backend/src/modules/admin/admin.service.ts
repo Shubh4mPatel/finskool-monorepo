@@ -19,6 +19,7 @@ import { BadRequestError, ConflictError, NotFoundError, ForbiddenError } from '.
 import { logger } from '../../shared/logger.js'
 import { normalizePhone } from '../../lib/phone.js'
 import { formatEmailDate } from '../../lib/email-templates.js'
+import { computeMemberStatus } from '../../lib/member-status.js'
 import { NotificationType } from '../notifications/notifications.dto.js'
 import redis from '../../lib/redis.js'
 import type {
@@ -1182,6 +1183,12 @@ export class AdminService {
           message: `You're active until ${formatEmailDate(sub.validUntil)}.`,
         },
       })
+      // Only a no-op-guarded flip out of 'expired' — a renewal shouldn't silently
+      // un-suspend or un-delete a member who happens to also have a lapsed subscription.
+      await tx.approvedPhone.updateMany({
+        where: { id: current.approvedPhoneId, status: 'expired' },
+        data: { status: 'registered' },
+      })
       return sub
     })
 
@@ -1244,7 +1251,7 @@ export class AdminService {
       // Shouldn't happen: addMember/importUsers always create User + ApprovedPhone together.
       // Deactivate what we can rather than blocking the admin action; log loudly so it's traceable.
       logger.warn({ approvedPhoneId: ap.id, phone: ap.phone }, 'admin.deleteMember: no matching User row for this ApprovedPhone')
-      await this.db.approvedPhone.update({ where: { id: ap.id }, data: { isActive: false } })
+      await this.db.approvedPhone.update({ where: { id: ap.id }, data: { isActive: false, status: 'deleted' } })
       return { approvedPhoneId: ap.id, userId: null, phone: ap.phone, isActive: false }
     }
 
@@ -1253,7 +1260,7 @@ export class AdminService {
     }
 
     await this.db.$transaction(async tx => {
-      await tx.approvedPhone.update({ where: { id: ap.id }, data: { isActive: false } })
+      await tx.approvedPhone.update({ where: { id: ap.id }, data: { isActive: false, status: 'deleted' } })
       await tx.user.update({ where: { id: user.id }, data: { isActive: false } })
       // All historical + current subscription rows for this user, not just the active one
       await tx.subscription.updateMany({ where: { userId: user.id }, data: { isActive: false } })
@@ -1297,6 +1304,7 @@ export class AdminService {
       where: { id: user.id },
       data: { isActive: false, suspensionReason: reason },
     })
+    await this.db.approvedPhone.update({ where: { id: ap.id }, data: { status: 'suspended' } })
 
     logger.info({ approvedPhoneId: ap.id, userId: user.id }, 'admin.suspendMember: suspended')
 
@@ -1330,6 +1338,24 @@ export class AdminService {
       where: { id: user.id },
       data: { isActive: true, suspensionReason: null },
     })
+
+    // Reinstating doesn't always mean "back to registered" — their subscription
+    // may have lapsed while they were suspended, so recompute rather than hardcode.
+    const currentSub = await this.db.subscription.findFirst({
+      where: { approvedPhoneId: ap.id },
+      orderBy: { createdAt: 'desc' },
+      select: { isActive: true, validUntil: true },
+    })
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const nextStatus = computeMemberStatus({
+      approvedPhoneActive: true,
+      registered: ap.isRegistered,
+      suspended: false,
+      currentSubscription: currentSub,
+      today,
+    })
+    await this.db.approvedPhone.update({ where: { id: ap.id }, data: { status: nextStatus } })
 
     logger.info({ approvedPhoneId: ap.id, userId: user.id }, 'admin.revokeSuspension: revoked')
 
@@ -1383,9 +1409,6 @@ export class AdminService {
       }),
     ])
 
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-
     // Batch-fetch linked Users (isActive/suspensionReason) for these rows — ApprovedPhone
     // and User have no formal relation, only the shared phone string, same pattern as elsewhere.
     const users = await this.db.user.findMany({
@@ -1400,19 +1423,6 @@ export class AdminService {
       const user = userByPhone.get(ap.phone)
       const suspendedByUser = user ? !user.isActive : false
 
-      let derivedStatus: MemberStatus
-      if (!ap.isActive) {
-        derivedStatus = 'deleted'
-      } else if (suspendedByUser) {
-        derivedStatus = 'suspended'
-      } else if (!ap.isRegistered) {
-        derivedStatus = 'pending'
-      } else if (sub && (!sub.isActive || new Date(sub.validUntil) < today)) {
-        derivedStatus = 'expired'
-      } else {
-        derivedStatus = 'registered'
-      }
-
       return {
         id: ap.id,
         name: ap.name ?? '',
@@ -1421,7 +1431,7 @@ export class AdminService {
         avatarUrl: user?.avatarUrl ?? null,
         isActive: ap.isActive && !suspendedByUser,
         isRegistered: ap.isRegistered,
-        status: derivedStatus,
+        status: ap.status,
         createdAt: ap.createdAt.toISOString(),
         suspensionReason: suspendedByUser ? (user?.suspensionReason ?? null) : null,
         subscription: sub
@@ -1500,7 +1510,7 @@ export class AdminService {
     })
     const ap = await tx.approvedPhone.update({
       where: { phone },
-      data: { name, email, isActive: true, isRegistered: false, addedBy: adminId },
+      data: { name, email, isActive: true, isRegistered: false, status: 'pending', addedBy: adminId },
     })
     return { userId: existingUser.id, approvedPhoneId: ap.id }
   }
@@ -1508,7 +1518,7 @@ export class AdminService {
   private async buildMemberWhere(
     filters: MemberExportFilters,
   ): Promise<{ apWhere: Record<string, unknown>; currentSubIds: string[] }> {
-    const { communityId, communityIds, status, validFrom, validTo, paidFrom, paidTo, search } = filters
+    const { communityId, communityIds, status, validFrom, validTo, paidFrom, paidTo, expiringIn7Days, search } = filters
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
@@ -1516,9 +1526,9 @@ export class AdminService {
     // subscription rows per community, so only the current one should count here.
     // "Current" = most recently created row per (member, community), not isActive:true —
     // see getCurrentSubscriptionIds for why. hasSubFilter tracks whether a subscription-level
-    // filter is actually requested — a deactivated member has zero current subscriptions in
-    // scope, and `some` on an always-present id-in-list would otherwise exclude them entirely
-    // (e.g. status=suspended).
+    // filter (community/validFrom/validTo/paidFrom/paidTo) is actually requested — a deactivated
+    // member has zero current subscriptions in scope, and `some` on an always-present id-in-list
+    // would otherwise exclude them entirely from queries that don't ask for one of these filters.
     const currentSubIds = await this.getCurrentSubscriptionIds()
     const subWhere: Record<string, unknown> = { id: { in: currentSubIds } }
     let hasSubFilter = false
@@ -1538,6 +1548,13 @@ export class AdminService {
       }
       hasSubFilter = true
     }
+    if (expiringIn7Days) {
+      const windowEnd = new Date(today)
+      windowEnd.setDate(today.getDate() + 7)
+      subWhere['isActive'] = true
+      subWhere['validUntil'] = { ...((subWhere['validUntil'] as object) ?? {}), gte: today, lte: windowEnd }
+      hasSubFilter = true
+    }
 
     // Exclude admin accounts (User.role = 'admin') — linked by phone
     const adminUsers = await this.db.user.findMany({
@@ -1546,17 +1563,8 @@ export class AdminService {
     })
     const adminPhones = adminUsers.map(u => u.phone)
 
-    // Suspension (suspendMember) only flips User.isActive, not ApprovedPhone.isActive — so
-    // "suspended" has two independent sources of truth. Fetch which phones are suspended this
-    // way once, up front, and fold it into both the status filter and the derived status below.
-    const suspendedUsers = await this.db.user.findMany({
-      where: { isActive: false },
-      select: { phone: true },
-    })
-    const suspendedUserPhones = suspendedUsers.map(u => u.phone)
-
-    // Build ApprovedPhone-level filter as an AND-list of conditions, since both `search` and
-    // the suspended-status check below need their own OR group — can't just assign apWhere.OR twice.
+    // Build ApprovedPhone-level filter as an AND-list of conditions, since `search`
+    // needs its own OR group — can't just assign apWhere.OR directly alongside other conditions.
     const andClauses: Record<string, unknown>[] = []
     if (adminPhones.length > 0) {
       andClauses.push({ phone: { notIn: adminPhones } })
@@ -1570,32 +1578,9 @@ export class AdminService {
       })
     }
 
-    // Status maps to DB fields
     const apWhere: Record<string, unknown> = {}
-    if (status === 'deleted') {
-      apWhere['isActive'] = false
-    } else if (status === 'suspended') {
-      apWhere['isActive'] = true
-      andClauses.push({ phone: { in: suspendedUserPhones } })
-    } else if (status === 'pending') {
-      apWhere['isRegistered'] = false
-      apWhere['isActive'] = true
-      if (suspendedUserPhones.length > 0) andClauses.push({ phone: { notIn: suspendedUserPhones } })
-    } else if (status === 'registered') {
-      apWhere['isRegistered'] = true
-      apWhere['isActive'] = true
-      if (suspendedUserPhones.length > 0) andClauses.push({ phone: { notIn: suspendedUserPhones } })
-      subWhere['isActive'] = true
-      subWhere['validUntil'] = { ...((subWhere['validUntil'] as object) ?? {}), gte: today }
-      hasSubFilter = true
-    } else if (status === 'expired') {
-      apWhere['isActive'] = true
-      if (suspendedUserPhones.length > 0) andClauses.push({ phone: { notIn: suspendedUserPhones } })
-      // Either naturally lapsed (validUntil passed — isActive may still be true within
-      // expireLapsedSubscriptions' buffer window, or already false past it) or manually
-      // revoked (isActive false regardless of validUntil) — both read as "expired" here.
-      subWhere['OR'] = [{ isActive: false }, { validUntil: { lt: today } }]
-      hasSubFilter = true
+    if (status) {
+      apWhere['status'] = status
     }
 
     if (hasSubFilter) {
@@ -1689,9 +1674,6 @@ export class AdminService {
   }
 
   private async fetchMemberDTO(approvedPhoneId: string): Promise<MemberItemDTO> {
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-
     const ap = await this.db.approvedPhone.findUnique({
       where: { id: approvedPhoneId },
       include: {
@@ -1714,13 +1696,6 @@ export class AdminService {
     const sub = allSubs[0] ?? null
     const suspendedByUser = user ? !user.isActive : false
 
-    let status: MemberStatus
-    if (!ap.isActive) status = 'deleted'
-    else if (suspendedByUser) status = 'suspended'
-    else if (!ap.isRegistered) status = 'pending'
-    else if (sub && (!sub.isActive || new Date(sub.validUntil) < today)) status = 'expired'
-    else status = 'registered'
-
     return {
       id: ap.id,
       name: ap.name ?? '',
@@ -1729,7 +1704,7 @@ export class AdminService {
       avatarUrl: user?.avatarUrl ?? null,
       isActive: ap.isActive && !suspendedByUser,
       isRegistered: ap.isRegistered,
-      status,
+      status: ap.status,
       createdAt: ap.createdAt.toISOString(),
       suspensionReason: suspendedByUser ? (user?.suspensionReason ?? null) : null,
       subscription: sub ? this.buildSubDTO(sub) : null,

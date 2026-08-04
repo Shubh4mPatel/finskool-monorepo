@@ -108,7 +108,7 @@ export class AuthService {
     // Mark phone as registered
     await this.db.approvedPhone.update({
       where: { phone: data.phone },
-      data: { isRegistered: true },
+      data: { isRegistered: true, status: 'registered' },
     });
 
     const communities = await this.fetchUserCommunities(updated.id);

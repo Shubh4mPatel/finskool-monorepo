@@ -121,7 +121,10 @@ export interface UpdateAdminAccessDTO {
   communityIds: string[]
 }
 
-// Status is derived, not stored
+// Persisted on ApprovedPhone.status — kept in sync at each lifecycle transition
+// (register/suspend/revoke/delete/renew) and by the daily expiry cron, rather
+// than re-derived on every read. See lib/member-status.ts for the shared
+// precedence logic used wherever a transition needs to compute the next value.
 export type MemberStatus = 'registered' | 'pending' | 'expired' | 'suspended' | 'deleted'
 
 export interface MemberListFilters {
@@ -132,6 +135,9 @@ export interface MemberListFilters {
   validTo?: string | undefined
   paidFrom?: string | undefined
   paidTo?: string | undefined
+  // Current subscription's validUntil falls within [today, today+7] — independent of
+  // `status`, since a suspended/pending member can still have a soon-to-expire subscription.
+  expiringIn7Days?: boolean | undefined
   search?: string | undefined
   page: number
   pageSize: number

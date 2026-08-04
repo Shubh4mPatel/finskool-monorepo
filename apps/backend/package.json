@@ -16,6 +16,7 @@
     "prisma:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
     "db:backfill-minio-domain": "tsx prisma/backfill-minio-domain.ts",
+    "db:backfill-member-status": "tsx prisma/backfill-member-status.ts",
     "docker:up": "docker-compose -f docker-compose.dev.yml up -d",
     "docker:down": "docker-compose -f docker-compose.dev.yml down",
     "docker:logs": "docker-compose -f docker-compose.dev.yml logs -f",

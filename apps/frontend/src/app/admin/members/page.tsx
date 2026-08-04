@@ -106,6 +106,7 @@ export default function MembersPage() {
   const [filterStatus, setFilterStatus] = useState("");
   const [validDate, setValidDate] = useState("");
   const [paidDate, setPaidDate] = useState("");
+  const [expiringSoon, setExpiringSoon] = useState(false);
 
   // Add member form
   const [newMember, setNewMember] = useState(EMPTY_MEMBER);
@@ -128,7 +129,7 @@ export default function MembersPage() {
   // Reset to page 1 when any filter changes
   useEffect(() => {
     setPage(1);
-  }, [filterCommunity, filterStatus, validDate, paidDate, debouncedSearch]);
+  }, [filterCommunity, filterStatus, validDate, paidDate, expiringSoon, debouncedSearch]);
 
   function buildMemberFilterParams(): URLSearchParams {
     const params = new URLSearchParams();
@@ -137,6 +138,7 @@ export default function MembersPage() {
     if (filterStatus) params.set("status", filterStatus);
     if (validDate) params.set("validTo", validDate);
     if (paidDate) { params.set("paidFrom", paidDate); params.set("paidTo", paidDate); }
+    if (expiringSoon) params.set("expiringIn7Days", "true");
     return params;
   }
 
@@ -158,7 +160,7 @@ export default function MembersPage() {
       .finally(() => setLoading(false));
   // toast is a stable context ref
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, debouncedSearch, filterCommunity, filterStatus, validDate, paidDate, fetchTrigger]);
+  }, [page, debouncedSearch, filterCommunity, filterStatus, validDate, paidDate, expiringSoon, fetchTrigger]);
 
   // Fetch summary stats (unfiltered)
   useEffect(() => {
@@ -623,6 +625,16 @@ export default function MembersPage() {
             <span className="text-xs font-semibold text-muted">Paid On</span>
             <input type="date" value={paidDate} onChange={e => setPaidDate(e.target.value)} className={dateCls} />
           </div>
+
+          <label className="flex shrink-0 items-center gap-1.5 rounded-full border border-divider px-3 py-2 text-xs font-semibold text-muted transition-colors hover:border-subtle">
+            <input
+              type="checkbox"
+              checked={expiringSoon}
+              onChange={e => setExpiringSoon(e.target.checked)}
+              className="h-3.5 w-3.5 accent-accent"
+            />
+            Expiring in 7 days
+          </label>
 
           <button
             onClick={exportMembersCSV}

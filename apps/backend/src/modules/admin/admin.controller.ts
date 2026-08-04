@@ -215,6 +215,7 @@ export class AdminController {
         validTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
         paidFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
         paidTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        expiringIn7Days: z.enum(['true', 'false']).optional().transform(v => (v === undefined ? undefined : v === 'true')),
         search: z.string().max(100).optional(),
         page: z.coerce.number().int().min(1).default(1),
         pageSize: z.coerce.number().int().min(1).max(100).default(8),
@@ -252,6 +253,7 @@ export class AdminController {
         validTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
         paidFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
         paidTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        expiringIn7Days: z.enum(['true', 'false']).optional().transform(v => (v === undefined ? undefined : v === 'true')),
         search: z.string().max(100).optional(),
       })
       const parsed = schema.safeParse(req.query)

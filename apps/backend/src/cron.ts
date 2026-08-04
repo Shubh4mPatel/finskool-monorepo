@@ -41,7 +41,7 @@ const digestWorker = new Worker(
     if (job.name === SUBSCRIPTION_LIFECYCLE_SWEEP_JOB) return runSubscriptionLifecycleSweep(prisma, notificationsService)
     if (job.name === ADMIN_UNREPLIED_DIGEST_JOB) return runAdminUnrepliedDigest(prisma, notificationsService)
     if (job.name === ADMIN_EXPIRY_DIGEST_JOB) return runAdminExpiryDigest(prisma, notificationsService)
-    if (job.name === EXPIRE_SUBSCRIPTIONS_JOB) return expireLapsedSubscriptions(prisma)
+    if (job.name === EXPIRE_SUBSCRIPTIONS_JOB) return expireLapsedSubscriptions(prisma, notificationsService)
   },
   { connection, concurrency: 1 },
 )

@@ -17,6 +17,14 @@ enum CommunityRole {
   member
 }
 
+enum MemberStatus {
+  pending
+  registered
+  expired
+  suspended
+  deleted
+}
+
 enum PostStatus {
   draft
   published
@@ -82,6 +90,7 @@ model ApprovedPhone {
   email        String?  @db.VarChar(255)
   isActive     Boolean  @default(true) @map("is_active")
   isRegistered Boolean  @default(false) @map("is_registered")
+  status       MemberStatus @default(pending)
   addedBy      String?  @map("added_by") @db.Uuid
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
