@@ -1,11 +1,13 @@
 // One-off: computes and persists ApprovedPhone.status for every existing member, using the
-// same precedence the app used to re-derive on every read (see src/lib/member-status.ts).
+// same precedence the app used to re-derive on every read (see src/lib/member-status.ts —
+// duplicated inline below rather than imported, because this script runs via tsx against the
+// production image, which only ships dist/ + src/generated, not the rest of src/; same reason
+// backfill-minio-domain.ts and seed.ts only ever import from src/generated).
 // Needed because the `status` column was added with a blanket DEFAULT 'pending', so every
 // existing row needs its real status backfilled once. Run once via `npm run db:backfill-member-status`;
 // safe to re-run (idempotent — recomputes and overwrites regardless of current value).
 import { PrismaClient } from '../src/generated/prisma/client.js'
 import { PrismaPg } from '@prisma/adapter-pg'
-import { computeMemberStatus } from '../src/lib/member-status.js'
 
 const connectionString = process.env['DATABASE_URL']
 if (!connectionString) throw new Error('DATABASE_URL is not set')
@@ -13,6 +15,24 @@ if (!connectionString) throw new Error('DATABASE_URL is not set')
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString }),
 })
+
+type MemberStatus = 'registered' | 'pending' | 'expired' | 'suspended' | 'deleted'
+
+// Kept byte-for-byte in sync with src/lib/member-status.ts's computeMemberStatus.
+function computeMemberStatus(params: {
+  approvedPhoneActive: boolean
+  registered: boolean
+  suspended: boolean
+  currentSubscription: { isActive: boolean; validUntil: Date } | null
+  today: Date
+}): MemberStatus {
+  const { approvedPhoneActive, registered, suspended, currentSubscription, today } = params
+  if (!approvedPhoneActive) return 'deleted'
+  if (suspended) return 'suspended'
+  if (!registered) return 'pending'
+  if (currentSubscription && (!currentSubscription.isActive || currentSubscription.validUntil < today)) return 'expired'
+  return 'registered'
+}
 
 async function main() {
   const today = new Date()
