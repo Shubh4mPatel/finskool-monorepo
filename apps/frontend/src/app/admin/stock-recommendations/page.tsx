@@ -14,6 +14,7 @@ interface StockOption {
   name: string;
   symbol: string;
   sector: string | null;
+  logoUrl: string | null;
   exchange: "nse" | "bse" | null;
   cmp: number | null;
 }
@@ -26,6 +27,7 @@ interface StockRecommendationItem {
   symbol: string;
   name: string;
   sector: string | null;
+  logoUrl: string | null;
   exchange: "nse" | "bse" | null;
   cmp: number | null;
   entryPrice: number;
@@ -124,14 +126,20 @@ function AdminRecommendationCard({ rec, communityName, onEdit, onDelete, deletin
     <div className="rounded-xl border border-divider p-4 transition-shadow hover:shadow-card">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold ${avatarColor(rec.symbol)}`}>
-            {rec.name.slice(0, 1)}
-          </span>
+          {rec.logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={rec.logoUrl} alt="" className="h-9 w-9 shrink-0 rounded-full object-cover" />
+          ) : (
+            <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold ${avatarColor(rec.symbol)}`}>
+              {rec.name.slice(0, 1)}
+            </span>
+          )}
           <div>
             <p className="font-semibold text-primary">{rec.name}</p>
             <p className="text-xs text-subtle">
               {rec.symbol}{rec.exchange ? ` · ${rec.exchange.toUpperCase()}` : ""} &middot; {communityName}
             </p>
+            <p className="text-xs text-subtle">{rec.sector ?? "Uncategorized"}</p>
           </div>
         </div>
         <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${CALL_STYLES[rec.actionCall]}`}>
@@ -174,9 +182,14 @@ function AdminRecommendationRow({ rec, communityName, onEdit, onDelete, deleting
     <tr className="border-t border-divider transition-colors hover:bg-background">
       <td className="px-3 py-3">
         <div className="flex items-center gap-3">
-          <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-display text-xs font-bold ${avatarColor(rec.symbol)}`}>
-            {rec.name.slice(0, 1)}
-          </span>
+          {rec.logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={rec.logoUrl} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover" />
+          ) : (
+            <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-display text-xs font-bold ${avatarColor(rec.symbol)}`}>
+              {rec.name.slice(0, 1)}
+            </span>
+          )}
           <div>
             <p className="font-semibold text-primary">{rec.name}</p>
             <p className="text-xs text-subtle">

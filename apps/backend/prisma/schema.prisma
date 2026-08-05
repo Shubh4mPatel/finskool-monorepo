@@ -220,6 +220,7 @@ model Stock {
   name      String   @db.VarChar(150)
   symbol    String   @unique @db.VarChar(50)
   sector    String?  @db.VarChar(100)
+  logoUrl   String?  @map("logo_url") @db.VarChar(500)
   token     String?  @db.VarChar(50)
   exchange  StockExchange?
   cmp       Decimal? @db.Decimal(10, 2)

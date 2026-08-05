@@ -29,6 +29,7 @@ export class StocksService {
         name: s.name,
         symbol: s.symbol,
         sector: s.sector,
+        logoUrl: s.logoUrl,
         exchange: s.exchange,
         cmp: live ? (rawCmp ?? rawClose) : (rawClose ?? rawCmp),
       }

@@ -3,6 +3,7 @@ export interface StockResponseDTO {
   name: string
   symbol: string
   sector: string | null
+  logoUrl: string | null
   exchange: 'nse' | 'bse' | null
   cmp: number | null
 }

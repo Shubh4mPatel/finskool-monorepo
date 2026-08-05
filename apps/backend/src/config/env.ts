@@ -82,6 +82,9 @@ export const env = {
     // daily sweep report can be managed independently of admin roles.
     reportEmails: (process.env['STOCK_REPORT_EMAIL'] ?? '').split(',').map(s => s.trim()).filter(Boolean),
   },
+
+  // Token for logo.dev, used to fetch a company logo by domain when enriching Stock rows.
+  logoDevToken: process.env['LOGO_DEV_TOKEN'] ?? '',
 } as const satisfies {
   nodeEnv: 'development' | 'production' | 'test'
   port: number
@@ -96,4 +99,5 @@ export const env = {
   email: { logoUrl: string }
   angelone: { apiKey: string; clientCode: string; pin: string; totpSecret: string }
   stockQuoteApi: { baseUrl: string; apiKey: string; reportEmails: string[] }
+  logoDevToken: string
 }

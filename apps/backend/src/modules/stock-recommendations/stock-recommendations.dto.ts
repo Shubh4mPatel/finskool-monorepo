@@ -26,6 +26,7 @@ export interface StockRecommendationResponseDTO {
   symbol: string
   name: string
   sector: string | null
+  logoUrl: string | null
   exchange: 'nse' | 'bse' | null
   cmp: number | null
   entryPrice: number

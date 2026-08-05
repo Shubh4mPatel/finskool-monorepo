@@ -11,6 +11,7 @@ interface StockRecommendationItem {
   symbol: string;
   name: string;
   sector: string | null;
+  logoUrl: string | null;
   cmp: number | null;
   entryPrice: number;
   targetPrice: number;
@@ -69,9 +70,14 @@ function RecommendationCard({ row }: { row: StockRecommendationItem }) {
     <div className="rounded-xl border border-divider p-4 transition-shadow duration-300 hover:shadow-card">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold ${avatarColor(row.symbol)}`}>
-            {row.name.slice(0, 1)}
-          </span>
+          {row.logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={row.logoUrl} alt="" className="h-9 w-9 shrink-0 rounded-full object-cover" />
+          ) : (
+            <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold ${avatarColor(row.symbol)}`}>
+              {row.name.slice(0, 1)}
+            </span>
+          )}
           <div>
             <p className="font-semibold text-primary">{row.name}</p>
             <p className="text-xs text-subtle">{row.sector ?? "Uncategorized"}</p>
@@ -124,9 +130,14 @@ function RecommendationTableRow({ row }: { row: StockRecommendationItem }) {
   return (
     <tr className="border-t border-divider transition-colors hover:bg-background">
       <td className="flex items-center gap-3 px-3 py-3">
-        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-display text-xs font-bold ${avatarColor(row.symbol)}`}>
-          {row.name.slice(0, 1)}
-        </span>
+        {row.logoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={row.logoUrl} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover" />
+        ) : (
+          <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-display text-xs font-bold ${avatarColor(row.symbol)}`}>
+            {row.name.slice(0, 1)}
+          </span>
+        )}
         <div>
           <p className="font-semibold text-primary">{row.name}</p>
           <p className="text-xs text-subtle">{row.symbol}</p>

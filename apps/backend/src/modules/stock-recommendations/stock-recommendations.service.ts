@@ -169,7 +169,7 @@ export class StockRecommendationsService {
     recommendationNotes: string | null
     createdAt: Date
     updatedAt: Date
-    stock: { symbol: string; name: string; sector: string | null; exchange: 'nse' | 'bse' | null; cmp: unknown; closePrice: unknown }
+    stock: { symbol: string; name: string; sector: string | null; logoUrl: string | null; exchange: 'nse' | 'bse' | null; cmp: unknown; closePrice: unknown }
   }): StockRecommendationResponseDTO {
     const entryPrice = Number(rec.entryPrice)
     // While the market's live, prefer the AngelOne tick-fed cmp; once it's
@@ -188,6 +188,7 @@ export class StockRecommendationsService {
       symbol: rec.stock.symbol,
       name: rec.stock.name,
       sector: rec.stock.sector,
+      logoUrl: rec.stock.logoUrl,
       exchange: rec.stock.exchange,
       cmp,
       entryPrice,
