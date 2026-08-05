@@ -9,6 +9,21 @@ import { useMarketStatus, useLiveCmpAndReturn } from "@/store/liveStockPrices/ho
 
 interface Community { id: string; name: string; slug: string; memberCount: number }
 
+interface StockRecommendationList {
+  recommendations: StockRecommendationItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+function getPaginationPages(current: number, total: number): (number | null)[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  if (current <= 4) return [1, 2, 3, 4, 5, null, total];
+  if (current >= total - 3) return [1, null, total - 4, total - 3, total - 2, total - 1, total];
+  return [1, null, current - 1, current, current + 1, null, total];
+}
+
 interface StockOption {
   id: string;
   name: string;
@@ -239,9 +254,14 @@ export default function AdminStockRecommendationsPage() {
   const [loading, setLoading] = useState(true);
   const [filterCommunity, setFilterCommunity] = useState("");
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [filterRisk, setFilterRisk] = useState("");
   const [filterCall, setFilterCall] = useState("");
   const [fetchTrigger, setFetchTrigger] = useState(0);
+  const PAGE_SIZE = 10;
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
 
   const [modal, setModal] = useState<ModalType>(null);
   const [selectedRecommendation, setSelectedRecommendation] = useState<StockRecommendationItem | null>(null);
@@ -266,22 +286,50 @@ export default function AdminStockRecommendationsPage() {
 
   useEffect(() => {
     api.get<Community[]>("/api/v1/admin/communities")
-      .then(setCommunities)
+      .then(list => {
+        setCommunities(list);
+        // Default to Swing Alpha on first load only — leave the user's own
+        // selection (including "All Communities") alone on later refreshes.
+        setFilterCommunity(prev => {
+          if (prev) return prev;
+          return list.find(c => c.slug === "swing-alpha")?.id ?? prev;
+        });
+      })
       .catch(() => {});
   }, []);
 
-  // Fetch every accessible recommendation once — community filtering happens
-  // client-side so the community cards can show every community's own counts
-  // at the same time, regardless of which one is currently selected.
+  // Debounce search
   useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 400);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // Reset to page 1 when any filter changes
+  useEffect(() => {
+    setPage(1);
+  }, [filterCommunity, filterRisk, filterCall, debouncedSearch]);
+
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (filterCommunity) params.set("communityId", filterCommunity);
+    if (filterRisk) params.set("riskLevel", filterRisk);
+    if (filterCall) params.set("actionCall", filterCall);
+    if (debouncedSearch) params.set("search", debouncedSearch);
+    params.set("page", String(page));
+    params.set("pageSize", String(PAGE_SIZE));
+
     setLoading(true);
-    api.get<StockRecommendationItem[]>("/api/v1/stock-recommendations")
-      .then(setRecommendations)
+    api.get<StockRecommendationList>(`/api/v1/stock-recommendations?${params.toString()}`)
+      .then(data => {
+        setRecommendations(data.recommendations);
+        setTotal(data.total);
+        setTotalPages(data.totalPages);
+      })
       .catch(err => toast.error(err instanceof ApiError ? err.message : "Failed to load recommendations"))
       .finally(() => setLoading(false));
   // toast is a stable context ref
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fetchTrigger]);
+  }, [filterCommunity, filterRisk, filterCall, debouncedSearch, page, fetchTrigger]);
 
   // Debounce the company search query
   useEffect(() => {
@@ -469,19 +517,11 @@ export default function AdminStockRecommendationsPage() {
     return communities.find(c => c.id === id)?.name ?? "—";
   }
 
-  function activeCallsFor(communityId: string): number {
-    return recommendations.filter(r => r.communityId === communityId && r.actionCall !== "exit").length;
-  }
-
-  const filtered = recommendations
-    .filter(r => !filterCommunity || r.communityId === filterCommunity)
-    .filter(r => !filterRisk || r.riskLevel === filterRisk)
-    .filter(r => !filterCall || r.actionCall === filterCall)
-    .filter(r => !search || r.name.toLowerCase().includes(search.toLowerCase()) || r.symbol.toLowerCase().includes(search.toLowerCase()));
-
-  const totalCalls = filtered.length;
-  const activeCalls = filtered.filter(r => r.actionCall !== "exit").length;
-  const withReturn = filtered.filter(r => r.returnPercent != null);
+  // recommendations is already filtered + paginated server-side (community/risk/call/search
+  // all sent as query params) — the stats below reflect the currently displayed page, except
+  // Total Calls which uses the server's total count across every matching page.
+  const activeCalls = recommendations.filter(r => r.actionCall !== "exit").length;
+  const withReturn = recommendations.filter(r => r.returnPercent != null);
   const avgReturn = withReturn.length > 0
     ? withReturn.reduce((sum, r) => sum + (r.returnPercent ?? 0), 0) / withReturn.length
     : null;
@@ -490,10 +530,10 @@ export default function AdminStockRecommendationsPage() {
     : null;
 
   const stats = [
-    { value: String(totalCalls), label: "Total Calls" },
-    { value: String(activeCalls), label: "Active" },
-    { value: avgReturn == null ? "—" : formatReturn(avgReturn), label: "Avg Return", positive: avgReturn != null && avgReturn >= 0 },
-    { value: winRate == null ? "—" : `${winRate.toFixed(0)}%`, label: "Win Rate" },
+    { value: String(total), label: "Total Calls" },
+    { value: String(activeCalls), label: "Active (this page)" },
+    { value: avgReturn == null ? "—" : formatReturn(avgReturn), label: "Avg Return (this page)", positive: avgReturn != null && avgReturn >= 0 },
+    { value: winRate == null ? "—" : `${winRate.toFixed(0)}%`, label: "Win Rate (this page)" },
   ];
 
   const fieldCls = (err?: string, isSelect?: boolean) =>
@@ -545,7 +585,7 @@ export default function AdminStockRecommendationsPage() {
               >
                 <span className="font-display text-base font-bold">{c.name}</span>
                 <span className={`text-xs ${active ? "text-white/80" : "text-muted"}`}>
-                  {c.memberCount} member{c.memberCount === 1 ? "" : "s"} &middot; {activeCallsFor(c.id)} active call{activeCallsFor(c.id) === 1 ? "" : "s"}
+                  {c.memberCount} member{c.memberCount === 1 ? "" : "s"}
                 </span>
               </button>
             );
@@ -605,7 +645,7 @@ export default function AdminStockRecommendationsPage() {
           </div>
         )}
 
-        {!loading && filtered.length === 0 && (
+        {!loading && recommendations.length === 0 && (
           <div className="mt-8 flex flex-col items-center justify-center py-12 text-center">
             <p className="font-semibold text-primary">No recommendations yet</p>
             <p className="mt-1 text-sm text-muted">Add your first stock call to get started.</p>
@@ -613,9 +653,9 @@ export default function AdminStockRecommendationsPage() {
         )}
 
         {/* Mobile card list */}
-        {!loading && filtered.length > 0 && (
+        {!loading && recommendations.length > 0 && (
           <div className="mt-4 flex flex-col gap-3 lg:hidden">
-            {filtered.map(rec => (
+            {recommendations.map(rec => (
               <AdminRecommendationCard
                 key={rec.id}
                 rec={rec}
@@ -629,7 +669,7 @@ export default function AdminStockRecommendationsPage() {
         )}
 
         {/* Desktop table */}
-        {!loading && filtered.length > 0 && (
+        {!loading && recommendations.length > 0 && (
           <div className="mt-4 hidden overflow-x-auto lg:block">
             <table className="w-full min-w-225 text-left text-sm">
               <thead>
@@ -647,7 +687,7 @@ export default function AdminStockRecommendationsPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(rec => (
+                {recommendations.map(rec => (
                   <AdminRecommendationRow
                     key={rec.id}
                     rec={rec}
@@ -659,6 +699,42 @@ export default function AdminStockRecommendationsPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* Pagination */}
+        {!loading && totalPages > 0 && (
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-4">
+            <p className="text-sm text-subtle">Showing {recommendations.length} of {total} recommendations</p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="rounded-full border border-divider px-4 py-1.5 text-sm font-semibold text-muted transition-colors hover:border-accent hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Previous
+              </button>
+              {getPaginationPages(page, totalPages).map((n, idx) =>
+                n === null ? (
+                  <span key={`e-${idx}`} className="text-sm text-subtle">…</span>
+                ) : (
+                  <button
+                    key={n}
+                    onClick={() => setPage(n)}
+                    className={`h-8 w-8 rounded-full text-sm font-semibold transition-colors ${n === page ? "bg-primary text-white shadow-glow" : "text-muted hover:bg-divider/60"}`}
+                  >
+                    {n}
+                  </button>
+                )
+              )}
+              <button
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                className="rounded-full border border-divider px-4 py-1.5 text-sm font-semibold text-muted transition-colors hover:border-accent hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Next
+              </button>
+            </div>
           </div>
         )}
       </div>

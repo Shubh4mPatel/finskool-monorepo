@@ -9,6 +9,11 @@ import { ForbiddenError } from '../../shared/errors/index.js'
 
 const listQuerySchema = z.object({
   communityId: z.string().uuid().optional(),
+  riskLevel: z.enum(['low', 'medium', 'high']).optional(),
+  actionCall: z.enum(['buy', 'hold', 'exit']).optional(),
+  search: z.string().max(100).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(10),
 })
 
 // Express 5 types params as string | string[] — route params are always strings
@@ -22,36 +27,43 @@ export class StockRecommendationsController {
 
   list = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const { communityId } = listQuerySchema.parse(req.query)
+      const { communityId, riskLevel, actionCall, search, page, pageSize } = listQuerySchema.parse(req.query)
       const user = req.user!
 
-      let listParams: { communityId?: string; communityIds?: string[] }
+      let scope: { communityId?: string; communityIds?: string[] }
 
       if (user.role === 'admin') {
         const accessible = user.accessibleCommunityIds
         if (accessible === null) {
           // Super admin: use client-provided query param (can see all communities)
-          listParams = { ...(communityId !== undefined && { communityId }) }
+          scope = { ...(communityId !== undefined && { communityId }) }
         } else if (communityId !== undefined) {
           if (!accessible.includes(communityId)) {
             throw new ForbiddenError('You do not have access to this community', 'COMMUNITY_ACCESS_DENIED')
           }
-          listParams = { communityId }
+          scope = { communityId }
         } else {
           // Scoped admin with no community specified: restrict to their granted set
-          listParams = { communityIds: accessible }
+          scope = { communityIds: accessible }
         }
       } else {
         // Member: use selectedCommunityId from JWT (set at login or via select-community endpoint)
         if (user.selectedCommunityId) {
-          listParams = { communityId: user.selectedCommunityId }
+          scope = { communityId: user.selectedCommunityId }
         } else {
           // No community selected yet — fall back to all subscribed communities
-          listParams = { communityIds: user.communityIds }
+          scope = { communityIds: user.communityIds }
         }
       }
 
-      const result = await this.service.listRecommendations(listParams)
+      const result = await this.service.listRecommendations({
+        ...scope,
+        riskLevel,
+        actionCall,
+        search,
+        page,
+        pageSize,
+      })
       res.json({ success: true, data: result })
     } catch (err) {
       next(err)

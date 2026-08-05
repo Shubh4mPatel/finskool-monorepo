@@ -9,6 +9,8 @@ import type {
   CreateStockRecommendationDTO,
   UpdateStockRecommendationDTO,
   StockRecommendationResponseDTO,
+  StockRecommendationListFilters,
+  StockRecommendationListDTO,
 } from './stock-recommendations.dto.js'
 
 const withStock = { include: { stock: true as const } }
@@ -16,11 +18,8 @@ const withStock = { include: { stock: true as const } }
 export class StockRecommendationsService {
   constructor(private readonly db: PrismaClient) {}
 
-  async listRecommendations(params: {
-    communityId?: string
-    communityIds?: string[]
-  }): Promise<StockRecommendationResponseDTO[]> {
-    const { communityId, communityIds } = params
+  async listRecommendations(params: StockRecommendationListFilters): Promise<StockRecommendationListDTO> {
+    const { communityId, communityIds, riskLevel, actionCall, search, page, pageSize } = params
     const where = {
       deletedAt: null,
       ...(communityId !== undefined
@@ -28,15 +27,36 @@ export class StockRecommendationsService {
         : communityIds !== undefined
           ? { communityId: { in: communityIds } }
           : {}),
+      ...(riskLevel !== undefined && { riskLevel }),
+      ...(actionCall !== undefined && { actionCall }),
+      ...(search && {
+        stock: {
+          OR: [
+            { name: { contains: search, mode: 'insensitive' as const } },
+            { symbol: { contains: search, mode: 'insensitive' as const } },
+          ],
+        },
+      }),
     }
 
-    const recs = await this.db.stockRecommendation.findMany({
-      where,
-      ...withStock,
-      orderBy: { createdAt: 'desc' as const },
-    })
+    const [total, recs] = await Promise.all([
+      this.db.stockRecommendation.count({ where }),
+      this.db.stockRecommendation.findMany({
+        where,
+        ...withStock,
+        orderBy: { createdAt: 'desc' as const },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+    ])
 
-    return recs.map(r => this.toResponse(r))
+    return {
+      recommendations: recs.map(r => this.toResponse(r)),
+      total,
+      page,
+      pageSize,
+      totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    }
   }
 
   async createRecommendation(

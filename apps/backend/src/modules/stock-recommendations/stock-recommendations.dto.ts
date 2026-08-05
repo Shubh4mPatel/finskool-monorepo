@@ -18,6 +18,24 @@ export interface UpdateStockRecommendationDTO {
   recommendationNotes?: string | undefined
 }
 
+export interface StockRecommendationListFilters {
+  communityId?: string | undefined
+  communityIds?: string[] | undefined
+  riskLevel?: 'low' | 'medium' | 'high' | undefined
+  actionCall?: 'buy' | 'hold' | 'exit' | undefined
+  search?: string | undefined
+  page: number
+  pageSize: number
+}
+
+export interface StockRecommendationListDTO {
+  recommendations: StockRecommendationResponseDTO[]
+  total: number
+  page: number
+  pageSize: number
+  totalPages: number
+}
+
 export interface StockRecommendationResponseDTO {
   id: string
   communityId: string
