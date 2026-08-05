@@ -167,14 +167,25 @@ function RecommendationTableRow({ row }: { row: StockRecommendationItem }) {
   );
 }
 
+interface StockRecommendationList {
+  recommendations: StockRecommendationItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
 export default function RecommendationsPage() {
   const [recommendations, setRecommendations] = useState<StockRecommendationItem[]>([]);
   const [loading, setLoading] = useState(true);
   const marketStatus = useMarketStatus();
 
   useEffect(() => {
-    api.get<StockRecommendationItem[]>("/api/v1/stock-recommendations")
-      .then(setRecommendations)
+    // pageSize=100 (the API's max) — this page has no pagination UI of its own,
+    // so request everything in one page rather than silently truncating to the
+    // admin endpoint's default page size of 10.
+    api.get<StockRecommendationList>("/api/v1/stock-recommendations?pageSize=100")
+      .then(data => setRecommendations(data.recommendations))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
