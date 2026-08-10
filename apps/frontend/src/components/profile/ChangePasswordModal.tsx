@@ -4,13 +4,14 @@ import { Lock, X } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import PasswordInput from "@/components/auth/PasswordInput";
 import { api, ApiError } from "@/lib/api";
+import { useToast } from "@/components/ui/Toast";
 
 export default function ChangePasswordModal({ trigger }: { trigger?: ReactNode }) {
+  const toast = useToast();
   const [open, setOpen] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
-  const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const handleClose = () => {
@@ -18,21 +19,20 @@ export default function ChangePasswordModal({ trigger }: { trigger?: ReactNode }
     setCurrentPassword("");
     setNewPassword("");
     setConfirmNewPassword("");
-    setError("");
   };
 
   const handleSave = async () => {
-    setError("");
     if (newPassword !== confirmNewPassword) {
-      setError("Passwords do not match");
+      toast.error("Passwords do not match");
       return;
     }
     setSubmitting(true);
     try {
       await api.patch("/api/v1/auth/me/password", { currentPassword, newPassword, confirmNewPassword });
+      toast.success({ title: "Password changed", message: "Your password has been updated." });
       handleClose();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to change password");
+      toast.error(err instanceof ApiError ? err.message : "Failed to change password");
     } finally {
       setSubmitting(false);
     }
@@ -95,10 +95,8 @@ export default function ChangePasswordModal({ trigger }: { trigger?: ReactNode }
                     placeholder="••••••••"
                     value={confirmNewPassword}
                     onChange={(e) => setConfirmNewPassword(e.target.value)}
-                    hasError={!!error}
                   />
                 </div>
-                {error && <p className="mt-1 text-xs text-red-500">{error}</p>}
               </div>
             </div>
 

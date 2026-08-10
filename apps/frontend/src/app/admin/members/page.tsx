@@ -589,7 +589,7 @@ export default function MembersPage() {
               type="text"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Search by name or email..."
+              placeholder="Search by name, email, or phone..."
               className="w-full bg-transparent text-sm text-primary placeholder:text-subtle focus:outline-none"
             />
           </div>
