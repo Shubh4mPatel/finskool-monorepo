@@ -26,6 +26,7 @@ export async function runAdminUnrepliedDigest(
 
   let digestsSent = 0
   for (const admin of admins) {
+    if (!admin.email) continue // shouldn't happen — admin accounts always require email
     const accessibleCommunityIds = await getAccessibleCommunityIds(db, admin.id)
     const scoped = accessibleCommunityIds === null
       ? unreplied
@@ -113,6 +114,7 @@ export async function runAdminExpiryDigest(
 
   let digestsSent = 0
   for (const admin of admins) {
+    if (!admin.email) continue // shouldn't happen — admin accounts always require email
     const accessibleCommunityIds = await getAccessibleCommunityIds(db, admin.id)
     const scoped = accessibleCommunityIds === null
       ? expiring

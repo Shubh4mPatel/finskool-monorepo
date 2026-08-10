@@ -197,8 +197,11 @@ export class NotificationsService {
       })
       created += result.count
 
+      // In-app notification rows above go to everyone in the chunk regardless of email —
+      // only the email send itself needs to skip members with no address on file.
+      const emails = chunk.map(r => r.email).filter((e): e is string => e !== null)
       await Promise.all([
-        this.sendEmailBatch(chunk.map(r => r.email), email.subject, email.html),
+        this.sendEmailBatch(emails, email.subject, email.html),
         this.publishLiveBatch(chunk.map(r => r.userId), { type, communityId, message, sourceId }),
       ])
     }

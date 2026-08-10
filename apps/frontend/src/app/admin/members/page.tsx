@@ -47,8 +47,7 @@ function validateMember(m: typeof EMPTY_MEMBER): MemberErrors {
   if (m.name.trim().length < 2) e.name = "Name must be at least 2 characters";
   if (!m.phone) e.phone = "Phone is required";
   else if (!isValidPhoneNumber(m.phone)) e.phone = "Enter a valid phone number";
-  if (!m.email) e.email = "Email is required";
-  else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(m.email)) e.email = "Invalid email address";
+  if (m.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(m.email)) e.email = "Invalid email address";
   if (!m.communityId) e.communityId = "Select a community";
   const amt = parseFloat(m.payment);
   if (!m.payment || isNaN(amt) || amt <= 0) e.payment = "Enter a valid payment amount";
@@ -410,7 +409,7 @@ export default function MembersPage() {
 
   function openEditModal(m: MemberItem) {
     setSelectedMember(m);
-    setEditForm({ name: m.name, phone: m.phone, email: m.email });
+    setEditForm({ name: m.name, phone: m.phone, email: m.email ?? "" });
     setEditNewCom({ communityId: "", payment: "", paidOn: "", validUntil: "" });
     setShowAddCom(false);
     setEditErrors({});
@@ -422,8 +421,7 @@ export default function MembersPage() {
     if (editForm.name.trim().length < 2) errs.name = "Name must be at least 2 characters";
     if (!editForm.phone) errs.phone = "Phone is required";
     else if (!isValidPhoneNumber(editForm.phone)) errs.phone = "Enter a valid phone number";
-    if (!editForm.email) errs.email = "Email is required";
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(editForm.email)) errs.email = "Invalid email address";
+    if (editForm.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(editForm.email)) errs.email = "Invalid email address";
     if (showAddCom) {
       if (!editNewCom.communityId) errs.newCommunityId = "Select a community";
       const amt = parseFloat(editNewCom.payment);
@@ -807,7 +805,7 @@ export default function MembersPage() {
                         ? <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${communityBadge(sub.communityName)}`}>{sub.communityName}</span>
                         : <span className="text-xs text-muted">—</span>}
                     </td>
-                    <td className="px-3 py-3 text-muted">{m.email}</td>
+                    <td className="px-3 py-3 text-muted">{m.email || "—"}</td>
                     <td className="px-3 py-3">
                       <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${STATUS_STYLES[m.status] ?? ""}`}>
                         {STATUS_LABELS[m.status] ?? m.status}
@@ -908,7 +906,7 @@ export default function MembersPage() {
                 {memberErrors.phone && <p className="mt-1 text-xs text-red-500">{memberErrors.phone}</p>}
               </div>
               <div>
-                <label className="text-sm font-semibold text-primary">Email</label>
+                <label className="text-sm font-semibold text-primary">Email (optional)</label>
                 <input type="email" placeholder="Enter email" value={newMember.email}
                   onChange={e => changeMemberField("email", e.target.value)}
                   onBlur={() => blurMemberField("email")}
@@ -1061,7 +1059,7 @@ export default function MembersPage() {
                 {editErrors.phone && <p className="mt-1 text-xs text-red-500">{editErrors.phone}</p>}
               </div>
               <div>
-                <label className="text-sm font-semibold text-primary">Email</label>
+                <label className="text-sm font-semibold text-primary">Email (optional)</label>
                 <input type="email" value={editForm.email}
                   onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))}
                   className={fieldCls(editErrors.email)} placeholder="Enter email" />

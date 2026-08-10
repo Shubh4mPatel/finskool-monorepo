@@ -56,7 +56,7 @@ export default function MemberDetailPage() {
       .get<MemberItem>(`/api/v1/admin/members/${params.id}`)
       .then((m) => {
         setMember(m);
-        setForm({ name: m.name, phone: m.phone, email: m.email });
+        setForm({ name: m.name, phone: m.phone, email: m.email ?? "" });
       })
       .catch((err) => toast.error(err instanceof ApiError ? err.message : "Failed to load member"))
       .finally(() => setLoading(false));
@@ -73,8 +73,7 @@ export default function MemberDetailPage() {
     if (form.name.trim().length < 2) e.name = "Name must be at least 2 characters";
     if (!form.phone) e.phone = "Phone is required";
     else if (!isValidPhoneNumber(form.phone)) e.phone = "Enter a valid phone number";
-    if (!form.email) e.email = "Email is required";
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) e.email = "Invalid email address";
+    if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) e.email = "Invalid email address";
     return e;
   }
 
@@ -87,7 +86,7 @@ export default function MemberDetailPage() {
     try {
       const updated = await api.patch<MemberItem>(`/api/v1/admin/members/${member.id}`, form);
       setMember(updated);
-      setForm({ name: updated.name, phone: updated.phone, email: updated.email });
+      setForm({ name: updated.name, phone: updated.phone, email: updated.email ?? "" });
       setIsEditing(false);
       toast.success({ title: "Member updated", message: `${updated.name} has been updated.` });
     } catch (err) {
@@ -99,7 +98,7 @@ export default function MemberDetailPage() {
 
   function handleCancelEdit() {
     if (!member) return;
-    setForm({ name: member.name, phone: member.phone, email: member.email });
+    setForm({ name: member.name, phone: member.phone, email: member.email ?? "" });
     setErrors({});
     setIsEditing(false);
   }
@@ -282,7 +281,7 @@ export default function MemberDetailPage() {
                   )}
                 </div>
                 {errors.name && <p className="mt-1 text-xs text-red-500">{errors.name}</p>}
-                <p className="text-sm text-subtle">{member.email}</p>
+                <p className="text-sm text-subtle">{member.email || "No email on file"}</p>
               </div>
             </div>
 
@@ -378,7 +377,7 @@ export default function MemberDetailPage() {
               {errors.phone && <p className="mt-1 text-xs text-red-500">{errors.phone}</p>}
             </div>
             <div>
-              <label className="text-sm font-semibold text-primary">E-mail Address</label>
+              <label className="text-sm font-semibold text-primary">E-mail Address (optional)</label>
               <input
                 type="email"
                 value={form.email}

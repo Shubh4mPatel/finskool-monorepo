@@ -76,22 +76,26 @@ export async function runSubscriptionLifecycleSweep(
     if (createdId === null) continue // already notified for this subscription+type — skip the email too
 
     notified++
-    const emailPayload = {
-      toEmail: sub.user.email,
-      name: sub.user.name,
-      phone: sub.user.phone,
-      communityName: sub.community.name,
-      validTill: sub.validUntil.toISOString(),
-      paymentLink: sub.community.paymentLink,
-    }
-    try {
-      if (bucket === 'expiring-7') await notifications.sendSubscriptionExpiring7DaysEmail(emailPayload)
-      else if (bucket === 'expiring-1') await notifications.sendSubscriptionExpiring1DayEmail(emailPayload)
-      else await notifications.sendSubscriptionExpiredEmail(emailPayload)
-    } catch (err) {
-      // In-app row already succeeded — an SMTP hiccup shouldn't roll that back
-      // or fail the whole sweep (same reasoning as sendEmailBatch elsewhere).
-      logger.error({ err, subscriptionId: sub.id, type }, 'subscriptionLifecycleSweep: email send failed')
+    // No email on file (member added by admin but never self-registered yet) — the
+    // in-app notification row above still stands, there's just nowhere to mail this to.
+    if (sub.user.email) {
+      const emailPayload = {
+        toEmail: sub.user.email,
+        name: sub.user.name,
+        phone: sub.user.phone,
+        communityName: sub.community.name,
+        validTill: sub.validUntil.toISOString(),
+        paymentLink: sub.community.paymentLink,
+      }
+      try {
+        if (bucket === 'expiring-7') await notifications.sendSubscriptionExpiring7DaysEmail(emailPayload)
+        else if (bucket === 'expiring-1') await notifications.sendSubscriptionExpiring1DayEmail(emailPayload)
+        else await notifications.sendSubscriptionExpiredEmail(emailPayload)
+      } catch (err) {
+        // In-app row already succeeded — an SMTP hiccup shouldn't roll that back
+        // or fail the whole sweep (same reasoning as sendEmailBatch elsewhere).
+        logger.error({ err, subscriptionId: sub.id, type }, 'subscriptionLifecycleSweep: email send failed')
+      }
     }
   }
 
@@ -151,17 +155,19 @@ export async function expireLapsedSubscriptions(
     })
     if (createdId === null) continue // reminder sweep already notified for this subscription
 
-    try {
-      await notifications.sendSubscriptionExpiredEmail({
-        toEmail: sub.user.email,
-        name: sub.user.name,
-        phone: sub.user.phone,
-        communityName: sub.community.name,
-        validTill: sub.validUntil.toISOString(),
-        paymentLink: sub.community.paymentLink,
-      })
-    } catch (err) {
-      logger.error({ err, subscriptionId: sub.id }, 'expireLapsedSubscriptions: email send failed')
+    if (sub.user.email) {
+      try {
+        await notifications.sendSubscriptionExpiredEmail({
+          toEmail: sub.user.email,
+          name: sub.user.name,
+          phone: sub.user.phone,
+          communityName: sub.community.name,
+          validTill: sub.validUntil.toISOString(),
+          paymentLink: sub.community.paymentLink,
+        })
+      } catch (err) {
+        logger.error({ err, subscriptionId: sub.id }, 'expireLapsedSubscriptions: email send failed')
+      }
     }
   }
 

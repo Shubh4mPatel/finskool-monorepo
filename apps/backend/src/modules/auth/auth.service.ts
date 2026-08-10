@@ -46,7 +46,11 @@ type DbUser = {
   id: string;
   name: string;
   phone: string;
-  email: string;
+  // Nullable at the DB level (a member added by admin has none until they
+  // register), but every codepath that reaches toPublicUser/issueTokens is
+  // already past registration (passwordHash set), which requires a real
+  // email — see register() below. Asserted non-null once, in toPublicUser.
+  email: string | null;
   passwordHash: string | null;
   role: string;
   isSuperAdmin: boolean;
@@ -131,7 +135,7 @@ export class AuthService {
           await notificationsQueue.add(
             NEW_MEMBER_REGISTERED_EMAIL_JOB,
             {
-              adminEmail: addedByAdmin.email,
+              adminEmail: addedByAdmin.email!, // admin accounts always have email
               adminName: addedByAdmin.name,
               memberName: updated.name,
               phone: updated.phone,
@@ -486,7 +490,7 @@ export class AuthService {
       id: user.id,
       name: user.name,
       phone: user.phone,
-      email: user.email,
+      email: user.email!, // guaranteed by registration — see the DbUser.email comment above
       role: user.role,
       isSuperAdmin: user.isSuperAdmin,
       avatarUrl: user.avatarUrl,

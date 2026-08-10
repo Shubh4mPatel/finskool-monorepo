@@ -5,10 +5,19 @@ import type { MemberListFilters } from './admin.dto.js'
 import { assertCommunityAccessFromToken } from '../../lib/community-access.js'
 import { BadRequestError, ForbiddenError } from '../../shared/errors/index.js'
 
+// Email is optional when an admin adds/imports a member (they may not have one on file yet —
+// the member supplies/confirms a real one at self-registration, which stays required there).
+// An empty-string form value is treated the same as an omitted key; if a value IS present it
+// still has to look like a real email.
+const optionalEmailSchema = z.preprocess(
+  v => (v === '' ? undefined : v),
+  z.string().trim().email('Invalid email address').optional(),
+)
+
 const addMemberSchema = z.object({
   phone: z.string().min(1, 'Phone is required'),
   name: z.string().min(2, 'Name must be at least 2 characters'),
-  email: z.string().email('Invalid email address'),
+  email: optionalEmailSchema,
   communityId: z.string().uuid('Invalid community'),
   payment: z.number().positive('Payment must be a positive number'),
   validUntil: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Valid until must be YYYY-MM-DD'),
@@ -35,7 +44,7 @@ const importQuerySchema = z.object({
 const importRowSchema = z.object({
   name: z.string().min(1),
   phone: z.string().min(1),
-  email: z.string().email(),
+  email: optionalEmailSchema,
   service: z.string().min(1),
   payment: z.coerce.number().positive(),
   valid: z.string().min(1),
@@ -104,7 +113,7 @@ const communityUploadUrlQuerySchema = z.object({
 const updateMemberSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
   phone: z.string().min(1, 'Phone is required'),
-  email: z.string().email('Invalid email address'),
+  email: optionalEmailSchema,
   newCommunity: z.object({
     communityId: z.string().uuid('Invalid community'),
     payment: z.number().positive('Payment must be a positive number'),

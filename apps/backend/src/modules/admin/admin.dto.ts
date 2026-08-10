@@ -3,7 +3,7 @@ export type DuplicateStrategy = 'skip' | 'overwrite'
 export interface AddMemberDTO {
   phone: string
   name: string
-  email: string
+  email?: string | undefined
   communityId: string
   payment: number
   validUntil: string   // ISO date string YYYY-MM-DD
@@ -13,7 +13,7 @@ export interface AddMemberResultDTO {
   approvedPhoneId: string
   phone: string
   name: string
-  email: string
+  email: string | null
   communityId: string
   validUntil: string
 }
@@ -159,7 +159,7 @@ export interface MemberItemDTO {
   id: string            // approvedPhone.id
   name: string
   phone: string
-  email: string
+  email: string | null
   avatarUrl: string | null
   isActive: boolean
   isRegistered: boolean
@@ -173,7 +173,7 @@ export interface MemberItemDTO {
 export interface UpdateMemberDTO {
   name: string
   phone: string
-  email: string
+  email?: string | undefined
   newCommunity?: {
     communityId: string
     payment: number
@@ -193,7 +193,7 @@ export interface MemberListDTO {
 export interface ImportRowDTO {
   name: string
   phone: string
-  email: string
+  email?: string | undefined
   service: string
   payment: number
   valid: string           // YYYY-MM-DD

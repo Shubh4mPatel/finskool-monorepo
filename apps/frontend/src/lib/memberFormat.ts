@@ -12,7 +12,7 @@ export interface MemberItem {
   id: string;
   name: string;
   phone: string;
-  email: string;
+  email: string | null;
   avatarUrl: string | null;
   isActive: boolean;
   isRegistered: boolean;

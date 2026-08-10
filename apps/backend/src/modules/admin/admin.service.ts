@@ -156,7 +156,16 @@ export class AdminService {
 
       const paidOn = parseDate(row['Paid on'] ?? '') // nullable — "9 June" without year → null
       const name = row['Name'] ?? ''
-      const email = (row['Email'] ?? '').toLowerCase()
+
+      // Email is optional — blank is fine, but a non-blank value must be well-formed. Written
+      // as null (not ''), since User.email is unique: two blank rows both writing '' would
+      // collide, but Postgres allows any number of actual NULLs under a unique constraint.
+      const rawEmail = (row['Email'] ?? '').toLowerCase().trim()
+      if (rawEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail)) {
+        summary.errors.push({ row: rowNum, phone, reason: 'Invalid email address' })
+        continue
+      }
+      const email = rawEmail || null
 
       const existingUser = await this.db.user.findUnique({ where: { phone } })
       const existingAp = await this.db.approvedPhone.findUnique({ where: { phone } })
@@ -202,14 +211,16 @@ export class AdminService {
         summary.created++
         if (!notifyCommunityId) notifyCommunityId = community.id
 
-        try {
-          await notificationsQueue.add(
-            WELCOME_EMAIL_JOB,
-            { toEmail: email, name, phone, communityName: community.name, validTill: validUntil.toISOString() },
-            { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
-          )
-        } catch (err) {
-          logger.error({ err, phone }, 'admin.importUsers: failed to enqueue welcome email job')
+        if (email) {
+          try {
+            await notificationsQueue.add(
+              WELCOME_EMAIL_JOB,
+              { toEmail: email, name, phone, communityName: community.name, validTill: validUntil.toISOString() },
+              { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
+            )
+          } catch (err) {
+            logger.error({ err, phone }, 'admin.importUsers: failed to enqueue welcome email job')
+          }
         }
       } else if (existingUser && existingAp) {
         // User exists but NOT subscribed to this community yet — add subscription only
@@ -237,14 +248,16 @@ export class AdminService {
         summary.created++
         if (!notifyCommunityId) notifyCommunityId = community.id
 
-        try {
-          await notificationsQueue.add(
-            WELCOME_EMAIL_JOB,
-            { toEmail: email, name, phone, communityName: community.name, validTill: validUntil.toISOString() },
-            { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
-          )
-        } catch (err) {
-          logger.error({ err, phone }, 'admin.importUsers: failed to enqueue welcome email job')
+        if (email) {
+          try {
+            await notificationsQueue.add(
+              WELCOME_EMAIL_JOB,
+              { toEmail: email, name, phone, communityName: community.name, validTill: validUntil.toISOString() },
+              { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
+            )
+          } catch (err) {
+            logger.error({ err, phone }, 'admin.importUsers: failed to enqueue welcome email job')
+          }
         }
       }
     }
@@ -283,6 +296,7 @@ export class AdminService {
       const payment = row.payment
       const validUntil = new Date(row.valid)
       const paidOn = row.paidOn ? new Date(row.paidOn) : null
+      const email = row.email ?? null
 
       if (isNaN(validUntil.getTime())) {
         summary.errors.push({ row: rowNum, phone, reason: 'Invalid valid-until date' })
@@ -303,10 +317,10 @@ export class AdminService {
           await this.db.$transaction(async tx => {
             await tx.subscription.update({ where: { id: existingSub.id }, data: { payment, paidOn, validUntil } })
             if (existingUser && !existingUser.passwordHash) {
-              await tx.user.update({ where: { id: existingUser.id }, data: { name: row.name, email: row.email } })
+              await tx.user.update({ where: { id: existingUser.id }, data: { name: row.name, email } })
             }
             if (existingAp) {
-              await tx.approvedPhone.update({ where: { phone }, data: { name: row.name, email: row.email, addedBy: adminId } })
+              await tx.approvedPhone.update({ where: { phone }, data: { name: row.name, email, addedBy: adminId } })
             }
           })
           summary.updated++
@@ -315,7 +329,7 @@ export class AdminService {
           // A previously-deleted member coming back — revive them (overwrite name/email,
           // reset registration state) rather than just quietly re-subscribing a dead account.
           await this.db.$transaction(async tx => {
-            await this.reviveMember(tx, existingUser, phone, row.name, row.email, adminId)
+            await this.reviveMember(tx, existingUser, phone, row.name, email, adminId)
             await tx.subscription.create({
               data: { userId: existingUser.id, approvedPhoneId: existingAp.id, communityId: community.id, payment, paidOn, validUntil },
             })
@@ -323,14 +337,16 @@ export class AdminService {
           summary.created++
           if (!notifyCommunityId) notifyCommunityId = community.id
 
-          try {
-            await notificationsQueue.add(
-              WELCOME_EMAIL_JOB,
-              { toEmail: row.email, name: row.name, phone, communityName: community.name, validTill: validUntil.toISOString() },
-              { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
-            )
-          } catch (err) {
-            logger.error({ err, phone }, 'admin.importUsersFromJSON: failed to enqueue welcome email job')
+          if (email) {
+            try {
+              await notificationsQueue.add(
+                WELCOME_EMAIL_JOB,
+                { toEmail: email, name: row.name, phone, communityName: community.name, validTill: validUntil.toISOString() },
+                { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
+              )
+            } catch (err) {
+              logger.error({ err, phone }, 'admin.importUsersFromJSON: failed to enqueue welcome email job')
+            }
           }
         } else if (existingUser && existingAp) {
           await this.db.subscription.create({
@@ -340,8 +356,8 @@ export class AdminService {
           if (!notifyCommunityId) notifyCommunityId = community.id
         } else {
           await this.db.$transaction(async tx => {
-            const user = await tx.user.create({ data: { phone, name: row.name, email: row.email } })
-            const ap = await tx.approvedPhone.create({ data: { phone, name: row.name, email: row.email, addedBy: adminId } })
+            const user = await tx.user.create({ data: { phone, name: row.name, email } })
+            const ap = await tx.approvedPhone.create({ data: { phone, name: row.name, email, addedBy: adminId } })
             await tx.subscription.create({
               data: { userId: user.id, approvedPhoneId: ap.id, communityId: community.id, payment, paidOn, validUntil },
             })
@@ -349,14 +365,16 @@ export class AdminService {
           summary.created++
           if (!notifyCommunityId) notifyCommunityId = community.id
 
-          try {
-            await notificationsQueue.add(
-              WELCOME_EMAIL_JOB,
-              { toEmail: row.email, name: row.name, phone, communityName: community.name, validTill: validUntil.toISOString() },
-              { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
-            )
-          } catch (err) {
-            logger.error({ err, phone }, 'admin.importUsersFromJSON: failed to enqueue welcome email job')
+          if (email) {
+            try {
+              await notificationsQueue.add(
+                WELCOME_EMAIL_JOB,
+                { toEmail: email, name: row.name, phone, communityName: community.name, validTill: validUntil.toISOString() },
+                { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
+              )
+            } catch (err) {
+              logger.error({ err, phone }, 'admin.importUsersFromJSON: failed to enqueue welcome email job')
+            }
           }
         }
       } catch (err) {
@@ -773,9 +791,8 @@ export class AdminService {
         errors.push('Invalid phone number')
       }
 
-      if (!row.email?.trim()) {
-        errors.push('Email is required')
-      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email)) {
+      // Email is optional — only checked for format when a value is actually provided.
+      if (row.email?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email.trim())) {
         errors.push('Invalid email address')
       }
 
@@ -946,7 +963,7 @@ export class AdminService {
     return admins.map(a => ({
       id: a.id,
       name: a.name,
-      email: a.email,
+      email: a.email!, // admin accounts always have email — createAdmin requires it
       avatarUrl: a.avatarUrl,
       isSuperAdmin: a.isSuperAdmin,
       communityAccess: a.communityAccess.map(ca => ca.community),
@@ -1013,7 +1030,7 @@ export class AdminService {
     return {
       id: created.id,
       name: created.name,
-      email: created.email,
+      email: created.email!, // just created with data.email, a required string
       avatarUrl: created.avatarUrl,
       isSuperAdmin: false,
       communityAccess: communities,
@@ -1051,7 +1068,7 @@ export class AdminService {
     return {
       id: target.id,
       name: target.name,
-      email: target.email,
+      email: target.email!, // admin accounts always have email — createAdmin requires it
       avatarUrl: target.avatarUrl,
       isSuperAdmin: target.isSuperAdmin,
       communityAccess: communities,
@@ -1087,25 +1104,28 @@ export class AdminService {
     if (existingUser?.isActive) {
       throw new ConflictError('This phone number is already registered', 'PHONE_EXISTS')
     }
-    const emailOwner = await this.db.user.findUnique({ where: { email: data.email } })
-    if (emailOwner && emailOwner.phone !== phone) {
-      throw new ConflictError('This email address is already registered', 'EMAIL_EXISTS')
+    // Email is optional at add-time — only a real, provided address can conflict.
+    if (data.email) {
+      const emailOwner = await this.db.user.findUnique({ where: { email: data.email } })
+      if (emailOwner && emailOwner.phone !== phone) {
+        throw new ConflictError('This email address is already registered', 'EMAIL_EXISTS')
+      }
     }
 
     const result = await this.db.$transaction(async tx => {
       let userId: string
       let approvedPhoneId: string
       if (existingUser) {
-        const revived = await this.reviveMember(tx, existingUser, phone, data.name, data.email, adminId)
+        const revived = await this.reviveMember(tx, existingUser, phone, data.name, data.email ?? null, adminId)
         userId = revived.userId
         approvedPhoneId = revived.approvedPhoneId
       } else {
         // Create User without password — user will set it when they register
         const user = await tx.user.create({
-          data: { phone, name: data.name, email: data.email },
+          data: { phone, name: data.name, email: data.email ?? null },
         })
         const ap = await tx.approvedPhone.create({
-          data: { phone, name: data.name, email: data.email, addedBy: adminId },
+          data: { phone, name: data.name, email: data.email ?? null, addedBy: adminId },
         })
         userId = user.id
         approvedPhoneId = ap.id
@@ -1125,21 +1145,25 @@ export class AdminService {
 
     logger.info({ phone, adminId }, 'admin.addMember: created')
 
-    try {
-      await notificationsQueue.add(
-        WELCOME_EMAIL_JOB,
-        { toEmail: data.email, name: data.name, phone, communityName: community.name, validTill: new Date(data.validUntil).toISOString() },
-        { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
-      )
-    } catch (err) {
-      logger.error({ err, phone }, 'admin.addMember: failed to enqueue welcome email job')
+    // No email on file yet — nothing to send to; the member gets a welcome email
+    // once they self-register with a real address.
+    if (data.email) {
+      try {
+        await notificationsQueue.add(
+          WELCOME_EMAIL_JOB,
+          { toEmail: data.email, name: data.name, phone, communityName: community.name, validTill: new Date(data.validUntil).toISOString() },
+          { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
+        )
+      } catch (err) {
+        logger.error({ err, phone }, 'admin.addMember: failed to enqueue welcome email job')
+      }
     }
 
     return {
       approvedPhoneId: result.approvedPhoneId,
       phone,
       name: data.name,
-      email: data.email,
+      email: data.email ?? null,
       communityId: data.communityId,
       validUntil: data.validUntil,
     }
@@ -1197,21 +1221,23 @@ export class AdminService {
       'admin.extendSubscription: extended',
     )
 
-    try {
-      await notificationsQueue.add(
-        SUBSCRIPTION_EXTENDED_EMAIL_JOB,
-        {
-          toEmail: current.user.email,
-          name: current.user.name,
-          communityName: current.community.name,
-          validTill: created.validUntil.toISOString(),
-          amount: Number(created.payment),
-          paidOn: (created.paidOn ?? paidOn).toISOString(),
-        },
-        { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
-      )
-    } catch (err) {
-      logger.error({ err, subscriptionId: created.id }, 'admin.extendSubscription: failed to enqueue subscription-extended email job')
+    if (current.user.email) {
+      try {
+        await notificationsQueue.add(
+          SUBSCRIPTION_EXTENDED_EMAIL_JOB,
+          {
+            toEmail: current.user.email,
+            name: current.user.name,
+            communityName: current.community.name,
+            validTill: created.validUntil.toISOString(),
+            amount: Number(created.payment),
+            paidOn: (created.paidOn ?? paidOn).toISOString(),
+          },
+          { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
+        )
+      } catch (err) {
+        logger.error({ err, subscriptionId: created.id }, 'admin.extendSubscription: failed to enqueue subscription-extended email job')
+      }
     }
 
     try {
@@ -1308,14 +1334,16 @@ export class AdminService {
 
     logger.info({ approvedPhoneId: ap.id, userId: user.id }, 'admin.suspendMember: suspended')
 
-    try {
-      await notificationsQueue.add(
-        MEMBER_SUSPENDED_EMAIL_JOB,
-        { toEmail: user.email, name: user.name, reason },
-        { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
-      )
-    } catch (err) {
-      logger.error({ err, approvedPhoneId }, 'admin.suspendMember: failed to enqueue suspension email job')
+    if (user.email) {
+      try {
+        await notificationsQueue.add(
+          MEMBER_SUSPENDED_EMAIL_JOB,
+          { toEmail: user.email, name: user.name, reason },
+          { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
+        )
+      } catch (err) {
+        logger.error({ err, approvedPhoneId }, 'admin.suspendMember: failed to enqueue suspension email job')
+      }
     }
 
     return {
@@ -1359,14 +1387,16 @@ export class AdminService {
 
     logger.info({ approvedPhoneId: ap.id, userId: user.id }, 'admin.revokeSuspension: revoked')
 
-    try {
-      await notificationsQueue.add(
-        MEMBER_REINSTATED_EMAIL_JOB,
-        { toEmail: user.email, name: user.name },
-        { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
-      )
-    } catch (err) {
-      logger.error({ err, approvedPhoneId }, 'admin.revokeSuspension: failed to enqueue reinstated email job')
+    if (user.email) {
+      try {
+        await notificationsQueue.add(
+          MEMBER_REINSTATED_EMAIL_JOB,
+          { toEmail: user.email, name: user.name },
+          { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
+        )
+      } catch (err) {
+        logger.error({ err, approvedPhoneId }, 'admin.revokeSuspension: failed to enqueue reinstated email job')
+      }
     }
 
     return { approvedPhoneId: ap.id, userId: updated.id, isActive: updated.isActive }
@@ -1427,7 +1457,7 @@ export class AdminService {
         id: ap.id,
         name: ap.name ?? '',
         phone: ap.phone,
-        email: ap.email ?? '',
+        email: ap.email,
         avatarUrl: user?.avatarUrl ?? null,
         isActive: ap.isActive && !suspendedByUser,
         isRegistered: ap.isRegistered,
@@ -1479,7 +1509,7 @@ export class AdminService {
       .map(({ m, sub }) => [
         m.name,
         m.phone,
-        m.email,
+        m.email ?? '',
         sub?.communityName ?? '—',
         sub ? formatCurrency(sub.payment) : '—',
         formatDate(sub?.paidOn),
@@ -1501,7 +1531,7 @@ export class AdminService {
     existingUser: { id: string },
     phone: string,
     name: string,
-    email: string,
+    email: string | null,
     adminId: string,
   ): Promise<{ userId: string; approvedPhoneId: string }> {
     await tx.user.update({
@@ -1700,7 +1730,7 @@ export class AdminService {
       id: ap.id,
       name: ap.name ?? '',
       phone: ap.phone,
-      email: ap.email ?? '',
+      email: ap.email,
       avatarUrl: user?.avatarUrl ?? null,
       isActive: ap.isActive && !suspendedByUser,
       isRegistered: ap.isRegistered,
@@ -1720,13 +1750,14 @@ export class AdminService {
 
     const normalizedPhone = normalizePhone(data.phone)
     if (!normalizedPhone) throw new BadRequestError('Invalid phone number')
+    const email = data.email ?? null
 
     if (normalizedPhone !== ap.phone) {
       const phoneConflict = await this.db.approvedPhone.findUnique({ where: { phone: normalizedPhone } })
       if (phoneConflict) throw new ConflictError('Phone number already in use', 'PHONE_EXISTS')
     }
-    if (data.email !== (ap.email ?? '')) {
-      const emailConflict = await this.db.user.findUnique({ where: { email: data.email } })
+    if (email && email !== ap.email) {
+      const emailConflict = await this.db.user.findUnique({ where: { email } })
       if (emailConflict && emailConflict.phone !== ap.phone) {
         throw new ConflictError('Email address already in use', 'EMAIL_EXISTS')
       }
@@ -1750,12 +1781,12 @@ export class AdminService {
     const newSubscriptionId = await this.db.$transaction(async tx => {
       await tx.approvedPhone.update({
         where: { id: approvedPhoneId },
-        data: { name: data.name, phone: normalizedPhone, email: data.email },
+        data: { name: data.name, phone: normalizedPhone, email },
       })
       if (user) {
         await tx.user.update({
           where: { id: user.id },
-          data: { name: data.name, phone: normalizedPhone, email: data.email },
+          data: { name: data.name, phone: normalizedPhone, email },
         })
       }
       if (data.newCommunity && user && addedCommunityName) {
@@ -1788,19 +1819,21 @@ export class AdminService {
     })
 
     if (data.newCommunity && user && addedCommunityName) {
-      try {
-        await notificationsQueue.add(
-          COMMUNITY_ADDED_EMAIL_JOB,
-          {
-            toEmail: data.email,
-            name: data.name,
-            communityName: addedCommunityName,
-            validTill: new Date(data.newCommunity.validUntil).toISOString(),
-          },
-          { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
-        )
-      } catch (err) {
-        logger.error({ err, approvedPhoneId }, 'admin.updateMember: failed to enqueue community-added email job')
+      if (email) {
+        try {
+          await notificationsQueue.add(
+            COMMUNITY_ADDED_EMAIL_JOB,
+            {
+              toEmail: email,
+              name: data.name,
+              communityName: addedCommunityName,
+              validTill: new Date(data.newCommunity.validUntil).toISOString(),
+            },
+            { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
+          )
+        } catch (err) {
+          logger.error({ err, approvedPhoneId }, 'admin.updateMember: failed to enqueue community-added email job')
+        }
       }
 
       if (newSubscriptionId) {
@@ -1849,14 +1882,16 @@ export class AdminService {
       })
     }
 
-    try {
-      await notificationsQueue.add(
-        COMMUNITY_ACCESS_REMOVED_EMAIL_JOB,
-        { toEmail: user.email, name: user.name, communityName: community?.name ?? '' },
-        { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
-      )
-    } catch (err) {
-      logger.error({ err, approvedPhoneId, communityId }, 'admin.revokeMemberCommunity: failed to enqueue access-removed email job')
+    if (user.email) {
+      try {
+        await notificationsQueue.add(
+          COMMUNITY_ACCESS_REMOVED_EMAIL_JOB,
+          { toEmail: user.email, name: user.name, communityName: community?.name ?? '' },
+          { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
+        )
+      } catch (err) {
+        logger.error({ err, approvedPhoneId, communityId }, 'admin.revokeMemberCommunity: failed to enqueue access-removed email job')
+      }
     }
 
     logger.info({ approvedPhoneId, communityId, remaining }, 'admin.revokeMemberCommunity: success')

@@ -129,7 +129,7 @@ export default function ImportCSVPage() {
         if (!name)    errors.push("Name required");
         if (!phone)   errors.push("Phone required");
         else if (!isValidPhoneNumber(phone, "IN")) errors.push("Invalid phone");
-        if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.push("Invalid email");
+        if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.push("Invalid email");
         if (!service) errors.push("Service required");
         else if (!communityList.includes(service.toLowerCase()))
           errors.push(`Community not found`);
