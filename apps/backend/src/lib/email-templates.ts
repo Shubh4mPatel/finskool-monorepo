@@ -25,7 +25,7 @@ interface TemplateDef {
 }
 
 const TEMPLATE_REGISTRY: Record<EmailTemplateId, TemplateDef> = {
-  'welcome': { file: 'welcome.html', subject: 'Your Finskool21 access is live' },
+  'welcome': { file: 'welcome.html', subject: 'Set up your Finskool21 account' },
   'subscription-expiring-7-days': { file: 'subscription-expiring-7-days.html', subject: 'Your {community_name} access ends in 7 days' },
   'subscription-expiring-1-day': { file: 'subscription-expiring-1-day.html', subject: 'Last day of your {community_name} access' },
   'subscription-expired': { file: 'subscription-expired.html', subject: 'Your {community_name} access has ended' },
