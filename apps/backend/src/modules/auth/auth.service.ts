@@ -109,10 +109,13 @@ export class AuthService {
       data: { name: data.fullName, email: data.email, passwordHash },
     });
 
-    // Mark phone as registered
+    // Mark phone as registered — also sync name/email here, since ApprovedPhone
+    // (not User) is what the admin members list reads from; without this, a
+    // member who edits their name/email at registration would show correctly
+    // on their own side but keep showing the admin's original placeholder value.
     await this.db.approvedPhone.update({
       where: { phone: data.phone },
-      data: { isRegistered: true, status: 'registered' },
+      data: { name: data.fullName, email: data.email, isRegistered: true, status: 'registered' },
     });
 
     const communities = await this.fetchUserCommunities(updated.id);
@@ -430,6 +433,12 @@ export class AuthService {
       where: { id: userId },
       data: { email: data.email },
     });
+    // Keep ApprovedPhone in sync — the admin members list reads name/email from
+    // there, not User (see the same note on register() above).
+    await this.db.approvedPhone.update({
+      where: { phone: updated.phone },
+      data: { email: data.email },
+    });
     logger.info({ userId }, 'auth.updateEmail: success');
     return this.toPublicUser(updated);
   }
@@ -437,6 +446,10 @@ export class AuthService {
   async updateName(userId: string, data: UpdateNameDTO): Promise<PublicUserDTO> {
     const updated = await this.db.user.update({
       where: { id: userId },
+      data: { name: data.name },
+    });
+    await this.db.approvedPhone.update({
+      where: { phone: updated.phone },
       data: { name: data.name },
     });
     logger.info({ userId }, 'auth.updateName: success');
