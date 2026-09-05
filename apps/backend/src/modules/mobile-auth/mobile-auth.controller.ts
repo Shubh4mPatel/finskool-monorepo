@@ -1,6 +1,14 @@
 import type { Request, Response, NextFunction, CookieOptions } from 'express'
 import type { MobileAuthService } from './mobile-auth.service.js'
-import { mobileRegisterSchema, verifyOtpSchema, resendOtpSchema, mobileLoginSchema } from './mobile-auth.validator.js'
+import {
+  mobileRegisterSchema,
+  verifyOtpSchema,
+  resendOtpSchema,
+  mobileLoginSchema,
+  forgotPasswordSchema,
+  verifyResetOtpSchema,
+  resetPasswordSchema,
+} from './mobile-auth.validator.js'
 import { env } from '../../config/env.js'
 
 // Mirrors auth.controller.ts's own cookie constants — kept as its own copy so
@@ -67,6 +75,44 @@ export class MobileAuthController {
       const { accessToken, refreshToken, user, communities } = await this.service.login(data)
       setAuthCookies(res, accessToken, refreshToken)
       res.json({ success: true, data: { user, communities } })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  forgotPassword = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { email } = forgotPasswordSchema.parse(req.body)
+      await this.service.forgotPassword(email)
+      // Same message whether or not the email matched anything — see
+      // MobileAuthService.forgotPassword's doc comment.
+      res.json({
+        success: true,
+        message: "If an account with this email exists and is verified, we've sent a password reset code.",
+      })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  verifyResetOtp = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { email, otp } = verifyResetOtpSchema.parse(req.body)
+      const result = await this.service.verifyResetOtp(email, otp)
+      // No cookies/session here — `result.cypher` is what authorizes the
+      // follow-up resetPassword call instead.
+      res.json({ success: true, message: 'Code verified.', data: result })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  resetPassword = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { cypher, newPassword } = resetPasswordSchema.parse(req.body)
+      await this.service.resetPassword(cypher, newPassword)
+      // No auto-login — the mobile client calls POST /auth/mobile/login separately.
+      res.json({ success: true, message: 'Password reset successfully. Please log in.' })
     } catch (err) {
       next(err)
     }

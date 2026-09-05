@@ -240,4 +240,137 @@ router.post('/resend-otp', controller.resendOtp)
  */
 router.post('/login', controller.login)
 
+/**
+ * @openapi
+ * /auth/mobile/forgot-password:
+ *   post:
+ *     tags: [Mobile Auth]
+ *     summary: Request a password-reset code
+ *     description: >
+ *       Always responds with the same generic message, whether or not the
+ *       email matches an account — no OTP is actually sent unless the
+ *       account exists, is active, has a password set, and has completed
+ *       phone verification (isPhoneVerified). This is intentional: it
+ *       prevents using this endpoint to discover which emails are registered.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email]
+ *             properties:
+ *               email: { type: string, format: email, example: jane@example.com }
+ *     responses:
+ *       200:
+ *         description: Always returned, regardless of whether the email matched anything.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message: { type: string, example: "If an account with this email exists and is verified, we've sent a password reset code." }
+ *       422:
+ *         description: Validation failed (malformed email).
+ *         content:
+ *           application/json: { schema: { $ref: '#/components/schemas/ValidationErrorResponse' } }
+ */
+router.post('/forgot-password', controller.forgotPassword)
+
+/**
+ * @openapi
+ * /auth/mobile/forgot-password/verify-otp:
+ *   post:
+ *     tags: [Mobile Auth]
+ *     summary: Verify the password-reset OTP
+ *     description: >
+ *       On success, returns a one-time "cypher" instead of logging the user
+ *       in. That cypher — not a session or JWT — is what authorizes the
+ *       follow-up POST /auth/mobile/forgot-password/reset call; it's
+ *       single-use and expires on its own shortly after issue.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, otp]
+ *             properties:
+ *               email: { type: string, format: email, example: jane@example.com }
+ *               otp: { type: string, pattern: '^\d{6}$', example: "482913" }
+ *     responses:
+ *       200:
+ *         description: Code verified — cypher issued.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message: { type: string, example: "Code verified." }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     cypher: { type: string, description: "Opaque one-time token, not a session/JWT.", example: "3f9a1c...b02e" }
+ *                     cypherExpiresInSeconds: { type: integer, example: 600 }
+ *       400:
+ *         description: Incorrect or expired code (code OTP_INVALID) — deliberately the same response for a wrong OTP and an email with no OTP outstanding.
+ *         content:
+ *           application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } }
+ *       429:
+ *         description: Too many incorrect attempts — request a new code (code OTP_LOCKED).
+ *         content:
+ *           application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } }
+ *       422:
+ *         description: Validation failed.
+ *         content:
+ *           application/json: { schema: { $ref: '#/components/schemas/ValidationErrorResponse' } }
+ */
+router.post('/forgot-password/verify-otp', controller.verifyResetOtp)
+
+/**
+ * @openapi
+ * /auth/mobile/forgot-password/reset:
+ *   post:
+ *     tags: [Mobile Auth]
+ *     summary: Set a new password using a verified-OTP cypher
+ *     description: >
+ *       No authentication/session is used or required here — the `cypher`
+ *       from verify-otp is the sole proof that the OTP step was completed.
+ *       It's consumed (deleted) as soon as this call is made, successfully
+ *       or not, so it can never be replayed. Does NOT log the user in; call
+ *       POST /auth/mobile/login afterward.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [cypher, newPassword, confirmNewPassword]
+ *             properties:
+ *               cypher: { type: string, example: "3f9a1c...b02e" }
+ *               newPassword: { type: string, format: password, minLength: 8, example: NewSecurePass456 }
+ *               confirmNewPassword: { type: string, format: password, example: NewSecurePass456 }
+ *     responses:
+ *       200:
+ *         description: Password reset.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message: { type: string, example: "Password reset successfully. Please log in." }
+ *       400:
+ *         description: Cypher missing, expired, already used, or no longer valid (code RESET_TOKEN_INVALID).
+ *         content:
+ *           application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } }
+ *       422:
+ *         description: Validation failed (weak password or confirmation mismatch).
+ *         content:
+ *           application/json: { schema: { $ref: '#/components/schemas/ValidationErrorResponse' } }
+ */
+router.post('/forgot-password/reset', controller.resetPassword)
+
 export default router

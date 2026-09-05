@@ -14,6 +14,7 @@ import {
   MEMBER_SUSPENDED_EMAIL_JOB,
   MEMBER_REINSTATED_EMAIL_JOB,
   OTP_EMAIL_JOB,
+  PASSWORD_RESET_OTP_EMAIL_JOB,
 } from './lib/queue.js'
 import prisma from './lib/prisma.js'
 import { logger } from './shared/logger.js'
@@ -36,6 +37,7 @@ const worker = new Worker(
     if (job.name === MEMBER_SUSPENDED_EMAIL_JOB) return service.sendMemberSuspendedEmail(job.data)
     if (job.name === MEMBER_REINSTATED_EMAIL_JOB) return service.sendMemberReinstatedEmail(job.data)
     if (job.name === OTP_EMAIL_JOB) return service.sendOtpEmail(job.data)
+    if (job.name === PASSWORD_RESET_OTP_EMAIL_JOB) return service.sendPasswordResetOtpEmail(job.data)
   },
   { connection, concurrency: 5 },
 )

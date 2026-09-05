@@ -123,6 +123,15 @@ export interface OtpEmailJobPayload {
   expiryMinutes: number
 }
 
+export const PASSWORD_RESET_OTP_EMAIL_JOB = 'password-reset-otp-email'
+
+export interface PasswordResetOtpEmailJobPayload {
+  toEmail: string
+  name: string
+  otp: string
+  expiryMinutes: number
+}
+
 export type NotificationJobPayload =
   | CommunityPostNotificationJobPayload
   | CommunityRecommendationNotificationJobPayload
@@ -135,6 +144,7 @@ export type NotificationJobPayload =
   | MemberSuspendedEmailJobPayload
   | MemberReinstatedEmailJobPayload
   | OtpEmailJobPayload
+  | PasswordResetOtpEmailJobPayload
 
 // Published by NotificationsService (running in the worker process) whenever a
 // new notification row is created, and consumed by lib/live-notifications-feed.ts

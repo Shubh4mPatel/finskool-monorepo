@@ -42,4 +42,23 @@ export function otpCooldownKey(userId: string): string {
   return `otp:register:cooldown:${userId}`
 }
 
+// Mobile forgot-password OTP — keyed by (lowercased) email, not userId, since
+// the "send OTP" endpoint deliberately never reveals whether a userId exists
+// for that email (see mobile-auth.service.ts#forgotPassword).
+export function passwordResetOtpKey(email: string): string {
+  return `otp:reset:${email}`
+}
+
+export function passwordResetOtpCooldownKey(email: string): string {
+  return `otp:reset:cooldown:${email}`
+}
+
+// The one-time "cypher" issued after a successful forgot-password OTP verify.
+// Keyed by a hash of the cypher itself (never the raw value — same reasoning
+// as refreshTokenKey) and resolves to the userId allowed to reset their
+// password with it, standing in for a real auth session for that one call.
+export function passwordResetCypherKey(cypherHash: string): string {
+  return `reset_cypher:${cypherHash}`
+}
+
 export default redis

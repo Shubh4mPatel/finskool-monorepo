@@ -44,3 +44,23 @@ export interface MobileAuthTokensInternal {
   user: PublicUserDTO
   communities: CommunityInfoDTO[]
 }
+
+export interface ForgotPasswordDTO {
+  email: string
+}
+
+export interface VerifyResetOtpDTO {
+  email: string
+  otp: string
+}
+
+export interface VerifyResetOtpResponseDTO {
+  cypher: string
+  cypherExpiresInSeconds: number
+}
+
+export interface ResetPasswordDTO {
+  cypher: string
+  newPassword: string
+  confirmNewPassword: string
+}

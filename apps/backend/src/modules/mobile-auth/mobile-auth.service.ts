@@ -1,11 +1,18 @@
-import { randomInt } from 'crypto'
-import { createHash } from 'crypto'
+import { randomInt, randomBytes, createHash } from 'crypto'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import type { PrismaClient } from '../../generated/prisma/client.js'
 import type { Redis } from 'ioredis'
-import { otpKey, otpCooldownKey, refreshTokenKey, selectedCommunityKey } from '../../lib/redis.js'
-import { notificationsQueue, OTP_EMAIL_JOB } from '../../lib/queue.js'
+import {
+  otpKey,
+  otpCooldownKey,
+  refreshTokenKey,
+  selectedCommunityKey,
+  passwordResetOtpKey,
+  passwordResetOtpCooldownKey,
+  passwordResetCypherKey,
+} from '../../lib/redis.js'
+import { notificationsQueue, OTP_EMAIL_JOB, PASSWORD_RESET_OTP_EMAIL_JOB } from '../../lib/queue.js'
 import { logger } from '../../shared/logger.js'
 import { env } from '../../config/env.js'
 import { getAccessibleCommunityIds } from '../../lib/community-access.js'
@@ -22,6 +29,7 @@ import type {
   MobileRegisterResponseDTO,
   MobileLoginDTO,
   MobileAuthTokensInternal,
+  VerifyResetOtpResponseDTO,
   PublicUserDTO,
   CommunityInfoDTO,
 } from './mobile-auth.dto.js'
@@ -31,6 +39,10 @@ const BCRYPT_ROUNDS = 12
 const OTP_TTL_SECONDS = 10 * 60 // 10 minutes
 const OTP_RESEND_COOLDOWN_SECONDS = 60
 const MAX_OTP_ATTEMPTS = 5
+// How long a verified-OTP "cypher" (see verifyResetOtp/resetPassword below)
+// stays redeemable — long enough to type a new password, short enough that a
+// leaked cypher isn't useful for long.
+const RESET_CYPHER_TTL_SECONDS = 10 * 60
 
 interface OtpRecord {
   hash: string
@@ -283,6 +295,119 @@ export class MobileAuthService {
     await this.sendOtp(userId, user.email, user.name)
     logger.info({ userId }, 'mobileAuth.resendOtp: OTP resent')
     return { otpExpiresInSeconds: OTP_TTL_SECONDS }
+  }
+
+  /**
+   * Always resolves silently, whether or not `email` matches an account —
+   * the endpoint's response is identical either way, by design, so this
+   * never gives an attacker a way to test which emails are registered. Only
+   * an account that is active, has completed OTP/password setup, and has
+   * `isPhoneVerified` is actually eligible for a reset code.
+   */
+  async forgotPassword(email: string): Promise<void> {
+    logger.info({ email }, 'mobileAuth.forgotPassword: attempt')
+
+    const user = await this.db.user.findUnique({ where: { email } })
+    const eligible = !!user && !user.deletedAt && user.isActive && user.isPhoneVerified && !!user.passwordHash
+    if (!eligible) {
+      logger.info({ email }, 'mobileAuth.forgotPassword: no-op (no matching/eligible account)')
+      return
+    }
+
+    // Also silent on cooldown — surfacing a 429 here would itself leak that
+    // a reset was recently requested for this email.
+    const cooldownActive = await this.redis.get(passwordResetOtpCooldownKey(email))
+    if (cooldownActive) {
+      logger.info({ email }, 'mobileAuth.forgotPassword: no-op (cooldown active)')
+      return
+    }
+
+    const otp = generateOtp()
+    const record: OtpRecord = { hash: hashOtp(otp), attempts: 0 }
+    await this.redis.set(passwordResetOtpKey(email), JSON.stringify(record), 'EX', OTP_TTL_SECONDS)
+    await this.redis.set(passwordResetOtpCooldownKey(email), '1', 'EX', OTP_RESEND_COOLDOWN_SECONDS)
+
+    try {
+      await notificationsQueue.add(
+        PASSWORD_RESET_OTP_EMAIL_JOB,
+        { toEmail: user.email!, name: user.name, otp, expiryMinutes: OTP_TTL_SECONDS / 60 },
+        { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
+      )
+    } catch (err) {
+      // Swallowed (unlike register's sendOtp) — the controller returns the
+      // same generic message regardless, so there's nothing useful to
+      // surface to the caller; logged here so ops still has visibility.
+      logger.error({ err, email }, 'mobileAuth.forgotPassword: failed to enqueue reset OTP email job')
+    }
+  }
+
+  /**
+   * Confirms the code from forgotPassword() and, on success, issues a
+   * short-lived opaque "cypher" instead of logging the user in — the whole
+   * point being that resetPassword() below can trust it without needing any
+   * auth/session machinery. Deliberately reuses the exact same OTP_INVALID
+   * error+message for "no such OTP" and "wrong code" so this step can't be
+   * used to distinguish a mistyped email from a mistyped OTP either.
+   */
+  async verifyResetOtp(email: string, otp: string): Promise<VerifyResetOtpResponseDTO> {
+    const raw = await this.redis.get(passwordResetOtpKey(email))
+    if (!raw) {
+      throw new BadRequestError('Invalid or expired code. Please request a new one.', 'OTP_INVALID')
+    }
+
+    const record = JSON.parse(raw) as OtpRecord
+    if (record.attempts >= MAX_OTP_ATTEMPTS) {
+      await this.redis.del(passwordResetOtpKey(email))
+      throw new TooManyRequestsError('Too many incorrect attempts. Please request a new code.', 'OTP_LOCKED')
+    }
+
+    if (hashOtp(otp) !== record.hash) {
+      const ttl = await this.redis.ttl(passwordResetOtpKey(email))
+      const updated: OtpRecord = { ...record, attempts: record.attempts + 1 }
+      await this.redis.set(passwordResetOtpKey(email), JSON.stringify(updated), 'EX', ttl > 0 ? ttl : OTP_TTL_SECONDS)
+      throw new BadRequestError('Invalid or expired code. Please request a new one.', 'OTP_INVALID')
+    }
+
+    await this.redis.del(passwordResetOtpKey(email))
+
+    // forgotPassword() only ever creates this OTP for an eligible account,
+    // so this should always resolve — defensive re-check only, in case the
+    // account changed state (e.g. got suspended) in between the two calls.
+    const user = await this.db.user.findUnique({ where: { email } })
+    if (!user || user.deletedAt || !user.isActive) {
+      throw new BadRequestError('Invalid or expired code. Please request a new one.', 'OTP_INVALID')
+    }
+
+    const cypher = randomBytes(32).toString('hex')
+    await this.redis.set(passwordResetCypherKey(hashToken(cypher)), user.id, 'EX', RESET_CYPHER_TTL_SECONDS)
+
+    logger.info({ userId: user.id }, 'mobileAuth.verifyResetOtp: success, cypher issued')
+    return { cypher, cypherExpiresInSeconds: RESET_CYPHER_TTL_SECONDS }
+  }
+
+  /**
+   * The only thing that authorizes this call is the cypher itself (a hash of
+   * it is the Redis lookup key) — no login/session is involved, per design.
+   * Single-use: the cypher is deleted the moment it's redeemed, successfully
+   * or not, so it can't be replayed.
+   */
+  async resetPassword(cypher: string, newPassword: string): Promise<void> {
+    const cypherHash = hashToken(cypher)
+    const userId = await this.redis.get(passwordResetCypherKey(cypherHash))
+    if (!userId) {
+      throw new BadRequestError('This reset session has expired. Please start again.', 'RESET_TOKEN_INVALID')
+    }
+    await this.redis.del(passwordResetCypherKey(cypherHash))
+
+    const user = await this.db.user.findUnique({ where: { id: userId } })
+    if (!user || user.deletedAt || !user.isActive) {
+      throw new BadRequestError('This reset session is no longer valid.', 'RESET_TOKEN_INVALID')
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS)
+    await this.db.user.update({ where: { id: user.id }, data: { passwordHash } })
+
+    logger.info({ userId: user.id }, 'mobileAuth.resetPassword: success')
   }
 
   private async issueTokens(user: DbUser): Promise<MobileAuthTokensInternal> {
