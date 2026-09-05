@@ -2,10 +2,13 @@ import express from 'express'
 import type { CorsOptions } from 'cors'
 import cors from 'cors'
 import cookieParser from 'cookie-parser'
+import swaggerUi from 'swagger-ui-express'
 import { env } from './config/env.js'
+import { swaggerSpec, swaggerDocsPath } from './config/swagger.js'
 import { errorMiddleware } from './middlewares/error.middleware.js'
 import { NotFoundError } from './shared/errors/index.js'
 import authRoutes from './modules/auth/auth.routes.js'
+import mobileAuthRoutes from './modules/mobile-auth/mobile-auth.routes.js'
 import adminRoutes from './modules/admin/admin.routes.js'
 import postsRoutes from './modules/posts/posts.routes.js'
 import commentsRoutes from './modules/comments/comments.routes.js'
@@ -38,7 +41,12 @@ export function createApp() {
     res.json({ status: 'healthy', timestamp: new Date().toISOString() })
   })
 
+  // Currently documents the mobile-auth module only — see src/config/swagger.ts
+  app.use(swaggerDocsPath, swaggerUi.serve, swaggerUi.setup(swaggerSpec))
+  app.get('/api/docs.json', (_req, res) => res.json(swaggerSpec))
+
   app.use('/api/v1/auth', authRoutes)
+  app.use('/api/v1/auth/mobile', mobileAuthRoutes)
   app.use('/api/v1/admin', adminRoutes)
   app.use('/api/v1/posts', postsRoutes)
   app.use('/api/v1', commentsRoutes)

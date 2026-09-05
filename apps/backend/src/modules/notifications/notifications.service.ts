@@ -19,6 +19,7 @@ import type {
   NewMemberRegisteredEmailJobPayload,
   MemberSuspendedEmailJobPayload,
   MemberReinstatedEmailJobPayload,
+  OtpEmailJobPayload,
   LiveNotificationEvent,
 } from '../../lib/queue.js'
 import { NotificationType } from './notifications.dto.js'
@@ -289,6 +290,15 @@ export class NotificationsService {
     const { subject, html } = renderEmail('member-reinstated', {
       first_name: firstNameOf(payload.name),
       frontend_url: env.frontendUrl,
+    })
+    await sendMail({ to: payload.toEmail, subject, html })
+  }
+
+  async sendOtpEmail(payload: OtpEmailJobPayload): Promise<void> {
+    const { subject, html } = renderEmail('otp-verification', {
+      first_name: firstNameOf(payload.name),
+      otp_code: payload.otp,
+      expiry_minutes: String(payload.expiryMinutes),
     })
     await sendMail({ to: payload.toEmail, subject, html })
   }

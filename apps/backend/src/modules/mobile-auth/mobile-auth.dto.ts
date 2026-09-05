@@ -1,0 +1,46 @@
+// Re-exported so callers don't need to reach into the web auth module just to
+// share the registration shape — same fields, same validation as auth.dto.ts's
+// RegisterDTO, kept as its own type here since the two flows are expected to
+// diverge (e.g. this one will eventually carry a channel: 'email' | 'whatsapp').
+export interface MobileRegisterDTO {
+  fullName: string
+  phone: string
+  email: string
+  password: string
+  confirmPassword: string
+}
+
+export interface MobileRegisterResponseDTO {
+  userId: string
+  phone: string
+  email: string
+  otpExpiresInSeconds: number
+}
+
+export interface VerifyOtpDTO {
+  userId: string
+  otp: string
+}
+
+export interface ResendOtpDTO {
+  userId: string
+}
+
+export interface MobileLoginDTO {
+  email: string
+  password: string
+}
+
+// Type-only reuse of the web auth module's response shapes (not its logic) —
+// login() here is a self-contained duplicate of AuthService.login() with one
+// extra isPhoneVerified gate, kept separate on purpose (see mobile-auth.service.ts).
+import type { PublicUserDTO, CommunityInfoDTO } from '../auth/auth.dto.js'
+export type { PublicUserDTO, CommunityInfoDTO, AuthResponseDTO } from '../auth/auth.dto.js'
+
+// Internal only — used between service and controller to pass tokens for cookie-setting
+export interface MobileAuthTokensInternal {
+  accessToken: string
+  refreshToken: string
+  user: PublicUserDTO
+  communities: CommunityInfoDTO[]
+}

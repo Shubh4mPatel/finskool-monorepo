@@ -1,0 +1,406 @@
+import { randomInt } from 'crypto'
+import { createHash } from 'crypto'
+import bcrypt from 'bcryptjs'
+import jwt from 'jsonwebtoken'
+import type { PrismaClient } from '../../generated/prisma/client.js'
+import type { Redis } from 'ioredis'
+import { otpKey, otpCooldownKey, refreshTokenKey, selectedCommunityKey } from '../../lib/redis.js'
+import { notificationsQueue, OTP_EMAIL_JOB } from '../../lib/queue.js'
+import { logger } from '../../shared/logger.js'
+import { env } from '../../config/env.js'
+import { getAccessibleCommunityIds } from '../../lib/community-access.js'
+import {
+  ConflictError,
+  ForbiddenError,
+  BadRequestError,
+  NotFoundError,
+  UnauthorizedError,
+  TooManyRequestsError,
+} from '../../shared/errors/index.js'
+import type {
+  MobileRegisterDTO,
+  MobileRegisterResponseDTO,
+  MobileLoginDTO,
+  MobileAuthTokensInternal,
+  PublicUserDTO,
+  CommunityInfoDTO,
+} from './mobile-auth.dto.js'
+import type { JwtPayload } from '../../middlewares/auth.middleware.js'
+
+const BCRYPT_ROUNDS = 12
+const OTP_TTL_SECONDS = 10 * 60 // 10 minutes
+const OTP_RESEND_COOLDOWN_SECONDS = 60
+const MAX_OTP_ATTEMPTS = 5
+
+interface OtpRecord {
+  hash: string
+  attempts: number
+}
+
+// Mirrors auth.service.ts's own DbUser — kept separate on purpose, see login() below.
+type DbUser = {
+  id: string
+  name: string
+  phone: string
+  email: string | null
+  passwordHash: string | null
+  role: string
+  isSuperAdmin: boolean
+  isPhoneVerified: boolean
+  avatarUrl: string | null
+  postNotificationsEnabled: boolean
+}
+
+function hashOtp(otp: string): string {
+  return createHash('sha256').update(otp).digest('hex')
+}
+
+function generateOtp(): string {
+  // 6-digit numeric code, zero-padded (randomInt is cryptographically secure,
+  // unlike Math.random) — matches the digit-only OTP shape the mobile client expects.
+  return String(randomInt(0, 1_000_000)).padStart(6, '0')
+}
+
+function hashToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex')
+}
+
+function startOfToday(): Date {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return today
+}
+
+export class MobileAuthService {
+  constructor(
+    private readonly db: PrismaClient,
+    private readonly redis: Redis,
+  ) {}
+
+  /**
+   * Open, self-serve registration — unlike the web flow (auth.service.ts#register),
+   * this does NOT require an admin to have pre-added the phone number first. It
+   * creates (or, for a phone an admin already added but who never completed web
+   * registration, updates) the User row immediately, but the account is not
+   * considered fully registered until the OTP sent here is confirmed via
+   * verifyOtp(). No auth cookies/tokens are issued at this step.
+   */
+  async register(data: MobileRegisterDTO): Promise<MobileRegisterResponseDTO> {
+    logger.info({ phone: data.phone }, 'mobileAuth.register: attempt')
+
+    const existing = await this.db.user.findUnique({ where: { phone: data.phone } })
+
+    let userId: string
+    let name: string
+
+    if (existing) {
+      // Phone already fully registered (web or a previous completed mobile flow)
+      if (existing.passwordHash) {
+        throw new ConflictError(
+          'This phone number is already registered. Please log in.',
+          'ALREADY_REGISTERED',
+        )
+      }
+      if (!existing.isActive) {
+        throw new ForbiddenError(
+          'Your access has been revoked. Please contact your admin.',
+          'PHONE_INACTIVE',
+        )
+      }
+
+      if (data.email !== existing.email) {
+        const emailTaken = await this.db.user.findFirst({
+          where: { email: data.email, id: { not: existing.id } },
+        })
+        if (emailTaken) throw new ConflictError('This email address is already registered', 'EMAIL_TAKEN')
+      }
+
+      const passwordHash = await bcrypt.hash(data.password, BCRYPT_ROUNDS)
+      const updated = await this.db.user.update({
+        where: { id: existing.id },
+        data: { name: data.fullName, email: data.email, passwordHash, isPhoneVerified: false },
+      })
+      // Keep ApprovedPhone's name/email fresh (admin members list reads from it —
+      // same reasoning as auth.service.ts#register) but deliberately do NOT flip
+      // isRegistered/status here; that only happens once the OTP is verified.
+      await this.db.approvedPhone.update({
+        where: { phone: data.phone },
+        data: { name: data.fullName, email: data.email },
+      })
+      userId = updated.id
+      name = updated.name
+    } else {
+      // Brand new user — nobody added this phone; check email isn't taken by anyone
+      const emailTaken = await this.db.user.findFirst({ where: { email: data.email } })
+      if (emailTaken) throw new ConflictError('This email address is already registered', 'EMAIL_TAKEN')
+
+      const passwordHash = await bcrypt.hash(data.password, BCRYPT_ROUNDS)
+      const created = await this.db.$transaction(async tx => {
+        const user = await tx.user.create({
+          data: {
+            phone: data.phone,
+            name: data.fullName,
+            email: data.email,
+            passwordHash,
+            isPhoneVerified: false,
+          },
+        })
+        // Mirrored into ApprovedPhone (addedBy: null — nobody invited this user)
+        // so the rest of the platform (Subscription.approvedPhoneId, the admin
+        // members list) keeps working the moment an admin assigns them to a
+        // community; status stays 'pending' until OTP verification.
+        await tx.approvedPhone.create({
+          data: { phone: data.phone, name: data.fullName, email: data.email, addedBy: null },
+        })
+        return user
+      })
+      userId = created.id
+      name = created.name
+    }
+
+    await this.sendOtp(userId, data.email, name)
+
+    logger.info({ userId }, 'mobileAuth.register: OTP sent')
+    return {
+      userId,
+      phone: data.phone,
+      email: data.email,
+      otpExpiresInSeconds: OTP_TTL_SECONDS,
+    }
+  }
+
+  /**
+   * A deliberate, self-contained duplicate of AuthService.login() (the web
+   * login) with exactly one addition — the isPhoneVerified gate — per an
+   * explicit instruction to add that check here instead of touching the
+   * existing web login. Everything else (lookup, active/passwordHash/password
+   * checks, subscription gate, token issuance) mirrors it line for line; keep
+   * both in sync by hand if the shared behavior ever changes.
+   */
+  async login(data: MobileLoginDTO): Promise<MobileAuthTokensInternal> {
+    logger.info({ email: data.email }, 'mobileAuth.login: attempt')
+
+    const user = await this.db.user.findUnique({ where: { email: data.email } })
+    if (!user || user.deletedAt) {
+      throw new UnauthorizedError('Invalid email or password')
+    }
+    if (!user.isActive) {
+      throw new UnauthorizedError('Your account has been deactivated. Please contact your admin.')
+    }
+    if (!user.passwordHash) {
+      throw new UnauthorizedError(
+        'You have not registered yet. Please sign up first to set your password.',
+        'NOT_REGISTERED',
+      )
+    }
+
+    const valid = await bcrypt.compare(data.password, user.passwordHash)
+    if (!valid) {
+      logger.warn({ email: data.email }, 'mobileAuth.login: invalid password')
+      throw new UnauthorizedError('Invalid email or password')
+    }
+
+    // The one addition over the web login — password already confirmed
+    // correct above, so this check can't be used to probe account existence.
+    if (!user.isPhoneVerified) {
+      throw new UnauthorizedError(
+        'Please verify your phone number before logging in.',
+        'PHONE_NOT_VERIFIED',
+      )
+    }
+
+    if (user.role !== 'admin' && !(await this.hasActiveSubscription(user.id))) {
+      throw new UnauthorizedError(
+        'Your subscription has expired. Please contact your admin to renew.',
+        'SUBSCRIPTION_EXPIRED',
+      )
+    }
+
+    logger.info({ userId: user.id }, 'mobileAuth.login: success')
+    return this.issueTokens(user)
+  }
+
+  async verifyOtp(userId: string, otp: string): Promise<void> {
+    const user = await this.db.user.findUnique({ where: { id: userId } })
+    if (!user || user.deletedAt) throw new NotFoundError('User not found')
+    if (user.isPhoneVerified) {
+      throw new ConflictError('This account is already verified', 'ALREADY_VERIFIED')
+    }
+
+    const raw = await this.redis.get(otpKey(userId))
+    if (!raw) {
+      throw new BadRequestError(
+        'This code has expired. Please request a new one.',
+        'OTP_EXPIRED',
+      )
+    }
+
+    const record = JSON.parse(raw) as OtpRecord
+    if (record.attempts >= MAX_OTP_ATTEMPTS) {
+      await this.redis.del(otpKey(userId))
+      throw new TooManyRequestsError(
+        'Too many incorrect attempts. Please request a new code.',
+        'OTP_LOCKED',
+      )
+    }
+
+    if (hashOtp(otp) !== record.hash) {
+      const ttl = await this.redis.ttl(otpKey(userId))
+      const updated: OtpRecord = { ...record, attempts: record.attempts + 1 }
+      await this.redis.set(otpKey(userId), JSON.stringify(updated), 'EX', ttl > 0 ? ttl : OTP_TTL_SECONDS)
+      throw new BadRequestError('Incorrect code. Please try again.', 'OTP_INVALID')
+    }
+
+    await this.redis.del(otpKey(userId))
+    await this.db.user.update({ where: { id: userId }, data: { isPhoneVerified: true } })
+    // Same completion fields the web flow (auth.service.ts#register) sets
+    // immediately — here they're deferred until this point on purpose.
+    await this.db.approvedPhone.update({
+      where: { phone: user.phone },
+      data: { isRegistered: true, status: 'registered' },
+    })
+
+    logger.info({ userId }, 'mobileAuth.verifyOtp: success')
+  }
+
+  async resendOtp(userId: string): Promise<{ otpExpiresInSeconds: number }> {
+    const user = await this.db.user.findUnique({ where: { id: userId } })
+    if (!user || user.deletedAt) throw new NotFoundError('User not found')
+    if (user.isPhoneVerified) {
+      throw new ConflictError('This account is already verified', 'ALREADY_VERIFIED')
+    }
+    if (!user.email) throw new BadRequestError('No email on file for this account')
+
+    const cooldownActive = await this.redis.get(otpCooldownKey(userId))
+    if (cooldownActive) {
+      const ttl = await this.redis.ttl(otpCooldownKey(userId))
+      throw new TooManyRequestsError(
+        `Please wait ${Math.max(ttl, 1)}s before requesting another code.`,
+        'OTP_COOLDOWN',
+      )
+    }
+
+    await this.sendOtp(userId, user.email, user.name)
+    logger.info({ userId }, 'mobileAuth.resendOtp: OTP resent')
+    return { otpExpiresInSeconds: OTP_TTL_SECONDS }
+  }
+
+  private async issueTokens(user: DbUser): Promise<MobileAuthTokensInternal> {
+    const role = user.role as 'admin' | 'member'
+    const communities = await this.fetchUserCommunities(user.id)
+    const communityIds = communities.map(c => c.id)
+
+    const selectedCommunityId = communityIds.length === 1 ? (communityIds[0] ?? null) : null
+    if (selectedCommunityId) {
+      await this.redis.set(selectedCommunityKey(user.id), selectedCommunityId)
+    }
+
+    const accessToken = await this.signAccessToken(
+      { id: user.id, role, isSuperAdmin: user.isSuperAdmin },
+      communityIds,
+      selectedCommunityId,
+    )
+    const refreshToken = jwt.sign(
+      { sub: user.id, role, type: 'refresh' } as object,
+      env.jwt.secret,
+    )
+
+    const tokenHash = hashToken(refreshToken)
+    await this.redis.set(refreshTokenKey(tokenHash), user.id)
+
+    return {
+      accessToken,
+      refreshToken,
+      user: this.toPublicUser(user),
+      communities,
+    }
+  }
+
+  private async fetchUserCommunities(userId: string): Promise<CommunityInfoDTO[]> {
+    const subscriptions = await this.db.subscription.findMany({
+      where: { userId, isActive: true, validUntil: { gte: startOfToday() } },
+      select: {
+        community: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            description: true,
+            tags: true,
+            coverImageUrl: true,
+            badgeUrl: true,
+            _count: { select: { subscriptions: { where: { isActive: true } } } },
+          },
+        },
+      },
+    })
+    return subscriptions.map(s => {
+      const { _count, ...community } = s.community
+      return { ...community, memberCount: _count.subscriptions }
+    })
+  }
+
+  private async hasActiveSubscription(userId: string): Promise<boolean> {
+    const count = await this.db.subscription.count({
+      where: { userId, isActive: true, validUntil: { gte: startOfToday() } },
+    })
+    return count > 0
+  }
+
+  private async computeAccessibleCommunityIds(userId: string, role: string): Promise<string[] | null> {
+    if (role !== 'admin') return []
+    return getAccessibleCommunityIds(this.db, userId)
+  }
+
+  private async signAccessToken(
+    user: { id: string; role: 'admin' | 'member'; isSuperAdmin: boolean },
+    communityIds: string[],
+    selectedCommunityId: string | null,
+  ): Promise<string> {
+    const accessibleCommunityIds = await this.computeAccessibleCommunityIds(user.id, user.role)
+    return jwt.sign(
+      {
+        sub: user.id,
+        role: user.role,
+        type: 'access',
+        communityIds,
+        selectedCommunityId,
+        accessibleCommunityIds,
+        isSuperAdmin: user.isSuperAdmin,
+      } satisfies JwtPayload as object,
+      env.jwt.secret,
+      { expiresIn: env.jwt.accessExpiresIn } as jwt.SignOptions,
+    )
+  }
+
+  private toPublicUser(user: DbUser): PublicUserDTO {
+    return {
+      id: user.id,
+      name: user.name,
+      phone: user.phone,
+      email: user.email!, // guaranteed once passwordHash is set — see the DbUser.email comment on auth.service.ts's own type
+      role: user.role,
+      isSuperAdmin: user.isSuperAdmin,
+      avatarUrl: user.avatarUrl,
+      postNotificationsEnabled: user.postNotificationsEnabled,
+    }
+  }
+
+  private async sendOtp(userId: string, email: string, name: string): Promise<void> {
+    const otp = generateOtp()
+    const record: OtpRecord = { hash: hashOtp(otp), attempts: 0 }
+    await this.redis.set(otpKey(userId), JSON.stringify(record), 'EX', OTP_TTL_SECONDS)
+    await this.redis.set(otpCooldownKey(userId), '1', 'EX', OTP_RESEND_COOLDOWN_SECONDS)
+
+    try {
+      await notificationsQueue.add(
+        OTP_EMAIL_JOB,
+        { toEmail: email, name, otp, expiryMinutes: OTP_TTL_SECONDS / 60 },
+        { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
+      )
+    } catch (err) {
+      logger.error({ err, userId }, 'mobileAuth.sendOtp: failed to enqueue OTP email job')
+      throw err
+    }
+  }
+}

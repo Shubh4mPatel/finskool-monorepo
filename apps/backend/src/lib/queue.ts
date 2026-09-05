@@ -114,6 +114,15 @@ export interface MemberReinstatedEmailJobPayload {
   name: string
 }
 
+export const OTP_EMAIL_JOB = 'otp-email'
+
+export interface OtpEmailJobPayload {
+  toEmail: string
+  name: string
+  otp: string
+  expiryMinutes: number
+}
+
 export type NotificationJobPayload =
   | CommunityPostNotificationJobPayload
   | CommunityRecommendationNotificationJobPayload
@@ -125,6 +134,7 @@ export type NotificationJobPayload =
   | NewMemberRegisteredEmailJobPayload
   | MemberSuspendedEmailJobPayload
   | MemberReinstatedEmailJobPayload
+  | OtpEmailJobPayload
 
 // Published by NotificationsService (running in the worker process) whenever a
 // new notification row is created, and consumed by lib/live-notifications-feed.ts

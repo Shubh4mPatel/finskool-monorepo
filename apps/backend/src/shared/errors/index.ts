@@ -40,6 +40,12 @@ export class ConflictError extends AppError {
   }
 }
 
+export class TooManyRequestsError extends AppError {
+  constructor(message = 'Too many requests', code?: string) {
+    super(429, message, code)
+  }
+}
+
 export class ValidationError extends AppError {
   constructor(
     message = 'Validation failed',

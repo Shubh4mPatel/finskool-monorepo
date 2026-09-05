@@ -17,6 +17,7 @@ export type EmailTemplateId =
   | 'admin-new-member'
   | 'member-suspended'
   | 'member-reinstated'
+  | 'otp-verification'
 
 interface TemplateDef {
   file: string
@@ -39,6 +40,7 @@ const TEMPLATE_REGISTRY: Record<EmailTemplateId, TemplateDef> = {
   'admin-new-member': { file: 'admin-new-member.html', subject: '{member_name} has registered' },
   'member-suspended': { file: 'member-suspended.html', subject: 'Your Finskool21 access has been suspended' },
   'member-reinstated': { file: 'member-reinstated.html', subject: 'Your Finskool21 access has been restored' },
+  'otp-verification': { file: 'otp-verification.html', subject: 'Your Finskool21 verification code is {otp_code}' },
 }
 
 const htmlCache = new Map<EmailTemplateId, string>()

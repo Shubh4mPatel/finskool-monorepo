@@ -204,7 +204,18 @@
       "Read(//tmp/claude-1000/bundled-skills/2.1.220/**)",
       "Bash(node -e \"require.resolve\\('playwright'\\)\")",
       "Bash(npm root *)",
-      "Bash(ls \"$\\(npm root -g\\)/playwright\")"
+      "Bash(ls \"$\\(npm root -g\\)/playwright\")",
+      "mcp__code-review-graph__list_communities_tool",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('deps:', list\\(d.get\\('dependencies',{}\\).keys\\(\\)\\)\\); print\\('devDeps:', list\\(d.get\\('devDependencies',{}\\).keys\\(\\)\\)\\)\")",
+      "Bash(python3 -c \"import docx; print\\('python-docx available'\\)\")",
+      "Bash(pip3 show *)",
+      "Bash(soffice --headless --convert-to docx finskool-scope.html --outdir .)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d.get\\('scripts',{}\\), indent=2\\)\\)\")",
+      "Bash(npm audit *)",
+      "Bash(node --experimental-strip-types -e ' *)",
+      "Bash(timeout 8 node --experimental-strip-types -e ' *)",
+      "Bash(DATABASE_URL=postgresql://u:p@localhost:5432/db JWT_SECRET=test timeout 8 npx tsx -e ' *)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('deps:', {k:v for k,v in d['dependencies'].items\\(\\) if 'swagger' in k}\\); print\\('devDeps:', {k:v for k,v in d['devDependencies'].items\\(\\) if 'swagger' in k}\\)\")"
     ],
     "additionalDirectories": [
       "/tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/8750fbd9-1edb-4d3f-b623-da0dec31a255/scratchpad/node_modules",

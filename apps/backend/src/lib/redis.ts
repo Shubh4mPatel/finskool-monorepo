@@ -31,4 +31,15 @@ export function likeCountKey(postId: string): string {
   return `like_count:${postId}`
 }
 
+// Mobile self-serve registration OTP (email-based for now — a stand-in until
+// WhatsApp delivery is wired up). Keyed by userId, not phone, since by the
+// time an OTP exists the user row already exists.
+export function otpKey(userId: string): string {
+  return `otp:register:${userId}`
+}
+
+export function otpCooldownKey(userId: string): string {
+  return `otp:register:cooldown:${userId}`
+}
+
 export default redis
