@@ -4,7 +4,7 @@ import { logger } from '../../shared/logger.js'
 import { sendMail } from '../../lib/mailer.js'
 import redis from '../../lib/redis.js'
 import { env } from '../../config/env.js'
-import { renderEmail, firstNameOf, formatEmailDate, formatEmailAmount, buildEmailRows, buildRenewalCta } from '../../lib/email-templates.js'
+import { renderEmail, firstNameOf, formatEmailDate, formatEmailDateTime, formatEmailAmount, buildEmailRows, buildRenewalCta } from '../../lib/email-templates.js'
 import {
   NOTIFICATIONS_PUBSUB_CHANNEL,
 } from '../../lib/queue.js'
@@ -21,6 +21,7 @@ import type {
   MemberReinstatedEmailJobPayload,
   OtpEmailJobPayload,
   PasswordResetOtpEmailJobPayload,
+  MobileNewLoginEmailJobPayload,
   LiveNotificationEvent,
 } from '../../lib/queue.js'
 import { NotificationType } from './notifications.dto.js'
@@ -309,6 +310,15 @@ export class NotificationsService {
       first_name: firstNameOf(payload.name),
       otp_code: payload.otp,
       expiry_minutes: String(payload.expiryMinutes),
+    })
+    await sendMail({ to: payload.toEmail, subject, html })
+  }
+
+  async sendMobileNewLoginEmail(payload: MobileNewLoginEmailJobPayload): Promise<void> {
+    const { subject, html } = renderEmail('mobile-new-login', {
+      first_name: firstNameOf(payload.name),
+      device_name: payload.deviceName,
+      login_time: formatEmailDateTime(payload.loginAt),
     })
     await sendMail({ to: payload.toEmail, subject, html })
   }

@@ -15,6 +15,7 @@ import {
   MEMBER_REINSTATED_EMAIL_JOB,
   OTP_EMAIL_JOB,
   PASSWORD_RESET_OTP_EMAIL_JOB,
+  MOBILE_NEW_LOGIN_EMAIL_JOB,
 } from './lib/queue.js'
 import prisma from './lib/prisma.js'
 import { logger } from './shared/logger.js'
@@ -38,6 +39,7 @@ const worker = new Worker(
     if (job.name === MEMBER_REINSTATED_EMAIL_JOB) return service.sendMemberReinstatedEmail(job.data)
     if (job.name === OTP_EMAIL_JOB) return service.sendOtpEmail(job.data)
     if (job.name === PASSWORD_RESET_OTP_EMAIL_JOB) return service.sendPasswordResetOtpEmail(job.data)
+    if (job.name === MOBILE_NEW_LOGIN_EMAIL_JOB) return service.sendMobileNewLoginEmail(job.data)
   },
   { connection, concurrency: 5 },
 )

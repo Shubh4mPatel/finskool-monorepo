@@ -19,6 +19,7 @@ export type EmailTemplateId =
   | 'member-reinstated'
   | 'otp-verification'
   | 'password-reset-otp'
+  | 'mobile-new-login'
 
 interface TemplateDef {
   file: string
@@ -43,6 +44,7 @@ const TEMPLATE_REGISTRY: Record<EmailTemplateId, TemplateDef> = {
   'member-reinstated': { file: 'member-reinstated.html', subject: 'Your Finskool21 access has been restored' },
   'otp-verification': { file: 'otp-verification.html', subject: 'Your Finskool21 verification code is {otp_code}' },
   'password-reset-otp': { file: 'password-reset-otp.html', subject: 'Your Finskool21 password reset code is {otp_code}' },
+  'mobile-new-login': { file: 'mobile-new-login.html', subject: 'New login to your Finskool21 account' },
 }
 
 const htmlCache = new Map<EmailTemplateId, string>()
@@ -101,6 +103,20 @@ export function firstNameOf(fullName: string): string {
 export function formatEmailDate(d: Date | string): string {
   const date = typeof d === 'string' ? new Date(d) : d
   return date.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+// Like formatEmailDate, but with hour/minute — for events (like a login) where
+// the time of day matters, not just the date.
+export function formatEmailDateTime(d: Date | string): string {
+  const date = typeof d === 'string' ? new Date(d) : d
+  return date.toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
 }
 
 export function formatEmailAmount(n: number): string {

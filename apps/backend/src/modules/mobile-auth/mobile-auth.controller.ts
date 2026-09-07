@@ -8,24 +8,32 @@ import {
   forgotPasswordSchema,
   verifyResetOtpSchema,
   resetPasswordSchema,
+  mobileSelectCommunitySchema,
 } from './mobile-auth.validator.js'
 import { env } from '../../config/env.js'
+import { UnauthorizedError } from '../../shared/errors/index.js'
 
-// Mirrors auth.controller.ts's own cookie constants — kept as its own copy so
-// this module has no import-time coupling to the web auth controller (see
-// mobile-auth.service.ts's login() for the same reasoning).
-const COOKIE_BASE: CookieOptions = {
+// No JWT for mobile at all — a single opaque session id (see
+// mobile-auth.service.ts's login()) is the whole credential, stored only as
+// an httpOnly cookie, never in a response body.
+const MOBILE_COOKIE_BASE: CookieOptions = {
   httpOnly: true,
   secure: env.cookie.secure,
   sameSite: 'lax',
   path: '/',
 }
-const ACCESS_MAX_AGE = 15 * 60 * 1000
-const REFRESH_MAX_AGE = 400 * 24 * 60 * 60 * 1000
+// The DB row (MobileSession), not this cookie, is the real source of truth —
+// this maxAge exists purely so the client's cookie jar doesn't evict the
+// cookie early (a cookie with no maxAge is dropped whenever the app process
+// ends). Long enough to effectively never expire on its own.
+const MOBILE_SESSION_MAX_AGE = 400 * 24 * 60 * 60 * 1000
 
-function setAuthCookies(res: Response, accessToken: string, refreshToken: string): void {
-  res.cookie('access_token', accessToken, { ...COOKIE_BASE, maxAge: ACCESS_MAX_AGE })
-  res.cookie('refresh_token', refreshToken, { ...COOKIE_BASE, maxAge: REFRESH_MAX_AGE })
+function setMobileSessionCookie(res: Response, sessionId: string): void {
+  res.cookie('mobile_session_id', sessionId, { ...MOBILE_COOKIE_BASE, maxAge: MOBILE_SESSION_MAX_AGE })
+}
+
+function clearMobileSessionCookie(res: Response): void {
+  res.clearCookie('mobile_session_id', MOBILE_COOKIE_BASE)
 }
 
 export class MobileAuthController {
@@ -72,9 +80,36 @@ export class MobileAuthController {
   login = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const data = mobileLoginSchema.parse(req.body)
-      const { accessToken, refreshToken, user, communities } = await this.service.login(data)
-      setAuthCookies(res, accessToken, refreshToken)
+      const { sessionId, user, communities } = await this.service.login(data, {
+        userAgent: req.headers['user-agent'],
+        ip: req.ip,
+      })
+      setMobileSessionCookie(res, sessionId)
       res.json({ success: true, data: { user, communities } })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  logout = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const sessionId = req.cookies?.['mobile_session_id'] as string | undefined
+      if (sessionId) {
+        await this.service.logout(sessionId)
+      }
+      clearMobileSessionCookie(res)
+      res.json({ success: true, message: 'Logged out' })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  selectCommunity = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      if (!req.user) throw new UnauthorizedError('Not authenticated')
+      const { communityId } = mobileSelectCommunitySchema.parse(req.body)
+      await this.service.selectCommunity(req.user.id, communityId)
+      res.json({ success: true })
     } catch (err) {
       next(err)
     }

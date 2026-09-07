@@ -132,6 +132,15 @@ export interface PasswordResetOtpEmailJobPayload {
   expiryMinutes: number
 }
 
+export const MOBILE_NEW_LOGIN_EMAIL_JOB = 'mobile-new-login-email'
+
+export interface MobileNewLoginEmailJobPayload {
+  toEmail: string
+  name: string
+  deviceName: string
+  loginAt: string // ISO string
+}
+
 export type NotificationJobPayload =
   | CommunityPostNotificationJobPayload
   | CommunityRecommendationNotificationJobPayload
@@ -145,6 +154,7 @@ export type NotificationJobPayload =
   | MemberReinstatedEmailJobPayload
   | OtpEmailJobPayload
   | PasswordResetOtpEmailJobPayload
+  | MobileNewLoginEmailJobPayload
 
 // Published by NotificationsService (running in the worker process) whenever a
 // new notification row is created, and consumed by lib/live-notifications-feed.ts

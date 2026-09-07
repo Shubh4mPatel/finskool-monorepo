@@ -39,6 +39,12 @@ export const resendOtpSchema = z.object({
 export const mobileLoginSchema = z.object({
   email: z.string().email('Invalid email address').toLowerCase(),
   password: z.string().min(1, 'Password is required'),
+  deviceId: z.string().max(255).optional(),
+  deviceType: z.enum(['ios', 'android']).optional(),
+})
+
+export const mobileSelectCommunitySchema = z.object({
+  communityId: z.string().uuid('Invalid community ID'),
 })
 
 export const forgotPasswordSchema = z.object({

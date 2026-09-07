@@ -1,20 +1,24 @@
 import { randomInt, randomBytes, createHash } from 'crypto'
 import bcrypt from 'bcryptjs'
-import jwt from 'jsonwebtoken'
+import { UAParser } from 'ua-parser-js'
+import { Prisma } from '../../generated/prisma/client.js'
 import type { PrismaClient } from '../../generated/prisma/client.js'
 import type { Redis } from 'ioredis'
 import {
   otpKey,
   otpCooldownKey,
-  refreshTokenKey,
-  selectedCommunityKey,
   passwordResetOtpKey,
   passwordResetOtpCooldownKey,
   passwordResetCypherKey,
 } from '../../lib/redis.js'
-import { notificationsQueue, OTP_EMAIL_JOB, PASSWORD_RESET_OTP_EMAIL_JOB } from '../../lib/queue.js'
+import { hashSessionId } from '../../lib/mobile-session.js'
+import {
+  notificationsQueue,
+  OTP_EMAIL_JOB,
+  PASSWORD_RESET_OTP_EMAIL_JOB,
+  MOBILE_NEW_LOGIN_EMAIL_JOB,
+} from '../../lib/queue.js'
 import { logger } from '../../shared/logger.js'
-import { env } from '../../config/env.js'
 import { getAccessibleCommunityIds } from '../../lib/community-access.js'
 import {
   ConflictError,
@@ -28,12 +32,11 @@ import type {
   MobileRegisterDTO,
   MobileRegisterResponseDTO,
   MobileLoginDTO,
-  MobileAuthTokensInternal,
+  MobileLoginResultInternal,
   VerifyResetOtpResponseDTO,
   PublicUserDTO,
   CommunityInfoDTO,
 } from './mobile-auth.dto.js'
-import type { JwtPayload } from '../../middlewares/auth.middleware.js'
 
 const BCRYPT_ROUNDS = 12
 const OTP_TTL_SECONDS = 10 * 60 // 10 minutes
@@ -81,6 +84,17 @@ function startOfToday(): Date {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   return today
+}
+
+// "Chrome on Windows" / "Safari on Apple iPhone" style label for the
+// new-device-login email. Best-effort — an unparseable or missing
+// User-Agent just falls back to a generic label rather than failing login.
+function parseDeviceName(userAgent: string | undefined): string {
+  if (!userAgent) return 'Unknown device'
+  const { browser, os, device } = new UAParser(userAgent).getResult()
+  const osLabel = device.vendor && device.model ? `${device.vendor} ${device.model}` : os.name
+  if (browser.name && osLabel) return `${browser.name} on ${osLabel}`
+  return browser.name || osLabel || 'Unknown device'
 }
 
 export class MobileAuthService {
@@ -182,14 +196,20 @@ export class MobileAuthService {
   }
 
   /**
-   * A deliberate, self-contained duplicate of AuthService.login() (the web
-   * login) with exactly one addition — the isPhoneVerified gate — per an
-   * explicit instruction to add that check here instead of touching the
-   * existing web login. Everything else (lookup, active/passwordHash/password
-   * checks, subscription gate, token issuance) mirrors it line for line; keep
-   * both in sync by hand if the shared behavior ever changes.
+   * Credential checks (lookup, active/passwordHash/password, isPhoneVerified,
+   * subscription) are a deliberate, self-contained duplicate of
+   * AuthService.login() — see that method's own comment for why. Session
+   * issuance below is NOT a duplicate of anything web does, though: mobile
+   * has no JWT at all. A single opaque, high-entropy session id is generated
+   * here, its hash upserted into MobileSession (one row per user — this
+   * upsert is what atomically kills any prior mobile session for this user
+   * and installs this one), and the raw value is handed back for the
+   * controller to set as an httpOnly cookie. It's never returned again.
    */
-  async login(data: MobileLoginDTO): Promise<MobileAuthTokensInternal> {
+  async login(
+    data: MobileLoginDTO,
+    meta: { userAgent: string | undefined; ip: string | undefined },
+  ): Promise<MobileLoginResultInternal> {
     logger.info({ email: data.email }, 'mobileAuth.login: attempt')
 
     const user = await this.db.user.findUnique({ where: { email: data.email } })
@@ -228,8 +248,78 @@ export class MobileAuthService {
       )
     }
 
+    const communities = await this.fetchUserCommunities(user.id)
+    const communityIds = communities.map(c => c.id)
+    const selectedCommunityId = communityIds.length === 1 ? (communityIds[0] ?? null) : null
+    const accessibleCommunityIds = await this.computeAccessibleCommunityIds(user.id, user.role)
+
+    const rawSessionId = randomBytes(32).toString('hex')
+    const sessionIdHash = hashSessionId(rawSessionId)
+    const deviceName = parseDeviceName(meta.userAgent)
+
+    const sessionData = {
+      sessionIdHash,
+      deviceId: data.deviceId ?? null,
+      deviceType: data.deviceType ?? null,
+      deviceName,
+      ip: meta.ip ?? null,
+      communityIds,
+      selectedCommunityId,
+      // Prisma's typed Json input rejects a bare `null` (ambiguous with
+      // "field omitted") — Prisma.JsonNull is the explicit "store JSON null"
+      // sentinel, used here for the super-admin/"unrestricted" case.
+      accessibleCommunityIds: accessibleCommunityIds ?? Prisma.JsonNull,
+    }
+    await this.db.mobileSession.upsert({
+      where: { userId: user.id },
+      create: { userId: user.id, ...sessionData },
+      update: sessionData,
+    })
+
+    try {
+      await notificationsQueue.add(
+        MOBILE_NEW_LOGIN_EMAIL_JOB,
+        { toEmail: user.email!, name: user.name, deviceName, loginAt: new Date().toISOString() },
+        { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
+      )
+    } catch (err) {
+      // Swallowed — a failed notification must never block or fail the login itself.
+      logger.error({ err, userId: user.id }, 'mobileAuth.login: failed to enqueue new-login email job')
+    }
+
     logger.info({ userId: user.id }, 'mobileAuth.login: success')
-    return this.issueTokens(user)
+    return { sessionId: rawSessionId, user: this.toPublicUser(user), communities }
+  }
+
+  /**
+   * Idempotent by construction: sessionIdHash is unique, so if this session
+   * was already superseded by a newer login (or already logged out), the
+   * delete simply matches nothing — deleteMany (not delete) so that's a
+   * silent no-op rather than a thrown "record not found".
+   */
+  async logout(rawSessionId: string): Promise<void> {
+    await this.db.mobileSession.deleteMany({ where: { sessionIdHash: hashSessionId(rawSessionId) } })
+  }
+
+  /**
+   * Mobile equivalent of AuthService.selectCommunity() — but since there's no
+   * access token to re-sign, this just updates the cached fields on the
+   * user's MobileSession row directly.
+   */
+  async selectCommunity(userId: string, communityId: string): Promise<void> {
+    const communities = await this.fetchUserCommunities(userId)
+    const communityIds = communities.map(c => c.id)
+    if (!communityIds.includes(communityId)) {
+      throw new ForbiddenError('You do not have access to this community', 'COMMUNITY_ACCESS_DENIED')
+    }
+
+    const updated = await this.db.mobileSession.updateMany({
+      where: { userId },
+      data: { selectedCommunityId: communityId, communityIds },
+    })
+    if (updated.count === 0) {
+      throw new UnauthorizedError('No active mobile session found. Please log in again.', 'SESSION_INVALIDATED')
+    }
   }
 
   async verifyOtp(userId: string, otp: string): Promise<void> {
@@ -410,37 +500,6 @@ export class MobileAuthService {
     logger.info({ userId: user.id }, 'mobileAuth.resetPassword: success')
   }
 
-  private async issueTokens(user: DbUser): Promise<MobileAuthTokensInternal> {
-    const role = user.role as 'admin' | 'member'
-    const communities = await this.fetchUserCommunities(user.id)
-    const communityIds = communities.map(c => c.id)
-
-    const selectedCommunityId = communityIds.length === 1 ? (communityIds[0] ?? null) : null
-    if (selectedCommunityId) {
-      await this.redis.set(selectedCommunityKey(user.id), selectedCommunityId)
-    }
-
-    const accessToken = await this.signAccessToken(
-      { id: user.id, role, isSuperAdmin: user.isSuperAdmin },
-      communityIds,
-      selectedCommunityId,
-    )
-    const refreshToken = jwt.sign(
-      { sub: user.id, role, type: 'refresh' } as object,
-      env.jwt.secret,
-    )
-
-    const tokenHash = hashToken(refreshToken)
-    await this.redis.set(refreshTokenKey(tokenHash), user.id)
-
-    return {
-      accessToken,
-      refreshToken,
-      user: this.toPublicUser(user),
-      communities,
-    }
-  }
-
   private async fetchUserCommunities(userId: string): Promise<CommunityInfoDTO[]> {
     const subscriptions = await this.db.subscription.findMany({
       where: { userId, isActive: true, validUntil: { gte: startOfToday() } },
@@ -475,27 +534,6 @@ export class MobileAuthService {
   private async computeAccessibleCommunityIds(userId: string, role: string): Promise<string[] | null> {
     if (role !== 'admin') return []
     return getAccessibleCommunityIds(this.db, userId)
-  }
-
-  private async signAccessToken(
-    user: { id: string; role: 'admin' | 'member'; isSuperAdmin: boolean },
-    communityIds: string[],
-    selectedCommunityId: string | null,
-  ): Promise<string> {
-    const accessibleCommunityIds = await this.computeAccessibleCommunityIds(user.id, user.role)
-    return jwt.sign(
-      {
-        sub: user.id,
-        role: user.role,
-        type: 'access',
-        communityIds,
-        selectedCommunityId,
-        accessibleCommunityIds,
-        isSuperAdmin: user.isSuperAdmin,
-      } satisfies JwtPayload as object,
-      env.jwt.secret,
-      { expiresIn: env.jwt.accessExpiresIn } as jwt.SignOptions,
-    )
   }
 
   private toPublicUser(user: DbUser): PublicUserDTO {

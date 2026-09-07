@@ -82,6 +82,7 @@ model User {
   notifications      Notification[]
   communityAccess    CommunityAdmin[]
   stockRecommendations StockRecommendation[]
+  mobileSession      MobileSession?
 
   @@index([phone], name: "idx_users_phone")
   @@index([email], name: "idx_users_email")
@@ -342,4 +343,49 @@ model Notification {
   @@index([userId, isRead], name: "idx_notifications_user_unread")
   @@index([communityId], name: "idx_notifications_community")
   @@map("notifications")
+}
+
+enum MobileDeviceType {
+  ios
+  android
+}
+
+// One row per user (userId is unique, not a soft "isActive" flag) — a fresh
+// mobile login upserts this row, which IS the entire "kill any prior mobile
+// session, install this one" mechanism: sessionIdHash is unique, so once a
+// login overwrites it, any request carrying the old raw session id can no
+// longer find a matching row at all. Logout deletes the row outright rather
+// than flagging it inactive, matching "session removed on logout" literally.
+//
+// communityIds/selectedCommunityId/accessibleCommunityIds are a deliberate
+// cache (Option C): role/isActive/isSuperAdmin are read live via the join to
+// User on every request (so a suspension takes effect immediately), but these
+// three are comparatively expensive to (re)compute (subscriptions + admin
+// community-grants), so they're only refreshed at login and on
+// POST /auth/mobile/select-community — a brief staleness window that's
+// accepted as low-stakes relative to querying them on every single request.
+model MobileSession {
+  id            String            @id @default(uuid()) @db.Uuid
+  userId        String            @unique @map("user_id") @db.Uuid
+  sessionIdHash String            @unique @map("session_id_hash") @db.VarChar(64)
+  deviceId      String?           @map("device_id") @db.VarChar(255)
+  deviceType    MobileDeviceType? @map("device_type")
+  deviceName    String?           @map("device_name") @db.VarChar(255)
+  ip            String?           @db.VarChar(45)
+
+  communityIds        String[] @map("community_ids")
+  selectedCommunityId String?  @map("selected_community_id") @db.Uuid
+  // Json, not String[] — Prisma has no nullable-scalar-list type, and null vs.
+  // an array (however short) is a meaningful distinction here: null means
+  // "super admin, unrestricted," a real array (empty included) means
+  // "restricted to exactly these community ids." Stored/read as
+  // `string[] | null` in application code (see src/lib/mobile-session.ts).
+  accessibleCommunityIds Json? @map("accessible_community_ids")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("mobile_sessions")
 }

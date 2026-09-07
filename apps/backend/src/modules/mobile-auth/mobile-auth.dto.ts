@@ -29,6 +29,10 @@ export interface ResendOtpDTO {
 export interface MobileLoginDTO {
   email: string
   password: string
+  // Client-supplied, best-effort — stored on the MobileSession row for
+  // display/support purposes only, never used for auth decisions.
+  deviceId?: string | undefined
+  deviceType?: 'ios' | 'android' | undefined
 }
 
 // Type-only reuse of the web auth module's response shapes (not its logic) —
@@ -37,12 +41,17 @@ export interface MobileLoginDTO {
 import type { PublicUserDTO, CommunityInfoDTO } from '../auth/auth.dto.js'
 export type { PublicUserDTO, CommunityInfoDTO, AuthResponseDTO } from '../auth/auth.dto.js'
 
-// Internal only — used between service and controller to pass tokens for cookie-setting
-export interface MobileAuthTokensInternal {
-  accessToken: string
-  refreshToken: string
+// Internal only — used between service and controller to pass the raw
+// session id for cookie-setting. No JWT/access-refresh pair for mobile —
+// see mobile-auth.service.ts's login() for why.
+export interface MobileLoginResultInternal {
+  sessionId: string
   user: PublicUserDTO
   communities: CommunityInfoDTO[]
+}
+
+export interface MobileSelectCommunityDTO {
+  communityId: string
 }
 
 export interface ForgotPasswordDTO {

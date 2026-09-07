@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { MobileAuthService } from './mobile-auth.service.js'
 import { MobileAuthController } from './mobile-auth.controller.js'
+import { authenticate } from '../../middlewares/auth.middleware.js'
 import prisma from '../../lib/prisma.js'
 import redis from '../../lib/redis.js'
 
@@ -177,8 +178,12 @@ router.post('/resend-otp', controller.resendOtp)
  *     description: >
  *       Independent from POST /auth/login — same lookup/password/subscription
  *       logic, plus one extra check specific to this flow: the account must
- *       have completed /auth/mobile/verify-otp first. On success, sets the
- *       same httpOnly access_token/refresh_token cookies as the web login.
+ *       have completed /auth/mobile/verify-otp first. No JWT is issued for
+ *       mobile at all: on success a single opaque session id is generated,
+ *       stored (hashed) on this user's MobileSession row — overwriting and
+ *       thereby killing any previous mobile session for this account — and
+ *       set as an httpOnly `mobile_session_id` cookie. A "new device login"
+ *       email is sent on every successful call, unconditionally.
  *     requestBody:
  *       required: true
  *       content:
@@ -189,9 +194,11 @@ router.post('/resend-otp', controller.resendOtp)
  *             properties:
  *               email: { type: string, format: email, example: jane@example.com }
  *               password: { type: string, format: password, example: SecurePass123 }
+ *               deviceId: { type: string, example: "device-uuid-from-client" }
+ *               deviceType: { type: string, enum: [ios, android] }
  *     responses:
  *       200:
- *         description: Logged in. Tokens are set as httpOnly cookies, not returned in the body.
+ *         description: Logged in. The session id is set as an httpOnly `mobile_session_id` cookie, not returned in the body.
  *         content:
  *           application/json:
  *             schema:
@@ -372,5 +379,75 @@ router.post('/forgot-password/verify-otp', controller.verifyResetOtp)
  *           application/json: { schema: { $ref: '#/components/schemas/ValidationErrorResponse' } }
  */
 router.post('/forgot-password/reset', controller.resetPassword)
+
+/**
+ * @openapi
+ * /auth/mobile/logout:
+ *   post:
+ *     tags: [Mobile Auth]
+ *     summary: End the current mobile session
+ *     description: >
+ *       Deletes this user's MobileSession row (if the presented cookie's
+ *       hash still matches it — an already-superseded cookie matches
+ *       nothing, so this is a silent no-op in that case) and clears the
+ *       `mobile_session_id` cookie either way. Idempotent — safe to call
+ *       with no cookie, an expired one, or one already logged out.
+ *     responses:
+ *       200:
+ *         description: Always returned.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 message: { type: string, example: "Logged out" }
+ */
+router.post('/logout', controller.logout)
+
+/**
+ * @openapi
+ * /auth/mobile/select-community:
+ *   post:
+ *     tags: [Mobile Auth]
+ *     summary: Switch the active community (mobile flow)
+ *     description: >
+ *       Mobile equivalent of POST /auth/select-community — but since there's
+ *       no access token to re-sign, this updates the cached
+ *       selectedCommunityId directly on the caller's MobileSession row.
+ *       Requires an active mobile session (this route runs behind
+ *       `authenticate`).
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [communityId]
+ *             properties:
+ *               communityId: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Selection updated.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *       401:
+ *         description: Not authenticated, or no active mobile session found (code SESSION_INVALIDATED).
+ *         content:
+ *           application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } }
+ *       403:
+ *         description: Caller isn't subscribed to this community (code COMMUNITY_ACCESS_DENIED).
+ *         content:
+ *           application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } }
+ *       422:
+ *         description: Validation failed.
+ *         content:
+ *           application/json: { schema: { $ref: '#/components/schemas/ValidationErrorResponse' } }
+ */
+router.post('/select-community', authenticate, controller.selectCommunity)
 
 export default router
