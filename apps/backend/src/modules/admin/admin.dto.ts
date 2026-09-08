@@ -121,10 +121,11 @@ export interface UpdateAdminAccessDTO {
   communityIds: string[]
 }
 
-// Persisted on ApprovedPhone.status — kept in sync at each lifecycle transition
-// (register/suspend/revoke/delete/renew) and by the daily expiry cron, rather
-// than re-derived on every read. See lib/member-status.ts for the shared
-// precedence logic used wherever a transition needs to compute the next value.
+// The admin-facing display status — NOT a single persisted column. Computed at
+// read time (see AdminService#deriveMemberStatus) from User.status (active/
+// suspended/deleted — the account's own standing), ApprovedPhone.status (pending/
+// registered — has this admin-added phone been claimed), and the member's current
+// subscription validity (expired is inherently per-subscription, not account-wide).
 export type MemberStatus = 'registered' | 'pending' | 'expired' | 'suspended' | 'deleted'
 
 export interface MemberListFilters {

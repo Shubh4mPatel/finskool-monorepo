@@ -87,7 +87,7 @@ export class AuthService {
         "ALREADY_REGISTERED",
       );
     }
-    if (!user.isActive) {
+    if (user.status !== "active") {
       throw new ForbiddenError(
         "Your access has been revoked. Please contact your admin.",
         "PHONE_INACTIVE",
@@ -115,7 +115,7 @@ export class AuthService {
     // on their own side but keep showing the admin's original placeholder value.
     await this.db.approvedPhone.update({
       where: { phone: data.phone },
-      data: { name: data.fullName, email: data.email, isRegistered: true, status: 'registered' },
+      data: { name: data.fullName, email: data.email, status: 'registered' },
     });
 
     const communities = await this.fetchUserCommunities(updated.id);
@@ -196,7 +196,7 @@ export class AuthService {
     if (!user || user.deletedAt) {
       throw new UnauthorizedError("Invalid email or password");
     }
-    if (!user.isActive) {
+    if (user.status !== "active") {
       throw new UnauthorizedError(
         "Your account has been deactivated. Please contact your admin.",
       );
@@ -246,7 +246,7 @@ export class AuthService {
 
     const user = await this.db.user.findUnique({ where: { id: payload.sub } });
     if (!user || user.deletedAt) throw new UnauthorizedError("User not found");
-    if (!user.isActive) {
+    if (user.status !== "active") {
       throw new UnauthorizedError(
         "Your account has been deactivated. Please contact your admin.",
       );
@@ -287,7 +287,7 @@ export class AuthService {
   async getMe(userId: string): Promise<AuthResponseDTO> {
     const user = await this.db.user.findUnique({ where: { id: userId } });
     if (!user || user.deletedAt) throw new UnauthorizedError("User not found");
-    if (!user.isActive) {
+    if (user.status !== "active") {
       throw new UnauthorizedError(
         "Your account has been deactivated. Please contact your admin.",
       );

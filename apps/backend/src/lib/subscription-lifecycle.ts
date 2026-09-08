@@ -33,7 +33,7 @@ export async function runSubscriptionLifecycleSweep(
     where: {
       isActive: true,
       validUntil: { gte: windowStart, lte: windowEnd },
-      user: { isActive: true },
+      user: { status: 'active' },
     },
     select: {
       id: true,
@@ -110,15 +110,18 @@ export async function runSubscriptionLifecycleSweep(
 // day of expiry (validUntil >= today), while this job only ever acts starting
 // the day after (validUntil < today) — the two windows never overlap.
 //
-// Also flips the member's persisted ApprovedPhone.status to 'expired' (only
-// out of 'registered' — a member who's already suspended/deleted keeps that
-// status) and sends the "your access has ended" notification. That email uses
-// the exact same notifyOnce dedup key — (userId, SubscriptionExpired,
-// subscriptionId) — as the reminder sweep's own (still-untouched) 'expired'
-// bucket, so whichever job reaches a given subscription first sends it and the
-// other is a no-op. Under normal operation this job always gets there first
-// (the sweep's [-7,-1] window only starts a full day later); the sweep's
-// branch is left in place purely as a backstop for when this job misses a run.
+// No longer touches ApprovedPhone at all: "expired" isn't a stored status
+// anymore (see AdminService#deriveMemberStatus) — it's computed at read time
+// from whether the member's current subscription is still valid, so flipping
+// Subscription.isActive here is already the entire signal, nothing else needs
+// updating for the admin dashboard to reflect it correctly. Still sends the
+// "your access has ended" notification, using the exact same notifyOnce dedup
+// key — (userId, SubscriptionExpired, subscriptionId) — as the reminder
+// sweep's own (still-untouched) 'expired' bucket, so whichever job reaches a
+// given subscription first sends it and the other is a no-op. Under normal
+// operation this job always gets there first (the sweep's [-7,-1] window only
+// starts a full day later); the sweep's branch is left in place purely as a
+// backstop for when this job misses a run.
 export async function expireLapsedSubscriptions(
   db: PrismaClient,
   notifications: NotificationsService,
@@ -131,7 +134,6 @@ export async function expireLapsedSubscriptions(
     select: {
       id: true,
       communityId: true,
-      approvedPhoneId: true,
       validUntil: true,
       user: { select: { id: true, name: true, phone: true, email: true } },
       community: { select: { name: true, paymentLink: true } },
@@ -139,13 +141,7 @@ export async function expireLapsedSubscriptions(
   })
 
   for (const sub of subs) {
-    await db.$transaction([
-      db.subscription.update({ where: { id: sub.id }, data: { isActive: false } }),
-      db.approvedPhone.updateMany({
-        where: { id: sub.approvedPhoneId, status: 'registered' },
-        data: { status: 'expired' },
-      }),
-    ])
+    await db.subscription.update({ where: { id: sub.id }, data: { isActive: false } })
 
     const createdId = await notifyOnce({
       db, communityId: sub.communityId, userId: sub.user.id,

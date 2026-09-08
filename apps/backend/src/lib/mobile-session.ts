@@ -35,10 +35,10 @@ export async function validateMobileSession(
   const session = await db.mobileSession.findUnique({
     where: { sessionIdHash: hashSessionId(rawSessionId) },
     include: {
-      user: { select: { id: true, role: true, isSuperAdmin: true, isActive: true, deletedAt: true } },
+      user: { select: { id: true, role: true, isSuperAdmin: true, status: true, deletedAt: true } },
     },
   })
-  if (!session || !session.user.isActive || session.user.deletedAt) return null
+  if (!session || session.user.status !== 'active' || session.user.deletedAt) return null
 
   return {
     userId: session.user.id,

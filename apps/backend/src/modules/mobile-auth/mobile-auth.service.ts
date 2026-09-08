@@ -156,7 +156,7 @@ export class MobileAuthService {
           'ALREADY_REGISTERED',
         )
       }
-      if (!existing.isActive) {
+      if (existing.status !== 'active') {
         throw new ForbiddenError(
           'Your access has been revoked. Please contact your admin.',
           'PHONE_INACTIVE',
@@ -222,7 +222,7 @@ export class MobileAuthService {
     if (!user || user.deletedAt) {
       throw new UnauthorizedError('Invalid email or password')
     }
-    if (!user.isActive) {
+    if (user.status !== 'active') {
       throw new UnauthorizedError('Your account has been deactivated. Please contact your admin.')
     }
     if (!user.passwordHash) {
@@ -377,12 +377,12 @@ export class MobileAuthService {
           // minutes since register() ran.
           const current = await tx.user.findUnique({
             where: { id: pending.existingUserId },
-            select: { isActive: true },
+            select: { status: true },
           })
           if (!current) {
             throw new NotFoundError('This phone number is no longer available. Please register again.')
           }
-          if (!current.isActive) {
+          if (current.status !== 'active') {
             throw new ForbiddenError('Your access has been revoked. Please contact your admin.', 'PHONE_INACTIVE')
           }
 
@@ -400,7 +400,7 @@ export class MobileAuthService {
           }
           await tx.approvedPhone.update({
             where: { phone: pending.phone },
-            data: { name: pending.fullName, email: pending.email, isRegistered: true, status: 'registered' },
+            data: { name: pending.fullName, email: pending.email, status: 'registered' },
           })
           return pending.existingUserId
         }
@@ -479,7 +479,7 @@ export class MobileAuthService {
     logger.info({ email }, 'mobileAuth.forgotPassword: attempt')
 
     const user = await this.db.user.findUnique({ where: { email } })
-    const eligible = !!user && !user.deletedAt && user.isActive && !!user.passwordHash
+    const eligible = !!user && !user.deletedAt && user.status === 'active' && !!user.passwordHash
     if (!eligible) {
       logger.info({ email }, 'mobileAuth.forgotPassword: no-op (no matching/eligible account)')
       return
@@ -545,7 +545,7 @@ export class MobileAuthService {
     // so this should always resolve — defensive re-check only, in case the
     // account changed state (e.g. got suspended) in between the two calls.
     const user = await this.db.user.findUnique({ where: { email } })
-    if (!user || user.deletedAt || !user.isActive) {
+    if (!user || user.deletedAt || user.status !== 'active') {
       throw new BadRequestError('Invalid or expired code. Please request a new one.', 'OTP_INVALID')
     }
 
@@ -571,7 +571,7 @@ export class MobileAuthService {
     await this.redis.del(passwordResetCypherKey(cypherHash))
 
     const user = await this.db.user.findUnique({ where: { id: userId } })
-    if (!user || user.deletedAt || !user.isActive) {
+    if (!user || user.deletedAt || user.status !== 'active') {
       throw new BadRequestError('This reset session is no longer valid.', 'RESET_TOKEN_INVALID')
     }
 

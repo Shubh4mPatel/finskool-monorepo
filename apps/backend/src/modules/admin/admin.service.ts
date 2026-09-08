@@ -19,7 +19,6 @@ import { BadRequestError, ConflictError, NotFoundError, ForbiddenError } from '.
 import { logger } from '../../shared/logger.js'
 import { normalizePhone } from '../../lib/phone.js'
 import { formatEmailDate } from '../../lib/email-templates.js'
-import { computeMemberStatus } from '../../lib/member-status.js'
 import { NotificationType } from '../notifications/notifications.dto.js'
 import redis from '../../lib/redis.js'
 import type {
@@ -199,7 +198,7 @@ export class AdminService {
         })
         summary.updated++
         if (!notifyCommunityId) notifyCommunityId = community.id
-      } else if (existingUser && existingAp && !existingAp.isActive) {
+      } else if (existingUser && existingAp && existingUser.status === 'deleted') {
         // A previously-deleted member coming back — revive them (overwrite name/email,
         // reset registration state) rather than just quietly re-subscribing a dead account.
         await this.db.$transaction(async tx => {
@@ -325,7 +324,7 @@ export class AdminService {
           })
           summary.updated++
           if (!notifyCommunityId) notifyCommunityId = community.id
-        } else if (existingUser && existingAp && !existingAp.isActive) {
+        } else if (existingUser && existingAp && existingUser.status === 'deleted') {
           // A previously-deleted member coming back — revive them (overwrite name/email,
           // reset registration state) rather than just quietly re-subscribing a dead account.
           await this.db.$transaction(async tx => {
@@ -1099,9 +1098,9 @@ export class AdminService {
     if (!community) throw new NotFoundError('Community not found')
 
     const existingUser = await this.db.user.findUnique({ where: { phone } })
-    // A deleted member's User row is still there (isActive: false) — only a genuinely
-    // active phone is a real conflict; an inactive one falls through to the revive path below.
-    if (existingUser?.isActive) {
+    // A deleted member's User row is still there (status: 'deleted') — only a genuinely
+    // active phone is a real conflict; a deleted one falls through to the revive path below.
+    if (existingUser?.status === 'active') {
       throw new ConflictError('This phone number is already registered', 'PHONE_EXISTS')
     }
     // Email is optional at add-time — only a real, provided address can conflict.
@@ -1207,12 +1206,11 @@ export class AdminService {
           message: `You're active until ${formatEmailDate(sub.validUntil)}.`,
         },
       })
-      // Only a no-op-guarded flip out of 'expired' — a renewal shouldn't silently
-      // un-suspend or un-delete a member who happens to also have a lapsed subscription.
-      await tx.approvedPhone.updateMany({
-        where: { id: current.approvedPhoneId, status: 'expired' },
-        data: { status: 'registered' },
-      })
+      // No ApprovedPhone write needed anymore: "expired" was never really a fact
+      // about ApprovedPhone, and isn't stored there at all now (see
+      // AdminService#deriveMemberStatus) — the admin dashboard will show this
+      // member as 'registered' again the instant this new subscription's
+      // validUntil/isActive make it current, purely from reading Subscription.
       return sub
     })
 
@@ -1275,9 +1273,9 @@ export class AdminService {
 
     if (!user) {
       // Shouldn't happen: addMember/importUsers always create User + ApprovedPhone together.
-      // Deactivate what we can rather than blocking the admin action; log loudly so it's traceable.
+      // "Deleted" lives only on User.status now, and there's no User row here to set it
+      // on — nothing meaningful to write, just log loudly so it's traceable.
       logger.warn({ approvedPhoneId: ap.id, phone: ap.phone }, 'admin.deleteMember: no matching User row for this ApprovedPhone')
-      await this.db.approvedPhone.update({ where: { id: ap.id }, data: { isActive: false, status: 'deleted' } })
       return { approvedPhoneId: ap.id, userId: null, phone: ap.phone, isActive: false }
     }
 
@@ -1286,8 +1284,10 @@ export class AdminService {
     }
 
     await this.db.$transaction(async tx => {
-      await tx.approvedPhone.update({ where: { id: ap.id }, data: { isActive: false, status: 'deleted' } })
-      await tx.user.update({ where: { id: user.id }, data: { isActive: false } })
+      // ApprovedPhone itself is untouched — its status only ever tracks
+      // pending/registered (has this phone been claimed), not account standing.
+      // "Deleted" is entirely a User.status concern now.
+      await tx.user.update({ where: { id: user.id }, data: { status: 'deleted' } })
       // All historical + current subscription rows for this user, not just the active one
       await tx.subscription.updateMany({ where: { userId: user.id }, data: { isActive: false } })
     })
@@ -1320,17 +1320,18 @@ export class AdminService {
   async suspendMember(approvedPhoneId: string, reason: string): Promise<SuspendMemberResultDTO> {
     const ap = await this.db.approvedPhone.findUnique({ where: { id: approvedPhoneId } })
     if (!ap) throw new NotFoundError('Member not found')
-    if (!ap.isActive) throw new ConflictError('This member was already deleted, not suspended')
 
     const user = await this.db.user.findUnique({ where: { phone: ap.phone } })
     if (!user) throw new NotFoundError('Member not found')
     if (user.role === 'admin') throw new ForbiddenError('Admin accounts cannot be suspended')
+    if (user.status === 'deleted') throw new ConflictError('This member was already deleted, not suspended')
 
+    // ApprovedPhone is untouched — suspension is purely a User.status concern now,
+    // same reasoning as deleteMember.
     const updated = await this.db.user.update({
       where: { id: user.id },
-      data: { isActive: false, suspensionReason: reason },
+      data: { status: 'suspended', suspensionReason: reason },
     })
-    await this.db.approvedPhone.update({ where: { id: ap.id }, data: { status: 'suspended' } })
 
     logger.info({ approvedPhoneId: ap.id, userId: user.id }, 'admin.suspendMember: suspended')
 
@@ -1349,7 +1350,7 @@ export class AdminService {
     return {
       approvedPhoneId: ap.id,
       userId: updated.id,
-      isActive: updated.isActive,
+      isActive: updated.status === 'active',
       suspensionReason: updated.suspensionReason!,
     }
   }
@@ -1357,33 +1358,21 @@ export class AdminService {
   async revokeSuspension(approvedPhoneId: string): Promise<RevokeSuspensionResultDTO> {
     const ap = await this.db.approvedPhone.findUnique({ where: { id: approvedPhoneId } })
     if (!ap) throw new NotFoundError('Member not found')
-    if (!ap.isActive) throw new ConflictError('This member was deleted, not suspended — cannot revoke')
 
     const user = await this.db.user.findUnique({ where: { phone: ap.phone } })
     if (!user) throw new NotFoundError('Member not found')
+    if (user.status === 'deleted') throw new ConflictError('This member was deleted, not suspended — cannot revoke')
 
+    // Reinstating is just "back to active" — no need to also figure out
+    // pending/registered/expired here anymore (that used to require
+    // computeMemberStatus): whether their subscription happens to be lapsed
+    // is a completely separate, independently-tracked fact (Subscription.isActive/
+    // validUntil), not something User.status or ApprovedPhone.status conflates
+    // suspension with. ApprovedPhone itself is untouched.
     const updated = await this.db.user.update({
       where: { id: user.id },
-      data: { isActive: true, suspensionReason: null },
+      data: { status: 'active', suspensionReason: null },
     })
-
-    // Reinstating doesn't always mean "back to registered" — their subscription
-    // may have lapsed while they were suspended, so recompute rather than hardcode.
-    const currentSub = await this.db.subscription.findFirst({
-      where: { approvedPhoneId: ap.id },
-      orderBy: { createdAt: 'desc' },
-      select: { isActive: true, validUntil: true },
-    })
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const nextStatus = computeMemberStatus({
-      approvedPhoneActive: true,
-      registered: ap.isRegistered,
-      suspended: false,
-      currentSubscription: currentSub,
-      today,
-    })
-    await this.db.approvedPhone.update({ where: { id: ap.id }, data: { status: nextStatus } })
 
     logger.info({ approvedPhoneId: ap.id, userId: user.id }, 'admin.revokeSuspension: revoked')
 
@@ -1399,7 +1388,7 @@ export class AdminService {
       }
     }
 
-    return { approvedPhoneId: ap.id, userId: updated.id, isActive: updated.isActive }
+    return { approvedPhoneId: ap.id, userId: updated.id, isActive: updated.status === 'active' }
   }
 
   async listMembers(filters: MemberListFilters): Promise<MemberListDTO> {
@@ -1439,11 +1428,11 @@ export class AdminService {
       }),
     ])
 
-    // Batch-fetch linked Users (isActive/suspensionReason) for these rows — ApprovedPhone
+    // Batch-fetch linked Users (status/suspensionReason) for these rows — ApprovedPhone
     // and User have no formal relation, only the shared phone string, same pattern as elsewhere.
     const users = await this.db.user.findMany({
       where: { phone: { in: rows.map(ap => ap.phone) } },
-      select: { phone: true, isActive: true, suspensionReason: true, avatarUrl: true },
+      select: { phone: true, status: true, suspensionReason: true, avatarUrl: true },
     })
     const userByPhone = new Map(users.map(u => [u.phone, u]))
 
@@ -1451,7 +1440,6 @@ export class AdminService {
       const allSubs = ap.subscriptions
       const sub = allSubs[0] ?? null
       const user = userByPhone.get(ap.phone)
-      const suspendedByUser = user ? !user.isActive : false
 
       return {
         id: ap.id,
@@ -1459,11 +1447,11 @@ export class AdminService {
         phone: ap.phone,
         email: ap.email,
         avatarUrl: user?.avatarUrl ?? null,
-        isActive: ap.isActive && !suspendedByUser,
-        isRegistered: ap.isRegistered,
-        status: ap.status,
+        isActive: user?.status === 'active',
+        isRegistered: ap.status === 'registered',
+        status: this.deriveMemberStatus(user?.status, ap.status, sub),
         createdAt: ap.createdAt.toISOString(),
-        suspensionReason: suspendedByUser ? (user?.suspensionReason ?? null) : null,
+        suspensionReason: user?.status === 'suspended' ? (user.suspensionReason ?? null) : null,
         subscription: sub
           ? {
               id: sub.id,
@@ -1521,10 +1509,10 @@ export class AdminService {
     return '﻿' + [header, ...rows].map(r => r.map(escape).join(',')).join('\n')
   }
 
-  // Brings a soft-deleted member (ApprovedPhone.isActive/User.isActive both false, per
-  // deleteMember) back to life: overwrites their name/email with the freshly-submitted
-  // values, and resets passwordHash + isRegistered so they go through register() again
-  // exactly like a brand-new signup — deliberate, since deleteMember doesn't clear any of
+  // Brings a soft-deleted member (User.status: 'deleted', per deleteMember) back to
+  // life: overwrites their name/email with the freshly-submitted values, and resets
+  // passwordHash + ApprovedPhone.status so they go through register() again exactly
+  // like a brand-new signup — deliberate, since deleteMember doesn't clear any of
   // this, so a revived member must not silently inherit their old password/session state.
   private async reviveMember(
     tx: Prisma.TransactionClient,
@@ -1536,11 +1524,11 @@ export class AdminService {
   ): Promise<{ userId: string; approvedPhoneId: string }> {
     await tx.user.update({
       where: { id: existingUser.id },
-      data: { name, email, passwordHash: null, isActive: true, suspensionReason: null },
+      data: { name, email, passwordHash: null, status: 'active', suspensionReason: null },
     })
     const ap = await tx.approvedPhone.update({
       where: { phone },
-      data: { name, email, isActive: true, isRegistered: false, status: 'pending', addedBy: adminId },
+      data: { name, email, status: 'pending', addedBy: adminId },
     })
     return { userId: existingUser.id, approvedPhoneId: ap.id }
   }
@@ -1562,6 +1550,11 @@ export class AdminService {
     const currentSubIds = await this.getCurrentSubscriptionIds()
     const subWhere: Record<string, unknown> = { id: { in: currentSubIds } }
     let hasSubFilter = false
+    // 'expired' (see the `status` handling below) needs "no CURRENT subscription is
+    // still valid" — the negation of every other subscription-shaped filter here,
+    // which all mean "at least one CURRENT subscription matches." Prisma expresses
+    // that as `none` instead of `some` on the same relation filter.
+    let subscriptionMode: 'some' | 'none' = 'some'
     if (communityId) { subWhere['communityId'] = communityId; hasSubFilter = true }
     else if (communityIds) { subWhere['communityId'] = { in: communityIds }; hasSubFilter = true }
     if (validFrom || validTo) {
@@ -1610,12 +1603,30 @@ export class AdminService {
     }
 
     const apWhere: Record<string, unknown> = {}
-    if (status) {
-      apWhere['status'] = status
+    // MemberListFilters.status is the 5-value admin-facing display status — no longer
+    // a single stored column (see deriveMemberStatus's doc comment), so filtering by it
+    // means combining ApprovedPhone.status (pending/registered) with a User.status
+    // lookup and, for registered/expired, whether the current subscription is valid.
+    if (status === 'pending') {
+      apWhere['status'] = 'pending'
+    } else if (status === 'suspended' || status === 'deleted') {
+      const matching = await this.db.user.findMany({ where: { status }, select: { phone: true } })
+      andClauses.push({ phone: { in: matching.map(u => u.phone) } })
+    } else if (status === 'registered' || status === 'expired') {
+      apWhere['status'] = 'registered'
+      const activeUsers = await this.db.user.findMany({ where: { status: 'active' }, select: { phone: true } })
+      andClauses.push({ phone: { in: activeUsers.map(u => u.phone) } })
+      // Merge the "current subscription still valid" check into subWhere so it composes
+      // correctly with any community/date filters requested alongside status — same
+      // gte-merge pattern expiringIn7Days uses above.
+      subWhere['isActive'] = true
+      subWhere['validUntil'] = { ...((subWhere['validUntil'] as object) ?? {}), gte: today }
+      hasSubFilter = true
+      subscriptionMode = status === 'expired' ? 'none' : 'some'
     }
 
     if (hasSubFilter) {
-      apWhere['subscriptions'] = { some: subWhere }
+      apWhere['subscriptions'] = { [subscriptionMode]: subWhere }
     }
     if (andClauses.length > 0) {
       apWhere['AND'] = andClauses
@@ -1651,6 +1662,27 @@ export class AdminService {
       result.push(s)
     }
     return result
+  }
+
+  // The admin-facing 5-value display status (registered/pending/expired/suspended/
+  // deleted) isn't persisted anywhere as a single column anymore — it's computed at
+  // read time from User.status (account standing: active/suspended/deleted),
+  // ApprovedPhone.status (has this admin-added phone been claimed: pending/registered),
+  // and the member's current subscription validity ("expired" is inherently a
+  // per-subscription fact, not an account-level one — see the UserStatus doc comment
+  // in schema.prisma). Shared by queryMembers and fetchMemberDTO so they can't drift.
+  private deriveMemberStatus(
+    userStatus: 'active' | 'suspended' | 'deleted' | undefined,
+    apStatus: 'pending' | 'registered',
+    currentSub: { isActive: boolean; validUntil: Date } | null,
+  ): MemberStatus {
+    if (!userStatus || userStatus === 'deleted') return 'deleted' // no matching User row shouldn't happen — treat as deleted, not a crash
+    if (userStatus === 'suspended') return 'suspended'
+    if (apStatus === 'pending') return 'pending'
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const hasValidSub = !!currentSub && currentSub.isActive && currentSub.validUntil >= today
+    return hasValidSub ? 'registered' : 'expired'
   }
 
   private buildSubDTO(s: {
@@ -1718,14 +1750,13 @@ export class AdminService {
 
     const user = await this.db.user.findUnique({
       where: { phone: ap.phone },
-      select: { isActive: true, suspensionReason: true, avatarUrl: true },
+      select: { status: true, suspensionReason: true, avatarUrl: true },
     })
 
     // "Current" per community = most recently created row, not isActive:true — see
     // getCurrentSubscriptionIds's comment on listMembers for why.
     const allSubs = this.latestSubscriptionPerCommunity(ap.subscriptions)
     const sub = allSubs[0] ?? null
-    const suspendedByUser = user ? !user.isActive : false
 
     return {
       id: ap.id,
@@ -1733,11 +1764,11 @@ export class AdminService {
       phone: ap.phone,
       email: ap.email,
       avatarUrl: user?.avatarUrl ?? null,
-      isActive: ap.isActive && !suspendedByUser,
-      isRegistered: ap.isRegistered,
-      status: ap.status,
+      isActive: user?.status === 'active',
+      isRegistered: ap.status === 'registered',
+      status: this.deriveMemberStatus(user?.status, ap.status, sub),
       createdAt: ap.createdAt.toISOString(),
-      suspensionReason: suspendedByUser ? (user?.suspensionReason ?? null) : null,
+      suspensionReason: user?.status === 'suspended' ? (user.suspensionReason ?? null) : null,
       subscription: sub ? this.buildSubDTO(sub) : null,
       allSubscriptions: allSubs.map(s => this.buildSubDTO(s)),
     }
@@ -1875,13 +1906,15 @@ export class AdminService {
 
     await this.db.subscription.update({ where: { id: sub.id }, data: { isActive: false } })
 
+    // Deliberately does NOT touch User.status/ApprovedPhone anymore, even when this
+    // was the member's last remaining subscription. This used to auto-deactivate the
+    // whole account (isActive:false) at that point — but "no active paid subscription"
+    // is no longer an account-standing concern (see UserStatus's doc comment in
+    // schema.prisma: expiry is tracked per-subscription, not account-wide), and once a
+    // free/unpaid community tier exists, losing your last PAID community shouldn't
+    // necessarily delete the account outright. Left as an open product decision rather
+    // than guessed at here — flag before changing this.
     const remaining = await this.db.subscription.count({ where: { userId: user.id, isActive: true } })
-    if (remaining === 0) {
-      await this.db.$transaction(async tx => {
-        await tx.approvedPhone.update({ where: { id: approvedPhoneId }, data: { isActive: false } })
-        await tx.user.update({ where: { id: user.id }, data: { isActive: false } })
-      })
-    }
 
     if (user.email) {
       try {

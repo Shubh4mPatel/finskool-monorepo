@@ -17,10 +17,24 @@ enum CommunityRole {
   member
 }
 
+// ApprovedPhone's own lifecycle — purely "has this admin-added phone been
+// claimed/registered by the person yet." Account-level standing (active/
+// suspended/deleted) lives on User.status instead — see UserStatus. Expiry
+// isn't tracked here either: it's inherently per (user, community), see
+// Subscription.isActive/validUntil, not a single member-wide flag.
 enum MemberStatus {
   pending
   registered
-  expired
+}
+
+// The account's own standing, independent of any particular community
+// membership or subscription. Deliberately does NOT include "expired" — a
+// user can hold multiple community subscriptions with independent expiry
+// (and some communities may be free, i.e. never expire), so "expired" isn't
+// a single fact about the account; check Subscription.isActive/validUntil
+// per community instead.
+enum UserStatus {
+  active
   suspended
   deleted
 }
@@ -59,7 +73,7 @@ model User {
   passwordHash String?   @map("password_hash") @db.VarChar(255)
   role         UserRole  @default(member)
   isSuperAdmin Boolean   @default(false) @map("is_super_admin")
-  isActive     Boolean   @default(true) @map("is_active")
+  status       UserStatus @default(active)
   suspensionReason String? @map("suspension_reason") @db.Text
   avatarUrl    String?   @map("avatar_url") @db.VarChar(500)
   postNotificationsEnabled Boolean @default(true) @map("post_notifications_enabled")
@@ -89,8 +103,6 @@ model ApprovedPhone {
   phone        String   @unique @db.VarChar(20)
   name         String?  @db.VarChar(100)
   email        String?  @db.VarChar(255)
-  isActive     Boolean  @default(true) @map("is_active")
-  isRegistered Boolean  @default(false) @map("is_registered")
   status       MemberStatus @default(pending)
   addedBy      String?  @map("added_by") @db.Uuid
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
