@@ -18,9 +18,13 @@ const router = Router()
  *     summary: Start self-serve mobile registration
  *     description: >
  *       Open registration — no admin needs to have pre-added this phone number.
- *       Creates the account immediately but leaves it unverified; sends a 6-digit
- *       OTP to the given email (a stand-in for WhatsApp delivery, not yet wired
- *       up). Registration only completes once /auth/mobile/verify-otp succeeds.
+ *       Does NOT create a database row: the submitted data + a hashed password
+ *       are held in Redis for 10 minutes under the `userId` returned below,
+ *       and a 6-digit OTP is sent to the given email (a stand-in for WhatsApp
+ *       delivery, not yet wired up). The account is only actually created —
+ *       and only then does the phone number/email become "taken" — once
+ *       /auth/mobile/verify-otp succeeds; an abandoned registration just
+ *       expires with its OTP, with nothing left behind to clean up.
  *       No auth cookies are set and no `communities` are returned by this call.
  *     requestBody:
  *       required: true
@@ -74,9 +78,11 @@ router.post('/register', controller.register)
  *     tags: [Mobile Auth]
  *     summary: Verify the OTP and complete registration
  *     description: >
- *       Confirms the code emailed by /auth/mobile/register. On success the
- *       account is marked verified — this call does NOT log the user in;
- *       call POST /auth/login separately afterward to get a session.
+ *       Confirms the code emailed by /auth/mobile/register. This is the call
+ *       that actually creates (or, for a phone pre-added by an admin, finishes
+ *       claiming) the account in the database — nothing exists yet before
+ *       this succeeds. Does NOT log the user in; call POST /auth/login
+ *       separately afterward to get a session.
  *     requestBody:
  *       required: true
  *       content:
@@ -98,15 +104,21 @@ router.post('/register', controller.register)
  *                 success: { type: boolean, example: true }
  *                 message: { type: string, example: "Phone number verified. You can now log in." }
  *       400:
- *         description: Incorrect or expired code (code OTP_INVALID | OTP_EXPIRED).
+ *         description: >
+ *           Incorrect code (OTP_INVALID); registration session not found or
+ *           its 10-minute window expired, so it must be started over via
+ *           /auth/mobile/register again (OTP_EXPIRED).
  *         content:
  *           application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } }
- *       404:
- *         description: User not found.
+ *       403:
+ *         description: Phone number's access was revoked by an admin since registering (code PHONE_INACTIVE).
  *         content:
  *           application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } }
  *       409:
- *         description: Account already verified (code ALREADY_VERIFIED).
+ *         description: >
+ *           Someone else already claimed this phone number/email in the last
+ *           few minutes — e.g. a duplicate registration attempt that got
+ *           verified first (code ALREADY_REGISTERED).
  *         content:
  *           application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } }
  *       429:
@@ -151,11 +163,10 @@ router.post('/verify-otp', controller.verifyOtp)
  *                   properties:
  *                     otpExpiresInSeconds: { type: integer, example: 600 }
  *       404:
- *         description: User not found.
- *         content:
- *           application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } }
- *       409:
- *         description: Account already verified (code ALREADY_VERIFIED).
+ *         description: >
+ *           Registration session not found or expired — the 10-minute window
+ *           from /auth/mobile/register has passed. Register again from
+ *           scratch (code REGISTRATION_EXPIRED).
  *         content:
  *           application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } }
  *       429:

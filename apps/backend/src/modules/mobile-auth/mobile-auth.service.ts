@@ -1,12 +1,12 @@
-import { randomInt, randomBytes, createHash } from 'crypto'
+import { randomInt, randomBytes, randomUUID, createHash } from 'crypto'
 import bcrypt from 'bcryptjs'
 import { UAParser } from 'ua-parser-js'
 import { Prisma } from '../../generated/prisma/client.js'
 import type { PrismaClient } from '../../generated/prisma/client.js'
 import type { Redis } from 'ioredis'
 import {
-  otpKey,
-  otpCooldownKey,
+  pendingRegistrationKey,
+  pendingRegistrationCooldownKey,
   passwordResetOtpKey,
   passwordResetOtpCooldownKey,
   passwordResetCypherKey,
@@ -50,6 +50,24 @@ const RESET_CYPHER_TTL_SECONDS = 10 * 60
 interface OtpRecord {
   hash: string
   attempts: number
+}
+
+// Everything register() would otherwise have written to Postgres immediately,
+// held in Redis instead until verifyOtp() confirms the code. No User row
+// exists — and `passwordHash` is set nowhere in the database — until that
+// happens, which is the whole point: see the module-level comment on
+// register() below for what this fixes.
+interface PendingRegistration {
+  fullName: string
+  phone: string
+  email: string
+  passwordHash: string
+  // Set when this phone was pre-added by an admin (a User/ApprovedPhone row
+  // already exists, just with no password yet) — verifyOtp() updates that
+  // row instead of creating a new one. Null for a genuinely new phone.
+  existingUserId: string | null
+  otpHash: string
+  otpAttempts: number
 }
 
 // Mirrors auth.service.ts's own DbUser — kept separate on purpose, see login() below.
@@ -105,19 +123,29 @@ export class MobileAuthService {
 
   /**
    * Open, self-serve registration — unlike the web flow (auth.service.ts#register),
-   * this does NOT require an admin to have pre-added the phone number first. It
-   * creates (or, for a phone an admin already added but who never completed web
-   * registration, updates) the User row immediately, but the account is not
-   * considered fully registered until the OTP sent here is confirmed via
-   * verifyOtp(). No auth cookies/tokens are issued at this step.
+   * this does NOT require an admin to have pre-added the phone number first.
+   *
+   * Deliberately does NOT touch Postgres. Everything submitted here (plus the
+   * hashed password and the OTP itself) is held in Redis under a fresh opaque
+   * token, TTL'd to the OTP's own lifetime — verifyOtp() is the only place
+   * that ever creates/updates a User row, and only once the code is
+   * confirmed. This used to write the User row immediately (with the real
+   * password hash) and only flip a `isPhoneVerified` flag at verify time —
+   * which meant an abandoned OTP left a permanent, unrecoverable half-account
+   * behind (looked "already registered" to register(), but couldn't log in
+   * or use forgot-password either, since both require isPhoneVerified).
+   * Nothing here writes to Postgres, so nothing here can get stuck: an
+   * abandoned attempt just expires along with its OTP.
+   *
+   * The response shape is unchanged on purpose — `userId` is still a string
+   * the client echoes back to verify-otp/resend-otp, it's just an opaque
+   * token now rather than a real Users.id.
    */
   async register(data: MobileRegisterDTO): Promise<MobileRegisterResponseDTO> {
     logger.info({ phone: data.phone }, 'mobileAuth.register: attempt')
 
     const existing = await this.db.user.findUnique({ where: { phone: data.phone } })
-
-    let userId: string
-    let name: string
+    let existingUserId: string | null = null
 
     if (existing) {
       // Phone already fully registered (web or a previous completed mobile flow)
@@ -133,62 +161,39 @@ export class MobileAuthService {
           'PHONE_INACTIVE',
         )
       }
-
       if (data.email !== existing.email) {
         const emailTaken = await this.db.user.findFirst({
           where: { email: data.email, id: { not: existing.id } },
         })
         if (emailTaken) throw new ConflictError('This email address is already registered', 'EMAIL_TAKEN')
       }
-
-      const passwordHash = await bcrypt.hash(data.password, BCRYPT_ROUNDS)
-      const updated = await this.db.user.update({
-        where: { id: existing.id },
-        data: { name: data.fullName, email: data.email, passwordHash, isPhoneVerified: false },
-      })
-      // Keep ApprovedPhone's name/email fresh (admin members list reads from it —
-      // same reasoning as auth.service.ts#register) but deliberately do NOT flip
-      // isRegistered/status here; that only happens once the OTP is verified.
-      await this.db.approvedPhone.update({
-        where: { phone: data.phone },
-        data: { name: data.fullName, email: data.email },
-      })
-      userId = updated.id
-      name = updated.name
+      existingUserId = existing.id
     } else {
-      // Brand new user — nobody added this phone; check email isn't taken by anyone
+      // Brand new phone — nobody added it; check email isn't taken by anyone
       const emailTaken = await this.db.user.findFirst({ where: { email: data.email } })
       if (emailTaken) throw new ConflictError('This email address is already registered', 'EMAIL_TAKEN')
-
-      const passwordHash = await bcrypt.hash(data.password, BCRYPT_ROUNDS)
-      const created = await this.db.$transaction(async tx => {
-        const user = await tx.user.create({
-          data: {
-            phone: data.phone,
-            name: data.fullName,
-            email: data.email,
-            passwordHash,
-            isPhoneVerified: false,
-          },
-        })
-        // Mirrored into ApprovedPhone (addedBy: null — nobody invited this user)
-        // so the rest of the platform (Subscription.approvedPhoneId, the admin
-        // members list) keeps working the moment an admin assigns them to a
-        // community; status stays 'pending' until OTP verification.
-        await tx.approvedPhone.create({
-          data: { phone: data.phone, name: data.fullName, email: data.email, addedBy: null },
-        })
-        return user
-      })
-      userId = created.id
-      name = created.name
     }
 
-    await this.sendOtp(userId, data.email, name)
+    const passwordHash = await bcrypt.hash(data.password, BCRYPT_ROUNDS)
+    // No dedup against a possibly-already-pending registration for this same
+    // phone — a retried/duplicate submission just gets its own independent
+    // token+OTP. Harmless: whichever one is verified first wins, the DB
+    // re-check inside finalizeRegistration() rejects the second, and any
+    // never-verified leftover just expires with its own TTL. See the
+    // conversation history in the mobile-auth OTP-registration fix for why
+    // this is safe without a "one pending registration per phone" lock.
+    const token = randomUUID()
+    await this.storePendingRegistration(token, {
+      fullName: data.fullName,
+      phone: data.phone,
+      email: data.email,
+      passwordHash,
+      existingUserId,
+    })
 
-    logger.info({ userId }, 'mobileAuth.register: OTP sent')
+    logger.info({ token }, 'mobileAuth.register: OTP sent, registration pending in redis')
     return {
-      userId,
+      userId: token,
       phone: data.phone,
       email: data.email,
       otpExpiresInSeconds: OTP_TTL_SECONDS,
@@ -322,14 +327,14 @@ export class MobileAuthService {
     }
   }
 
-  async verifyOtp(userId: string, otp: string): Promise<void> {
-    const user = await this.db.user.findUnique({ where: { id: userId } })
-    if (!user || user.deletedAt) throw new NotFoundError('User not found')
-    if (user.isPhoneVerified) {
-      throw new ConflictError('This account is already verified', 'ALREADY_VERIFIED')
-    }
-
-    const raw = await this.redis.get(otpKey(userId))
+  /**
+   * `token` is whatever register() returned as `userId` — a Redis-only
+   * reference, not a Users.id (see register()'s own doc comment). Confirming
+   * the code here is what actually creates/updates the User row; nothing in
+   * Postgres exists for this registration before this call succeeds.
+   */
+  async verifyOtp(token: string, otp: string): Promise<void> {
+    const raw = await this.redis.get(pendingRegistrationKey(token))
     if (!raw) {
       throw new BadRequestError(
         'This code has expired. Please request a new one.',
@@ -337,53 +342,129 @@ export class MobileAuthService {
       )
     }
 
-    const record = JSON.parse(raw) as OtpRecord
-    if (record.attempts >= MAX_OTP_ATTEMPTS) {
-      await this.redis.del(otpKey(userId))
+    const pending = JSON.parse(raw) as PendingRegistration
+    if (pending.otpAttempts >= MAX_OTP_ATTEMPTS) {
+      await this.redis.del(pendingRegistrationKey(token))
       throw new TooManyRequestsError(
         'Too many incorrect attempts. Please request a new code.',
         'OTP_LOCKED',
       )
     }
 
-    if (hashOtp(otp) !== record.hash) {
-      const ttl = await this.redis.ttl(otpKey(userId))
-      const updated: OtpRecord = { ...record, attempts: record.attempts + 1 }
-      await this.redis.set(otpKey(userId), JSON.stringify(updated), 'EX', ttl > 0 ? ttl : OTP_TTL_SECONDS)
+    if (hashOtp(otp) !== pending.otpHash) {
+      const ttl = await this.redis.ttl(pendingRegistrationKey(token))
+      const updated: PendingRegistration = { ...pending, otpAttempts: pending.otpAttempts + 1 }
+      await this.redis.set(pendingRegistrationKey(token), JSON.stringify(updated), 'EX', ttl > 0 ? ttl : OTP_TTL_SECONDS)
       throw new BadRequestError('Incorrect code. Please try again.', 'OTP_INVALID')
     }
 
-    await this.redis.del(otpKey(userId))
-    await this.db.user.update({ where: { id: userId }, data: { isPhoneVerified: true } })
-    // Same completion fields the web flow (auth.service.ts#register) sets
-    // immediately — here they're deferred until this point on purpose.
-    await this.db.approvedPhone.update({
-      where: { phone: user.phone },
-      data: { isRegistered: true, status: 'registered' },
-    })
+    // Code confirmed — consume the pending record now, regardless of what
+    // finalizeRegistration does below. A token that loses the race in there
+    // (someone else claimed this phone/email in the last few minutes) can
+    // never succeed on retry either, so there's nothing to gain by keeping
+    // it alive for its remaining TTL.
+    await this.redis.del(pendingRegistrationKey(token))
 
-    logger.info({ userId }, 'mobileAuth.verifyOtp: success')
+    const userId = await this.finalizeRegistration(pending)
+    logger.info({ userId, phone: pending.phone }, 'mobileAuth.verifyOtp: success, account created')
   }
 
-  async resendOtp(userId: string): Promise<{ otpExpiresInSeconds: number }> {
-    const user = await this.db.user.findUnique({ where: { id: userId } })
-    if (!user || user.deletedAt) throw new NotFoundError('User not found')
-    if (user.isPhoneVerified) {
-      throw new ConflictError('This account is already verified', 'ALREADY_VERIFIED')
-    }
-    if (!user.email) throw new BadRequestError('No email on file for this account')
+  /**
+   * The only place a mobile-registered User row is ever created or given its
+   * password. Re-validates against Postgres fresh rather than trusting
+   * anything cached in `pending` — several minutes may have passed since
+   * register() ran (an admin could have revoked the phone, someone else
+   * could have grabbed the email).
+   */
+  private async finalizeRegistration(pending: PendingRegistration): Promise<string> {
+    try {
+      return await this.db.$transaction(async tx => {
+        if (pending.existingUserId) {
+          // Freshness check, not a race guard (that's the updateMany below) —
+          // an admin could have revoked this phone sometime in the last few
+          // minutes since register() ran.
+          const current = await tx.user.findUnique({
+            where: { id: pending.existingUserId },
+            select: { isActive: true },
+          })
+          if (!current) {
+            throw new NotFoundError('This phone number is no longer available. Please register again.')
+          }
+          if (!current.isActive) {
+            throw new ForbiddenError('Your access has been revoked. Please contact your admin.', 'PHONE_INACTIVE')
+          }
 
-    const cooldownActive = await this.redis.get(otpCooldownKey(userId))
+          // Conditional update, not read-then-write: guards against two
+          // verifyOtp() calls for the same pre-added phone racing each other
+          // (e.g. a duplicate registration attempt per §Q2) by making
+          // "is this still unclaimed" and "claim it" one atomic operation
+          // instead of two steps with a gap a second request could land in.
+          const result = await tx.user.updateMany({
+            where: { id: pending.existingUserId, passwordHash: null },
+            data: { name: pending.fullName, email: pending.email, passwordHash: pending.passwordHash, isPhoneVerified: true },
+          })
+          if (result.count === 0) {
+            throw new ConflictError('This phone number is already registered. Please log in.', 'ALREADY_REGISTERED')
+          }
+          await tx.approvedPhone.update({
+            where: { phone: pending.phone },
+            data: { name: pending.fullName, email: pending.email, isRegistered: true, status: 'registered' },
+          })
+          return pending.existingUserId
+        }
+
+        // Brand new phone — Postgres's own unique constraint on `phone`
+        // (caught as P2002 below) is what protects against two concurrent
+        // registrations for the same never-before-seen number.
+        const created = await tx.user.create({
+          data: {
+            phone: pending.phone,
+            name: pending.fullName,
+            email: pending.email,
+            passwordHash: pending.passwordHash,
+            isPhoneVerified: true,
+          },
+        })
+        await tx.approvedPhone.create({
+          data: { phone: pending.phone, name: pending.fullName, email: pending.email, addedBy: null, isRegistered: true, status: 'registered' },
+        })
+        return created.id
+      })
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        throw new ConflictError('This phone number or email was just registered. Please log in.', 'ALREADY_REGISTERED')
+      }
+      throw err
+    }
+  }
+
+  async resendOtp(token: string): Promise<{ otpExpiresInSeconds: number }> {
+    const raw = await this.redis.get(pendingRegistrationKey(token))
+    if (!raw) {
+      throw new NotFoundError(
+        'This registration session has expired or was not found. Please register again.',
+        'REGISTRATION_EXPIRED',
+      )
+    }
+    const pending = JSON.parse(raw) as PendingRegistration
+
+    const cooldownActive = await this.redis.get(pendingRegistrationCooldownKey(token))
     if (cooldownActive) {
-      const ttl = await this.redis.ttl(otpCooldownKey(userId))
+      const ttl = await this.redis.ttl(pendingRegistrationCooldownKey(token))
       throw new TooManyRequestsError(
         `Please wait ${Math.max(ttl, 1)}s before requesting another code.`,
         'OTP_COOLDOWN',
       )
     }
 
-    await this.sendOtp(userId, user.email, user.name)
-    logger.info({ userId }, 'mobileAuth.resendOtp: OTP resent')
+    await this.storePendingRegistration(token, {
+      fullName: pending.fullName,
+      phone: pending.phone,
+      email: pending.email,
+      passwordHash: pending.passwordHash,
+      existingUserId: pending.existingUserId,
+    })
+    logger.info({ token }, 'mobileAuth.resendOtp: OTP resent')
     return { otpExpiresInSeconds: OTP_TTL_SECONDS }
   }
 
@@ -549,20 +630,30 @@ export class MobileAuthService {
     }
   }
 
-  private async sendOtp(userId: string, email: string, name: string): Promise<void> {
+  /**
+   * Writes (or rewrites, on resend) the full pending-registration record —
+   * payload plus a freshly generated OTP — under `token`, and emails the
+   * code. Used by both register() (first write) and resendOtp() (rewrite
+   * with the same payload), so the two can never drift on TTLs or on what
+   * counts as "still pending."
+   */
+  private async storePendingRegistration(
+    token: string,
+    data: { fullName: string; phone: string; email: string; passwordHash: string; existingUserId: string | null },
+  ): Promise<void> {
     const otp = generateOtp()
-    const record: OtpRecord = { hash: hashOtp(otp), attempts: 0 }
-    await this.redis.set(otpKey(userId), JSON.stringify(record), 'EX', OTP_TTL_SECONDS)
-    await this.redis.set(otpCooldownKey(userId), '1', 'EX', OTP_RESEND_COOLDOWN_SECONDS)
+    const record: PendingRegistration = { ...data, otpHash: hashOtp(otp), otpAttempts: 0 }
+    await this.redis.set(pendingRegistrationKey(token), JSON.stringify(record), 'EX', OTP_TTL_SECONDS)
+    await this.redis.set(pendingRegistrationCooldownKey(token), '1', 'EX', OTP_RESEND_COOLDOWN_SECONDS)
 
     try {
       await notificationsQueue.add(
         OTP_EMAIL_JOB,
-        { toEmail: email, name, otp, expiryMinutes: OTP_TTL_SECONDS / 60 },
+        { toEmail: data.email, name: data.fullName, otp, expiryMinutes: OTP_TTL_SECONDS / 60 },
         { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
       )
     } catch (err) {
-      logger.error({ err, userId }, 'mobileAuth.sendOtp: failed to enqueue OTP email job')
+      logger.error({ err, token }, 'mobileAuth.storePendingRegistration: failed to enqueue OTP email job')
       throw err
     }
   }

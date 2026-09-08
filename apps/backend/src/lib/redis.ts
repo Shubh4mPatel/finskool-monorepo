@@ -31,15 +31,20 @@ export function likeCountKey(postId: string): string {
   return `like_count:${postId}`
 }
 
-// Mobile self-serve registration OTP (email-based for now — a stand-in until
-// WhatsApp delivery is wired up). Keyed by userId, not phone, since by the
-// time an OTP exists the user row already exists.
-export function otpKey(userId: string): string {
-  return `otp:register:${userId}`
+// Mobile self-serve registration — the *pending* registration (submitted
+// form data + password hash + OTP state) for an account that doesn't exist
+// in Postgres yet. No User/ApprovedPhone row is written until verifyOtp()
+// succeeds, so this can't be keyed by a real userId the way an OTP-only
+// record could — it's keyed by an opaque token handed to the client as
+// `userId` in the register() response instead (see mobile-auth.service.ts).
+// TTL'd the same as the OTP itself: an abandoned registration just expires
+// here, no orphaned DB row and nothing to clean up.
+export function pendingRegistrationKey(token: string): string {
+  return `mobile:pending_registration:${token}`
 }
 
-export function otpCooldownKey(userId: string): string {
-  return `otp:register:cooldown:${userId}`
+export function pendingRegistrationCooldownKey(token: string): string {
+  return `mobile:pending_registration:cooldown:${token}`
 }
 
 // Mobile forgot-password OTP — keyed by (lowercased) email, not userId, since
