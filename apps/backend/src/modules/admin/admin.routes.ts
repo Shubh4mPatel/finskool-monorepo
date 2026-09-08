@@ -59,6 +59,7 @@ router.get('/members/export', authenticate, requireRole('admin'), controller.exp
 router.get('/members/by-user/:userId', authenticate, requireRole('admin'), controller.getMemberByUserId)
 router.get('/members/:id', authenticate, requireRole('admin'), controller.getMember)
 router.post('/members', authenticate, requireRole('admin'), controller.addMember)
+router.post('/members/revive', authenticate, requireRole('admin'), controller.reviveAndAddMember)
 router.patch('/members/:id', authenticate, requireRole('admin'), controller.updateMember)
 router.patch('/members/:id/password', authenticate, requireRole('admin'), controller.resetMemberPassword)
 router.post('/members/bulk-delete', authenticate, requireRole('admin'), controller.bulkDeleteMembers)

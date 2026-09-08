@@ -276,7 +276,13 @@ export class AdminService {
     rows: ImportRowDTO[],
     adminId: string,
     strategy: DuplicateStrategy,
+    // Row numbers (1-based, matching validateImport's rowNum) the admin explicitly
+    // selected to revive on the review page — see validateImport's existingStatus.
+    // A row matching a suspended/deleted user that ISN'T in this set is skipped
+    // rather than silently reactivated.
+    reviveRowNums: number[] = [],
   ): Promise<ImportSummaryDTO> {
+    const reviveRowNumSet = new Set(reviveRowNums)
     const summary: ImportSummaryDTO = { total: rows.length, created: 0, updated: 0, skipped: 0, errors: [] }
 
     const communities = await this.db.community.findMany({ select: { id: true, name: true } })
@@ -324,9 +330,16 @@ export class AdminService {
           })
           summary.updated++
           if (!notifyCommunityId) notifyCommunityId = community.id
-        } else if (existingUser && existingAp && existingUser.status === 'deleted') {
-          // A previously-deleted member coming back — revive them (overwrite name/email,
-          // reset registration state) rather than just quietly re-subscribing a dead account.
+        } else if (existingUser && existingAp && existingUser.status !== 'active' && !reviveRowNumSet.has(rowNum)) {
+          // Matches a suspended/deleted member, but the admin didn't select this row
+          // to revive on the review page — skip rather than silently reactivate.
+          summary.skipped++
+          summary.errors.push({ row: rowNum, phone, reason: `Member is ${existingUser.status} — not selected to revive` })
+          continue
+        } else if (existingUser && existingAp && existingUser.status !== 'active') {
+          // Admin explicitly selected this row to revive (suspended or deleted member
+          // coming back) — overwrite name/email, reset registration state, rather than
+          // just quietly re-subscribing a dead/suspended account.
           await this.db.$transaction(async tx => {
             await this.reviveMember(tx, existingUser, phone, row.name, email, adminId)
             await tx.subscription.create({
@@ -763,7 +776,7 @@ export class AdminService {
     const phones = rows.map(r => r.phone).filter(Boolean)
     const emails = rows.map(r => r.email).filter(Boolean)
 
-    const [existingByPhone, existingByEmail] = await Promise.all([
+    const [existingByPhone, existingByEmail, existingUsersByPhone] = await Promise.all([
       this.db.approvedPhone.findMany({
         where: { phone: { in: phones } },
         select: { phone: true, name: true },
@@ -772,10 +785,15 @@ export class AdminService {
         where: { email: { in: emails } },
         select: { email: true, phone: true, name: true },
       }),
+      this.db.user.findMany({
+        where: { phone: { in: phones } },
+        select: { phone: true, status: true },
+      }),
     ])
 
     const existingPhoneSet = new Set(existingByPhone.map(r => r.phone))
     const existingEmailMap = new Map(existingByEmail.map(r => [r.email, r]))
+    const userStatusByPhone = new Map(existingUsersByPhone.map(u => [u.phone, u.status]))
 
     const results: ValidateImportRowResult[] = rows.map(row => {
       const errors: string[] = []
@@ -811,8 +829,12 @@ export class AdminService {
       const phoneExists = existingPhoneSet.has(row.phone)
       const emailMatch = row.email ? existingEmailMap.get(row.email) : undefined
       const emailExistsDifferentPhone = emailMatch && emailMatch.phone !== row.phone
+      const userStatus = userStatusByPhone.get(row.phone)
+      const existingStatus = userStatus === 'suspended' || userStatus === 'deleted' ? userStatus : undefined
 
-      if (phoneExists) {
+      if (existingStatus) {
+        warnings.push(`Phone belongs to a ${existingStatus} member ("${existingByPhone.find(p => p.phone === row.phone)?.name ?? row.phone}") — select to revive, otherwise this row is skipped`)
+      } else if (phoneExists) {
         warnings.push(`Phone already exists — customer "${existingByPhone.find(p => p.phone === row.phone)?.name ?? row.phone}" will be updated based on strategy`)
       }
       if (emailExistsDifferentPhone) {
@@ -824,6 +846,7 @@ export class AdminService {
         errors,
         warnings,
         isDuplicate: phoneExists || !!emailExistsDifferentPhone,
+        existingStatus,
       }
     })
 
@@ -1098,10 +1121,18 @@ export class AdminService {
     if (!community) throw new NotFoundError('Community not found')
 
     const existingUser = await this.db.user.findUnique({ where: { phone } })
-    // A deleted member's User row is still there (status: 'deleted') — only a genuinely
-    // active phone is a real conflict; a deleted one falls through to the revive path below.
     if (existingUser?.status === 'active') {
       throw new ConflictError('This phone number is already registered', 'PHONE_EXISTS')
+    }
+    // Suspended/deleted needs an explicit admin decision — see reviveAndAddMember() —
+    // rather than silently reactivating whoever this phone used to belong to. (The
+    // active case already threw above, so reaching here with an existingUser means
+    // it's guaranteed to be one of those two.)
+    if (existingUser) {
+      throw new ConflictError(
+        `This phone belongs to a ${existingUser.status} member (${existingUser.name}). Confirm to reactivate them.`,
+        'MEMBER_REVIVE_REQUIRED',
+      )
     }
     // Email is optional at add-time — only a real, provided address can conflict.
     if (data.email) {
@@ -1112,34 +1143,24 @@ export class AdminService {
     }
 
     const result = await this.db.$transaction(async tx => {
-      let userId: string
-      let approvedPhoneId: string
-      if (existingUser) {
-        const revived = await this.reviveMember(tx, existingUser, phone, data.name, data.email ?? null, adminId)
-        userId = revived.userId
-        approvedPhoneId = revived.approvedPhoneId
-      } else {
-        // Create User without password — user will set it when they register
-        const user = await tx.user.create({
-          data: { phone, name: data.name, email: data.email ?? null },
-        })
-        const ap = await tx.approvedPhone.create({
-          data: { phone, name: data.name, email: data.email ?? null, addedBy: adminId },
-        })
-        userId = user.id
-        approvedPhoneId = ap.id
-      }
+      // Create User without password — user will set it when they register
+      const user = await tx.user.create({
+        data: { phone, name: data.name, email: data.email ?? null },
+      })
+      const ap = await tx.approvedPhone.create({
+        data: { phone, name: data.name, email: data.email ?? null, addedBy: adminId },
+      })
       await tx.subscription.create({
         data: {
-          userId,
-          approvedPhoneId,
+          userId: user.id,
+          approvedPhoneId: ap.id,
           communityId: data.communityId,
           payment: data.payment,
           paidOn: new Date(),
           validUntil: new Date(data.validUntil),
         },
       })
-      return { approvedPhoneId }
+      return { approvedPhoneId: ap.id }
     })
 
     logger.info({ phone, adminId }, 'admin.addMember: created')
@@ -1155,6 +1176,71 @@ export class AdminService {
         )
       } catch (err) {
         logger.error({ err, phone }, 'admin.addMember: failed to enqueue welcome email job')
+      }
+    }
+
+    return {
+      approvedPhoneId: result.approvedPhoneId,
+      phone,
+      name: data.name,
+      email: data.email ?? null,
+      communityId: data.communityId,
+      validUntil: data.validUntil,
+    }
+  }
+
+  // The only place addMember()'s MEMBER_REVIVE_REQUIRED conflict can actually be
+  // resolved — called separately once the admin has explicitly confirmed they want
+  // to reactivate a specific suspended/deleted phone, rather than addMember() doing
+  // it silently. Takes the exact same input as addMember() since it's the same form
+  // resubmitted after the admin clicks "confirm" on that prompt.
+  async reviveAndAddMember(data: AddMemberDTO, adminId: string): Promise<AddMemberResultDTO> {
+    const phone = normalizePhone(data.phone)
+    if (!phone) throw new BadRequestError('Invalid phone number')
+
+    const community = await this.db.community.findUnique({ where: { id: data.communityId } })
+    if (!community) throw new NotFoundError('Community not found')
+
+    const existingUser = await this.db.user.findUnique({ where: { phone } })
+    if (!existingUser) {
+      throw new NotFoundError('No existing member found for this phone number to revive')
+    }
+    if (existingUser.status === 'active') {
+      throw new ConflictError('This member is already active — use the regular add-member flow instead', 'PHONE_EXISTS')
+    }
+    if (data.email) {
+      const emailOwner = await this.db.user.findUnique({ where: { email: data.email } })
+      if (emailOwner && emailOwner.phone !== phone) {
+        throw new ConflictError('This email address is already registered', 'EMAIL_EXISTS')
+      }
+    }
+
+    const result = await this.db.$transaction(async tx => {
+      const revived = await this.reviveMember(tx, existingUser, phone, data.name, data.email ?? null, adminId)
+      await tx.subscription.create({
+        data: {
+          userId: revived.userId,
+          approvedPhoneId: revived.approvedPhoneId,
+          communityId: data.communityId,
+          payment: data.payment,
+          paidOn: new Date(),
+          validUntil: new Date(data.validUntil),
+        },
+      })
+      return { approvedPhoneId: revived.approvedPhoneId }
+    })
+
+    logger.info({ phone, adminId, previousStatus: existingUser.status }, 'admin.reviveAndAddMember: revived')
+
+    if (data.email) {
+      try {
+        await notificationsQueue.add(
+          WELCOME_EMAIL_JOB,
+          { toEmail: data.email, name: data.name, phone, communityName: community.name, validTill: new Date(data.validUntil).toISOString() },
+          { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
+        )
+      } catch (err) {
+        logger.error({ err, phone }, 'admin.reviveAndAddMember: failed to enqueue welcome email job')
       }
     }
 

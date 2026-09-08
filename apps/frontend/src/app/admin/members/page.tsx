@@ -381,6 +381,17 @@ export default function MembersPage() {
       setMemberErrors(e => ({ ...e, [field]: validateMember(updated)[field] }));
   }
 
+  function addMemberPayload() {
+    return {
+      phone: newMember.phone,
+      name: newMember.name,
+      email: newMember.email,
+      communityId: newMember.communityId,
+      payment: parseFloat(newMember.payment),
+      validUntil: newMember.validUntil,
+    };
+  }
+
   async function handleAddMember() {
     const errs = validateMember(newMember);
     setMemberTouched({ name: true, phone: true, email: true, communityId: true, payment: true, validUntil: true });
@@ -389,19 +400,41 @@ export default function MembersPage() {
 
     setAddingMember(true);
     try {
-      await api.post("/api/v1/admin/members", {
-        phone: newMember.phone,
-        name: newMember.name,
-        email: newMember.email,
-        communityId: newMember.communityId,
-        payment: parseFloat(newMember.payment),
-        validUntil: newMember.validUntil,
-      });
+      await api.post("/api/v1/admin/members", addMemberPayload());
       toast.success({ title: "Member added", message: `${newMember.name} can now sign up at /signup` });
       close();
       refresh();
     } catch (err) {
+      // This phone belongs to a suspended/deleted member — addMember stops short of
+      // reviving them on its own; confirm with the admin first, then resubmit to the
+      // dedicated revive endpoint.
+      if (err instanceof ApiError && err.code === "MEMBER_REVIVE_REQUIRED") {
+        await handleReviveConfirm(err.message);
+        return;
+      }
       toast.error(err instanceof ApiError ? err.message : "Failed to add member");
+    } finally {
+      setAddingMember(false);
+    }
+  }
+
+  async function handleReviveConfirm(message: string) {
+    const ok = await confirm({
+      title: "Reactivate Member?",
+      message,
+      confirmLabel: "Yes, Reactivate",
+      variant: "positive",
+    });
+    if (!ok) return;
+
+    setAddingMember(true);
+    try {
+      await api.post("/api/v1/admin/members/revive", addMemberPayload());
+      toast.success({ title: "Member reactivated", message: `${newMember.name} can now sign up at /signup` });
+      close();
+      refresh();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to revive member");
     } finally {
       setAddingMember(false);
     }

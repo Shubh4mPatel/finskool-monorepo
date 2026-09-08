@@ -22,6 +22,19 @@ interface ParsedRow {
   errors: string[];
   warnings: string[];
   isDuplicate: boolean;
+  // Set only when the phone matches an existing member who isn't active — needs an
+  // explicit admin decision (the `revive` checkbox below) rather than being silently
+  // reactivated, or silently skipped, during import.
+  existingStatus?: "suspended" | "deleted";
+  revive: boolean;
+}
+
+interface ValidateRowResult {
+  rowNum: number;
+  errors: string[];
+  warnings: string[];
+  isDuplicate: boolean;
+  existingStatus?: "suspended" | "deleted";
 }
 
 interface ImportResult {
@@ -141,7 +154,7 @@ export default function ImportCSVPage() {
           rowNum: i + 2,
           name, phone: phone ? normalizePhone(phone) : "",
           email, service, payment, paidOn, valid,
-          errors, warnings: [], isDuplicate: false,
+          errors, warnings: [], isDuplicate: false, revive: false,
         };
       });
 
@@ -160,7 +173,7 @@ export default function ImportCSVPage() {
     if (!editCell) return;
     setRows(prev => prev.map(r =>
       r.rowNum === editCell.rowNum
-        ? { ...r, [editCell.field]: editValue, errors: [], warnings: [], isDuplicate: false }
+        ? { ...r, [editCell.field]: editValue, errors: [], warnings: [], isDuplicate: false, existingStatus: undefined, revive: false }
         : r
     ));
     setEditCell(null);
@@ -180,14 +193,19 @@ export default function ImportCSVPage() {
         valid: r.valid,
         ...(r.paidOn ? { paidOn: r.paidOn } : {}),
       }));
-      const { results } = await api.post<{ results: { rowNum: number; errors: string[]; warnings: string[]; isDuplicate: boolean }[] }>(
+      const { results } = await api.post<{ results: ValidateRowResult[] }>(
         "/api/v1/admin/validate-import",
         { rows: payload }
       );
       setRows(prev => prev.map(r => {
         const v = results.find(x => x.rowNum === r.rowNum);
         if (!v) return r;
-        return { ...r, errors: v.errors, warnings: v.warnings, isDuplicate: v.isDuplicate };
+        // A row's revive selection only survives if it still matches the same
+        // suspended/deleted member as before — any change (edited row, or the
+        // member's status itself changed) resets it, so a stale checkbox can
+        // never carry over onto a different account.
+        const revive = v.existingStatus && v.existingStatus === r.existingStatus ? r.revive : false;
+        return { ...r, errors: v.errors, warnings: v.warnings, isDuplicate: v.isDuplicate, existingStatus: v.existingStatus, revive };
       }));
       setNeedsRevalidation(false);
       if (results.some(v => v.errors.length > 0)) setShowErrorModal(true);
@@ -196,6 +214,10 @@ export default function ImportCSVPage() {
     } finally {
       setValidating(false);
     }
+  }
+
+  function toggleRevive(rowNum: number) {
+    setRows(prev => prev.map(r => (r.rowNum === rowNum ? { ...r, revive: !r.revive } : r)));
   }
 
   async function handleConfirmImport() {
@@ -213,6 +235,9 @@ export default function ImportCSVPage() {
           valid: r.valid,
           ...(r.paidOn ? { paidOn: r.paidOn } : {}),
         })),
+        // Row numbers the admin explicitly checked to reactivate a suspended/deleted
+        // member — any other row matching one is skipped server-side instead.
+        reviveRowNums: validRows.filter(r => r.revive).map(r => r.rowNum),
       };
       const data = await api.post<ImportResult>("/api/v1/admin/import-json", payload);
       setResult(data);
@@ -318,7 +343,7 @@ export default function ImportCSVPage() {
                       valid: r.valid,
                       ...(r.paidOn ? { paidOn: r.paidOn } : {}),
                     }));
-                    const { results } = await api.post<{ results: { rowNum: number; errors: string[]; warnings: string[]; isDuplicate: boolean }[] }>(
+                    const { results } = await api.post<{ results: ValidateRowResult[] }>(
                       "/api/v1/admin/validate-import",
                       { rows: payload }
                     );
@@ -330,6 +355,7 @@ export default function ImportCSVPage() {
                         errors: validation.errors.length > 0 ? validation.errors : r.errors,
                         warnings: validation.warnings,
                         isDuplicate: validation.isDuplicate,
+                        existingStatus: validation.existingStatus,
                       };
                     }));
                   } catch {
@@ -476,7 +502,19 @@ export default function ImportCSVPage() {
                         <td className="px-3 py-3">
                           <EditableCell field="name" value={r.name}
                             className={`font-semibold ${hasError ? "text-red-600" : hasWarning ? "text-amber-700" : "text-primary"}`} />
-                          {hasWarning && <span className="ml-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">EXISTS</span>}
+                          {r.existingStatus ? (
+                            <label className="ml-1 inline-flex cursor-pointer items-center gap-1 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700">
+                              <input
+                                type="checkbox"
+                                checked={r.revive}
+                                onChange={() => toggleRevive(r.rowNum)}
+                                className="h-3 w-3 accent-red-600"
+                              />
+                              Revive ({r.existingStatus})
+                            </label>
+                          ) : (
+                            hasWarning && <span className="ml-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">EXISTS</span>
+                          )}
                         </td>
                         <td className="px-3 py-3 text-muted"><EditableCell field="phone" value={r.phone} /></td>
                         <td className="px-3 py-3 text-muted"><EditableCell field="payment" value={r.payment} /></td>

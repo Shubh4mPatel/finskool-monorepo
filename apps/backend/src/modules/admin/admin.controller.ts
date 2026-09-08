@@ -54,6 +54,9 @@ const importRowSchema = z.object({
 const importJSONSchema = z.object({
   strategy: z.enum(['skip', 'overwrite']).default('skip'),
   rows: z.array(importRowSchema).min(1, 'At least one row required'),
+  // Row numbers (matching validateImport's rowNum) the admin checked on the review
+  // page to revive a suspended/deleted member — see ValidateImportRowResult.existingStatus.
+  reviveRowNums: z.array(z.number().int()).default([]),
 })
 
 const validateImportRowSchema = z.object({
@@ -140,8 +143,8 @@ export class AdminController {
 
   importJSON = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const { strategy, rows } = importJSONSchema.parse(req.body)
-      const result = await this.service.importUsersFromJSON(rows, req.user!.id, strategy)
+      const { strategy, rows, reviveRowNums } = importJSONSchema.parse(req.body)
+      const result = await this.service.importUsersFromJSON(rows, req.user!.id, strategy, reviveRowNums)
       res.json({ success: true, data: result })
     } catch (err) {
       next(err)
@@ -382,6 +385,20 @@ export class AdminController {
       if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
       assertCommunityAccessFromToken(req.user!.accessibleCommunityIds, parsed.data.communityId)
       const result = await this.service.addMember(parsed.data, req.user!.id)
+      res.status(201).json({ success: true, data: result })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  // Reached only after the admin confirms the MEMBER_REVIVE_REQUIRED prompt from
+  // addMember above — same request shape, resubmitted as-is.
+  reviveAndAddMember = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const parsed = addMemberSchema.safeParse(req.body)
+      if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
+      assertCommunityAccessFromToken(req.user!.accessibleCommunityIds, parsed.data.communityId)
+      const result = await this.service.reviveAndAddMember(parsed.data, req.user!.id)
       res.status(201).json({ success: true, data: result })
     } catch (err) {
       next(err)

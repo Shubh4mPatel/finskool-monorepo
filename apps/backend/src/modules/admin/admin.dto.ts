@@ -223,6 +223,11 @@ export interface ValidateImportRowResult {
   errors: string[]    // blocking — format / missing field
   warnings: string[]  // non-blocking — duplicate exists
   isDuplicate: boolean
+  // Set only when the row's phone matches an existing User whose account isn't
+  // active. 'suspended'/'deleted' rows need an explicit admin decision — see
+  // reviveRowNums on importUsersFromJSON — rather than silently reviving during
+  // a bulk import; 'active'/undefined need no decision (normal update-or-create).
+  existingStatus?: 'suspended' | 'deleted' | undefined
 }
 
 export interface ValidateImportDTO {
