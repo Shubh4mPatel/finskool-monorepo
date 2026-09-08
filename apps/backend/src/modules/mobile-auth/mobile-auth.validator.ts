@@ -16,7 +16,7 @@ export const mobileRegisterSchema = z
   .object({
     fullName: z.string().min(2, 'Full name must be at least 2 characters').max(100),
     phone: phoneSchema,
-    email: z.string().email('Invalid email address'),
+    email: z.string().email('Invalid email address').toLowerCase(),
     password: z.string().min(8, 'Password must be at least 8 characters').max(128),
     confirmPassword: z.string(),
   })

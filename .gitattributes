@@ -1,0 +1,7 @@
+# Shell scripts must keep LF line endings regardless of the checkout platform —
+# a CRLF shebang line (`#!/bin/sh<CR>`) fails inside a Linux container with a
+# misleading "exec: no such file or directory" error. Without this, a Windows
+# checkout (core.autocrlf=true/input misconfigured, or a plain `git clone` on
+# a machine defaulting to CRLF) can silently break every Dockerfile ENTRYPOINT
+# in this repo.
+*.sh text eol=lf

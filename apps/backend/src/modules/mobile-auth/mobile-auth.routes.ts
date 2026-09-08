@@ -188,9 +188,7 @@ router.post('/resend-otp', controller.resendOtp)
  *     summary: Log in (mobile flow)
  *     description: >
  *       Independent from POST /auth/login — same lookup/password/subscription
- *       logic, plus one extra check specific to this flow: the account must
- *       have completed /auth/mobile/verify-otp first. No JWT is issued for
- *       mobile at all: on success a single opaque session id is generated,
+ *       logic. No JWT is issued for mobile at all: on success a single opaque session id is generated,
  *       stored (hashed) on this user's MobileSession row — overwriting and
  *       thereby killing any previous mobile session for this account — and
  *       set as an httpOnly `mobile_session_id` cookie. A "new device login"
@@ -246,9 +244,7 @@ router.post('/resend-otp', controller.resendOtp)
  *       401:
  *         description: >
  *           Invalid credentials, deactivated account, never registered
- *           (NOT_REGISTERED), phone not yet verified (PHONE_NOT_VERIFIED —
- *           the check unique to this endpoint), or subscription expired
- *           (SUBSCRIPTION_EXPIRED).
+ *           (NOT_REGISTERED), or subscription expired (SUBSCRIPTION_EXPIRED).
  *         content:
  *           application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } }
  *       422:
@@ -267,9 +263,9 @@ router.post('/login', controller.login)
  *     description: >
  *       Always responds with the same generic message, whether or not the
  *       email matches an account — no OTP is actually sent unless the
- *       account exists, is active, has a password set, and has completed
- *       phone verification (isPhoneVerified). This is intentional: it
- *       prevents using this endpoint to discover which emails are registered.
+ *       account exists, is active, and has a password set (i.e. has actually
+ *       completed registration). This is intentional: it prevents using this
+ *       endpoint to discover which emails are registered.
  *     requestBody:
  *       required: true
  *       content:

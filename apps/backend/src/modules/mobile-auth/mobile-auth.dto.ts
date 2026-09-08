@@ -36,8 +36,8 @@ export interface MobileLoginDTO {
 }
 
 // Type-only reuse of the web auth module's response shapes (not its logic) —
-// login() here is a self-contained duplicate of AuthService.login() with one
-// extra isPhoneVerified gate, kept separate on purpose (see mobile-auth.service.ts).
+// login() here is a self-contained duplicate of AuthService.login(), kept
+// separate on purpose (see mobile-auth.service.ts).
 import type { PublicUserDTO, CommunityInfoDTO } from '../auth/auth.dto.js'
 export type { PublicUserDTO, CommunityInfoDTO, AuthResponseDTO } from '../auth/auth.dto.js'
 

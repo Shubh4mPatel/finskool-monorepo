@@ -60,12 +60,6 @@ model User {
   role         UserRole  @default(member)
   isSuperAdmin Boolean   @default(false) @map("is_super_admin")
   isActive     Boolean   @default(true) @map("is_active")
-  // Gates login on the mobile self-serve flow (registration.dto -> OTP verify).
-  // Defaults true so every pre-existing row and every admin-invited web
-  // registration (which never went through OTP) is unaffected; only the new
-  // mobile-auth module ever writes `false`, at creation, then flips it back
-  // to `true` once the OTP is confirmed.
-  isPhoneVerified Boolean @default(true) @map("is_phone_verified")
   suspensionReason String? @map("suspension_reason") @db.Text
   avatarUrl    String?   @map("avatar_url") @db.VarChar(500)
   postNotificationsEnabled Boolean @default(true) @map("post_notifications_enabled")

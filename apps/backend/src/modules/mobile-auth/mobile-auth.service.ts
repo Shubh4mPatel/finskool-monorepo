@@ -79,7 +79,6 @@ type DbUser = {
   passwordHash: string | null
   role: string
   isSuperAdmin: boolean
-  isPhoneVerified: boolean
   avatarUrl: string | null
   postNotificationsEnabled: boolean
 }
@@ -129,11 +128,13 @@ export class MobileAuthService {
    * hashed password and the OTP itself) is held in Redis under a fresh opaque
    * token, TTL'd to the OTP's own lifetime — verifyOtp() is the only place
    * that ever creates/updates a User row, and only once the code is
-   * confirmed. This used to write the User row immediately (with the real
-   * password hash) and only flip a `isPhoneVerified` flag at verify time —
-   * which meant an abandoned OTP left a permanent, unrecoverable half-account
-   * behind (looked "already registered" to register(), but couldn't log in
-   * or use forgot-password either, since both require isPhoneVerified).
+   * confirmed. This used to write the User row (with the real password hash)
+   * immediately, gated behind a separate `isPhoneVerified` flag flipped at
+   * verify time — which meant an abandoned OTP left a permanent,
+   * unrecoverable half-account behind (looked "already registered" to
+   * register(), but couldn't log in or use forgot-password either). That
+   * flag is gone now: `passwordHash` itself is only ever written here at
+   * verify time, so its presence already means "verified," for every row.
    * Nothing here writes to Postgres, so nothing here can get stuck: an
    * abandoned attempt just expires along with its OTP.
    *
@@ -201,12 +202,12 @@ export class MobileAuthService {
   }
 
   /**
-   * Credential checks (lookup, active/passwordHash/password, isPhoneVerified,
-   * subscription) are a deliberate, self-contained duplicate of
-   * AuthService.login() — see that method's own comment for why. Session
-   * issuance below is NOT a duplicate of anything web does, though: mobile
-   * has no JWT at all. A single opaque, high-entropy session id is generated
-   * here, its hash upserted into MobileSession (one row per user — this
+   * Credential checks (lookup, active/passwordHash/password, subscription)
+   * are a deliberate, self-contained duplicate of AuthService.login() — see
+   * that method's own comment for why. Session issuance below is NOT a
+   * duplicate of anything web does, though: mobile has no JWT at all. A
+   * single opaque, high-entropy session id is generated here, its hash
+   * upserted into MobileSession (one row per user — this
    * upsert is what atomically kills any prior mobile session for this user
    * and installs this one), and the raw value is handed back for the
    * controller to set as an httpOnly cookie. It's never returned again.
@@ -235,15 +236,6 @@ export class MobileAuthService {
     if (!valid) {
       logger.warn({ email: data.email }, 'mobileAuth.login: invalid password')
       throw new UnauthorizedError('Invalid email or password')
-    }
-
-    // The one addition over the web login — password already confirmed
-    // correct above, so this check can't be used to probe account existence.
-    if (!user.isPhoneVerified) {
-      throw new UnauthorizedError(
-        'Please verify your phone number before logging in.',
-        'PHONE_NOT_VERIFIED',
-      )
     }
 
     if (user.role !== 'admin' && !(await this.hasActiveSubscription(user.id))) {
@@ -401,7 +393,7 @@ export class MobileAuthService {
           // instead of two steps with a gap a second request could land in.
           const result = await tx.user.updateMany({
             where: { id: pending.existingUserId, passwordHash: null },
-            data: { name: pending.fullName, email: pending.email, passwordHash: pending.passwordHash, isPhoneVerified: true },
+            data: { name: pending.fullName, email: pending.email, passwordHash: pending.passwordHash },
           })
           if (result.count === 0) {
             throw new ConflictError('This phone number is already registered. Please log in.', 'ALREADY_REGISTERED')
@@ -413,8 +405,19 @@ export class MobileAuthService {
           return pending.existingUserId
         }
 
-        // Brand new phone — Postgres's own unique constraint on `phone`
-        // (caught as P2002 below) is what protects against two concurrent
+        // Brand new phone — nobody added it, so this is a User row with no
+        // matching ApprovedPhone, by design: ApprovedPhone is the admin
+        // module's own membership roster/addressing scheme (every
+        // suspend/resetPassword/updateMember/revokeMemberCommunity call in
+        // admin.service.ts takes an approvedPhoneId, not a userId), which
+        // doesn't apply to someone no admin has touched. The consequence:
+        // this account is invisible to the admin members list/exports and
+        // can't be suspended, password-reset, or granted a community
+        // subscription from the admin side — admin.addMember() itself
+        // refuses on any already-active phone, so there is currently no
+        // admin path that grants this user access to a paid community
+        // after the fact. Postgres's unique constraint on `phone` (caught
+        // as P2002 below) is what protects against two concurrent
         // registrations for the same never-before-seen number.
         const created = await tx.user.create({
           data: {
@@ -422,11 +425,7 @@ export class MobileAuthService {
             name: pending.fullName,
             email: pending.email,
             passwordHash: pending.passwordHash,
-            isPhoneVerified: true,
           },
-        })
-        await tx.approvedPhone.create({
-          data: { phone: pending.phone, name: pending.fullName, email: pending.email, addedBy: null, isRegistered: true, status: 'registered' },
         })
         return created.id
       })
@@ -472,14 +471,15 @@ export class MobileAuthService {
    * Always resolves silently, whether or not `email` matches an account —
    * the endpoint's response is identical either way, by design, so this
    * never gives an attacker a way to test which emails are registered. Only
-   * an account that is active, has completed OTP/password setup, and has
-   * `isPhoneVerified` is actually eligible for a reset code.
+   * an active account that has actually completed registration
+   * (`passwordHash` set — which, since the register/verify-otp rework, is
+   * only ever true once verification succeeded) is eligible for a reset code.
    */
   async forgotPassword(email: string): Promise<void> {
     logger.info({ email }, 'mobileAuth.forgotPassword: attempt')
 
     const user = await this.db.user.findUnique({ where: { email } })
-    const eligible = !!user && !user.deletedAt && user.isActive && user.isPhoneVerified && !!user.passwordHash
+    const eligible = !!user && !user.deletedAt && user.isActive && !!user.passwordHash
     if (!eligible) {
       logger.info({ email }, 'mobileAuth.forgotPassword: no-op (no matching/eligible account)')
       return
