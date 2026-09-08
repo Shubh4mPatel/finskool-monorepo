@@ -108,16 +108,21 @@ model ApprovedPhone {
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  subscriptions Subscription[]
-
   @@index([phone], name: "idx_approved_phones_phone")
   @@map("approved_phones")
 }
 
+// Deliberately maps to User only — not ApprovedPhone. A self-registered user
+// (self-serve mobile signup, nobody added their phone) never gets an
+// ApprovedPhone row at all, so requiring one here would mean such a user
+// could never hold a subscription, and therefore could never pass either
+// login()'s hasActiveSubscription gate (auth.service.ts / mobile-auth.service.ts)
+// — permanently locking them out of an account they just successfully created.
+// User<->ApprovedPhone stay linked by phone string only, same as everywhere
+// else in this schema; no formal relation needed for that.
 model Subscription {
   id              String    @id @default(uuid()) @db.Uuid
   userId          String    @map("user_id") @db.Uuid
-  approvedPhoneId String    @map("approved_phone_id") @db.Uuid
   communityId     String    @map("community_id") @db.Uuid
   payment         Decimal   @db.Decimal(10, 2)
   paidOn          DateTime? @map("paid_on") @db.Date
@@ -127,11 +132,9 @@ model Subscription {
   updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  approvedPhone ApprovedPhone @relation(fields: [approvedPhoneId], references: [id], onDelete: Cascade)
   community     Community     @relation(fields: [communityId], references: [id], onDelete: Cascade)
 
   @@index([userId], name: "idx_subscriptions_user")
-  @@index([approvedPhoneId], name: "idx_subscriptions_approved_phone")
   @@index([communityId], name: "idx_subscriptions_community")
   @@index([userId, communityId], name: "idx_subscriptions_user_community")
   @@map("subscriptions")
@@ -147,6 +150,13 @@ model Community {
   coverImageUrl String?   @map("cover_image_url") @db.VarChar(500)
   badgeUrl      String?   @map("badge_url") @db.VarChar(500)
   paymentLink   String?   @map("payment_link") @db.VarChar(500)
+  // At most one Community should ever have this set — the community every
+  // brand-new self-registered user is auto-subscribed to at signup (see
+  // mobile-auth.service.ts#finalizeRegistration), so their account isn't
+  // permanently locked out of login()'s hasActiveSubscription gate before any
+  // admin has done anything. Not enforced as a DB-level uniqueness constraint
+  // (no real need for one — this is set/unset by hand via the admin UI).
+  isFree        Boolean   @default(false) @map("is_free")
   createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
   deletedAt     DateTime? @map("deleted_at") @db.Timestamptz
 

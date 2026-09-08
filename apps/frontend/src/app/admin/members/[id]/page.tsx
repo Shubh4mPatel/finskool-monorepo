@@ -9,7 +9,7 @@ import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import PhoneInput from "@/components/ui/PhoneInput";
 import PasswordInput from "@/components/auth/PasswordInput";
-import { type MemberItem, getInitials, formatDate } from "@/lib/memberFormat";
+import { type MemberItem, getInitials, formatDate, SOURCE_LABELS } from "@/lib/memberFormat";
 
 type FormErrors = Partial<Record<"name" | "phone" | "email", string>>;
 
@@ -347,7 +347,7 @@ export default function MemberDetailPage() {
                 >
                   <Pencil size={14} />
                 </button>
-                {member.status !== "deleted" && (
+                {member.accountStatus !== "deleted" && (
                   <button
                     type="button"
                     onClick={handleDelete}
@@ -395,7 +395,16 @@ export default function MemberDetailPage() {
             </div>
             <div>
               <label className="text-sm font-semibold text-primary">Registered</label>
-              <input type="text" value={member.isRegistered ? "Yes" : "Not yet"} disabled className="mt-2 w-full rounded-[10px] border border-[#d6d2c8] bg-[#f8f7f5] px-4 py-3 text-sm text-black" />
+              <input
+                type="text"
+                value={member.registrationStatus === "pending" ? "Not yet" : "Yes"}
+                disabled
+                className="mt-2 w-full rounded-[10px] border border-[#d6d2c8] bg-[#f8f7f5] px-4 py-3 text-sm text-black"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-semibold text-primary">Source</label>
+              <input type="text" value={SOURCE_LABELS[member.source]} disabled className="mt-2 w-full rounded-[10px] border border-[#d6d2c8] bg-[#f8f7f5] px-4 py-3 text-sm text-black" />
             </div>
           </div>
 
@@ -409,8 +418,8 @@ export default function MemberDetailPage() {
               Change Password
             </button>
 
-            {member.status !== "deleted" &&
-              (member.status === "suspended" ? (
+            {member.accountStatus !== "deleted" &&
+              (member.accountStatus === "suspended" ? (
                 <button
                   type="button"
                   onClick={handleRevoke}

@@ -30,11 +30,29 @@ const extendSubscriptionSchema = z.object({
 })
 
 const bulkDeleteMembersSchema = z.object({
-  approvedPhoneIds: z.array(z.string().uuid()).min(1, 'At least one member id is required'),
+  userIds: z.array(z.string().uuid()).min(1, 'At least one member id is required'),
 })
 
 const suspendMemberSchema = z.object({
   reason: z.string().trim().min(1, 'A reason is required').max(1000, 'Reason is too long'),
+})
+
+// Shared by listMembers and exportMembersCsv — same filters, listMembers just adds
+// page/pageSize on top. Four independent facts, replacing the old single 5-value
+// `status` filter — see MemberListFilters' own doc comments in admin.dto.ts for
+// what each one means and how registrationStatus/source relate.
+const memberQueryFilterSchema = z.object({
+  communityId: z.string().uuid().optional(),
+  accountStatus: z.enum(['active', 'suspended', 'deleted']).optional(),
+  registrationStatus: z.enum(['pending', 'registered']).optional(),
+  hasActiveSubscription: z.enum(['true', 'false']).optional().transform(v => (v === undefined ? undefined : v === 'true')),
+  source: z.enum(['admin', 'self']).optional(),
+  validFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  validTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  paidFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  paidTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  expiringIn7Days: z.enum(['true', 'false']).optional().transform(v => (v === undefined ? undefined : v === 'true')),
+  search: z.string().max(100).optional(),
 })
 
 const importQuerySchema = z.object({
@@ -220,15 +238,7 @@ export class AdminController {
 
   listMembers = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const schema = z.object({
-        communityId: z.string().uuid().optional(),
-        status: z.enum(['registered', 'pending', 'expired', 'suspended', 'deleted']).optional(),
-        validFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-        validTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-        paidFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-        paidTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-        expiringIn7Days: z.enum(['true', 'false']).optional().transform(v => (v === undefined ? undefined : v === 'true')),
-        search: z.string().max(100).optional(),
+      const schema = memberQueryFilterSchema.extend({
         page: z.coerce.number().int().min(1).default(1),
         pageSize: z.coerce.number().int().min(1).max(100).default(8),
       })
@@ -258,17 +268,7 @@ export class AdminController {
   // admin, scoped or super, can export members across every community, by product decision.
   exportMembersCsv = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const schema = z.object({
-        communityId: z.string().uuid().optional(),
-        status: z.enum(['registered', 'pending', 'expired', 'suspended', 'deleted']).optional(),
-        validFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-        validTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-        paidFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-        paidTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-        expiringIn7Days: z.enum(['true', 'false']).optional().transform(v => (v === undefined ? undefined : v === 'true')),
-        search: z.string().max(100).optional(),
-      })
-      const parsed = schema.safeParse(req.query)
+      const parsed = memberQueryFilterSchema.safeParse(req.query)
       if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Invalid query')
 
       const csv = await this.service.exportMembersCsv(parsed.data)
@@ -433,7 +433,7 @@ export class AdminController {
     try {
       const parsed = bulkDeleteMembersSchema.safeParse(req.body)
       if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
-      const result = await this.service.bulkDeleteMembers(parsed.data.approvedPhoneIds)
+      const result = await this.service.bulkDeleteMembers(parsed.data.userIds)
       res.json({ success: true, data: result })
     } catch (err) {
       next(err)
@@ -505,7 +505,7 @@ export class AdminController {
       const id = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
       const parsed = updateMemberSchema.safeParse(req.body)
       if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
-      const result = await this.service.updateMember(id, parsed.data)
+      const result = await this.service.updateMember(id, parsed.data, req.user!.id)
       res.json({ success: true, data: result })
     } catch (err) {
       next(err)
@@ -517,17 +517,6 @@ export class AdminController {
       const raw = req.params['id']
       const id = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
       const result = await this.service.getMemberById(id)
-      res.json({ success: true, data: result })
-    } catch (err) {
-      next(err)
-    }
-  }
-
-  getMemberByUserId = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-    try {
-      const raw = req.params['userId']
-      const userId = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
-      const result = await this.service.getApprovedPhoneIdForUser(userId)
       res.json({ success: true, data: result })
     } catch (err) {
       next(err)

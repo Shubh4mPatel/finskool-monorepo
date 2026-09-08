@@ -89,6 +89,25 @@ async function main() {
     },
   })
 
+  // The community every brand-new self-registered user is auto-subscribed to
+  // at signup (see mobile-auth.service.ts#finalizeRegistration) — without
+  // this, a self-registered account has no subscription at all and can never
+  // pass login()'s hasActiveSubscription gate. No cover image (not a
+  // showcase community), no admin membership row (nothing to moderate).
+  const freeCommunity = await prisma.community.upsert({
+    where: { slug: 'free' },
+    update: { isFree: true },
+    create: {
+      createdBy: admin.id,
+      name: 'Free',
+      slug: 'free',
+      description: 'Default access granted automatically to every new member.',
+      tags: [],
+      isFree: true,
+    },
+  })
+  console.log(`[seed] Free community ready: ${freeCommunity.id}`)
+
   for (const community of [swingAlpha, investorCommunity]) {
     await prisma.communityMember.upsert({
       where: { uq_community_member: { communityId: community.id, userId: admin.id } },

@@ -434,11 +434,24 @@ export class AuthService {
       data: { email: data.email },
     });
     // Keep ApprovedPhone in sync — the admin members list reads name/email from
-    // there, not User (see the same note on register() above).
-    await this.db.approvedPhone.update({
-      where: { phone: updated.phone },
-      data: { email: data.email },
-    });
+    // there, not User (see the same note on register() above). updateMany, not
+    // update: a self-registered user has no ApprovedPhone row at all, and
+    // `.update()` throws (P2025) when its `where` matches nothing — which
+    // used to mean this call crashed with an unhandled 500 for exactly that
+    // population, even though the User write just above it had already
+    // succeeded. updateMany affecting 0 rows is a silent, correct no-op
+    // instead. Wrapped in try/catch too, matching this codebase's convention
+    // for secondary/denormalized writes elsewhere (e.g. every
+    // notificationsQueue.add call site) — a transient failure syncing this
+    // display copy must never fail the primary write, which already succeeded.
+    try {
+      await this.db.approvedPhone.updateMany({
+        where: { phone: updated.phone },
+        data: { email: data.email },
+      });
+    } catch (err) {
+      logger.error({ err, userId }, 'auth.updateEmail: failed to sync ApprovedPhone');
+    }
     logger.info({ userId }, 'auth.updateEmail: success');
     return this.toPublicUser(updated);
   }
@@ -448,10 +461,15 @@ export class AuthService {
       where: { id: userId },
       data: { name: data.name },
     });
-    await this.db.approvedPhone.update({
-      where: { phone: updated.phone },
-      data: { name: data.name },
-    });
+    // See updateEmail's comment just above for why this is updateMany + try/catch.
+    try {
+      await this.db.approvedPhone.updateMany({
+        where: { phone: updated.phone },
+        data: { name: data.name },
+      });
+    } catch (err) {
+      logger.error({ err, userId }, 'auth.updateName: failed to sync ApprovedPhone');
+    }
     logger.info({ userId }, 'auth.updateName: success');
     return this.toPublicUser(updated);
   }

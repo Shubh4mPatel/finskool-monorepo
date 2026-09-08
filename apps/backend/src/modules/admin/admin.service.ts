@@ -198,14 +198,17 @@ export class AdminService {
         })
         summary.updated++
         if (!notifyCommunityId) notifyCommunityId = community.id
-      } else if (existingUser && existingAp && existingUser.status === 'deleted') {
-        // A previously-deleted member coming back — revive them (overwrite name/email,
-        // reset registration state) rather than just quietly re-subscribing a dead account.
-        await this.db.$transaction(async tx => {
-          await this.reviveMember(tx, existingUser, phone, name, email, adminId)
-          await tx.subscription.create({
-            data: { userId: existingUser.id, approvedPhoneId: existingAp.id, communityId: community.id, payment, paidOn, validUntil },
-          })
+      } else if (existingUser && existingUser.status === 'deleted') {
+        // A previously-deleted member coming back — revive them (see reviveMember's own
+        // doc comment for exactly what "revive" does/doesn't reset) rather than just
+        // quietly re-subscribing a dead account. Note: no longer gated on existingAp —
+        // a self-registered-then-deleted user has no ApprovedPhone row at all, and
+        // reviveMember's upsert handles that (creates one) same as any other revive path.
+        const revived = await this.db.$transaction(async tx => {
+          return this.reviveMember(tx, existingUser, phone, name, email, adminId)
+        })
+        await this.db.subscription.create({
+          data: { userId: existingUser.id, communityId: community.id, payment, paidOn, validUntil },
         })
         summary.created++
         if (!notifyCommunityId) notifyCommunityId = community.id
@@ -213,20 +216,22 @@ export class AdminService {
         if (email) {
           try {
             await notificationsQueue.add(
-              WELCOME_EMAIL_JOB,
-              { toEmail: email, name, phone, communityName: community.name, validTill: validUntil.toISOString() },
+              revived.wasAlreadyRegistered ? MEMBER_REINSTATED_EMAIL_JOB : WELCOME_EMAIL_JOB,
+              revived.wasAlreadyRegistered
+                ? { toEmail: email, name }
+                : { toEmail: email, name, phone, communityName: community.name, validTill: validUntil.toISOString() },
               { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
             )
           } catch (err) {
-            logger.error({ err, phone }, 'admin.importUsers: failed to enqueue welcome email job')
+            logger.error({ err, phone }, 'admin.importUsers: failed to enqueue revive email job')
           }
         }
-      } else if (existingUser && existingAp) {
-        // User exists but NOT subscribed to this community yet — add subscription only
+      } else if (existingUser) {
+        // User exists (admin-added or self-registered) but NOT subscribed to this
+        // community yet — add subscription only.
         await this.db.subscription.create({
           data: {
             userId: existingUser.id,
-            approvedPhoneId: existingAp.id,
             communityId: community.id,
             payment,
             paidOn,
@@ -239,9 +244,9 @@ export class AdminService {
         // Brand new user — create User + ApprovedPhone + Subscription in one transaction
         await this.db.$transaction(async tx => {
           const user = await tx.user.create({ data: { phone, name, email } })
-          const ap = await tx.approvedPhone.create({ data: { phone, name, email, addedBy: adminId } })
+          await tx.approvedPhone.create({ data: { phone, name, email, addedBy: adminId } })
           await tx.subscription.create({
-            data: { userId: user.id, approvedPhoneId: ap.id, communityId: community.id, payment, paidOn, validUntil },
+            data: { userId: user.id, communityId: community.id, payment, paidOn, validUntil },
           })
         })
         summary.created++
@@ -330,21 +335,22 @@ export class AdminService {
           })
           summary.updated++
           if (!notifyCommunityId) notifyCommunityId = community.id
-        } else if (existingUser && existingAp && existingUser.status !== 'active' && !reviveRowNumSet.has(rowNum)) {
+        } else if (existingUser && existingUser.status !== 'active' && !reviveRowNumSet.has(rowNum)) {
           // Matches a suspended/deleted member, but the admin didn't select this row
           // to revive on the review page — skip rather than silently reactivate.
+          // No longer gated on existingAp — a self-registered-then-suspended/deleted
+          // user has no ApprovedPhone row at all, and still needs an explicit revive decision.
           summary.skipped++
           summary.errors.push({ row: rowNum, phone, reason: `Member is ${existingUser.status} — not selected to revive` })
           continue
-        } else if (existingUser && existingAp && existingUser.status !== 'active') {
+        } else if (existingUser && existingUser.status !== 'active') {
           // Admin explicitly selected this row to revive (suspended or deleted member
-          // coming back) — overwrite name/email, reset registration state, rather than
-          // just quietly re-subscribing a dead/suspended account.
-          await this.db.$transaction(async tx => {
-            await this.reviveMember(tx, existingUser, phone, row.name, email, adminId)
-            await tx.subscription.create({
-              data: { userId: existingUser.id, approvedPhoneId: existingAp.id, communityId: community.id, payment, paidOn, validUntil },
-            })
+          // coming back) — see reviveMember's own doc comment for exactly what gets reset.
+          const revived = await this.db.$transaction(async tx => {
+            return this.reviveMember(tx, existingUser, phone, row.name, email, adminId)
+          })
+          await this.db.subscription.create({
+            data: { userId: existingUser.id, communityId: community.id, payment, paidOn, validUntil },
           })
           summary.created++
           if (!notifyCommunityId) notifyCommunityId = community.id
@@ -352,26 +358,30 @@ export class AdminService {
           if (email) {
             try {
               await notificationsQueue.add(
-                WELCOME_EMAIL_JOB,
-                { toEmail: email, name: row.name, phone, communityName: community.name, validTill: validUntil.toISOString() },
+                revived.wasAlreadyRegistered ? MEMBER_REINSTATED_EMAIL_JOB : WELCOME_EMAIL_JOB,
+                revived.wasAlreadyRegistered
+                  ? { toEmail: email, name: row.name }
+                  : { toEmail: email, name: row.name, phone, communityName: community.name, validTill: validUntil.toISOString() },
                 { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
               )
             } catch (err) {
-              logger.error({ err, phone }, 'admin.importUsersFromJSON: failed to enqueue welcome email job')
+              logger.error({ err, phone }, 'admin.importUsersFromJSON: failed to enqueue revive email job')
             }
           }
-        } else if (existingUser && existingAp) {
+        } else if (existingUser) {
+          // User exists (admin-added or self-registered) but NOT subscribed to this
+          // community yet — add subscription only.
           await this.db.subscription.create({
-            data: { userId: existingUser.id, approvedPhoneId: existingAp.id, communityId: community.id, payment, paidOn, validUntil },
+            data: { userId: existingUser.id, communityId: community.id, payment, paidOn, validUntil },
           })
           summary.created++
           if (!notifyCommunityId) notifyCommunityId = community.id
         } else {
           await this.db.$transaction(async tx => {
             const user = await tx.user.create({ data: { phone, name: row.name, email } })
-            const ap = await tx.approvedPhone.create({ data: { phone, name: row.name, email, addedBy: adminId } })
+            await tx.approvedPhone.create({ data: { phone, name: row.name, email, addedBy: adminId } })
             await tx.subscription.create({
-              data: { userId: user.id, approvedPhoneId: ap.id, communityId: community.id, payment, paidOn, validUntil },
+              data: { userId: user.id, communityId: community.id, payment, paidOn, validUntil },
             })
           })
           summary.created++
@@ -1153,7 +1163,6 @@ export class AdminService {
       await tx.subscription.create({
         data: {
           userId: user.id,
-          approvedPhoneId: ap.id,
           communityId: data.communityId,
           payment: data.payment,
           paidOn: new Date(),
@@ -1220,14 +1229,13 @@ export class AdminService {
       await tx.subscription.create({
         data: {
           userId: revived.userId,
-          approvedPhoneId: revived.approvedPhoneId,
           communityId: data.communityId,
           payment: data.payment,
           paidOn: new Date(),
           validUntil: new Date(data.validUntil),
         },
       })
-      return { approvedPhoneId: revived.approvedPhoneId }
+      return { approvedPhoneId: revived.approvedPhoneId, wasAlreadyRegistered: revived.wasAlreadyRegistered }
     })
 
     logger.info({ phone, adminId, previousStatus: existingUser.status }, 'admin.reviveAndAddMember: revived')
@@ -1235,12 +1243,14 @@ export class AdminService {
     if (data.email) {
       try {
         await notificationsQueue.add(
-          WELCOME_EMAIL_JOB,
-          { toEmail: data.email, name: data.name, phone, communityName: community.name, validTill: new Date(data.validUntil).toISOString() },
+          result.wasAlreadyRegistered ? MEMBER_REINSTATED_EMAIL_JOB : WELCOME_EMAIL_JOB,
+          result.wasAlreadyRegistered
+            ? { toEmail: data.email, name: data.name }
+            : { toEmail: data.email, name: data.name, phone, communityName: community.name, validTill: new Date(data.validUntil).toISOString() },
           { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
         )
       } catch (err) {
-        logger.error({ err, phone }, 'admin.reviveAndAddMember: failed to enqueue welcome email job')
+        logger.error({ err, phone }, 'admin.reviveAndAddMember: failed to enqueue revive email job')
       }
     }
 
@@ -1273,7 +1283,6 @@ export class AdminService {
       const sub = await tx.subscription.create({
         data: {
           userId: current.userId,
-          approvedPhoneId: current.approvedPhoneId,
           communityId: current.communityId,
           payment: data.payment,
           paidOn,
@@ -1350,24 +1359,17 @@ export class AdminService {
     }
   }
 
-  async deleteMember(approvedPhoneId: string): Promise<DeleteMemberResultDTO> {
-    const ap = await this.db.approvedPhone.findUnique({ where: { id: approvedPhoneId } })
-    if (!ap) throw new NotFoundError('Member not found')
-
-    // Linked only by phone (no formal FK) — same lookup pattern used throughout this file
-    const user = await this.db.user.findUnique({ where: { phone: ap.phone } })
-
-    if (!user) {
-      // Shouldn't happen: addMember/importUsers always create User + ApprovedPhone together.
-      // "Deleted" lives only on User.status now, and there's no User row here to set it
-      // on — nothing meaningful to write, just log loudly so it's traceable.
-      logger.warn({ approvedPhoneId: ap.id, phone: ap.phone }, 'admin.deleteMember: no matching User row for this ApprovedPhone')
-      return { approvedPhoneId: ap.id, userId: null, phone: ap.phone, isActive: false }
-    }
-
+  async deleteMember(userId: string): Promise<DeleteMemberResultDTO> {
+    const user = await this.db.user.findUnique({ where: { id: userId } })
+    if (!user) throw new NotFoundError('Member not found')
     if (user.role === 'admin') {
       throw new ForbiddenError('Admin accounts cannot be deactivated from this endpoint')
     }
+
+    // Linked only by phone (no formal relation) — same lookup pattern used throughout this
+    // file. Nullable: a self-registered member has no ApprovedPhone row, which is the normal
+    // case now under userId-primary addressing, not an error to defend against.
+    const ap = await this.db.approvedPhone.findUnique({ where: { phone: user.phone } })
 
     await this.db.$transaction(async tx => {
       // ApprovedPhone itself is untouched — its status only ever tracks
@@ -1378,39 +1380,38 @@ export class AdminService {
       await tx.subscription.updateMany({ where: { userId: user.id }, data: { isActive: false } })
     })
 
-    logger.info({ approvedPhoneId: ap.id, userId: user.id, phone: ap.phone }, 'admin.deleteMember: deactivated')
-    return { approvedPhoneId: ap.id, userId: user.id, phone: ap.phone, isActive: false }
+    logger.info({ userId: user.id, approvedPhoneId: ap?.id ?? null, phone: user.phone }, 'admin.deleteMember: deactivated')
+    return { userId: user.id, approvedPhoneId: ap?.id ?? null, phone: user.phone, isActive: false }
   }
 
-  async bulkDeleteMembers(approvedPhoneIds: string[]): Promise<BulkDeleteMembersResultDTO> {
-    const errors: { approvedPhoneId: string; reason: string }[] = []
+  async bulkDeleteMembers(userIds: string[]): Promise<BulkDeleteMembersResultDTO> {
+    const errors: { userId: string; reason: string }[] = []
     let succeeded = 0
 
-    for (const id of approvedPhoneIds) {
+    for (const id of userIds) {
       try {
         await this.deleteMember(id)
         succeeded++
       } catch (err) {
         const reason = err instanceof Error ? err.message : 'Unknown error'
-        errors.push({ approvedPhoneId: id, reason })
+        errors.push({ userId: id, reason })
       }
     }
 
     logger.info(
-      { total: approvedPhoneIds.length, succeeded, failed: errors.length },
+      { total: userIds.length, succeeded, failed: errors.length },
       'admin.bulkDeleteMembers: complete',
     )
-    return { total: approvedPhoneIds.length, succeeded, failed: errors.length, errors }
+    return { total: userIds.length, succeeded, failed: errors.length, errors }
   }
 
-  async suspendMember(approvedPhoneId: string, reason: string): Promise<SuspendMemberResultDTO> {
-    const ap = await this.db.approvedPhone.findUnique({ where: { id: approvedPhoneId } })
-    if (!ap) throw new NotFoundError('Member not found')
-
-    const user = await this.db.user.findUnique({ where: { phone: ap.phone } })
+  async suspendMember(userId: string, reason: string): Promise<SuspendMemberResultDTO> {
+    const user = await this.db.user.findUnique({ where: { id: userId } })
     if (!user) throw new NotFoundError('Member not found')
     if (user.role === 'admin') throw new ForbiddenError('Admin accounts cannot be suspended')
     if (user.status === 'deleted') throw new ConflictError('This member was already deleted, not suspended')
+
+    const ap = await this.db.approvedPhone.findUnique({ where: { phone: user.phone } })
 
     // ApprovedPhone is untouched — suspension is purely a User.status concern now,
     // same reasoning as deleteMember.
@@ -1419,7 +1420,7 @@ export class AdminService {
       data: { status: 'suspended', suspensionReason: reason },
     })
 
-    logger.info({ approvedPhoneId: ap.id, userId: user.id }, 'admin.suspendMember: suspended')
+    logger.info({ userId: user.id, approvedPhoneId: ap?.id ?? null }, 'admin.suspendMember: suspended')
 
     if (user.email) {
       try {
@@ -1429,25 +1430,27 @@ export class AdminService {
           { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
         )
       } catch (err) {
-        logger.error({ err, approvedPhoneId }, 'admin.suspendMember: failed to enqueue suspension email job')
+        logger.error({ err, userId }, 'admin.suspendMember: failed to enqueue suspension email job')
       }
     }
 
     return {
-      approvedPhoneId: ap.id,
       userId: updated.id,
+      approvedPhoneId: ap?.id ?? null,
       isActive: updated.status === 'active',
       suspensionReason: updated.suspensionReason!,
     }
   }
 
-  async revokeSuspension(approvedPhoneId: string): Promise<RevokeSuspensionResultDTO> {
-    const ap = await this.db.approvedPhone.findUnique({ where: { id: approvedPhoneId } })
-    if (!ap) throw new NotFoundError('Member not found')
-
-    const user = await this.db.user.findUnique({ where: { phone: ap.phone } })
-    if (!user) throw new NotFoundError('Member not found')
+  async revokeSuspension(userId: string): Promise<RevokeSuspensionResultDTO> {
+    // New guard vs. before — see this plan's §1: reachable by any userId now, not just
+    // ones that happened to match an ApprovedPhone, so an admin account must be excluded
+    // explicitly rather than by accident.
+    const user = await this.db.user.findUnique({ where: { id: userId } })
+    if (!user || user.role === 'admin') throw new NotFoundError('Member not found')
     if (user.status === 'deleted') throw new ConflictError('This member was deleted, not suspended — cannot revoke')
+
+    const ap = await this.db.approvedPhone.findUnique({ where: { phone: user.phone } })
 
     // Reinstating is just "back to active" — no need to also figure out
     // pending/registered/expired here anymore (that used to require
@@ -1460,7 +1463,7 @@ export class AdminService {
       data: { status: 'active', suspensionReason: null },
     })
 
-    logger.info({ approvedPhoneId: ap.id, userId: user.id }, 'admin.revokeSuspension: revoked')
+    logger.info({ userId: user.id, approvedPhoneId: ap?.id ?? null }, 'admin.revokeSuspension: revoked')
 
     if (user.email) {
       try {
@@ -1470,39 +1473,49 @@ export class AdminService {
           { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
         )
       } catch (err) {
-        logger.error({ err, approvedPhoneId }, 'admin.revokeSuspension: failed to enqueue reinstated email job')
+        logger.error({ err, userId }, 'admin.revokeSuspension: failed to enqueue reinstated email job')
       }
     }
 
-    return { approvedPhoneId: ap.id, userId: updated.id, isActive: updated.status === 'active' }
+    return { userId: updated.id, approvedPhoneId: ap?.id ?? null, isActive: updated.status === 'active' }
   }
 
   async listMembers(filters: MemberListFilters): Promise<MemberListDTO> {
     const { page, pageSize, ...whereFilters } = filters
-    const { apWhere, currentSubIds } = await this.buildMemberWhere(whereFilters)
-    const { members, total } = await this.queryMembers(apWhere, currentSubIds, { skip: (page - 1) * pageSize, take: pageSize })
+    const { userWhere, currentSubIds } = await this.buildMemberWhere(whereFilters)
+    const { members, total } = await this.queryMembers(userWhere, currentSubIds, { skip: (page - 1) * pageSize, take: pageSize })
     return { members, total, page, pageSize, totalPages: Math.ceil(total / pageSize) }
   }
 
   async exportMembersCsv(filters: MemberExportFilters): Promise<string> {
-    const { apWhere, currentSubIds } = await this.buildMemberWhere(filters)
-    const { members } = await this.queryMembers(apWhere, currentSubIds)
+    const { userWhere, currentSubIds } = await this.buildMemberWhere(filters)
+    const { members } = await this.queryMembers(userWhere, currentSubIds)
     return this.membersToCsv(members)
   }
 
   // Shared by listMembers (paginated) and exportMembersCsv (unpaginated — omit `pagination`
   // to fetch every matching row). When unpaginated, `total` is just `members.length` — no
   // separate count() query needed since the fetched rows already are the full result set.
+  // Driving table is User (was ApprovedPhone) — see this plan's "Key architectural finding":
+  // Subscription.userId is a real Prisma relation, ApprovedPhone.subscriptions never was
+  // (and no longer exists at all, post schema change), and User-primary is what actually
+  // makes self-registered members show up here in the first place.
   private async queryMembers(
-    apWhere: Record<string, unknown>,
+    userWhere: Record<string, unknown>,
     currentSubIds: string[],
     pagination?: { skip: number; take: number },
   ): Promise<{ members: MemberItemDTO[]; total: number }> {
     const [total, rows] = await Promise.all([
-      pagination ? this.db.approvedPhone.count({ where: apWhere }) : Promise.resolve(null),
-      this.db.approvedPhone.findMany({
-        where: apWhere,
-        orderBy: { createdAt: 'desc' },
+      pagination ? this.db.user.count({ where: userWhere }) : Promise.resolve(null),
+      this.db.user.findMany({
+        where: userWhere,
+        // Name, ascending — was createdAt desc. Now a mixed admin-added +
+        // self-registered list, so alphabetical is the more useful default.
+        // Sorts on User.name specifically (see the ap?.name ?? u.name display
+        // precedence note below) — this has to be a plain column the DB can
+        // ORDER BY directly, not the resolved display name, since LIMIT/OFFSET
+        // pagination requires the sort to happen in SQL.
+        orderBy: { name: 'asc' },
         ...pagination,
         include: {
           subscriptions: {
@@ -1514,64 +1527,65 @@ export class AdminService {
       }),
     ])
 
-    // Batch-fetch linked Users (status/suspensionReason) for these rows — ApprovedPhone
-    // and User have no formal relation, only the shared phone string, same pattern as elsewhere.
-    const users = await this.db.user.findMany({
-      where: { phone: { in: rows.map(ap => ap.phone) } },
-      select: { phone: true, status: true, suspensionReason: true, avatarUrl: true },
+    // Batch-fetch matching ApprovedPhone rows (nullable per user — self-registered
+    // members have none) — same phone-matching idiom used throughout this file,
+    // since User and ApprovedPhone have no formal relation.
+    const approvedPhones = await this.db.approvedPhone.findMany({
+      where: { phone: { in: rows.map(u => u.phone) } },
     })
-    const userByPhone = new Map(users.map(u => [u.phone, u]))
+    const apByPhone = new Map(approvedPhones.map(a => [a.phone, a]))
 
-    const members: MemberItemDTO[] = rows.map(ap => {
-      const allSubs = ap.subscriptions
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    const members: MemberItemDTO[] = rows.map(u => {
+      const ap = apByPhone.get(u.phone) ?? null
+      const allSubs = u.subscriptions
       const sub = allSubs[0] ?? null
-      const user = userByPhone.get(ap.phone)
+      const hasActiveSubscription = !!sub && sub.isActive && sub.validUntil >= today
 
       return {
-        id: ap.id,
-        name: ap.name ?? '',
-        phone: ap.phone,
-        email: ap.email,
-        avatarUrl: user?.avatarUrl ?? null,
-        isActive: user?.status === 'active',
-        isRegistered: ap.status === 'registered',
-        status: this.deriveMemberStatus(user?.status, ap.status, sub),
-        createdAt: ap.createdAt.toISOString(),
-        suspensionReason: user?.status === 'suspended' ? (user.suspensionReason ?? null) : null,
-        subscription: sub
-          ? {
-              id: sub.id,
-              communityId: sub.communityId,
-              communityName: sub.community.name,
-              payment: Number(sub.payment),
-              paidOn: sub.paidOn ? sub.paidOn.toISOString().split('T')[0]! : null,
-              validUntil: sub.validUntil.toISOString().split('T')[0]!,
-              isActive: sub.isActive,
-            }
-          : null,
-        allSubscriptions: allSubs.map(s => ({
-          id: s.id,
-          communityId: s.communityId,
-          communityName: s.community.name,
-          payment: Number(s.payment),
-          paidOn: s.paidOn ? s.paidOn.toISOString().split('T')[0]! : null,
-          validUntil: s.validUntil.toISOString().split('T')[0]!,
-          isActive: s.isActive,
-        })),
+        id: u.id,
+        approvedPhoneId: ap?.id ?? null,
+        source: ap ? 'admin' : 'self',
+        // IMPORTANT: keep this precedence — do not switch to User fields as source of truth.
+        // importUsers's overwrite-strategy deliberately updates ApprovedPhone.name/email on
+        // every re-import but only touches User.name/email pre-registration, so ApprovedPhone
+        // is the deliberate "admin's view of record" and can genuinely diverge from User
+        // post-registration.
+        name: ap?.name ?? u.name,
+        phone: ap?.phone ?? u.phone,
+        email: ap?.email ?? u.email,
+        avatarUrl: u.avatarUrl,
+        accountStatus: u.status,
+        registrationStatus: ap?.status ?? null,
+        hasActiveSubscription,
+        createdAt: u.createdAt.toISOString(),
+        suspensionReason: u.status === 'suspended' ? (u.suspensionReason ?? null) : null,
+        subscription: sub ? this.buildSubDTO(sub) : null,
+        allSubscriptions: allSubs.map(s => this.buildSubDTO(s)),
       }
     })
 
     return { members, total: total ?? members.length }
   }
 
+  // Old admin-facing 5-value display status, kept only as the CSV export's column
+  // vocabulary — every other consumer now reads accountStatus/registrationStatus/
+  // hasActiveSubscription directly instead of a derived, conflated single value.
+  // registrationStatus === null (self-registered) falls through to the last line,
+  // same as any admin-added member whose ApprovedPhone.status is 'registered' —
+  // correct, since "registered" here just means "has a real, currently-valid
+  // subscription," which is exactly as true for a self-registered member (see
+  // this plan's §0.1 free-community auto-subscribe) as for an admin-added one.
+  private memberStatusLabel(m: MemberItemDTO): string {
+    if (m.accountStatus === 'suspended') return 'Suspended'
+    if (m.accountStatus === 'deleted') return 'Deleted'
+    if (m.registrationStatus === 'pending') return 'Pending Sign'
+    return m.hasActiveSubscription ? 'Registered' : 'Expired'
+  }
+
   private membersToCsv(members: MemberItemDTO[]): string {
-    const STATUS_LABELS: Record<MemberStatus, string> = {
-      registered: 'Registered',
-      pending: 'Pending Sign',
-      expired: 'Expired',
-      suspended: 'Suspended',
-      deleted: 'Deleted',
-    }
     const formatCurrency = (n: number) => `₹${n.toLocaleString('en-IN')}`
     const formatDate = (iso: string | null | undefined) =>
       iso ? new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'
@@ -1588,41 +1602,62 @@ export class AdminService {
         sub ? formatCurrency(sub.payment) : '—',
         formatDate(sub?.paidOn),
         formatDate(sub?.validUntil),
-        STATUS_LABELS[m.status] ?? m.status,
+        this.memberStatusLabel(m),
         formatDate(m.createdAt),
       ])
 
     return '﻿' + [header, ...rows].map(r => r.map(escape).join(',')).join('\n')
   }
 
-  // Brings a soft-deleted member (User.status: 'deleted', per deleteMember) back to
-  // life: overwrites their name/email with the freshly-submitted values, and resets
-  // passwordHash + ApprovedPhone.status so they go through register() again exactly
-  // like a brand-new signup — deliberate, since deleteMember doesn't clear any of
-  // this, so a revived member must not silently inherit their old password/session state.
+  // Brings a suspended/deleted member back to active. Branches on whether they'd
+  // already completed registration before (a real password already set) —
+  // "revive" must not force a re-registration flow on someone who already has
+  // working credentials:
+  //   - Already registered: passwordHash is left untouched entirely (not
+  //     reset), ApprovedPhone.status becomes 'registered'. They log back in
+  //     with the exact same phone/email + password they had before.
+  //   - Never registered (admin added them, but they never got as far as
+  //     setting a password before being suspended/deleted): unchanged from
+  //     before — ApprovedPhone.status becomes 'pending', nothing to preserve.
+  // `approvedPhone.upsert` (not `.update`) because a self-registered-then-
+  // suspended/deleted user has no ApprovedPhone row at all to update — the
+  // exact same "no row exists yet" case a brand-new admin-added phone hits,
+  // just reached via a different path. `name`/`email` for the `create` branch
+  // come from this function's own parameters — every call site already looked
+  // up `existingUser` and has fresh name/email in hand before calling this;
+  // no separate Users-table lookup is needed here (see the caller sites).
   private async reviveMember(
     tx: Prisma.TransactionClient,
-    existingUser: { id: string },
+    existingUser: { id: string; passwordHash: string | null },
     phone: string,
     name: string,
     email: string | null,
     adminId: string,
-  ): Promise<{ userId: string; approvedPhoneId: string }> {
+  ): Promise<{ userId: string; approvedPhoneId: string; wasAlreadyRegistered: boolean }> {
+    const wasAlreadyRegistered = existingUser.passwordHash !== null
+
     await tx.user.update({
       where: { id: existingUser.id },
-      data: { name, email, passwordHash: null, status: 'active', suspensionReason: null },
+      // No passwordHash field here at all — see the comment above for why
+      // wiping it (the old behavior) was the actual bug.
+      data: { name, email, status: 'active', suspensionReason: null },
     })
-    const ap = await tx.approvedPhone.update({
+    const registrationStatus = wasAlreadyRegistered ? 'registered' : 'pending'
+    const ap = await tx.approvedPhone.upsert({
       where: { phone },
-      data: { name, email, status: 'pending', addedBy: adminId },
+      create: { phone, name, email, status: registrationStatus, addedBy: adminId },
+      update: { name, email, status: registrationStatus, addedBy: adminId },
     })
-    return { userId: existingUser.id, approvedPhoneId: ap.id }
+    return { userId: existingUser.id, approvedPhoneId: ap.id, wasAlreadyRegistered }
   }
 
   private async buildMemberWhere(
     filters: MemberExportFilters,
-  ): Promise<{ apWhere: Record<string, unknown>; currentSubIds: string[] }> {
-    const { communityId, communityIds, status, validFrom, validTo, paidFrom, paidTo, expiringIn7Days, search } = filters
+  ): Promise<{ userWhere: Record<string, unknown>; currentSubIds: string[] }> {
+    const {
+      communityId, communityIds, accountStatus, registrationStatus, hasActiveSubscription, source,
+      validFrom, validTo, paidFrom, paidTo, expiringIn7Days, search,
+    } = filters
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
@@ -1630,16 +1665,16 @@ export class AdminService {
     // subscription rows per community, so only the current one should count here.
     // "Current" = most recently created row per (member, community), not isActive:true —
     // see getCurrentSubscriptionIds for why. hasSubFilter tracks whether a subscription-level
-    // filter (community/validFrom/validTo/paidFrom/paidTo) is actually requested — a deactivated
-    // member has zero current subscriptions in scope, and `some` on an always-present id-in-list
-    // would otherwise exclude them entirely from queries that don't ask for one of these filters.
+    // filter is actually requested — a deactivated member has zero current subscriptions in
+    // scope, and `some` on an always-present id-in-list would otherwise exclude them entirely
+    // from queries that don't ask for one of these filters.
     const currentSubIds = await this.getCurrentSubscriptionIds()
     const subWhere: Record<string, unknown> = { id: { in: currentSubIds } }
     let hasSubFilter = false
-    // 'expired' (see the `status` handling below) needs "no CURRENT subscription is
-    // still valid" — the negation of every other subscription-shaped filter here,
-    // which all mean "at least one CURRENT subscription matches." Prisma expresses
-    // that as `none` instead of `some` on the same relation filter.
+    // hasActiveSubscription: false needs "no CURRENT subscription is still valid" — the
+    // negation of every other subscription-shaped filter here, which all mean "at least
+    // one CURRENT subscription matches." Prisma expresses that as `none` instead of `some`
+    // on the same relation filter.
     let subscriptionMode: 'some' | 'none' = 'some'
     if (communityId) { subWhere['communityId'] = communityId; hasSubFilter = true }
     else if (communityIds) { subWhere['communityId'] = { in: communityIds }; hasSubFilter = true }
@@ -1664,20 +1699,17 @@ export class AdminService {
       subWhere['validUntil'] = { ...((subWhere['validUntil'] as object) ?? {}), gte: today, lte: windowEnd }
       hasSubFilter = true
     }
-
-    // Exclude admin accounts (User.role = 'admin') — linked by phone
-    const adminUsers = await this.db.user.findMany({
-      where: { role: 'admin' },
-      select: { phone: true },
-    })
-    const adminPhones = adminUsers.map(u => u.phone)
-
-    // Build ApprovedPhone-level filter as an AND-list of conditions, since `search`
-    // needs its own OR group — can't just assign apWhere.OR directly alongside other conditions.
-    const andClauses: Record<string, unknown>[] = []
-    if (adminPhones.length > 0) {
-      andClauses.push({ phone: { notIn: adminPhones } })
+    if (hasActiveSubscription !== undefined) {
+      subWhere['isActive'] = true
+      subWhere['validUntil'] = { ...((subWhere['validUntil'] as object) ?? {}), gte: today }
+      hasSubFilter = true
+      subscriptionMode = hasActiveSubscription ? 'some' : 'none'
     }
+
+    // Build a phone-based AND-list of conditions (registrationStatus/source are
+    // ApprovedPhone-level facts, resolved to phone sets here since User is the
+    // driving table now), plus `search`'s own OR group.
+    const andClauses: Record<string, unknown>[] = []
     if (search) {
       andClauses.push({
         OR: [
@@ -1687,38 +1719,28 @@ export class AdminService {
         ],
       })
     }
-
-    const apWhere: Record<string, unknown> = {}
-    // MemberListFilters.status is the 5-value admin-facing display status — no longer
-    // a single stored column (see deriveMemberStatus's doc comment), so filtering by it
-    // means combining ApprovedPhone.status (pending/registered) with a User.status
-    // lookup and, for registered/expired, whether the current subscription is valid.
-    if (status === 'pending') {
-      apWhere['status'] = 'pending'
-    } else if (status === 'suspended' || status === 'deleted') {
-      const matching = await this.db.user.findMany({ where: { status }, select: { phone: true } })
-      andClauses.push({ phone: { in: matching.map(u => u.phone) } })
-    } else if (status === 'registered' || status === 'expired') {
-      apWhere['status'] = 'registered'
-      const activeUsers = await this.db.user.findMany({ where: { status: 'active' }, select: { phone: true } })
-      andClauses.push({ phone: { in: activeUsers.map(u => u.phone) } })
-      // Merge the "current subscription still valid" check into subWhere so it composes
-      // correctly with any community/date filters requested alongside status — same
-      // gte-merge pattern expiringIn7Days uses above.
-      subWhere['isActive'] = true
-      subWhere['validUntil'] = { ...((subWhere['validUntil'] as object) ?? {}), gte: today }
-      hasSubFilter = true
-      subscriptionMode = status === 'expired' ? 'none' : 'some'
+    if (registrationStatus) {
+      // By construction admin-added-only — see MemberListFilters.registrationStatus's
+      // own doc comment. A self-registered member's phone can never appear in this set.
+      const matching = await this.db.approvedPhone.findMany({ where: { status: registrationStatus }, select: { phone: true } })
+      andClauses.push({ phone: { in: matching.map(a => a.phone) } })
+    }
+    if (source) {
+      // Applied independently of (not else-if'd with) registrationStatus above, so an
+      // internally-contradictory combination (e.g. registrationStatus=pending AND
+      // source=self — impossible by construction) correctly ANDs down to an empty
+      // result instead of one filter silently winning over the other.
+      const approvedPhones = await this.db.approvedPhone.findMany({ select: { phone: true } })
+      const approvedPhoneSet = approvedPhones.map(a => a.phone)
+      andClauses.push({ phone: source === 'admin' ? { in: approvedPhoneSet } : { notIn: approvedPhoneSet } })
     }
 
-    if (hasSubFilter) {
-      apWhere['subscriptions'] = { [subscriptionMode]: subWhere }
-    }
-    if (andClauses.length > 0) {
-      apWhere['AND'] = andClauses
-    }
+    const userWhere: Record<string, unknown> = { role: 'member', deletedAt: null }
+    if (accountStatus) userWhere['status'] = accountStatus
+    if (hasSubFilter) userWhere['subscriptions'] = { [subscriptionMode]: subWhere }
+    if (andClauses.length > 0) userWhere['AND'] = andClauses
 
-    return { apWhere, currentSubIds }
+    return { userWhere, currentSubIds }
   }
 
   // "Current" subscription per community = most recently created row, not
@@ -1731,10 +1753,12 @@ export class AdminService {
   private async getCurrentSubscriptionIds(): Promise<string[]> {
     // Prisma's query builder can't express "top 1 row per group" declaratively
     // (no DISTINCT ON / no id-of-groupBy-max) — a raw query is the direct fit.
+    // Groups by user_id now (was approved_phone_id) — Subscription no longer has
+    // that column at all (see schema.prisma's own comment on the model).
     const rows = await this.db.$queryRaw<{ id: string }[]>`
-      SELECT DISTINCT ON (approved_phone_id, community_id) id
+      SELECT DISTINCT ON (user_id, community_id) id
       FROM subscriptions
-      ORDER BY approved_phone_id, community_id, created_at DESC
+      ORDER BY user_id, community_id, created_at DESC
     `
     return rows.map(r => r.id)
   }
@@ -1748,27 +1772,6 @@ export class AdminService {
       result.push(s)
     }
     return result
-  }
-
-  // The admin-facing 5-value display status (registered/pending/expired/suspended/
-  // deleted) isn't persisted anywhere as a single column anymore — it's computed at
-  // read time from User.status (account standing: active/suspended/deleted),
-  // ApprovedPhone.status (has this admin-added phone been claimed: pending/registered),
-  // and the member's current subscription validity ("expired" is inherently a
-  // per-subscription fact, not an account-level one — see the UserStatus doc comment
-  // in schema.prisma). Shared by queryMembers and fetchMemberDTO so they can't drift.
-  private deriveMemberStatus(
-    userStatus: 'active' | 'suspended' | 'deleted' | undefined,
-    apStatus: 'pending' | 'registered',
-    currentSub: { isActive: boolean; validUntil: Date } | null,
-  ): MemberStatus {
-    if (!userStatus || userStatus === 'deleted') return 'deleted' // no matching User row shouldn't happen — treat as deleted, not a crash
-    if (userStatus === 'suspended') return 'suspended'
-    if (apStatus === 'pending') return 'pending'
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const hasValidSub = !!currentSub && currentSub.isActive && currentSub.validUntil >= today
-    return hasValidSub ? 'registered' : 'expired'
   }
 
   private buildSubDTO(s: {
@@ -1791,40 +1794,24 @@ export class AdminService {
     }
   }
 
-  async getMemberById(id: string): Promise<MemberItemDTO> {
-    return this.fetchMemberDTO(id)
+  async getMemberById(userId: string): Promise<MemberItemDTO> {
+    return this.fetchMemberDTO(userId)
   }
 
-  // Resolves a comment/post author's User.id to the ApprovedPhone.id their member
-  // profile page is keyed by — same phone-matching idiom used everywhere else in
-  // this file, since User and ApprovedPhone have no formal Prisma relation.
-  async getApprovedPhoneIdForUser(userId: string): Promise<{ approvedPhoneId: string }> {
-    const user = await this.db.user.findUnique({ where: { id: userId }, select: { phone: true, role: true } })
+  async resetMemberPassword(userId: string, newPassword: string): Promise<MemberItemDTO> {
+    const user = await this.db.user.findUnique({ where: { id: userId } })
     if (!user || user.role === 'admin') throw new NotFoundError('Member not found')
-
-    const ap = await this.db.approvedPhone.findUnique({ where: { phone: user.phone }, select: { id: true } })
-    if (!ap) throw new NotFoundError('Member not found')
-
-    return { approvedPhoneId: ap.id }
-  }
-
-  async resetMemberPassword(approvedPhoneId: string, newPassword: string): Promise<MemberItemDTO> {
-    const ap = await this.db.approvedPhone.findUnique({ where: { id: approvedPhoneId } })
-    if (!ap) throw new NotFoundError('Member not found')
-
-    const user = await this.db.user.findUnique({ where: { phone: ap.phone } })
-    if (!user) throw new NotFoundError('Member not found')
 
     const passwordHash = await bcrypt.hash(newPassword, 12)
     await this.db.user.update({ where: { id: user.id }, data: { passwordHash } })
 
-    logger.info({ approvedPhoneId }, 'admin.resetMemberPassword: password reset')
-    return this.fetchMemberDTO(approvedPhoneId)
+    logger.info({ userId }, 'admin.resetMemberPassword: password reset')
+    return this.fetchMemberDTO(userId)
   }
 
-  private async fetchMemberDTO(approvedPhoneId: string): Promise<MemberItemDTO> {
-    const ap = await this.db.approvedPhone.findUnique({
-      where: { id: approvedPhoneId },
+  private async fetchMemberDTO(userId: string): Promise<MemberItemDTO> {
+    const user = await this.db.user.findUnique({
+      where: { id: userId },
       include: {
         subscriptions: {
           include: { community: { select: { id: true, name: true } } },
@@ -1832,51 +1819,58 @@ export class AdminService {
         },
       },
     })
-    if (!ap) throw new NotFoundError('Member not found')
+    if (!user || user.role === 'admin') throw new NotFoundError('Member not found')
 
-    const user = await this.db.user.findUnique({
-      where: { phone: ap.phone },
-      select: { status: true, suspensionReason: true, avatarUrl: true },
-    })
+    const ap = await this.db.approvedPhone.findUnique({ where: { phone: user.phone } })
 
     // "Current" per community = most recently created row, not isActive:true — see
-    // getCurrentSubscriptionIds's comment on listMembers for why.
-    const allSubs = this.latestSubscriptionPerCommunity(ap.subscriptions)
+    // getCurrentSubscriptionIds's comment on queryMembers for why.
+    const allSubs = this.latestSubscriptionPerCommunity(user.subscriptions)
     const sub = allSubs[0] ?? null
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const hasActiveSubscription = !!sub && sub.isActive && sub.validUntil >= today
 
     return {
-      id: ap.id,
-      name: ap.name ?? '',
-      phone: ap.phone,
-      email: ap.email,
-      avatarUrl: user?.avatarUrl ?? null,
-      isActive: user?.status === 'active',
-      isRegistered: ap.status === 'registered',
-      status: this.deriveMemberStatus(user?.status, ap.status, sub),
-      createdAt: ap.createdAt.toISOString(),
-      suspensionReason: user?.status === 'suspended' ? (user.suspensionReason ?? null) : null,
+      id: user.id,
+      approvedPhoneId: ap?.id ?? null,
+      source: ap ? 'admin' : 'self',
+      name: ap?.name ?? user.name,
+      phone: ap?.phone ?? user.phone,
+      email: ap?.email ?? user.email,
+      avatarUrl: user.avatarUrl,
+      accountStatus: user.status,
+      registrationStatus: ap?.status ?? null,
+      hasActiveSubscription,
+      createdAt: user.createdAt.toISOString(),
+      suspensionReason: user.status === 'suspended' ? (user.suspensionReason ?? null) : null,
       subscription: sub ? this.buildSubDTO(sub) : null,
       allSubscriptions: allSubs.map(s => this.buildSubDTO(s)),
     }
   }
 
-  async updateMember(approvedPhoneId: string, data: UpdateMemberDTO): Promise<MemberItemDTO> {
-    const ap = await this.db.approvedPhone.findUnique({ where: { id: approvedPhoneId } })
-    if (!ap) throw new NotFoundError('Member not found')
+  async updateMember(userId: string, data: UpdateMemberDTO, adminId: string): Promise<MemberItemDTO> {
+    const user = await this.db.user.findUnique({ where: { id: userId } })
+    if (!user || user.role === 'admin') throw new NotFoundError('Member not found')
 
-    const user = await this.db.user.findUnique({ where: { phone: ap.phone } })
+    // Nullable — a self-registered member has no ApprovedPhone row (yet; see the
+    // newCommunity branch below, the one place that can change that).
+    let ap = await this.db.approvedPhone.findUnique({ where: { phone: user.phone } })
 
     const normalizedPhone = normalizePhone(data.phone)
     if (!normalizedPhone) throw new BadRequestError('Invalid phone number')
     const email = data.email ?? null
 
-    if (normalizedPhone !== ap.phone) {
-      const phoneConflict = await this.db.approvedPhone.findUnique({ where: { phone: normalizedPhone } })
+    if (normalizedPhone !== user.phone) {
+      // Checked against User (was ApprovedPhone) — phone is unique on User too, and a
+      // self-registered user (no ApprovedPhone row) could otherwise slip past this
+      // check entirely and hit an unhandled unique-constraint error on the write below.
+      const phoneConflict = await this.db.user.findFirst({ where: { phone: normalizedPhone, id: { not: user.id } } })
       if (phoneConflict) throw new ConflictError('Phone number already in use', 'PHONE_EXISTS')
     }
-    if (email && email !== ap.email) {
+    if (email && email !== user.email) {
       const emailConflict = await this.db.user.findUnique({ where: { email } })
-      if (emailConflict && emailConflict.phone !== ap.phone) {
+      if (emailConflict && emailConflict.id !== user.id) {
         throw new ConflictError('Email address already in use', 'EMAIL_EXISTS')
       }
     }
@@ -1888,32 +1882,43 @@ export class AdminService {
       })
       if (!community) throw new NotFoundError('Community not found')
       addedCommunityName = community.name
-      if (user) {
-        const alreadyIn = await this.db.subscription.findFirst({
-          where: { userId: user.id, communityId: data.newCommunity.communityId, isActive: true },
-        })
-        if (alreadyIn) throw new ConflictError('Member is already in this community', 'ALREADY_IN_COMMUNITY')
-      }
+      const alreadyIn = await this.db.subscription.findFirst({
+        where: { userId: user.id, communityId: data.newCommunity.communityId, isActive: true },
+      })
+      if (alreadyIn) throw new ConflictError('Member is already in this community', 'ALREADY_IN_COMMUNITY')
     }
 
     const newSubscriptionId = await this.db.$transaction(async tx => {
-      await tx.approvedPhone.update({
-        where: { id: approvedPhoneId },
+      await tx.user.update({
+        where: { id: user.id },
         data: { name: data.name, phone: normalizedPhone, email },
       })
-      if (user) {
-        await tx.user.update({
-          where: { id: user.id },
+      if (ap) {
+        await tx.approvedPhone.update({
+          where: { id: ap.id },
           data: { name: data.name, phone: normalizedPhone, email },
         })
       }
-      if (data.newCommunity && user && addedCommunityName) {
+      if (data.newCommunity && addedCommunityName) {
+        // Lazily create an ApprovedPhone if this was a self-registered member.
+        // Subscription no longer requires one (see schema.prisma's own comment on
+        // the model) — this is purely to make them a first-class member of the
+        // admin roster going forward, not an FK requirement anymore. This is the
+        // one point where a self-registered member's `source` permanently flips
+        // from 'self' to 'admin' — a deliberate consequence of an admin actively
+        // granting them community access, not a side effect of any other field
+        // on this form. status: 'registered' (not the default 'pending') since
+        // this person already has a working password.
+        if (!ap) {
+          ap = await tx.approvedPhone.create({
+            data: { phone: normalizedPhone, name: data.name, email, status: 'registered', addedBy: adminId },
+          })
+        }
         const paidOn = data.newCommunity.paidOn ? new Date(data.newCommunity.paidOn) : new Date()
         const validUntil = new Date(data.newCommunity.validUntil)
         const sub = await tx.subscription.create({
           data: {
             userId: user.id,
-            approvedPhoneId,
             communityId: data.newCommunity.communityId,
             payment: data.newCommunity.payment,
             paidOn,
@@ -1936,7 +1941,7 @@ export class AdminService {
       return null
     })
 
-    if (data.newCommunity && user && addedCommunityName) {
+    if (data.newCommunity && addedCommunityName) {
       if (email) {
         try {
           await notificationsQueue.add(
@@ -1950,7 +1955,7 @@ export class AdminService {
             { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
           )
         } catch (err) {
-          logger.error({ err, approvedPhoneId }, 'admin.updateMember: failed to enqueue community-added email job')
+          logger.error({ err, userId }, 'admin.updateMember: failed to enqueue community-added email job')
         }
       }
 
@@ -1967,21 +1972,18 @@ export class AdminService {
             } satisfies LiveNotificationEvent),
           )
         } catch (err) {
-          logger.error({ err, approvedPhoneId }, 'admin.updateMember: failed to publish live notification')
+          logger.error({ err, userId }, 'admin.updateMember: failed to publish live notification')
         }
       }
     }
 
-    logger.info({ approvedPhoneId }, 'admin.updateMember: success')
-    return this.fetchMemberDTO(approvedPhoneId)
+    logger.info({ userId }, 'admin.updateMember: success')
+    return this.fetchMemberDTO(userId)
   }
 
-  async revokeMemberCommunity(approvedPhoneId: string, communityId: string): Promise<void> {
-    const ap = await this.db.approvedPhone.findUnique({ where: { id: approvedPhoneId } })
-    if (!ap) throw new NotFoundError('Member not found')
-
-    const user = await this.db.user.findUnique({ where: { phone: ap.phone } })
-    if (!user) throw new NotFoundError('Member account not found')
+  async revokeMemberCommunity(userId: string, communityId: string): Promise<void> {
+    const user = await this.db.user.findUnique({ where: { id: userId } })
+    if (!user || user.role === 'admin') throw new NotFoundError('Member not found')
 
     const sub = await this.db.subscription.findFirst({
       where: { userId: user.id, communityId, isActive: true },
@@ -2010,10 +2012,10 @@ export class AdminService {
           { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
         )
       } catch (err) {
-        logger.error({ err, approvedPhoneId, communityId }, 'admin.revokeMemberCommunity: failed to enqueue access-removed email job')
+        logger.error({ err, userId, communityId }, 'admin.revokeMemberCommunity: failed to enqueue access-removed email job')
       }
     }
 
-    logger.info({ approvedPhoneId, communityId, remaining }, 'admin.revokeMemberCommunity: success')
+    logger.info({ userId, communityId, remaining }, 'admin.revokeMemberCommunity: success')
   }
 }

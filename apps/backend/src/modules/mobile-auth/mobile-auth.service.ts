@@ -407,18 +407,15 @@ export class MobileAuthService {
 
         // Brand new phone — nobody added it, so this is a User row with no
         // matching ApprovedPhone, by design: ApprovedPhone is the admin
-        // module's own membership roster/addressing scheme (every
-        // suspend/resetPassword/updateMember/revokeMemberCommunity call in
-        // admin.service.ts takes an approvedPhoneId, not a userId), which
-        // doesn't apply to someone no admin has touched. The consequence:
-        // this account is invisible to the admin members list/exports and
-        // can't be suspended, password-reset, or granted a community
-        // subscription from the admin side — admin.addMember() itself
-        // refuses on any already-active phone, so there is currently no
-        // admin path that grants this user access to a paid community
-        // after the fact. Postgres's unique constraint on `phone` (caught
-        // as P2002 below) is what protects against two concurrent
-        // registrations for the same never-before-seen number.
+        // module's own membership roster/addressing scheme. admin.service.ts's
+        // member-management functions are now userId-primary and work for
+        // this account too (list/search/suspend/reset-password/updateMember
+        // all find it directly) — the only remaining consequence of having no
+        // ApprovedPhone is that admin.updateMember's `source` field reads
+        // 'self' for them until an admin explicitly grants a community (which
+        // lazily creates one at that point). Postgres's unique constraint on
+        // `phone` (caught as P2002 below) is what protects against two
+        // concurrent registrations for the same never-before-seen number.
         const created = await tx.user.create({
           data: {
             phone: pending.phone,
@@ -427,6 +424,35 @@ export class MobileAuthService {
             passwordHash: pending.passwordHash,
           },
         })
+
+        // Auto-subscribe to the free community (Community.isFree — see
+        // seed.ts / backfill-free-community.ts for how it's created) so this
+        // account isn't permanently locked out of login()'s
+        // hasActiveSubscription gate before any admin has done anything.
+        // Deliberately only here, not in the existingUserId branch above —
+        // an admin who pre-added this phone already granted a real paid
+        // subscription via addMember(), so there's nothing to top up.
+        const freeCommunity = await tx.community.findFirst({ where: { isFree: true, deletedAt: null } })
+        if (freeCommunity) {
+          await tx.subscription.create({
+            data: {
+              userId: created.id,
+              communityId: freeCommunity.id,
+              payment: 0,
+              paidOn: null,
+              // validUntil is a required column with no "never expires"
+              // representation — 100 years out is the free tier's way of
+              // saying "doesn't really expire."
+              validUntil: new Date(new Date().setFullYear(new Date().getFullYear() + 100)),
+            },
+          })
+        } else {
+          // Not a hard failure — the account is still created successfully,
+          // just without free access until an admin seeds one (expected in a
+          // fresh/unseeded environment; see backfill-free-community.ts).
+          logger.warn({ userId: created.id }, 'mobileAuth.finalizeRegistration: no free community exists — skipping auto-subscribe')
+        }
+
         return created.id
       })
     } catch (err) {

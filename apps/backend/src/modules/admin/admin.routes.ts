@@ -56,7 +56,6 @@ router.delete(
 )
 router.get('/members', authenticate, requireRole('admin'), controller.listMembers)
 router.get('/members/export', authenticate, requireRole('admin'), controller.exportMembersCsv)
-router.get('/members/by-user/:userId', authenticate, requireRole('admin'), controller.getMemberByUserId)
 router.get('/members/:id', authenticate, requireRole('admin'), controller.getMember)
 router.post('/members', authenticate, requireRole('admin'), controller.addMember)
 router.post('/members/revive', authenticate, requireRole('admin'), controller.reviveAndAddMember)

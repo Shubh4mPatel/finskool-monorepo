@@ -11,8 +11,8 @@ import PhoneInput from "@/components/ui/PhoneInput";
 import {
   type MemberSubscription,
   type MemberItem,
-  STATUS_STYLES,
-  STATUS_LABELS,
+  getDisplayStatus,
+  SOURCE_LABELS,
   getInitials,
   formatCurrency,
   formatDate,
@@ -102,7 +102,10 @@ export default function MembersPage() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [filterCommunity, setFilterCommunity] = useState("");
-  const [filterStatus, setFilterStatus] = useState("");
+  const [filterAccountStatus, setFilterAccountStatus] = useState("");
+  const [filterRegistrationStatus, setFilterRegistrationStatus] = useState("");
+  const [filterHasActiveSubscription, setFilterHasActiveSubscription] = useState("");
+  const [filterSource, setFilterSource] = useState("");
   const [validDate, setValidDate] = useState("");
   const [paidDate, setPaidDate] = useState("");
   const [expiringSoon, setExpiringSoon] = useState(false);
@@ -128,13 +131,16 @@ export default function MembersPage() {
   // Reset to page 1 when any filter changes
   useEffect(() => {
     setPage(1);
-  }, [filterCommunity, filterStatus, validDate, paidDate, expiringSoon, debouncedSearch]);
+  }, [filterCommunity, filterAccountStatus, filterRegistrationStatus, filterHasActiveSubscription, filterSource, validDate, paidDate, expiringSoon, debouncedSearch]);
 
   function buildMemberFilterParams(): URLSearchParams {
     const params = new URLSearchParams();
     if (debouncedSearch) params.set("search", debouncedSearch);
     if (filterCommunity) params.set("communityId", filterCommunity);
-    if (filterStatus) params.set("status", filterStatus);
+    if (filterAccountStatus) params.set("accountStatus", filterAccountStatus);
+    if (filterRegistrationStatus) params.set("registrationStatus", filterRegistrationStatus);
+    if (filterHasActiveSubscription) params.set("hasActiveSubscription", filterHasActiveSubscription);
+    if (filterSource) params.set("source", filterSource);
     if (validDate) params.set("validTo", validDate);
     if (paidDate) { params.set("paidFrom", paidDate); params.set("paidTo", paidDate); }
     if (expiringSoon) params.set("expiringIn7Days", "true");
@@ -159,14 +165,14 @@ export default function MembersPage() {
       .finally(() => setLoading(false));
   // toast is a stable context ref
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, debouncedSearch, filterCommunity, filterStatus, validDate, paidDate, expiringSoon, fetchTrigger]);
+  }, [page, debouncedSearch, filterCommunity, filterAccountStatus, filterRegistrationStatus, filterHasActiveSubscription, filterSource, validDate, paidDate, expiringSoon, fetchTrigger]);
 
   // Fetch summary stats (unfiltered)
   useEffect(() => {
     Promise.all([
       api.get<MemberList>("/api/v1/admin/members?page=1&pageSize=1"),
-      api.get<MemberList>("/api/v1/admin/members?page=1&pageSize=1&status=registered"),
-      api.get<MemberList>("/api/v1/admin/members?page=1&pageSize=1&status=pending"),
+      api.get<MemberList>("/api/v1/admin/members?page=1&pageSize=1&hasActiveSubscription=true"),
+      api.get<MemberList>("/api/v1/admin/members?page=1&pageSize=1&registrationStatus=pending"),
     ]).then(([all, reg, pend]) => {
       setStatsData({ total: all.total, registered: reg.total, pending: pend.total });
     }).catch(() => {});
@@ -232,7 +238,7 @@ export default function MembersPage() {
       const ids = Array.from(selectedIds);
       const result = await api.post<{ total: number; succeeded: number; failed: number }>(
         "/api/v1/admin/members/bulk-delete",
-        { approvedPhoneIds: ids },
+        { userIds: ids },
       );
       if (result.failed > 0) {
         toast.error(`Deactivated ${result.succeeded} of ${result.total} members — ${result.failed} failed.`);
@@ -636,13 +642,38 @@ export default function MembersPage() {
           </div>
 
           <div className="relative shrink-0">
-            <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className={selectCls}>
-              <option value="">All Status</option>
-              <option value="registered">Registered</option>
-              <option value="pending">Pending Sign</option>
-              <option value="expired">Expired</option>
+            <select value={filterAccountStatus} onChange={e => setFilterAccountStatus(e.target.value)} className={selectCls}>
+              <option value="">All Account Status</option>
+              <option value="active">Active</option>
               <option value="suspended">Suspended</option>
               <option value="deleted">Deleted</option>
+            </select>
+            <ChevronDown size={13} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-subtle" />
+          </div>
+
+          <div className="relative shrink-0">
+            <select value={filterRegistrationStatus} onChange={e => setFilterRegistrationStatus(e.target.value)} className={selectCls}>
+              <option value="">All Registration</option>
+              <option value="registered">Registered</option>
+              <option value="pending">Pending Sign</option>
+            </select>
+            <ChevronDown size={13} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-subtle" />
+          </div>
+
+          <div className="relative shrink-0">
+            <select value={filterHasActiveSubscription} onChange={e => setFilterHasActiveSubscription(e.target.value)} className={selectCls}>
+              <option value="">Any Subscription</option>
+              <option value="true">Active Subscription</option>
+              <option value="false">Expired</option>
+            </select>
+            <ChevronDown size={13} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-subtle" />
+          </div>
+
+          <div className="relative shrink-0">
+            <select value={filterSource} onChange={e => setFilterSource(e.target.value)} className={selectCls}>
+              <option value="">All Sources</option>
+              <option value="admin">{SOURCE_LABELS.admin}</option>
+              <option value="self">{SOURCE_LABELS.self}</option>
             </select>
             <ChevronDown size={13} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-subtle" />
           </div>
@@ -729,8 +760,8 @@ export default function MembersPage() {
                       </div>
                     </button>
                   </div>
-                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${STATUS_STYLES[m.status] ?? ""}`}>
-                    {STATUS_LABELS[m.status] ?? m.status}
+                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${getDisplayStatus(m).style}`}>
+                    {getDisplayStatus(m).label}
                   </span>
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
@@ -749,8 +780,8 @@ export default function MembersPage() {
                     <Plus size={10} /> Extend
                   </button>
                   <button onClick={() => openEditModal(m)} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-divider/60 hover:text-accent" title="Edit member"><Pencil size={13} /></button>
-                  {m.status !== "deleted" && (
-                    <button onClick={() => (m.status === "suspended" ? handleRevokeSuspension(m) : openSuspendModal(m))} disabled={revoking} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-amber-50 hover:text-amber-500"><Ban size={13} /></button>
+                  {m.accountStatus !== "deleted" && (
+                    <button onClick={() => (m.accountStatus === "suspended" ? handleRevokeSuspension(m) : openSuspendModal(m))} disabled={revoking} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-amber-50 hover:text-amber-500"><Ban size={13} /></button>
                   )}
                   <button
                     onClick={() => sub ? handleRevokeCommunity(m, sub.communityId, sub.communityName) : handleDeleteMember(m)}
@@ -840,8 +871,8 @@ export default function MembersPage() {
                     </td>
                     <td className="px-3 py-3 text-muted">{m.email || "—"}</td>
                     <td className="px-3 py-3">
-                      <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${STATUS_STYLES[m.status] ?? ""}`}>
-                        {STATUS_LABELS[m.status] ?? m.status}
+                      <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${getDisplayStatus(m).style}`}>
+                        {getDisplayStatus(m).label}
                       </span>
                     </td>
                     <td className="px-3 py-3">
@@ -852,8 +883,8 @@ export default function MembersPage() {
                         <button onClick={() => openEditModal(m)} title="Edit member" className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-divider/60 hover:text-accent">
                           <Pencil size={13} />
                         </button>
-                        {m.status !== "deleted" && (
-                          <button onClick={() => (m.status === "suspended" ? handleRevokeSuspension(m) : openSuspendModal(m))} disabled={revoking} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-amber-50 hover:text-amber-500">
+                        {m.accountStatus !== "deleted" && (
+                          <button onClick={() => (m.accountStatus === "suspended" ? handleRevokeSuspension(m) : openSuspendModal(m))} disabled={revoking} className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition-colors hover:bg-amber-50 hover:text-amber-500">
                             <Ban size={13} />
                           </button>
                         )}

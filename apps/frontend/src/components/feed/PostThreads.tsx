@@ -128,15 +128,11 @@ function CommentNode({
   // admins don't have a /admin/members profile to link to.
   const canOpenProfile = isAdmin && !isAuthorAdmin;
 
-  async function handleAuthorClick() {
-    try {
-      const { approvedPhoneId } = await api.get<{ approvedPhoneId: string }>(
-        `/api/v1/admin/members/by-user/${comment.author.id}`,
-      );
-      router.push(`/admin/members/${approvedPhoneId}`);
-    } catch {
-      alert("Could not open this member's profile");
-    }
+  function handleAuthorClick() {
+    // Member detail is now keyed directly by User.id — no by-user lookup needed
+    // (that endpoint resolved userId -> approvedPhoneId, which no longer applies
+    // now that the profile page itself is userId-addressed).
+    router.push(`/admin/members/${comment.author.id}`);
   }
 
   return (

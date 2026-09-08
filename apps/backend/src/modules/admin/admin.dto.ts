@@ -35,21 +35,21 @@ export interface ExtendSubscriptionResultDTO {
 }
 
 export interface DeleteMemberResultDTO {
-  approvedPhoneId: string
-  userId: string | null   // null only in the (shouldn't-happen) missing-User edge case
+  userId: string
+  approvedPhoneId: string | null   // present only for an admin-added member
   phone: string
   isActive: boolean        // always false on success
 }
 
 export interface BulkDeleteMembersDTO {
-  approvedPhoneIds: string[]
+  userIds: string[]
 }
 
 export interface BulkDeleteMembersResultDTO {
   total: number
   succeeded: number
   failed: number
-  errors: { approvedPhoneId: string; reason: string }[]
+  errors: { userId: string; reason: string }[]
 }
 
 export interface SuspendMemberDTO {
@@ -57,15 +57,15 @@ export interface SuspendMemberDTO {
 }
 
 export interface SuspendMemberResultDTO {
-  approvedPhoneId: string
   userId: string
+  approvedPhoneId: string | null
   isActive: boolean          // always false on success
   suspensionReason: string
 }
 
 export interface RevokeSuspensionResultDTO {
-  approvedPhoneId: string
   userId: string
+  approvedPhoneId: string | null
   isActive: boolean          // always true on success
 }
 
@@ -121,23 +121,40 @@ export interface UpdateAdminAccessDTO {
   communityIds: string[]
 }
 
-// The admin-facing display status — NOT a single persisted column. Computed at
-// read time (see AdminService#deriveMemberStatus) from User.status (active/
-// suspended/deleted — the account's own standing), ApprovedPhone.status (pending/
-// registered — has this admin-added phone been claimed), and the member's current
-// subscription validity (expired is inherently per-subscription, not account-wide).
+// Old admin-facing display status — a single computed value conflating account
+// standing, registration progress, and subscription validity into one of 5
+// strings. Demoted: no longer part of MemberItemDTO (see below, which exposes
+// the 3 underlying facts independently instead) — kept only as the CSV
+// export's column-label vocabulary, see AdminService#memberStatusLabel.
 export type MemberStatus = 'registered' | 'pending' | 'expired' | 'suspended' | 'deleted'
 
 export interface MemberListFilters {
   communityId?: string | undefined
   communityIds?: string[] | undefined
-  status?: MemberStatus | undefined
+  // The account's own standing — User.status directly.
+  accountStatus?: 'active' | 'suspended' | 'deleted' | undefined
+  // Has this admin-added phone been claimed — ApprovedPhone.status directly.
+  // By construction this can only ever match admin-added members: a
+  // self-registered member has no ApprovedPhone row, so this field is always
+  // `null` for them (see MemberItemDTO) and can never equal 'pending' or
+  // 'registered'. Applying this filter therefore implicitly restricts results
+  // to source: 'admin' — passing `source: 'admin'` alongside it is a no-op.
+  registrationStatus?: 'pending' | 'registered' | undefined
+  // Whether their current subscription (any community) is active and not
+  // past validUntil — independent of accountStatus/registrationStatus, since
+  // "expired" was never really an account-standing fact (see UserStatus's
+  // doc comment in schema.prisma).
+  hasActiveSubscription?: boolean | undefined
+  // Was this member added by an admin (has an ApprovedPhone row) or did they
+  // self-register via the mobile app (no ApprovedPhone at all)? The only way
+  // to isolate self-registered members — see registrationStatus above.
+  source?: 'admin' | 'self' | undefined
   validFrom?: string | undefined
   validTo?: string | undefined
   paidFrom?: string | undefined
   paidTo?: string | undefined
   // Current subscription's validUntil falls within [today, today+7] — independent of
-  // `status`, since a suspended/pending member can still have a soon-to-expire subscription.
+  // the other filters, since a suspended/pending member can still have a soon-to-expire subscription.
   expiringIn7Days?: boolean | undefined
   search?: string | undefined
   page: number
@@ -157,15 +174,17 @@ export interface MemberSubscriptionDTO {
 }
 
 export interface MemberItemDTO {
-  id: string            // approvedPhone.id
+  id: string                        // User.id (was ApprovedPhone.id)
+  approvedPhoneId: string | null    // present only when source === 'admin'
+  source: 'admin' | 'self'
   name: string
   phone: string
   email: string | null
   avatarUrl: string | null
-  isActive: boolean
-  isRegistered: boolean
-  status: MemberStatus
-  createdAt: string
+  accountStatus: 'active' | 'suspended' | 'deleted'
+  registrationStatus: 'pending' | 'registered' | null   // null for source === 'self'
+  hasActiveSubscription: boolean
+  createdAt: string                 // now User.createdAt uniformly
   suspensionReason: string | null   // set only when suspended via suspendMember(); null otherwise (incl. deleted)
   subscription: MemberSubscriptionDTO | null   // most recent active subscription (for status / extend)
   allSubscriptions: MemberSubscriptionDTO[]    // all active subscriptions (one UI row per entry)

@@ -218,7 +218,8 @@
       "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('deps:', {k:v for k,v in d['dependencies'].items\\(\\) if 'swagger' in k}\\); print\\('devDeps:', {k:v for k,v in d['devDependencies'].items\\(\\) if 'swagger' in k}\\)\")",
       "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('ua-parser-js:', d['dependencies'].get\\('ua-parser-js'\\)\\)\")",
       "Bash(curl -s http://localhost:3001/api/docs.json)",
-      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(list\\(d['paths'].keys\\(\\)\\)\\)\")"
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(list\\(d['paths'].keys\\(\\)\\)\\)\")",
+      "Bash(echo \"frontend exit: $?\")"
     ],
     "additionalDirectories": [
       "/tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/8750fbd9-1edb-4d3f-b623-da0dec31a255/scratchpad/node_modules",
