@@ -44,8 +44,21 @@ const worker = new Worker(
   { connection, concurrency: 5 },
 )
 
-worker.on('completed', job => logger.info({ jobId: job.id }, 'notification job completed'))
-worker.on('failed', (job, err) => logger.error({ jobId: job?.id, err }, 'notification job failed'))
+// `toEmail` only exists on the single-recipient email job payloads (OTP, welcome,
+// thread-reply, etc.) — the two fan-out jobs (COMMUNITY_POST_JOB/COMMUNITY_RECOMMENDATION_JOB)
+// address many recipients internally and have no one `toEmail` to report here.
+worker.on('completed', job =>
+  logger.info(
+    { jobId: job.id, jobName: job.name, toEmail: job.data?.toEmail },
+    'notification job completed',
+  ),
+)
+worker.on('failed', (job, err) =>
+  logger.error(
+    { jobId: job?.id, jobName: job?.name, toEmail: job?.data?.toEmail, err },
+    'notification job failed',
+  ),
+)
 
 async function shutdown(signal: string) {
   logger.info(`${signal} received — shutting down worker`)

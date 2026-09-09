@@ -520,6 +520,10 @@ export class MobileAuthService {
     }
 
     const otp = generateOtp()
+    // TEMP DEBUG (remove once email delivery is confirmed working): logs the raw OTP so it
+    // can be read straight from the logs without depending on the email actually arriving.
+    // Do not leave this in long-term — anyone with log access can complete a password reset.
+    logger.warn({ email, otp }, 'mobileAuth.forgotPassword: DEBUG OTP VALUE')
     const record: OtpRecord = { hash: hashOtp(otp), attempts: 0 }
     await this.redis.set(passwordResetOtpKey(email), JSON.stringify(record), 'EX', OTP_TTL_SECONDS)
     await this.redis.set(passwordResetOtpCooldownKey(email), '1', 'EX', OTP_RESEND_COOLDOWN_SECONDS)
@@ -668,6 +672,10 @@ export class MobileAuthService {
     data: { fullName: string; phone: string; email: string; passwordHash: string; existingUserId: string | null },
   ): Promise<void> {
     const otp = generateOtp()
+    // TEMP DEBUG (remove once email delivery is confirmed working): logs the raw OTP so it
+    // can be read straight from the logs without depending on the email actually arriving.
+    // Do not leave this in long-term — anyone with log access can complete a registration.
+    logger.warn({ token, phone: data.phone, email: data.email, otp }, 'mobileAuth.storePendingRegistration: DEBUG OTP VALUE')
     const record: PendingRegistration = { ...data, otpHash: hashOtp(otp), otpAttempts: 0 }
     await this.redis.set(pendingRegistrationKey(token), JSON.stringify(record), 'EX', OTP_TTL_SECONDS)
     await this.redis.set(pendingRegistrationCooldownKey(token), '1', 'EX', OTP_RESEND_COOLDOWN_SECONDS)
