@@ -3,7 +3,7 @@ import { uploadFile, deleteFile } from '../../lib/minio.js'
 import { notificationsQueue, COMMUNITY_POST_JOB } from '../../lib/queue.js'
 import { assertCommunityAccessFromToken } from '../../lib/community-access.js'
 import { truncateText } from '../../lib/email-templates.js'
-import { NotFoundError, BadRequestError } from '../../shared/errors/index.js'
+import { NotFoundError, BadRequestError, ForbiddenError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
 import type {
   CreatePostDTO,
@@ -16,6 +16,29 @@ import type {
 
 export class PostsService {
   constructor(private readonly db: PrismaClient) {}
+
+  /**
+   * Live DB check (not the communityIds cached on the member's JWT/mobile
+   * session at login) — used only for the mobile app's explicit ?communityId
+   * param on GET /posts, where a member picks a community to view directly
+   * rather than relying on whatever was current at their last login/session
+   * refresh. Catches both "never subscribed" and "subscription expired since
+   * login" with the same check and the same error, same as
+   * auth.service.ts/mobile-auth.service.ts's own hasActiveSubscription.
+   */
+  async assertMemberSubscribed(userId: string, communityId: string): Promise<void> {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const count = await this.db.subscription.count({
+      where: { userId, communityId, isActive: true, validUntil: { gte: today } },
+    })
+    if (count === 0) {
+      throw new ForbiddenError(
+        'You do not have an active subscription to this community.',
+        'SUBSCRIPTION_REQUIRED',
+      )
+    }
+  }
 
   async listPosts(params: {
     page: number

@@ -28,6 +28,11 @@ declare global {
         selectedCommunityId: string | null
         accessibleCommunityIds: string[] | null
         isSuperAdmin: boolean
+        // Which of the two auth paths below produced this request — 'mobile' means
+        // req.user came from a MobileSession lookup rather than a verified JWT.
+        // Needed by routes (e.g. posts.controller.ts's member communityId param)
+        // that behave differently for the mobile app vs. the web JWT flow.
+        authVia: 'web' | 'mobile'
       }
     }
   }
@@ -56,6 +61,7 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
         // before this field existed) — only the latter should fall back to [].
         accessibleCommunityIds: payload.accessibleCommunityIds === undefined ? [] : payload.accessibleCommunityIds,
         isSuperAdmin: payload.isSuperAdmin ?? false,
+        authVia: 'web',
       }
       return next()
     } catch {
@@ -79,6 +85,7 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
       selectedCommunityId: ctx.selectedCommunityId,
       accessibleCommunityIds: ctx.accessibleCommunityIds,
       isSuperAdmin: ctx.isSuperAdmin,
+      authVia: 'mobile',
     }
     return next()
   }

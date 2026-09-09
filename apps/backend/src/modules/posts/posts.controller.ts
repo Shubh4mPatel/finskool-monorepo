@@ -56,14 +56,21 @@ export class PostsController {
           // Scoped admin with no community specified: restrict to their granted set
           listParams = { page, pageSize, communityIds: accessible, order, ...dateParam }
         }
+      } else if (user.authVia === 'mobile' && communityId !== undefined) {
+        // Mobile only: the app can ask for one specific community directly instead of
+        // relying on selectedCommunityId/communityIds, which are only as fresh as the
+        // session's last login — a subscription bought or one that lapsed since then
+        // wouldn't be reflected there. Checked live against Postgres instead of the
+        // cached session data for exactly that reason.
+        await this.service.assertMemberSubscribed(user.id, communityId)
+        listParams = { page, pageSize, communityId, order, ...dateParam }
+      } else if (user.selectedCommunityId) {
+        // Web (and mobile with no explicit communityId): selectedCommunityId from JWT
+        // /session (set at login or via select-community endpoint)
+        listParams = { page, pageSize, communityId: user.selectedCommunityId, order, ...dateParam }
       } else {
-        // Member: use selectedCommunityId from JWT (set at login or via select-community endpoint)
-        if (user.selectedCommunityId) {
-          listParams = { page, pageSize, communityId: user.selectedCommunityId, order, ...dateParam }
-        } else {
-          // No community selected yet — fall back to all subscribed communities
-          listParams = { page, pageSize, communityIds: user.communityIds, order, ...dateParam }
-        }
+        // No community selected yet — fall back to all subscribed communities
+        listParams = { page, pageSize, communityIds: user.communityIds, order, ...dateParam }
       }
 
       const result = await this.service.listPosts(listParams)
