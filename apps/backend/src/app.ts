@@ -16,6 +16,7 @@ import notificationsRoutes from './modules/notifications/notifications.routes.js
 import stocksRoutes from './modules/stocks/stocks.routes.js'
 import stockRecommendationsRoutes from './modules/stock-recommendations/stock-recommendations.routes.js'
 import prisma from './lib/prisma.js'
+import { authenticate } from './middlewares/auth.middleware.js'
 
 function buildCorsOptions(): CorsOptions {
   const { origin, credentials } = env.cors
@@ -54,10 +55,10 @@ export function createApp() {
   app.use('/api/v1/stocks', stocksRoutes)
   app.use('/api/v1/stock-recommendations', stockRecommendationsRoutes)
 
-  app.get('/api/v1/communities', async (_req, res, next) => {
+  app.get('/api/v1/communities', authenticate, async (_req, res, next) => {
     try {
       const communities = await prisma.community.findMany({
-        where: { deletedAt: null },
+        where: { deletedAt: null, isFree: false },
         select: { id: true, name: true, slug: true, description: true, coverImageUrl: true },
         orderBy: { name: 'asc' },
       })
