@@ -32,6 +32,7 @@ export class PostsController {
       const user = req.user!
 
       let listParams: {
+        userId: string
         page: number
         pageSize: number
         communityId?: string
@@ -46,15 +47,15 @@ export class PostsController {
         const accessible = user.accessibleCommunityIds
         if (accessible === null) {
           // Super admin: use client-provided query param (can see all communities)
-          listParams = { page, pageSize, order, ...dateParam, ...(communityId !== undefined && { communityId }) }
+          listParams = { userId: user.id, page, pageSize, order, ...dateParam, ...(communityId !== undefined && { communityId }) }
         } else if (communityId !== undefined) {
           if (!accessible.includes(communityId)) {
             throw new ForbiddenError('You do not have access to this community', 'COMMUNITY_ACCESS_DENIED')
           }
-          listParams = { page, pageSize, communityId, order, ...dateParam }
+          listParams = { userId: user.id, page, pageSize, communityId, order, ...dateParam }
         } else {
           // Scoped admin with no community specified: restrict to their granted set
-          listParams = { page, pageSize, communityIds: accessible, order, ...dateParam }
+          listParams = { userId: user.id, page, pageSize, communityIds: accessible, order, ...dateParam }
         }
       } else if (user.authVia === 'mobile' && communityId !== undefined) {
         // Mobile only: the app can ask for one specific community directly instead of
@@ -63,14 +64,14 @@ export class PostsController {
         // wouldn't be reflected there. Checked live against Postgres instead of the
         // cached session data for exactly that reason.
         await this.service.assertMemberSubscribed(user.id, communityId)
-        listParams = { page, pageSize, communityId, order, ...dateParam }
+        listParams = { userId: user.id, page, pageSize, communityId, order, ...dateParam }
       } else if (user.selectedCommunityId) {
         // Web (and mobile with no explicit communityId): selectedCommunityId from JWT
         // /session (set at login or via select-community endpoint)
-        listParams = { page, pageSize, communityId: user.selectedCommunityId, order, ...dateParam }
+        listParams = { userId: user.id, page, pageSize, communityId: user.selectedCommunityId, order, ...dateParam }
       } else {
         // No community selected yet — fall back to all subscribed communities
-        listParams = { page, pageSize, communityIds: user.communityIds, order, ...dateParam }
+        listParams = { userId: user.id, page, pageSize, communityIds: user.communityIds, order, ...dateParam }
       }
 
       const result = await this.service.listPosts(listParams)

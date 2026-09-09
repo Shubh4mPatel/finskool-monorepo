@@ -12,6 +12,7 @@ import mobileAuthRoutes from './modules/mobile-auth/mobile-auth.routes.js'
 import adminRoutes from './modules/admin/admin.routes.js'
 import postsRoutes from './modules/posts/posts.routes.js'
 import commentsRoutes from './modules/comments/comments.routes.js'
+import reactionsRoutes from './modules/reactions/reactions.routes.js'
 import notificationsRoutes from './modules/notifications/notifications.routes.js'
 import stocksRoutes from './modules/stocks/stocks.routes.js'
 import stockRecommendationsRoutes from './modules/stock-recommendations/stock-recommendations.routes.js'
@@ -51,6 +52,7 @@ export function createApp() {
   app.use('/api/v1/admin', adminRoutes)
   app.use('/api/v1/posts', postsRoutes)
   app.use('/api/v1', commentsRoutes)
+  app.use('/api/v1', reactionsRoutes)
   app.use('/api/v1/notifications', notificationsRoutes)
   app.use('/api/v1/stocks', stocksRoutes)
   app.use('/api/v1/stock-recommendations', stockRecommendationsRoutes)

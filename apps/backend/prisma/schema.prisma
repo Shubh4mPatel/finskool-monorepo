@@ -85,6 +85,7 @@ model User {
   pinnedPosts        Post[]            @relation("PostPinnedBy")
   comments           Comment[]
   likes              PostLike[]
+  reactions          Reaction[]
   communities        Community[]
   subscriptions      Subscription[]
   notifications      Notification[]
@@ -220,12 +221,21 @@ model Post {
   createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz
   updatedAt   DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
   deletedAt   DateTime?  @map("deleted_at") @db.Timestamptz
+  // Denormalized summary keyed by ReactionType.name, e.g. {"like": 12, "love": 3}
+  // — never joins reaction_types just to render counts. Recomputed from scratch
+  // (groupBy + overwrite, see ReactionsService) inside the same transaction as
+  // every Reaction upsert/delete; never incremented in place. Nullable, no DB
+  // default — same convention as the only other Json field in this schema,
+  // MobileSession.accessibleCommunityIds, cast to a hand-written TS type at
+  // the point of use.
+  reactionCounts Json?   @map("reaction_counts")
 
   community             Community             @relation(fields: [communityId], references: [id], onDelete: Cascade)
   author                User                  @relation("PostAuthor", fields: [authorId], references: [id])
   pinnedByUser          User?                 @relation("PostPinnedBy", fields: [pinnedBy], references: [id])
   comments              Comment[]
   likes                 PostLike[]
+  reactions             Reaction[]
   commentNotifications  CommentNotification[]
 
   // (communityId, pinOrder) uniqueness among non-deleted posts is enforced by a
@@ -337,6 +347,43 @@ model PostLike {
   @@index([postId], name: "idx_likes_post")
   @@index([userId], name: "idx_likes_user")
   @@map("post_likes")
+}
+
+// Fixed, code-referenced lookup table — no admin CRUD. Rows are seeded via
+// raw SQL INSERT embedded in migration 20260908130000_add_post_reactions
+// (see that migration's SQL) and never change at runtime. Int PK (not UUID)
+// because this is a small, stable, human-assigned enum-like set.
+model ReactionType {
+  id        Int    @id @db.SmallInt
+  name      String @unique @db.VarChar(20)
+  emoji     String @db.VarChar(8)
+  sortOrder Int    @map("sort_order") @db.SmallInt
+
+  reactions Reaction[]
+
+  @@map("reaction_types")
+}
+
+// One row per (post, user) — re-reacting with a different type UPSERTS this
+// row (uq_reactions_post_user) rather than adding a new one, unlike the
+// simpler append-only PostLike above. updatedAt is present because
+// reactionTypeId can change after creation.
+model Reaction {
+  id             String   @id @default(uuid()) @db.Uuid
+  postId         String   @map("post_id") @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  reactionTypeId Int      @map("reaction_type_id") @db.SmallInt
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  post         Post         @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reactionType ReactionType @relation(fields: [reactionTypeId], references: [id])
+
+  @@unique([postId, userId], name: "uq_reactions_post_user")
+  @@index([postId], name: "idx_reactions_post")
+  @@index([userId], name: "idx_reactions_user")
+  @@map("reactions")
 }
 
 model Notification {

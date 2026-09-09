@@ -44,6 +44,8 @@ export interface PostFeedItemDTO {
   publishedAt: Date | null
   createdAt: Date
   commentCount: number
+  reactionCounts: Record<string, number>
+  myReaction: string | null
 }
 
 export interface ListPostsResponseDTO {
@@ -70,5 +72,7 @@ export interface CommentedPostItemDTO {
   publishedAt: Date | null
   createdAt: Date
   commentCount: number
+  reactionCounts: Record<string, number>
+  myReaction: string | null
   lastCommentedAt: Date
 }

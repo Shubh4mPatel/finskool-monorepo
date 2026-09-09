@@ -41,6 +41,7 @@ export class PostsService {
   }
 
   async listPosts(params: {
+    userId: string
     page: number
     pageSize: number
     communityId?: string
@@ -48,7 +49,7 @@ export class PostsService {
     date?: string
     order?: 'asc' | 'desc'
   }): Promise<ListPostsResponseDTO> {
-    const { page, pageSize, communityId, communityIds, date, order = 'desc' } = params
+    const { userId, page, pageSize, communityId, communityIds, date, order = 'desc' } = params
     // Anchored to IST (+05:30), not UTC — the frontend displays/labels dates in
     // en-IN local time, so a "day" here must match what the user sees on a post
     // card, not the UTC calendar day the timestamp happens to fall on.
@@ -73,6 +74,7 @@ export class PostsService {
           community: { select: { name: true, slug: true, badgeUrl: true } },
           author: { select: { name: true, avatarUrl: true } },
           _count: { select: { comments: { where: { deletedAt: null } } } },
+          reactions: { where: { userId }, select: { reactionType: { select: { name: true } } }, take: 1 },
         },
         orderBy: [{ pinOrder: { sort: 'asc', nulls: 'last' } }, { publishedAt: order }],
         skip: (page - 1) * pageSize,
@@ -98,6 +100,8 @@ export class PostsService {
         publishedAt: p.publishedAt,
         createdAt: p.createdAt,
         commentCount: p._count.comments,
+        reactionCounts: (p.reactionCounts as Record<string, number> | null) ?? {},
+        myReaction: p.reactions[0]?.reactionType.name ?? null,
       })),
       total,
       page,
@@ -122,6 +126,7 @@ export class PostsService {
         community: { select: { name: true, slug: true, badgeUrl: true } },
         author: { select: { name: true, avatarUrl: true } },
         _count: { select: { comments: { where: { deletedAt: null } } } },
+        reactions: { where: { userId }, select: { reactionType: { select: { name: true } } }, take: 1 },
       },
     })
 
@@ -142,6 +147,8 @@ export class PostsService {
         publishedAt: p.publishedAt,
         createdAt: p.createdAt,
         commentCount: p._count.comments,
+        reactionCounts: (p.reactionCounts as Record<string, number> | null) ?? {},
+        myReaction: p.reactions[0]?.reactionType.name ?? null,
         lastCommentedAt: lastCommentedByPost.get(p.id)!,
       }))
       .sort((a, b) => b.lastCommentedAt.getTime() - a.lastCommentedAt.getTime())
