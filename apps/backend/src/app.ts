@@ -61,10 +61,38 @@ export function createApp() {
     try {
       const communities = await prisma.community.findMany({
         where: { deletedAt: null, isFree: false },
-        select: { id: true, name: true, slug: true, description: true, coverImageUrl: true },
+        select: { id: true, name: true, slug: true, description: true, tags: true, type: true, coverImageUrl: true },
         orderBy: { name: 'asc' },
       })
-      res.json({ success: true, data: communities })
+
+      // Distinct subscribed-member count per community — grouped on
+      // (communityId, userId) rather than a plain groupBy(['communityId'])
+      // count, so a user with more than one active subscription row for the
+      // same community (e.g. an un-deactivated renewal) is only counted
+      // once. Same "active + not expired" definition used to gate access
+      // elsewhere (posts.service.ts#assertMemberSubscribed, reactions.service.ts).
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      const activeSubscribers = await prisma.subscription.groupBy({
+        by: ['communityId', 'userId'],
+        where: {
+          communityId: { in: communities.map(c => c.id) },
+          isActive: true,
+          validUntil: { gte: today },
+        },
+      })
+      const memberCountByCommunity = new Map<string, number>()
+      for (const s of activeSubscribers) {
+        memberCountByCommunity.set(s.communityId, (memberCountByCommunity.get(s.communityId) ?? 0) + 1)
+      }
+
+      res.json({
+        success: true,
+        data: communities.map(c => ({
+          ...c,
+          subscribedMemberCount: memberCountByCommunity.get(c.id) ?? 0,
+        })),
+      })
     } catch (err) {
       next(err)
     }

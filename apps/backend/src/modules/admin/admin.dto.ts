@@ -75,6 +75,7 @@ export interface CommunityDTO {
   slug: string
   description: string | null
   tags: string[]
+  type: string | null
   coverImageUrl: string | null
   badgeUrl: string | null
   paymentLink: string | null
@@ -86,6 +87,7 @@ export interface CreateCommunityDTO {
   slug?: string | undefined
   description?: string | undefined
   tags: string[]
+  type?: string | undefined
   coverImageUrl?: string | undefined
   badgeUrl?: string | undefined
   paymentLink?: string | undefined
@@ -95,6 +97,7 @@ export interface UpdateCommunityDTO {
   name: string
   description?: string | undefined
   tags: string[]
+  type?: string | undefined
   coverImageUrl?: string | undefined
   badgeUrl?: string | undefined
   paymentLink?: string | undefined

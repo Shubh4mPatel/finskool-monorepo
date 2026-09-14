@@ -148,6 +148,11 @@ model Community {
   slug          String    @unique @db.VarChar(150)
   description   String?
   tags          String[]
+  // Freeform category label set by the admin when creating/editing the
+  // community, e.g. "Intraday", "Short Term", "Swing", "Long Term" — distinct
+  // from `tags` (a multi-value list). Nullable since existing communities
+  // predate this field.
+  type          String?   @db.VarChar(50)
   coverImageUrl String?   @map("cover_image_url") @db.VarChar(500)
   badgeUrl      String?   @map("badge_url") @db.VarChar(500)
   paymentLink   String?   @map("payment_link") @db.VarChar(500)
