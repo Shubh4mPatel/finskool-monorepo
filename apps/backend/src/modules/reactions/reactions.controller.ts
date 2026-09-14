@@ -6,6 +6,7 @@ import { upsertReactionSchema } from './reactions.validator.js'
 const listReactionsQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(50).default(20),
+  reactionType: z.string().min(1).optional(),
 })
 
 function getParam(req: Request, name: string): string {
@@ -43,7 +44,7 @@ export class ReactionsController {
 
   list = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const { page, pageSize } = listReactionsQuerySchema.parse(req.query)
+      const { page, pageSize, reactionType } = listReactionsQuerySchema.parse(req.query)
       const result = await this.service.listPostReactions(
         req.user!.id,
         req.user!.role,
@@ -51,6 +52,7 @@ export class ReactionsController {
         getParam(req, 'postId'),
         page,
         pageSize,
+        reactionType,
       )
       res.json({ success: true, data: result })
     } catch (err) {

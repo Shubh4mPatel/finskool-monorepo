@@ -193,6 +193,14 @@ router.delete('/posts/:postId/reactions', authenticate, controller.remove)
  *       - name: pageSize
  *         in: query
  *         schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+ *       - name: reactionType
+ *         in: query
+ *         required: false
+ *         description: >
+ *           Filter to only this reaction type's name (e.g. `like`, `love`) —
+ *           one of the `name` values from `GET /reaction-types`. Omit to get
+ *           every reaction on the post regardless of type.
+ *         schema: { type: string, example: like }
  *     responses:
  *       200:
  *         description: Paginated list of reactions.
@@ -220,6 +228,10 @@ router.delete('/posts/:postId/reactions', authenticate, controller.remove)
  *                     page: { type: integer, example: 1 }
  *                     pageSize: { type: integer, example: 20 }
  *                     totalPages: { type: integer, example: 2 }
+ *       400:
+ *         description: "`reactionType` doesn't match any known reaction type name."
+ *         content:
+ *           application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } }
  *       401:
  *         description: Not authenticated.
  *         content:

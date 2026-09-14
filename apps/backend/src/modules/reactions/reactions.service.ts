@@ -161,6 +161,7 @@ export class ReactionsService {
     postId: string,
     page: number,
     pageSize: number,
+    reactionType?: string,
   ): Promise<ListPostReactionsResponseDTO> {
     const post = await this.db.post.findUnique({
       where: { id: postId, deletedAt: null, status: 'published' },
@@ -170,9 +171,18 @@ export class ReactionsService {
 
     await this.assertCanAccessReactions(userId, userRole, accessibleCommunityIds, post.communityId)
 
+    let reactionTypeId: number | undefined
+    if (reactionType !== undefined) {
+      const type = await this.db.reactionType.findUnique({ where: { name: reactionType } })
+      if (!type) throw new BadRequestError('Invalid reaction type')
+      reactionTypeId = type.id
+    }
+
+    const where = { postId, ...(reactionTypeId !== undefined && { reactionTypeId }) }
+
     const [reactions, total] = await Promise.all([
       this.db.reaction.findMany({
-        where: { postId },
+        where,
         include: {
           user: { select: { id: true, name: true, avatarUrl: true } },
           reactionType: { select: { name: true, emoji: true } },
@@ -181,7 +191,7 @@ export class ReactionsService {
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
-      this.db.reaction.count({ where: { postId } }),
+      this.db.reaction.count({ where }),
     ])
 
     return {
