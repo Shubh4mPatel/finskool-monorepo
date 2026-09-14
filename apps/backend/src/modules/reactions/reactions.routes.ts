@@ -172,4 +172,70 @@ router.get('/reaction-types', authenticate, controller.listTypes)
 router.put('/posts/:postId/reactions', authenticate, controller.upsert)
 router.delete('/posts/:postId/reactions', authenticate, controller.remove)
 
+/**
+ * @openapi
+ * /posts/{postId}/reactions:
+ *   get:
+ *     tags: [Reactions]
+ *     summary: List who reacted to a post, and with what, paginated
+ *     description: >
+ *       Every reaction on the post, one row per user, newest first. Same
+ *       visibility rule as reacting/unreacting: a scoped admin needs access
+ *       to the post's community, a member needs an active subscription to it.
+ *     parameters:
+ *       - name: postId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - name: page
+ *         in: query
+ *         schema: { type: integer, minimum: 1, default: 1 }
+ *       - name: pageSize
+ *         in: query
+ *         schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+ *     responses:
+ *       200:
+ *         description: Paginated list of reactions.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     reactions:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           userId: { type: string, format: uuid }
+ *                           userName: { type: string, example: "Priya Shah" }
+ *                           userAvatarUrl: { type: string, nullable: true }
+ *                           reactionType: { type: string, example: like }
+ *                           emoji: { type: string, example: "👍" }
+ *                           reactedAt: { type: string, format: date-time }
+ *                     total: { type: integer, example: 30 }
+ *                     page: { type: integer, example: 1 }
+ *                     pageSize: { type: integer, example: 20 }
+ *                     totalPages: { type: integer, example: 2 }
+ *       401:
+ *         description: Not authenticated.
+ *         content:
+ *           application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } }
+ *       403:
+ *         description: >
+ *           Not a member of the post's community (code SUBSCRIPTION_REQUIRED),
+ *           or a scoped admin without access to it (code
+ *           COMMUNITY_ACCESS_DENIED).
+ *         content:
+ *           application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } }
+ *       404:
+ *         description: Post not found, not published, or deleted.
+ *         content:
+ *           application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } }
+ */
+router.get('/posts/:postId/reactions', authenticate, controller.list)
+
 export default router

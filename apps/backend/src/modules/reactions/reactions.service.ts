@@ -6,7 +6,12 @@ import redis from '../../lib/redis.js'
 import { NotFoundError, ForbiddenError, BadRequestError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
 import { NotificationType } from '../notifications/notifications.dto.js'
-import type { ReactionTypeDTO, UpsertReactionDTO, ReactionResultDTO } from './reactions.dto.js'
+import type {
+  ReactionTypeDTO,
+  UpsertReactionDTO,
+  ReactionResultDTO,
+  ListPostReactionsResponseDTO,
+} from './reactions.dto.js'
 
 export class ReactionsService {
   constructor(private readonly db: PrismaClient) {}
@@ -41,18 +46,7 @@ export class ReactionsService {
     })
     if (!post) throw new NotFoundError('Post not found or not published')
 
-    if (userRole === 'admin') {
-      assertCommunityAccessFromToken(accessibleCommunityIds, post.communityId)
-    }
-
-    if (userRole !== 'admin') {
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
-      const subscription = await this.db.subscription.findFirst({
-        where: { userId, communityId: post.communityId, isActive: true, validUntil: { gte: today } },
-      })
-      if (!subscription) throw new ForbiddenError('You must be a community member to react')
-    }
+    await this.assertCanAccessReactions(userId, userRole, accessibleCommunityIds, post.communityId)
 
     const reactionTypeNameById = await this.getReactionTypeNameById()
     const reactionTypeName = reactionTypeNameById.get(data.reactionTypeId)
@@ -140,18 +134,7 @@ export class ReactionsService {
     })
     if (!post) throw new NotFoundError('Post not found or not published')
 
-    if (userRole === 'admin') {
-      assertCommunityAccessFromToken(accessibleCommunityIds, post.communityId)
-    }
-
-    if (userRole !== 'admin') {
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
-      const subscription = await this.db.subscription.findFirst({
-        where: { userId, communityId: post.communityId, isActive: true, validUntil: { gte: today } },
-      })
-      if (!subscription) throw new ForbiddenError('You must be a community member to react')
-    }
+    await this.assertCanAccessReactions(userId, userRole, accessibleCommunityIds, post.communityId)
 
     const reactionTypeNameById = await this.getReactionTypeNameById()
 
@@ -164,6 +147,77 @@ export class ReactionsService {
 
     logger.info({ postId, userId }, 'reactions.remove: success')
     return { reactionCounts, myReaction: null }
+  }
+
+  /**
+   * Paginated list of who reacted with what on a post, newest first. Same
+   * visibility rule as react/unreact: a scoped admin needs community access,
+   * a member needs an active subscription to the post's community.
+   */
+  async listPostReactions(
+    userId: string,
+    userRole: UserRole,
+    accessibleCommunityIds: string[] | null,
+    postId: string,
+    page: number,
+    pageSize: number,
+  ): Promise<ListPostReactionsResponseDTO> {
+    const post = await this.db.post.findUnique({
+      where: { id: postId, deletedAt: null, status: 'published' },
+      select: { id: true, communityId: true },
+    })
+    if (!post) throw new NotFoundError('Post not found or not published')
+
+    await this.assertCanAccessReactions(userId, userRole, accessibleCommunityIds, post.communityId)
+
+    const [reactions, total] = await Promise.all([
+      this.db.reaction.findMany({
+        where: { postId },
+        include: {
+          user: { select: { id: true, name: true, avatarUrl: true } },
+          reactionType: { select: { name: true, emoji: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.db.reaction.count({ where: { postId } }),
+    ])
+
+    return {
+      reactions: reactions.map(r => ({
+        userId: r.user.id,
+        userName: r.user.name,
+        userAvatarUrl: r.user.avatarUrl,
+        reactionType: r.reactionType.name,
+        emoji: r.reactionType.emoji,
+        reactedAt: r.createdAt,
+      })),
+      total,
+      page,
+      pageSize,
+      totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    }
+  }
+
+  /** Shared visibility guard for all three per-post reaction endpoints (upsert/remove/list). */
+  private async assertCanAccessReactions(
+    userId: string,
+    userRole: UserRole,
+    accessibleCommunityIds: string[] | null,
+    communityId: string,
+  ): Promise<void> {
+    if (userRole === 'admin') {
+      assertCommunityAccessFromToken(accessibleCommunityIds, communityId)
+      return
+    }
+
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const subscription = await this.db.subscription.findFirst({
+      where: { userId, communityId, isActive: true, validUntil: { gte: today } },
+    })
+    if (!subscription) throw new ForbiddenError('You must be a community member to view or react to this post')
   }
 
   /**
