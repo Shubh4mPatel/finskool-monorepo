@@ -8,8 +8,8 @@
 services:
   backend:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: apps/backend/Dockerfile
       target: dev
     image: finskool-backend-dev:latest
     container_name: finskool-backend-dev
@@ -35,10 +35,10 @@ services:
       - "${PORT}:${PORT}"
     volumes:
       # Live-reload: host source over the image, but keep the image's node_modules.
-      - ./src:/app/src
-      - ./prisma:/app/prisma
-      - ./prisma.config.ts:/app/prisma.config.ts
-      - ./tsconfig.json:/app/tsconfig.json
+      - ./src:/app/apps/backend/src
+      - ./prisma:/app/apps/backend/prisma
+      - ./prisma.config.ts:/app/apps/backend/prisma.config.ts
+      - ./tsconfig.json:/app/apps/backend/tsconfig.json
     depends_on:
       postgres:
         condition: service_healthy
@@ -53,8 +53,8 @@ services:
 
   worker:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: apps/backend/Dockerfile
       target: dev
     image: finskool-backend-dev:latest
     container_name: finskool-worker-dev
@@ -70,10 +70,10 @@ services:
       SMTP_PORT: "1025"
     command: sh -c "npx prisma generate && npx prisma migrate deploy && npm run dev:worker"
     volumes:
-      - ./src:/app/src
-      - ./prisma:/app/prisma
-      - ./prisma.config.ts:/app/prisma.config.ts
-      - ./tsconfig.json:/app/tsconfig.json
+      - ./src:/app/apps/backend/src
+      - ./prisma:/app/apps/backend/prisma
+      - ./prisma.config.ts:/app/apps/backend/prisma.config.ts
+      - ./tsconfig.json:/app/apps/backend/tsconfig.json
     depends_on:
       postgres:
         condition: service_healthy

@@ -1,0 +1,20 @@
+# Applies when the build context is the monorepo root (apps/backend/Dockerfile
+# is built this way — see apps/backend/docker-compose.dev.yml and
+# docker/docker-compose.production.yml). apps/frontend builds from its own
+# directory and isn't affected by this file.
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+.git
+.gitignore
+**/.env
+**/.env.local
+**/*.log
+logs
+docs
+apps/backend/README.md
+apps/backend/shcema.md
+docker
+docker-compose*.yml
+**/.dockerignore
