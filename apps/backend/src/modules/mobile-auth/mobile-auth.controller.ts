@@ -104,6 +104,16 @@ export class MobileAuthController {
     }
   }
 
+  getProfile = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      if (!req.user) throw new UnauthorizedError('Not authenticated')
+      const data = await this.service.getProfile(req.user.id)
+      res.json({ success: true, data })
+    } catch (err) {
+      next(err)
+    }
+  }
+
   selectCommunity = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       if (!req.user) throw new UnauthorizedError('Not authenticated')

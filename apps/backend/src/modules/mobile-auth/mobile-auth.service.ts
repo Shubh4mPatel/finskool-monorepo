@@ -36,6 +36,8 @@ import type {
   VerifyResetOtpResponseDTO,
   PublicUserDTO,
   CommunityInfoDTO,
+  PaidCommunityDTO,
+  MobileProfileDTO,
 } from './mobile-auth.dto.js'
 
 const BCRYPT_ROUNDS = 12
@@ -609,6 +611,45 @@ export class MobileAuthService {
     await this.db.user.update({ where: { id: user.id }, data: { passwordHash } })
 
     logger.info({ userId: user.id }, 'mobileAuth.resetPassword: success')
+  }
+
+  /**
+   * GET /auth/mobile/me. Unlike login()'s communities (current access only,
+   * via fetchUserCommunities below), this is a purchase-history view: every
+   * community ever paid for, including ones that have since lapsed.
+   */
+  async getProfile(userId: string): Promise<MobileProfileDTO> {
+    const user = await this.db.user.findUnique({ where: { id: userId } })
+    if (!user || user.deletedAt) throw new UnauthorizedError('User not found')
+
+    const { avatarUrl, email, phone, postNotificationsEnabled } = this.toPublicUser(user)
+    const communities = await this.fetchPaidCommunities(userId)
+    return { user: { avatarUrl, email, phone, postNotificationsEnabled }, communities }
+  }
+
+  // Every community ever paid for (excluding the free community and
+  // soft-deleted communities), one row each — the latest subscription's
+  // expiry, regardless of whether it's still active. Deliberately does NOT
+  // filter on isActive/validUntil >= today (that's fetchUserCommunities'
+  // job, for current-access decisions) since a lapsed community should still
+  // show up here with a past expiresAt rather than disappearing.
+  private async fetchPaidCommunities(userId: string): Promise<PaidCommunityDTO[]> {
+    const grouped = await this.db.subscription.groupBy({
+      by: ['communityId'],
+      where: { userId, community: { isFree: false, deletedAt: null } },
+      _max: { validUntil: true },
+    })
+    if (grouped.length === 0) return []
+
+    const communities = await this.db.community.findMany({
+      where: { id: { in: grouped.map(g => g.communityId) } },
+      select: { id: true, name: true, slug: true, description: true, tags: true, coverImageUrl: true, badgeUrl: true },
+    })
+    const expiryByCommunity = new Map(grouped.map(g => [g.communityId, g._max.validUntil!]))
+
+    return communities
+      .map(c => ({ ...c, expiresAt: expiryByCommunity.get(c.id)!.toISOString().split('T')[0]! }))
+      .sort((a, b) => b.expiresAt.localeCompare(a.expiresAt))
   }
 
   private async fetchUserCommunities(userId: string): Promise<CommunityInfoDTO[]> {

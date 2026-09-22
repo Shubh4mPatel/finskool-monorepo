@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { MobileAuthService } from './mobile-auth.service.js'
 import { MobileAuthController } from './mobile-auth.controller.js'
-import { authenticate } from '../../middlewares/auth.middleware.js'
+import { authenticate, requireMobileAuth } from '../../middlewares/auth.middleware.js'
 import prisma from '../../lib/prisma.js'
 import redis from '../../lib/redis.js'
 
@@ -456,5 +456,61 @@ router.post('/logout', controller.logout)
  *           application/json: { schema: { $ref: '#/components/schemas/ValidationErrorResponse' } }
  */
 router.post('/select-community', authenticate, controller.selectCommunity)
+
+/**
+ * @openapi
+ * /auth/mobile/me:
+ *   get:
+ *     tags: [Mobile Auth]
+ *     summary: Get the authenticated mobile user's profile
+ *     description: >
+ *       Mobile-only (requireMobileAuth). Returns avatar/email/phone/notification
+ *       preference, plus every community the user has ever paid for (excluding the
+ *       single isFree community) — one row per community, showing that community's
+ *       most recent subscription's expiry date regardless of whether it's still
+ *       active. A lapsed community stays in the list with a past `expiresAt`; compare
+ *       client-side against today's date to show active vs. expired.
+ *     responses:
+ *       200:
+ *         description: Profile fetched.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     user:
+ *                       type: object
+ *                       properties:
+ *                         avatarUrl: { type: string, nullable: true }
+ *                         email: { type: string }
+ *                         phone: { type: string }
+ *                         postNotificationsEnabled: { type: boolean }
+ *                     communities:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           id: { type: string, format: uuid }
+ *                           name: { type: string }
+ *                           slug: { type: string }
+ *                           description: { type: string, nullable: true }
+ *                           tags: { type: array, items: { type: string } }
+ *                           coverImageUrl: { type: string, nullable: true }
+ *                           badgeUrl: { type: string, nullable: true }
+ *                           expiresAt: { type: string, example: "2026-03-15", description: "Latest subscription's expiry for this community, past or future." }
+ *       401:
+ *         description: Not authenticated.
+ *         content:
+ *           application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } }
+ *       403:
+ *         description: Authenticated via web JWT instead of a mobile session (code MOBILE_ONLY).
+ *         content:
+ *           application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } }
+ */
+router.get('/me', authenticate, requireMobileAuth, controller.getProfile)
 
 export default router

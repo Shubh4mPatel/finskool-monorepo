@@ -39,7 +39,7 @@ export interface MobileLoginDTO {
 // login() here is a self-contained duplicate of AuthService.login(), kept
 // separate on purpose (see mobile-auth.service.ts).
 import type { PublicUserDTO, CommunityInfoDTO } from '../auth/auth.dto.js'
-export type { PublicUserDTO, CommunityInfoDTO, AuthResponseDTO } from '../auth/auth.dto.js'
+export type { PublicUserDTO, CommunityInfoDTO, AuthResponseDTO, PaidCommunityDTO, MobileProfileDTO } from '../auth/auth.dto.js'
 
 // Internal only — used between service and controller to pass the raw
 // session id for cookie-setting. No JWT/access-refresh pair for mobile —
