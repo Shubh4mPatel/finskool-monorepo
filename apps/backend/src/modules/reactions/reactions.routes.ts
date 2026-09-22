@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { ReactionsService } from './reactions.service.js'
 import { ReactionsController } from './reactions.controller.js'
-import { authenticate } from '../../middlewares/auth.middleware.js'
+import { authenticate, requireMobileAuth } from '../../middlewares/auth.middleware.js'
 import prisma from '../../lib/prisma.js'
 
 const service = new ReactionsService(prisma)
@@ -11,17 +11,31 @@ const router = Router()
 
 // mounted at /api/v1 — full paths defined here, same pattern as
 // commentsRoutes (deliberately overlapping the /posts URL space).
+router.get('/reaction-types', authenticate, controller.listTypes)
+router.put('/posts/:postId/reactions', authenticate, controller.upsert)
+router.delete('/posts/:postId/reactions', authenticate, controller.remove)
+router.get('/posts/:postId/reactions', authenticate, controller.list)
+
+export default router
+
+// Mounted separately at /api/v1/mobile — the mobile app's own copy of the
+// reactions API, gated to MobileSession auth only (see requireMobileAuth).
+// Reuses the same controller/service as the unprefixed routes above
+// (unchanged, still reachable by any authenticated caller) so behavior never
+// drifts between them.
+export const mobileReactionsRouter = Router()
+mobileReactionsRouter.use(authenticate, requireMobileAuth)
 
 /**
  * @openapi
- * /reaction-types:
+ * /mobile/reaction-types:
  *   get:
  *     tags: [Reactions]
  *     summary: List the available reaction types
  *     description: >
  *       Fixed, seeded set (like, love, haha, wow, sad, angry) — there is no
  *       admin CRUD for these, they never change at runtime. Use `id` as the
- *       `reactionTypeId` sent to `PUT /posts/{postId}/reactions`. Sorted by
+ *       `reactionTypeId` sent to `PUT /mobile/posts/{postId}/reactions`. Sorted by
  *       `sortOrder`, ascending.
  *     responses:
  *       200:
@@ -46,11 +60,11 @@ const router = Router()
  *         content:
  *           application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } }
  */
-router.get('/reaction-types', authenticate, controller.listTypes)
+mobileReactionsRouter.get('/reaction-types', controller.listTypes)
 
 /**
  * @openapi
- * /posts/{postId}/reactions:
+ * /mobile/posts/{postId}/reactions:
  *   put:
  *     tags: [Reactions]
  *     summary: Set (or change) the caller's reaction on a post
@@ -77,7 +91,7 @@ router.get('/reaction-types', authenticate, controller.listTypes)
  *             properties:
  *               reactionTypeId:
  *                 type: integer
- *                 description: One of the `id` values from `GET /reaction-types`.
+ *                 description: One of the `id` values from `GET /mobile/reaction-types`.
  *                 example: 1
  *     responses:
  *       200:
@@ -169,12 +183,12 @@ router.get('/reaction-types', authenticate, controller.listTypes)
  *         content:
  *           application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } }
  */
-router.put('/posts/:postId/reactions', authenticate, controller.upsert)
-router.delete('/posts/:postId/reactions', authenticate, controller.remove)
+mobileReactionsRouter.put('/posts/:postId/reactions', controller.upsert)
+mobileReactionsRouter.delete('/posts/:postId/reactions', controller.remove)
 
 /**
  * @openapi
- * /posts/{postId}/reactions:
+ * /mobile/posts/{postId}/reactions:
  *   get:
  *     tags: [Reactions]
  *     summary: List who reacted to a post, and with what, paginated
@@ -198,7 +212,7 @@ router.delete('/posts/:postId/reactions', authenticate, controller.remove)
  *         required: false
  *         description: >
  *           Filter to only this reaction type's name (e.g. `like`, `love`) —
- *           one of the `name` values from `GET /reaction-types`. Omit to get
+ *           one of the `name` values from `GET /mobile/reaction-types`. Omit to get
  *           every reaction on the post regardless of type.
  *         schema: { type: string, example: like }
  *     responses:
@@ -248,6 +262,4 @@ router.delete('/posts/:postId/reactions', authenticate, controller.remove)
  *         content:
  *           application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } }
  */
-router.get('/posts/:postId/reactions', authenticate, controller.list)
-
-export default router
+mobileReactionsRouter.get('/posts/:postId/reactions', controller.list)

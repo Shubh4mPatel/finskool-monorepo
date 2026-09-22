@@ -102,3 +102,15 @@ export function requireRole(...roles: UserRole[]) {
     next()
   }
 }
+
+// Gates the /api/v1/mobile/* routes — same controllers as their web
+// counterparts, but only a MobileSession-backed request (authVia: 'mobile')
+// may call them. A valid web JWT is rejected here rather than accepted,
+// since these paths exist specifically to be the mobile app's own surface.
+export function requireMobileAuth(req: Request, _res: Response, next: NextFunction): void {
+  if (!req.user) return next(new UnauthorizedError())
+  if (req.user.authVia !== 'mobile') {
+    return next(new ForbiddenError('This endpoint is only available to the mobile app', 'MOBILE_ONLY'))
+  }
+  next()
+}

@@ -1,11 +1,13 @@
 import swaggerJSDoc from 'swagger-jsdoc'
 
 // Covers the mobile self-serve auth flow (src/modules/mobile-auth), Posts
-// (src/modules/posts), Reactions (src/modules/reactions), and Payments
-// (src/modules/payments) — the rest of the API predates this doc setup and
-// isn't annotated yet. Extending coverage to other modules just means adding
-// `@openapi` JSDoc blocks to their .routes.ts files and adding that module's
-// glob below; swagger-jsdoc picks the blocks up automatically.
+// (src/modules/posts), Reactions (src/modules/reactions), Payments
+// (src/modules/payments), and the mobile-only community listing
+// (GET /mobile/communities in app.ts) — the rest of the API predates this
+// doc setup and isn't annotated yet. Extending coverage to other modules
+// just means adding `@openapi` JSDoc blocks to their .routes.ts files and
+// adding that module's glob below; swagger-jsdoc picks the blocks up
+// automatically.
 const definition: swaggerJSDoc.OAS3Definition = {
   openapi: '3.0.0',
   info: {
@@ -23,6 +25,7 @@ const definition: swaggerJSDoc.OAS3Definition = {
     { name: 'Posts', description: 'Community post feed (members) + authoring (admins)' },
     { name: 'Reactions', description: 'Emoji reactions on posts (like, love, haha, wow, sad, angry)' },
     { name: 'Payments', description: 'Community plan purchases via Razorpay Orders (list plans, create order, verify payment)' },
+    { name: 'Communities', description: 'Community discovery/paywall listing (mobile-only)' },
   ],
   components: {
     schemas: {
@@ -60,6 +63,10 @@ export const swaggerSpec = swaggerJSDoc({
     new URL('../modules/reactions/*.routes.js', import.meta.url).pathname,
     new URL('../modules/payments/*.routes.ts', import.meta.url).pathname,
     new URL('../modules/payments/*.routes.js', import.meta.url).pathname,
+    // GET /mobile/communities lives inline in app.ts rather than a .routes.ts
+    // file (see the comment on that route) — scanned individually here.
+    new URL('../app.ts', import.meta.url).pathname,
+    new URL('../app.js', import.meta.url).pathname,
   ],
 })
 
