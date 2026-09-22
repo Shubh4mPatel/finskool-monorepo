@@ -1,11 +1,11 @@
 import swaggerJSDoc from 'swagger-jsdoc'
 
 // Covers the mobile self-serve auth flow (src/modules/mobile-auth), Posts
-// (src/modules/posts), and Reactions (src/modules/reactions) — the rest of
-// the API predates this doc setup and isn't annotated yet. Extending
-// coverage to other modules just means adding `@openapi` JSDoc blocks to
-// their .routes.ts files and adding that module's glob below; swagger-jsdoc
-// picks the blocks up automatically.
+// (src/modules/posts), Reactions (src/modules/reactions), and Payments
+// (src/modules/payments) — the rest of the API predates this doc setup and
+// isn't annotated yet. Extending coverage to other modules just means adding
+// `@openapi` JSDoc blocks to their .routes.ts files and adding that module's
+// glob below; swagger-jsdoc picks the blocks up automatically.
 const definition: swaggerJSDoc.OAS3Definition = {
   openapi: '3.0.0',
   info: {
@@ -22,6 +22,7 @@ const definition: swaggerJSDoc.OAS3Definition = {
     { name: 'Mobile Auth', description: 'Self-serve registration + OTP verification' },
     { name: 'Posts', description: 'Community post feed (members) + authoring (admins)' },
     { name: 'Reactions', description: 'Emoji reactions on posts (like, love, haha, wow, sad, angry)' },
+    { name: 'Payments', description: 'Community plan purchases via Razorpay Orders (list plans, create order, verify payment)' },
   ],
   components: {
     schemas: {
@@ -57,6 +58,8 @@ export const swaggerSpec = swaggerJSDoc({
     new URL('../modules/posts/*.routes.js', import.meta.url).pathname,
     new URL('../modules/reactions/*.routes.ts', import.meta.url).pathname,
     new URL('../modules/reactions/*.routes.js', import.meta.url).pathname,
+    new URL('../modules/payments/*.routes.ts', import.meta.url).pathname,
+    new URL('../modules/payments/*.routes.js', import.meta.url).pathname,
   ],
 })
 

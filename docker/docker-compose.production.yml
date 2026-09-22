@@ -1,38 +1,22 @@
-# Production stack — runs on VPS behind this project's own internal Nginx, which in turn
-# sits behind the box-wide Traefik instance (/root/docker-compose.yml) that owns host ports
-# 80/443 for every site on this server. We don't bind 80/443 or run our own certbot here —
-# Traefik does host-based routing + Let's Encrypt (TLS-ALPN-01, no webroot needed) via the
-# labels on the nginx service below, same pattern as the other sites on this box.
+# Production stack — runs this project's own internal Nginx directly on the host's
+# port 80 (see the nginx service below). No external reverse proxy (Traefik or
+# otherwise) is required — TLS is not terminated here; put this behind a proxy or
+# add certbot/443 to nginx.conf yourself if you need HTTPS.
 # All environment is driven by apps/backend/.env
 #
 #   docker compose -f docker/docker-compose.production.yml up -d --build
-#
-# Site is routed at https://community.finskool21.in — see apps/backend/.env.example for
-# CORS_ORIGIN/FRONTEND_URL/MINIO_PUBLIC_*.
 
 services:
 
   # ── Nginx reverse proxy ────────────────────────────────────────────────────
-  # No ports: published — Traefik reaches this container over the shared root_default
-  # network (see `networks:` below) and forwards to its internal port 80 (see the
-  # traefik.http.services...loadbalancer.server.port label).
   nginx:
     image: nginx:alpine
     container_name: finskool-nginx
     restart: unless-stopped
+    ports:
+      - "80:80"
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
-    networks:
-      - default
-      - traefik-public
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.finskool.rule=Host(`community.finskool21.in`)
-      - traefik.http.routers.finskool.entrypoints=web,websecure
-      - traefik.http.routers.finskool.tls=true
-      - traefik.http.routers.finskool.tls.certresolver=mytlschallenge
-      - traefik.http.services.finskool.loadbalancer.server.port=80
-      - traefik.docker.network=root_default
     depends_on:
       finskool-backend:
         condition: service_healthy
@@ -261,13 +245,3 @@ volumes:
     name: finskool-minio-data
   finskool-seed-flag:
     name: finskool-seed-flag
-
-networks:
-  default: {}
-  # Traefik's own compose project (/root/docker-compose.yml) has no explicit top-level
-  # `networks:`, so its containers land on the implicit network named after that project
-  # directory — root_default. Only the nginx service joins this network (see its
-  # `networks:` list above); every other finskool-* service stays on `default` only.
-  traefik-public:
-    external: true
-    name: root_default
