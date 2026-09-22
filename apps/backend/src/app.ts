@@ -16,6 +16,7 @@ import reactionsRoutes from './modules/reactions/reactions.routes.js'
 import notificationsRoutes from './modules/notifications/notifications.routes.js'
 import stocksRoutes from './modules/stocks/stocks.routes.js'
 import stockRecommendationsRoutes from './modules/stock-recommendations/stock-recommendations.routes.js'
+import paymentsRoutes from './modules/payments/payments.routes.js'
 import prisma from './lib/prisma.js'
 import { authenticate } from './middlewares/auth.middleware.js'
 
@@ -56,6 +57,7 @@ export function createApp() {
   app.use('/api/v1/notifications', notificationsRoutes)
   app.use('/api/v1/stocks', stocksRoutes)
   app.use('/api/v1/stock-recommendations', stockRecommendationsRoutes)
+  app.use('/api/v1', paymentsRoutes)
 
   app.get('/api/v1/communities', authenticate, async (_req, res, next) => {
     try {

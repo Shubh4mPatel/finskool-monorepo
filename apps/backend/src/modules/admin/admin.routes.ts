@@ -43,6 +43,11 @@ router.post('/communities', authenticate, requireRole('admin'), controller.creat
 router.patch('/communities/:id', authenticate, requireRole('admin'), controller.updateCommunity)
 router.delete('/communities/:id', authenticate, requireRole('admin'), controller.deleteCommunity)
 
+router.get('/communities/:communityId/plans', authenticate, requireRole('admin'), controller.listPlans)
+router.post('/communities/:communityId/plans', authenticate, requireRole('admin'), controller.createPlan)
+router.patch('/communities/:communityId/plans/:planId', authenticate, requireRole('admin'), controller.updatePlan)
+router.delete('/communities/:communityId/plans/:planId', authenticate, requireRole('admin'), controller.deletePlan)
+
 router.get('/admins', authenticate, requireRole('admin'), controller.listAdmins)
 router.post('/admins', authenticate, requireRole('admin'), controller.createAdmin)
 router.patch('/admins/:adminId', authenticate, requireRole('admin'), controller.updateAdminAccess)

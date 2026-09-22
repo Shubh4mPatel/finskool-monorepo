@@ -54,6 +54,9 @@ import type {
   ValidateImportRowInput,
   ValidateImportRowResult,
   ValidateImportDTO,
+  PlanDTO,
+  CreatePlanDTO,
+  UpdatePlanDTO,
 } from './admin.dto.js'
 
 const _require = createRequire(import.meta.url)
@@ -990,6 +993,96 @@ export class AdminService {
     ])
 
     logger.info({ communityId }, 'admin.deleteCommunity: success')
+  }
+
+  async listPlans(communityId: string): Promise<PlanDTO[]> {
+    const community = await this.db.community.findUnique({ where: { id: communityId } })
+    if (!community || community.deletedAt) throw new NotFoundError('Community not found')
+
+    const plans = await this.db.plan.findMany({
+      where: { communityId, isActive: true },
+      orderBy: { durationMonths: 'asc' },
+    })
+    return plans.map(this.toPlanDTO)
+  }
+
+  async createPlan(communityId: string, data: CreatePlanDTO, adminId: string): Promise<PlanDTO> {
+    const community = await this.db.community.findUnique({ where: { id: communityId } })
+    if (!community || community.deletedAt) throw new NotFoundError('Community not found')
+    // "except from the free community there can be multiple plans" — the free
+    // community (see Community.isFree's own doc comment) never has plans at all.
+    if (community.isFree) {
+      throw new BadRequestError('The free community cannot have plans')
+    }
+
+    const plan = await this.db.plan.create({
+      data: {
+        communityId,
+        name: data.name,
+        durationMonths: data.durationMonths,
+        price: data.price,
+        updatedBy: adminId,
+      },
+    })
+
+    logger.info({ communityId, planId: plan.id }, 'admin.createPlan: success')
+    return this.toPlanDTO(plan)
+  }
+
+  async updatePlan(communityId: string, planId: string, data: UpdatePlanDTO, adminId: string): Promise<PlanDTO> {
+    const existing = await this.db.plan.findUnique({ where: { id: planId } })
+    if (!existing || !existing.isActive || existing.communityId !== communityId) {
+      throw new NotFoundError('Plan not found')
+    }
+
+    const plan = await this.db.plan.update({
+      where: { id: planId },
+      data: {
+        name: data.name,
+        durationMonths: data.durationMonths,
+        price: data.price,
+        updatedBy: adminId,
+      },
+    })
+
+    logger.info({ communityId, planId }, 'admin.updatePlan: success')
+    return this.toPlanDTO(plan)
+  }
+
+  async deletePlan(communityId: string, planId: string, adminId: string): Promise<void> {
+    const existing = await this.db.plan.findUnique({ where: { id: planId } })
+    if (!existing || !existing.isActive || existing.communityId !== communityId) {
+      throw new NotFoundError('Plan not found')
+    }
+
+    // Soft delete — existing Subscriptions/PlanOrders keep their planId
+    // (history), the plan just stops being offered/listed going forward.
+    await this.db.plan.update({ where: { id: planId }, data: { isActive: false, updatedBy: adminId } })
+    logger.info({ communityId, planId }, 'admin.deletePlan: success')
+  }
+
+  private toPlanDTO(plan: {
+    id: string
+    communityId: string
+    name: string
+    durationMonths: number
+    price: Prisma.Decimal
+    isActive: boolean
+    createdAt: Date
+    updatedAt: Date
+    updatedBy: string | null
+  }): PlanDTO {
+    return {
+      id: plan.id,
+      communityId: plan.communityId,
+      name: plan.name,
+      durationMonths: plan.durationMonths,
+      price: Number(plan.price),
+      isActive: plan.isActive,
+      createdAt: plan.createdAt.toISOString(),
+      updatedAt: plan.updatedAt.toISOString(),
+      updatedBy: plan.updatedBy,
+    }
   }
 
   async listAdmins(requestingAdminId: string): Promise<AdminUserDTO[]> {

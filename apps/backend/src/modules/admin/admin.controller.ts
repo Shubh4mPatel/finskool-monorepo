@@ -149,6 +149,15 @@ const resetMemberPasswordSchema = z.object({
   newPassword: z.string().min(8, 'Password must be at least 8 characters'),
 })
 
+const planSchema = z.object({
+  name: z.string().trim().min(1, 'Name is required').max(100),
+  // Plan.durationMonths is a Postgres SMALLINT (max 32767) — cap here so an
+  // out-of-range value fails validation with a clean 400 instead of the
+  // insert throwing an unhandled Postgres error.
+  durationMonths: z.number().int().positive('Duration must be a positive number of months').max(1200, 'Duration is too long'),
+  price: z.number().positive('Price must be a positive number').max(10_000_000, 'Price is too large'),
+})
+
 const listNotificationsSchema = z.object({
   isReplied: z
     .enum(['true', 'false'])
@@ -341,6 +350,62 @@ export class AdminController {
       const id = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
       await this.service.deleteCommunity(req.user!.id, id)
       res.json({ success: true, message: 'Community deleted' })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  listPlans = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const raw = req.params['communityId']
+      const communityId = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
+      assertCommunityAccessFromToken(req.user!.accessibleCommunityIds, communityId)
+      const result = await this.service.listPlans(communityId)
+      res.json({ success: true, data: result })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  createPlan = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const raw = req.params['communityId']
+      const communityId = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
+      assertCommunityAccessFromToken(req.user!.accessibleCommunityIds, communityId)
+      const parsed = planSchema.safeParse(req.body)
+      if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
+      const result = await this.service.createPlan(communityId, parsed.data, req.user!.id)
+      res.status(201).json({ success: true, data: result })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  updatePlan = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const communityIdRaw = req.params['communityId']
+      const communityId = Array.isArray(communityIdRaw) ? (communityIdRaw[0] ?? '') : (communityIdRaw ?? '')
+      const planIdRaw = req.params['planId']
+      const planId = Array.isArray(planIdRaw) ? (planIdRaw[0] ?? '') : (planIdRaw ?? '')
+      assertCommunityAccessFromToken(req.user!.accessibleCommunityIds, communityId)
+      const parsed = planSchema.safeParse(req.body)
+      if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
+      const result = await this.service.updatePlan(communityId, planId, parsed.data, req.user!.id)
+      res.json({ success: true, data: result })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  deletePlan = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const communityIdRaw = req.params['communityId']
+      const communityId = Array.isArray(communityIdRaw) ? (communityIdRaw[0] ?? '') : (communityIdRaw ?? '')
+      const planIdRaw = req.params['planId']
+      const planId = Array.isArray(planIdRaw) ? (planIdRaw[0] ?? '') : (planIdRaw ?? '')
+      assertCommunityAccessFromToken(req.user!.accessibleCommunityIds, communityId)
+      await this.service.deletePlan(communityId, planId, req.user!.id)
+      res.json({ success: true, message: 'Plan deleted' })
     } catch (err) {
       next(err)
     }

@@ -85,6 +85,11 @@ export const env = {
 
   // Token for logo.dev, used to fetch a company logo by domain when enriching Stock rows.
   logoDevToken: process.env['LOGO_DEV_TOKEN'] ?? '',
+
+  razorpay: {
+    keyId: process.env['RAZORPAY_KEY_ID'] ?? '',
+    keySecret: process.env['RAZORPAY_KEY_SECRET'] ?? '',
+  },
 } as const satisfies {
   nodeEnv: 'development' | 'production' | 'test'
   port: number
@@ -100,4 +105,5 @@ export const env = {
   angelone: { apiKey: string; clientCode: string; pin: string; totpSecret: string }
   stockQuoteApi: { baseUrl: string; apiKey: string; reportEmails: string[] }
   logoDevToken: string
+  razorpay: { keyId: string; keySecret: string }
 }

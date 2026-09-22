@@ -92,6 +92,7 @@ model User {
   communityAccess    CommunityAdmin[]
   stockRecommendations StockRecommendation[]
   mobileSession      MobileSession?
+  planOrders         PlanOrder[]
 
   @@index([phone], name: "idx_users_phone")
   @@index([email], name: "idx_users_email")
@@ -125,20 +126,79 @@ model Subscription {
   id              String    @id @default(uuid()) @db.Uuid
   userId          String    @map("user_id") @db.Uuid
   communityId     String    @map("community_id") @db.Uuid
+  planId          String?   @map("plan_id") @db.Uuid
   payment         Decimal   @db.Decimal(10, 2)
   paidOn          DateTime? @map("paid_on") @db.Date
   validUntil      DateTime  @map("valid_until") @db.Date
   isActive        Boolean   @default(true) @map("is_active")
+  // Why this subscription was created/extended — see SubscriptionSource in
+  // notifications.dto.ts-style "as const" object. Nullable: existing rows
+  // predate this field and aren't backfilled with a guess.
+  source          String?   @db.VarChar(30)
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   community     Community     @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  plan          Plan?         @relation(fields: [planId], references: [id], onDelete: SetNull)
 
   @@index([userId], name: "idx_subscriptions_user")
   @@index([communityId], name: "idx_subscriptions_community")
   @@index([userId, communityId], name: "idx_subscriptions_user_community")
+  @@index([planId], name: "idx_subscriptions_plan")
   @@map("subscriptions")
+}
+
+model Plan {
+  id             String    @id @default(uuid()) @db.Uuid
+  communityId    String    @map("community_id") @db.Uuid
+  name           String    @db.VarChar(100)
+  durationMonths Int       @map("duration_months") @db.SmallInt
+  price          Decimal   @db.Decimal(10, 2)
+  // Soft-delete flag — false means "stopped offering this plan", not erased;
+  // existing Subscriptions/PlanOrders keep their planId either way. Every
+  // listing/purchase read filters on this instead of a deletedAt column.
+  isActive       Boolean   @default(true) @map("is_active")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  // Admin who last created/edited/deactivated this plan — loose reference,
+  // same convention as ApprovedPhone.addedBy (no FK relation).
+  updatedBy      String?   @map("updated_by") @db.Uuid
+
+  community     Community      @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  subscriptions Subscription[]
+  orders        PlanOrder[]
+
+  @@index([communityId], name: "idx_plans_community")
+  @@map("plans")
+}
+
+// One row per Razorpay order created for a one-time plan purchase (Orders
+// API, not Razorpay Subscriptions — Plan carries no Razorpay fields of its
+// own, see the schema doc). `status` moves created -> paid|failed and is set
+// exactly once, from PaymentsService#verifyPayment inside the same
+// transaction that creates/extends the resulting Subscription.
+model PlanOrder {
+  id                String    @id @default(uuid()) @db.Uuid
+  userId            String    @map("user_id") @db.Uuid
+  communityId       String    @map("community_id") @db.Uuid
+  planId            String    @map("plan_id") @db.Uuid
+  razorpayOrderId   String    @unique @map("razorpay_order_id") @db.VarChar(64)
+  razorpayPaymentId String?   @unique @map("razorpay_payment_id") @db.VarChar(64)
+  amount            Decimal   @db.Decimal(10, 2)
+  currency          String    @default("INR") @db.VarChar(10)
+  status            String    @default("created") @db.VarChar(20) // created | paid | failed
+  subscriptionId    String?   @map("subscription_id") @db.Uuid    // set once verify succeeds
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  plan      Plan      @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@index([userId], name: "idx_plan_orders_user")
+  @@index([communityId], name: "idx_plan_orders_community")
+  @@map("plan_orders")
 }
 
 model Community {
@@ -153,6 +213,14 @@ model Community {
   // from `tags` (a multi-value list). Nullable since existing communities
   // predate this field.
   type          String?   @db.VarChar(50)
+  subtitle      String?   @db.VarChar(200)
+  // Shared "what's included" bullet list across all of this community's
+  // plans (not per-plan).
+  whatsIncluded String[]  @map("whats_included")
+  // Distinct users with an active, non-expired subscription right now.
+  // Stored, not computed-on-read — kept in sync by a recompute call at every
+  // subscription-lifecycle write site; backfilled once at migration time.
+  activeSubCount Int      @default(0) @map("active_sub_count")
   coverImageUrl String?   @map("cover_image_url") @db.VarChar(500)
   badgeUrl      String?   @map("badge_url") @db.VarChar(500)
   paymentLink   String?   @map("payment_link") @db.VarChar(500)
@@ -173,6 +241,8 @@ model Community {
   notifications Notification[]
   adminAccess   CommunityAdmin[]
   stockRecommendations StockRecommendation[]
+  plans         Plan[]
+  planOrders    PlanOrder[]
 
   @@index([slug], name: "idx_communities_slug")
   @@index([createdBy], name: "idx_communities_created_by")

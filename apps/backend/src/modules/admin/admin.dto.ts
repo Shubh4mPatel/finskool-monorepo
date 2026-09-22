@@ -103,6 +103,30 @@ export interface UpdateCommunityDTO {
   paymentLink?: string | undefined
 }
 
+export interface PlanDTO {
+  id: string
+  communityId: string
+  name: string
+  durationMonths: number
+  price: number
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
+  updatedBy: string | null
+}
+
+export interface CreatePlanDTO {
+  name: string
+  durationMonths: number
+  price: number
+}
+
+export interface UpdatePlanDTO {
+  name: string
+  durationMonths: number
+  price: number
+}
+
 export interface AdminUserDTO {
   id: string
   name: string
