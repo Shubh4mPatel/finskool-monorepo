@@ -40,6 +40,48 @@ export class PostsService {
     }
   }
 
+  /**
+   * Which community GET /mobile/posts should serve, or null if there's
+   * nothing to show (no `requestedId` and no free community exists). No
+   * `requestedId` means the free community. Access is checked live for every
+   * community, free included: members need an active, unexpired subscription
+   * (every account gets one for the free community — see
+   * lib/free-community.ts); admins can always read the free community and
+   * need a community grant for any paid one.
+   */
+  async resolveMobileFeedCommunity(
+    user: { id: string; role: string; accessibleCommunityIds: string[] | null },
+    requestedId: string | undefined,
+  ): Promise<string | null> {
+    let communityId: string
+    let isFree: boolean
+
+    if (requestedId === undefined) {
+      const free = await this.db.community.findFirst({
+        where: { isFree: true, deletedAt: null },
+        select: { id: true },
+      })
+      if (!free) return null
+      communityId = free.id
+      isFree = true
+    } else {
+      const community = await this.db.community.findUnique({
+        where: { id: requestedId },
+        select: { isFree: true, deletedAt: true },
+      })
+      if (!community || community.deletedAt) throw new NotFoundError('Community not found')
+      communityId = requestedId
+      isFree = community.isFree
+    }
+
+    if (user.role === 'admin') {
+      if (!isFree) assertCommunityAccessFromToken(user.accessibleCommunityIds, communityId)
+    } else {
+      await this.assertMemberSubscribed(user.id, communityId)
+    }
+    return communityId
+  }
+
   async listPosts(params: {
     userId: string
     page: number

@@ -20,6 +20,7 @@ import {
 } from '../../lib/queue.js'
 import { logger } from '../../shared/logger.js'
 import { getAccessibleCommunityIds } from '../../lib/community-access.js'
+import { ensureFreeSubscription } from '../../lib/free-community.js'
 import {
   ConflictError,
   ForbiddenError,
@@ -240,6 +241,12 @@ export class MobileAuthService {
       throw new UnauthorizedError('Invalid email or password')
     }
 
+    // Accounts created before the free community existed (or added/imported by
+    // an admin) have no free subscription row yet — grant it here so every
+    // member has it, and so a member whose paid plans have all lapsed can still
+    // log in to the free tier instead of being locked out.
+    if (user.role !== 'admin') await ensureFreeSubscription(this.db, user.id)
+
     if (user.role !== 'admin' && !(await this.hasActiveSubscription(user.id))) {
       throw new UnauthorizedError(
         'Your subscription has expired. Please contact your admin to renew.',
@@ -298,27 +305,6 @@ export class MobileAuthService {
    */
   async logout(rawSessionId: string): Promise<void> {
     await this.db.mobileSession.deleteMany({ where: { sessionIdHash: hashSessionId(rawSessionId) } })
-  }
-
-  /**
-   * Mobile equivalent of AuthService.selectCommunity() — but since there's no
-   * access token to re-sign, this just updates the cached fields on the
-   * user's MobileSession row directly.
-   */
-  async selectCommunity(userId: string, communityId: string): Promise<void> {
-    const communities = await this.fetchUserCommunities(userId)
-    const communityIds = communities.map(c => c.id)
-    if (!communityIds.includes(communityId)) {
-      throw new ForbiddenError('You do not have access to this community', 'COMMUNITY_ACCESS_DENIED')
-    }
-
-    const updated = await this.db.mobileSession.updateMany({
-      where: { userId },
-      data: { selectedCommunityId: communityId, communityIds },
-    })
-    if (updated.count === 0) {
-      throw new UnauthorizedError('No active mobile session found. Please log in again.', 'SESSION_INVALIDATED')
-    }
   }
 
   /**
@@ -404,6 +390,9 @@ export class MobileAuthService {
             where: { phone: pending.phone },
             data: { name: pending.fullName, email: pending.email, status: 'registered' },
           })
+          // Pre-added by an admin with a paid plan, but still needs the free
+          // community like every other account.
+          await ensureFreeSubscription(tx, pending.existingUserId)
           return pending.existingUserId
         }
 
@@ -427,33 +416,12 @@ export class MobileAuthService {
           },
         })
 
-        // Auto-subscribe to the free community (Community.isFree — see
-        // seed.ts / backfill-free-community.ts for how it's created) so this
-        // account isn't permanently locked out of login()'s
-        // hasActiveSubscription gate before any admin has done anything.
-        // Deliberately only here, not in the existingUserId branch above —
-        // an admin who pre-added this phone already granted a real paid
-        // subscription via addMember(), so there's nothing to top up.
-        const freeCommunity = await tx.community.findFirst({ where: { isFree: true, deletedAt: null } })
-        if (freeCommunity) {
-          await tx.subscription.create({
-            data: {
-              userId: created.id,
-              communityId: freeCommunity.id,
-              payment: 0,
-              paidOn: null,
-              // validUntil is a required column with no "never expires"
-              // representation — 100 years out is the free tier's way of
-              // saying "doesn't really expire."
-              validUntil: new Date(new Date().setFullYear(new Date().getFullYear() + 100)),
-            },
-          })
-        } else {
-          // Not a hard failure — the account is still created successfully,
-          // just without free access until an admin seeds one (expected in a
-          // fresh/unseeded environment; see backfill-free-community.ts).
-          logger.warn({ userId: created.id }, 'mobileAuth.finalizeRegistration: no free community exists — skipping auto-subscribe')
-        }
+        // Every account gets the free community at signup — the mobile feed
+        // requires an active subscription even for it (see
+        // PostsService#resolveMobileFeedCommunity), and it keeps the account
+        // from being locked out of login()'s subscription gate before an admin
+        // has done anything.
+        await ensureFreeSubscription(tx, created.id)
 
         return created.id
       })

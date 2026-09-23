@@ -81,6 +81,32 @@ export class PostsController {
     }
   }
 
+  // GET /mobile/posts — the community is already resolved and access-checked by
+  // mobileFeedCommunity (posts.middleware.ts), so no role/session scoping here.
+  listMobile = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { page, pageSize, date, order } = listQuerySchema.parse(req.query)
+      const communityId = res.locals['feedCommunityId'] as string | null
+
+      if (communityId === null) {
+        res.json({ success: true, data: { posts: [], total: 0, page, pageSize, totalPages: 1 } })
+        return
+      }
+
+      const result = await this.service.listPosts({
+        userId: req.user!.id,
+        page,
+        pageSize,
+        communityId,
+        order,
+        ...(date !== undefined && { date }),
+      })
+      res.json({ success: true, data: result })
+    } catch (err) {
+      next(err)
+    }
+  }
+
   listCommented = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const result = await this.service.listCommentedPosts(req.user!.id)

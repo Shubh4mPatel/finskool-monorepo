@@ -414,51 +414,6 @@ router.post('/logout', controller.logout)
 
 /**
  * @openapi
- * /auth/mobile/select-community:
- *   post:
- *     tags: [Mobile Auth]
- *     summary: Switch the active community (mobile flow)
- *     description: >
- *       Mobile equivalent of POST /auth/select-community — but since there's
- *       no access token to re-sign, this updates the cached
- *       selectedCommunityId directly on the caller's MobileSession row.
- *       Requires an active mobile session (this route runs behind
- *       `authenticate`).
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [communityId]
- *             properties:
- *               communityId: { type: string, format: uuid }
- *     responses:
- *       200:
- *         description: Selection updated.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success: { type: boolean, example: true }
- *       401:
- *         description: Not authenticated, or no active mobile session found (code SESSION_INVALIDATED).
- *         content:
- *           application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } }
- *       403:
- *         description: Caller isn't subscribed to this community (code COMMUNITY_ACCESS_DENIED).
- *         content:
- *           application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } }
- *       422:
- *         description: Validation failed.
- *         content:
- *           application/json: { schema: { $ref: '#/components/schemas/ValidationErrorResponse' } }
- */
-router.post('/select-community', authenticate, controller.selectCommunity)
-
-/**
- * @openapi
  * /auth/mobile/me:
  *   get:
  *     tags: [Mobile Auth]

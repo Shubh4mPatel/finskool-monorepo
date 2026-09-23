@@ -50,10 +50,6 @@ export interface MobileLoginResultInternal {
   communities: CommunityInfoDTO[]
 }
 
-export interface MobileSelectCommunityDTO {
-  communityId: string
-}
-
 export interface ForgotPasswordDTO {
   email: string
 }

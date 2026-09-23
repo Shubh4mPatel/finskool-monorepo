@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { PostsService } from './posts.service.js'
 import { PostsController } from './posts.controller.js'
+import { mobileFeedCommunity } from './posts.middleware.js'
 import { authenticate, requireRole, requireMobileAuth } from '../../middlewares/auth.middleware.js'
 import prisma from '../../lib/prisma.js'
 
@@ -28,10 +29,10 @@ router.patch('/:id/pin', admin, controller.pin)
 
 export default router
 
-// Mounted separately at /api/v1/mobile — the mobile app's own copy of the
-// feed endpoint, gated to MobileSession auth only (see requireMobileAuth).
-// Reuses the same controller/service as the unprefixed GET /api/v1/posts
-// above (unchanged, still used by web) so behavior never drifts between them.
+// Mounted separately at /api/v1/mobile — the mobile app's own feed endpoint,
+// gated to MobileSession auth only (see requireMobileAuth). Its community
+// scoping (explicit communityId, free feed by default) differs from the
+// unprefixed GET /api/v1/posts above, which the admin website keeps using.
 export const mobilePostsRouter = Router()
 mobilePostsRouter.use(authenticate, requireMobileAuth)
 
@@ -42,25 +43,23 @@ mobilePostsRouter.use(authenticate, requireMobileAuth)
  *     tags: [Posts]
  *     summary: List published posts (feed)
  *     description: >
- *       Which community's posts come back depends on caller and role:
+ *       Mobile-only (403 MOBILE_ONLY for a web JWT). The feed is always for
+ *       exactly one community:
  *
- *       - **Super admin** (unrestricted access): sees all communities, or one
- *         via `communityId`.
- *       - **Scoped admin**: `communityId` must be one they're granted access
- *         to (else 403 COMMUNITY_ACCESS_DENIED); omit it to see every
- *         community they're granted, merged.
- *       - **Member, web**: `communityId` is ignored — scoped to
- *         `selectedCommunityId` from their session (see POST
- *         /auth/select-community / POST /auth/mobile/select-community), or
- *         every community they're subscribed to if none is selected yet.
- *       - **Member, mobile app only**: may pass `communityId` explicitly to
- *         view one community directly, bypassing `selectedCommunityId`. This
- *         is checked live against the database (not the possibly-stale
- *         communityIds cached on the mobile session at login) — a 403
- *         SUBSCRIPTION_REQUIRED is returned if that subscription is missing
- *         or has expired since login.
+ *       - **`communityId` omitted** — the free community's posts. Empty page
+ *         if no free community exists.
+ *       - **`communityId` given** — that community's posts.
  *
- *       Only `status: published` (drafts never appear here) and
+ *       Access is checked live against the database on every call, for the
+ *       free community too: a member needs an active, unexpired subscription
+ *       to the requested community (else 403 SUBSCRIPTION_REQUIRED). Every
+ *       account gets a free-community subscription at registration, or at its
+ *       first login if it predates that. Admins can always read the free
+ *       community, and need a grant for a paid one (else 403
+ *       COMMUNITY_ACCESS_DENIED; super admins can use any).
+ *
+ *       Get community ids from `GET /mobile/communities` (paid) or the
+ *       `communities` returned by login. Only `status: published` and
  *       non-deleted posts are returned. Pinned posts (top 3 per community)
  *       always sort first, then by `publishedAt` in the requested `order`.
  *     parameters:
@@ -73,9 +72,8 @@ mobilePostsRouter.use(authenticate, requireMobileAuth)
  *       - name: communityId
  *         in: query
  *         description: >
- *           Admins: filter to one community. Members: honored only on mobile
- *           (see description above) and live-checked against an active
- *           subscription; ignored for web members.
+ *           Community to show. Omit for the free community's feed. The caller
+ *           must have access to it (see description above).
  *         schema: { type: string, format: uuid }
  *       - name: date
  *         in: query
@@ -126,10 +124,14 @@ mobilePostsRouter.use(authenticate, requireMobileAuth)
  *           application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } }
  *       403:
  *         description: >
- *           Scoped admin requested a community outside their grant (code
- *           COMMUNITY_ACCESS_DENIED), or a mobile member has no active
- *           subscription to the requested community (code
- *           SUBSCRIPTION_REQUIRED).
+ *           A member has no active, unexpired subscription to the requested
+ *           community (code SUBSCRIPTION_REQUIRED), an admin has no grant for
+ *           the requested paid community (code COMMUNITY_ACCESS_DENIED), or the
+ *           caller isn't on a mobile session (code MOBILE_ONLY).
+ *         content:
+ *           application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } }
+ *       404:
+ *         description: No such community (or it was deleted).
  *         content:
  *           application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } }
  *       422:
@@ -137,4 +139,4 @@ mobilePostsRouter.use(authenticate, requireMobileAuth)
  *         content:
  *           application/json: { schema: { $ref: '#/components/schemas/ValidationErrorResponse' } }
  */
-mobilePostsRouter.get('/posts', controller.list)
+mobilePostsRouter.get('/posts', mobileFeedCommunity(service), controller.listMobile)

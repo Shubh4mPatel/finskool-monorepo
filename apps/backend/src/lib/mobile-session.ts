@@ -1,7 +1,7 @@
 import { createHash } from 'crypto'
 import type { PrismaClient } from '../generated/prisma/client.js'
 
-// Shared by both mobile-auth.service.ts (writes, on login/logout/select-community)
+// Shared by both mobile-auth.service.ts (writes, on login/logout)
 // and auth.middleware.ts (reads, on every mobile-authenticated request) so the
 // two never drift on how a session id is hashed or what counts as valid.
 export function hashSessionId(rawSessionId: string): string {

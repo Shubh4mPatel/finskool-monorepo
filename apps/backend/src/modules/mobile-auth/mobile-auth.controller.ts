@@ -8,7 +8,6 @@ import {
   forgotPasswordSchema,
   verifyResetOtpSchema,
   resetPasswordSchema,
-  mobileSelectCommunitySchema,
 } from './mobile-auth.validator.js'
 import { env } from '../../config/env.js'
 import { UnauthorizedError } from '../../shared/errors/index.js'
@@ -109,17 +108,6 @@ export class MobileAuthController {
       if (!req.user) throw new UnauthorizedError('Not authenticated')
       const data = await this.service.getProfile(req.user.id)
       res.json({ success: true, data })
-    } catch (err) {
-      next(err)
-    }
-  }
-
-  selectCommunity = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-    try {
-      if (!req.user) throw new UnauthorizedError('Not authenticated')
-      const { communityId } = mobileSelectCommunitySchema.parse(req.body)
-      await this.service.selectCommunity(req.user.id, communityId)
-      res.json({ success: true })
     } catch (err) {
       next(err)
     }

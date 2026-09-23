@@ -43,10 +43,6 @@ export const mobileLoginSchema = z.object({
   deviceType: z.enum(['ios', 'android']).optional(),
 })
 
-export const mobileSelectCommunitySchema = z.object({
-  communityId: z.string().uuid('Invalid community ID'),
-})
-
 export const forgotPasswordSchema = z.object({
   email: z.string().email('Invalid email address').toLowerCase(),
 })
