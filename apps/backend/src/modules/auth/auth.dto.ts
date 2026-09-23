@@ -72,6 +72,10 @@ export interface MobileProfileDTO {
     email: string
     phone: string
     postNotificationsEnabled: boolean
+    // KYC details are submitted once via POST /auth/mobile/me/kyc. The PAN
+    // itself is never returned — only whether one has been submitted.
+    panSubmitted: boolean
+    dateOfBirth: string | null // YYYY-MM-DD
   }
   communities: PaidCommunityDTO[]
 }

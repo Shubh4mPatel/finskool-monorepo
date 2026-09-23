@@ -227,7 +227,9 @@
       "Bash(echo \"grep exit:$? \\(1 = none left in mobile-auth\\)\")",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" -X POST http://localhost:3001/api/v1/auth/mobile/select-community)",
       "Bash(break)",
-      "Bash(echo \"tsc filtered exit:$? \\(1 = clean\\)\")"
+      "Bash(echo \"tsc filtered exit:$? \\(1 = clean\\)\")",
+      "Bash(echo \"--- exit:$? ---\")",
+      "Bash(git -C /home/shubh4m/projects/finskool-monorepo status --short)"
     ],
     "additionalDirectories": [
       "/tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/8750fbd9-1edb-4d3f-b623-da0dec31a255/scratchpad/node_modules",

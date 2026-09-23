@@ -21,6 +21,7 @@ import {
 import { logger } from '../../shared/logger.js'
 import { getAccessibleCommunityIds } from '../../lib/community-access.js'
 import { ensureFreeSubscription } from '../../lib/free-community.js'
+import { encryptPan } from '../../lib/pan-crypto.js'
 import {
   ConflictError,
   ForbiddenError,
@@ -39,6 +40,7 @@ import type {
   CommunityInfoDTO,
   PaidCommunityDTO,
   MobileProfileDTO,
+  SubmitKycDTO,
 } from './mobile-auth.dto.js'
 
 const BCRYPT_ROUNDS = 12
@@ -592,7 +594,41 @@ export class MobileAuthService {
 
     const { avatarUrl, email, phone, postNotificationsEnabled } = this.toPublicUser(user)
     const communities = await this.fetchPaidCommunities(userId)
-    return { user: { avatarUrl, email, phone, postNotificationsEnabled }, communities }
+    return {
+      user: {
+        avatarUrl,
+        email,
+        phone,
+        postNotificationsEnabled,
+        panSubmitted: user.panEncrypted !== null,
+        dateOfBirth: user.dateOfBirth?.toISOString().split('T')[0] ?? null,
+      },
+      communities,
+    }
+  }
+
+  /**
+   * Saves date of birth + PAN (encrypted) exactly once. The conditional
+   * update — not a read-then-write — is what locks it: `panEncrypted: null` in
+   * the where clause means two concurrent submits can't both succeed. Never
+   * log the PAN or DOB here.
+   */
+  async submitKyc(userId: string, data: SubmitKycDTO): Promise<void> {
+    const user = await this.db.user.findUnique({ where: { id: userId }, select: { deletedAt: true } })
+    if (!user || user.deletedAt) throw new UnauthorizedError('User not found')
+
+    const updated = await this.db.user.updateMany({
+      where: { id: userId, panEncrypted: null },
+      data: {
+        dateOfBirth: new Date(`${data.dateOfBirth}T00:00:00.000Z`),
+        panEncrypted: encryptPan(data.panNumber),
+        kycSubmittedAt: new Date(),
+      },
+    })
+    if (updated.count === 0) {
+      throw new ConflictError('Your details have already been submitted and cannot be changed.', 'KYC_ALREADY_SUBMITTED')
+    }
+    logger.info({ userId }, 'mobileAuth.submitKyc: success')
   }
 
   // Every community ever paid for (excluding the free community and

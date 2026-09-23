@@ -77,6 +77,12 @@ model User {
   suspensionReason String? @map("suspension_reason") @db.Text
   avatarUrl    String?   @map("avatar_url") @db.VarChar(500)
   postNotificationsEnabled Boolean @default(true) @map("post_notifications_enabled")
+  // Submitted once from the mobile app (POST /auth/mobile/me/kyc), then locked.
+  // panEncrypted is AES-256-GCM ciphertext (see lib/pan-crypto.ts), decryptable
+  // only with PAN_ENCRYPTION_KEY — never select or return it from a normal query.
+  dateOfBirth    DateTime? @map("date_of_birth") @db.Date
+  panEncrypted   String?   @map("pan_encrypted") @db.VarChar(255)
+  kycSubmittedAt DateTime? @map("kyc_submitted_at") @db.Timestamptz
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
   deletedAt    DateTime? @map("deleted_at") @db.Timestamptz
 

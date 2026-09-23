@@ -228,6 +228,8 @@ router.post('/resend-otp', controller.resendOtp)
  *                         isSuperAdmin: { type: boolean }
  *                         avatarUrl: { type: string, nullable: true }
  *                         postNotificationsEnabled: { type: boolean }
+ *                         panSubmitted: { type: boolean, description: "Whether PAN + date of birth were submitted via POST /auth/mobile/me/kyc. The PAN itself is never returned." }
+ *                         dateOfBirth: { type: string, nullable: true, example: "1995-04-12" }
  *                     communities:
  *                       type: array
  *                       items:
@@ -444,6 +446,8 @@ router.post('/logout', controller.logout)
  *                         email: { type: string }
  *                         phone: { type: string }
  *                         postNotificationsEnabled: { type: boolean }
+ *                         panSubmitted: { type: boolean, description: "Whether PAN + date of birth were submitted via POST /auth/mobile/me/kyc. The PAN itself is never returned." }
+ *                         dateOfBirth: { type: string, nullable: true, example: "1995-04-12" }
  *                     communities:
  *                       type: array
  *                       items:
@@ -467,5 +471,60 @@ router.post('/logout', controller.logout)
  *           application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } }
  */
 router.get('/me', authenticate, requireMobileAuth, controller.getProfile)
+
+/**
+ * @openapi
+ * /auth/mobile/me/kyc:
+ *   post:
+ *     tags: [Mobile Auth]
+ *     summary: Submit date of birth and PAN (once)
+ *     description: >
+ *       Mobile-only (requireMobileAuth). Saves the caller's date of birth and
+ *       PAN. The PAN is stored encrypted and is never returned by any mobile
+ *       endpoint — `GET /auth/mobile/me` only reports `panSubmitted`. Locked
+ *       once set: a second call, even with different values, returns 409
+ *       KYC_ALREADY_SUBMITTED and changes nothing. The PAN is trimmed and
+ *       upper-cased before validation, so `abcde1234f` is accepted.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [dateOfBirth, panNumber]
+ *             properties:
+ *               dateOfBirth: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$', example: "1995-04-12", description: "A real past date, 1900-01-01 or later." }
+ *               panNumber: { type: string, pattern: '^[A-Za-z]{5}[0-9]{4}[A-Za-z]$', example: "ABCDE1234F" }
+ *     responses:
+ *       201:
+ *         description: Details saved.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     panSubmitted: { type: boolean, example: true }
+ *       401:
+ *         description: Not authenticated.
+ *         content:
+ *           application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } }
+ *       403:
+ *         description: Authenticated via web JWT instead of a mobile session (code MOBILE_ONLY).
+ *         content:
+ *           application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } }
+ *       409:
+ *         description: Details were already submitted and can't be changed (code KYC_ALREADY_SUBMITTED).
+ *         content:
+ *           application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } }
+ *       422:
+ *         description: Invalid PAN format or date of birth.
+ *         content:
+ *           application/json: { schema: { $ref: '#/components/schemas/ValidationErrorResponse' } }
+ */
+router.post('/me/kyc', authenticate, requireMobileAuth, controller.submitKyc)
 
 export default router

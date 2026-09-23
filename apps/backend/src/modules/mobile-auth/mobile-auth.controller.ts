@@ -8,6 +8,7 @@ import {
   forgotPasswordSchema,
   verifyResetOtpSchema,
   resetPasswordSchema,
+  submitKycSchema,
 } from './mobile-auth.validator.js'
 import { env } from '../../config/env.js'
 import { UnauthorizedError } from '../../shared/errors/index.js'
@@ -108,6 +109,18 @@ export class MobileAuthController {
       if (!req.user) throw new UnauthorizedError('Not authenticated')
       const data = await this.service.getProfile(req.user.id)
       res.json({ success: true, data })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  submitKyc = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      if (!req.user) throw new UnauthorizedError('Not authenticated')
+      const data = submitKycSchema.parse(req.body)
+      await this.service.submitKyc(req.user.id, data)
+      // Deliberately doesn't echo the PAN/DOB back.
+      res.status(201).json({ success: true, data: { panSubmitted: true } })
     } catch (err) {
       next(err)
     }

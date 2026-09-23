@@ -90,6 +90,11 @@ export const env = {
     keyId: process.env['RAZORPAY_KEY_ID'] ?? '',
     keySecret: process.env['RAZORPAY_KEY_SECRET'] ?? '',
   },
+
+  // 32-byte AES-256-GCM key as 64 hex chars — see src/lib/pan-crypto.ts.
+  pan: {
+    encryptionKey: process.env['PAN_ENCRYPTION_KEY'] ?? '',
+  },
 } as const satisfies {
   nodeEnv: 'development' | 'production' | 'test'
   port: number
@@ -106,4 +111,5 @@ export const env = {
   stockQuoteApi: { baseUrl: string; apiKey: string; reportEmails: string[] }
   logoDevToken: string
   razorpay: { keyId: string; keySecret: string }
+  pan: { encryptionKey: string }
 }

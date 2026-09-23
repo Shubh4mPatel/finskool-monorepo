@@ -50,6 +50,11 @@ export interface MobileLoginResultInternal {
   communities: CommunityInfoDTO[]
 }
 
+export interface SubmitKycDTO {
+  dateOfBirth: string // YYYY-MM-DD
+  panNumber: string   // already trimmed + upper-cased by submitKycSchema
+}
+
 export interface ForgotPasswordDTO {
   email: string
 }

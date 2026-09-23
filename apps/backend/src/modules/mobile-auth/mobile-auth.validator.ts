@@ -62,3 +62,27 @@ export const resetPasswordSchema = z
     message: 'Passwords do not match',
     path: ['confirmNewPassword'],
   })
+
+// Indian PAN: 5 letters, 4 digits, 1 letter (e.g. ABCDE1234F). Input is trimmed and
+// upper-cased before the check, so " abcde1234f " is accepted and stored normalised.
+const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]$/
+
+export const submitKycSchema = z.object({
+  dateOfBirth: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Date of birth must be in YYYY-MM-DD format')
+    .superRefine((value, ctx) => {
+      // Round-trip catches impossible dates like 2026-02-30, which Date() would roll forward.
+      const parsed = new Date(`${value}T00:00:00.000Z`)
+      if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) {
+        ctx.addIssue({ code: 'custom', message: 'Enter a valid date of birth' })
+        return
+      }
+      if (value > new Date().toISOString().slice(0, 10)) {
+        ctx.addIssue({ code: 'custom', message: 'Date of birth cannot be in the future' })
+      } else if (value < '1900-01-01') {
+        ctx.addIssue({ code: 'custom', message: 'Enter a valid date of birth' })
+      }
+    }),
+  panNumber: z.string().trim().toUpperCase().regex(PAN_REGEX, 'Enter a valid PAN, e.g. ABCDE1234F'),
+})
