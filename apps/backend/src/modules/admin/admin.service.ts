@@ -18,6 +18,7 @@ import type { LiveNotificationEvent } from '../../lib/queue.js'
 import { BadRequestError, ConflictError, NotFoundError, ForbiddenError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
 import { normalizePhone } from '../../lib/phone.js'
+import { ensureFreeSubscription } from '../../lib/free-community.js'
 import { formatEmailDate } from '../../lib/email-templates.js'
 import { NotificationType } from '../notifications/notifications.dto.js'
 import redis from '../../lib/redis.js'
@@ -208,7 +209,9 @@ export class AdminService {
         // a self-registered-then-deleted user has no ApprovedPhone row at all, and
         // reviveMember's upsert handles that (creates one) same as any other revive path.
         const revived = await this.db.$transaction(async tx => {
-          return this.reviveMember(tx, existingUser, phone, name, email, adminId)
+          const r = await this.reviveMember(tx, existingUser, phone, name, email, adminId)
+          await ensureFreeSubscription(tx, existingUser.id)
+          return r
         })
         await this.db.subscription.create({
           data: { userId: existingUser.id, communityId: community.id, payment, paidOn, validUntil },
@@ -232,6 +235,7 @@ export class AdminService {
       } else if (existingUser) {
         // User exists (admin-added or self-registered) but NOT subscribed to this
         // community yet — add subscription only.
+        await ensureFreeSubscription(this.db, existingUser.id)
         await this.db.subscription.create({
           data: {
             userId: existingUser.id,
@@ -248,6 +252,7 @@ export class AdminService {
         await this.db.$transaction(async tx => {
           const user = await tx.user.create({ data: { phone, name, email } })
           await tx.approvedPhone.create({ data: { phone, name, email, addedBy: adminId } })
+          await ensureFreeSubscription(tx, user.id)
           await tx.subscription.create({
             data: { userId: user.id, communityId: community.id, payment, paidOn, validUntil },
           })
@@ -350,7 +355,9 @@ export class AdminService {
           // Admin explicitly selected this row to revive (suspended or deleted member
           // coming back) — see reviveMember's own doc comment for exactly what gets reset.
           const revived = await this.db.$transaction(async tx => {
-            return this.reviveMember(tx, existingUser, phone, row.name, email, adminId)
+            const r = await this.reviveMember(tx, existingUser, phone, row.name, email, adminId)
+            await ensureFreeSubscription(tx, existingUser.id)
+            return r
           })
           await this.db.subscription.create({
             data: { userId: existingUser.id, communityId: community.id, payment, paidOn, validUntil },
@@ -374,6 +381,7 @@ export class AdminService {
         } else if (existingUser) {
           // User exists (admin-added or self-registered) but NOT subscribed to this
           // community yet — add subscription only.
+          await ensureFreeSubscription(this.db, existingUser.id)
           await this.db.subscription.create({
             data: { userId: existingUser.id, communityId: community.id, payment, paidOn, validUntil },
           })
@@ -383,6 +391,7 @@ export class AdminService {
           await this.db.$transaction(async tx => {
             const user = await tx.user.create({ data: { phone, name: row.name, email } })
             await tx.approvedPhone.create({ data: { phone, name: row.name, email, addedBy: adminId } })
+            await ensureFreeSubscription(tx, user.id)
             await tx.subscription.create({
               data: { userId: user.id, communityId: community.id, payment, paidOn, validUntil },
             })
@@ -1267,6 +1276,10 @@ export class AdminService {
       const ap = await tx.approvedPhone.create({
         data: { phone, name: data.name, email: data.email ?? null, addedBy: adminId },
       })
+      // Every member gets free-tier access in addition to whatever paid
+      // community the admin is granting here — same as a self-registered
+      // account (see mobile-auth.service.ts#finalizeRegistration).
+      await ensureFreeSubscription(tx, user.id)
       await tx.subscription.create({
         data: {
           userId: user.id,
@@ -1333,6 +1346,7 @@ export class AdminService {
 
     const result = await this.db.$transaction(async tx => {
       const revived = await this.reviveMember(tx, existingUser, phone, data.name, data.email ?? null, adminId)
+      await ensureFreeSubscription(tx, revived.userId)
       await tx.subscription.create({
         data: {
           userId: revived.userId,
