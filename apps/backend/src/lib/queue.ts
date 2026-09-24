@@ -123,6 +123,13 @@ export interface OtpEmailJobPayload {
   expiryMinutes: number
 }
 
+export const OTP_WHATSAPP_JOB = 'otp-whatsapp'
+
+export interface OtpWhatsappJobPayload {
+  phone: string   // E.164, with leading '+' (lib/phone.ts's normalizePhone output)
+  otp: string
+}
+
 export const PASSWORD_RESET_OTP_EMAIL_JOB = 'password-reset-otp-email'
 
 export interface PasswordResetOtpEmailJobPayload {
@@ -153,6 +160,7 @@ export type NotificationJobPayload =
   | MemberSuspendedEmailJobPayload
   | MemberReinstatedEmailJobPayload
   | OtpEmailJobPayload
+  | OtpWhatsappJobPayload
   | PasswordResetOtpEmailJobPayload
   | MobileNewLoginEmailJobPayload
 

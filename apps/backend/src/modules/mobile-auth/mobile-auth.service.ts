@@ -14,7 +14,7 @@ import {
 import { hashSessionId } from '../../lib/mobile-session.js'
 import {
   notificationsQueue,
-  OTP_EMAIL_JOB,
+  OTP_WHATSAPP_JOB,
   PASSWORD_RESET_OTP_EMAIL_JOB,
   MOBILE_NEW_LOGIN_EMAIL_JOB,
 } from '../../lib/queue.js'
@@ -727,12 +727,12 @@ export class MobileAuthService {
 
     try {
       await notificationsQueue.add(
-        OTP_EMAIL_JOB,
-        { toEmail: data.email, name: data.fullName, otp, expiryMinutes: OTP_TTL_SECONDS / 60 },
+        OTP_WHATSAPP_JOB,
+        { phone: data.phone, otp },
         { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
       )
     } catch (err) {
-      logger.error({ err, token }, 'mobileAuth.storePendingRegistration: failed to enqueue OTP email job')
+      logger.error({ err, token }, 'mobileAuth.storePendingRegistration: failed to enqueue OTP WhatsApp job')
       throw err
     }
   }

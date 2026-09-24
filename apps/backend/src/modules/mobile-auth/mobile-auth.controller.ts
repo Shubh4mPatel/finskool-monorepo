@@ -47,7 +47,7 @@ export class MobileAuthController {
       // considered registered until verifyOtp() succeeds.
       res.status(201).json({
         success: true,
-        message: 'OTP sent to your email. Verify it to complete registration.',
+        message: 'OTP sent to your WhatsApp. Verify it to complete registration.',
         data: result,
       })
     } catch (err) {
@@ -71,7 +71,7 @@ export class MobileAuthController {
     try {
       const { userId } = resendOtpSchema.parse(req.body)
       const result = await this.service.resendOtp(userId)
-      res.json({ success: true, message: 'A new code has been sent to your email.', data: result })
+      res.json({ success: true, message: 'A new code has been sent to your WhatsApp.', data: result })
     } catch (err) {
       next(err)
     }

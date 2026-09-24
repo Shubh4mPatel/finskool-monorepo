@@ -5,6 +5,7 @@ import { sendMail } from '../../lib/mailer.js'
 import redis from '../../lib/redis.js'
 import { env } from '../../config/env.js'
 import { renderEmail, firstNameOf, formatEmailDate, formatEmailDateTime, formatEmailAmount, buildEmailRows, buildRenewalCta } from '../../lib/email-templates.js'
+import { sendWhatsappOtp } from '../../lib/whatsapp.js'
 import {
   NOTIFICATIONS_PUBSUB_CHANNEL,
 } from '../../lib/queue.js'
@@ -20,6 +21,7 @@ import type {
   MemberSuspendedEmailJobPayload,
   MemberReinstatedEmailJobPayload,
   OtpEmailJobPayload,
+  OtpWhatsappJobPayload,
   PasswordResetOtpEmailJobPayload,
   MobileNewLoginEmailJobPayload,
   LiveNotificationEvent,
@@ -303,6 +305,10 @@ export class NotificationsService {
       expiry_minutes: String(payload.expiryMinutes),
     })
     await sendMail({ to: payload.toEmail, subject, html })
+  }
+
+  async sendOtpWhatsapp(payload: OtpWhatsappJobPayload): Promise<void> {
+    await sendWhatsappOtp(payload.phone, payload.otp)
   }
 
   async sendPasswordResetOtpEmail(payload: PasswordResetOtpEmailJobPayload): Promise<void> {

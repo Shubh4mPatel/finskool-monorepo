@@ -20,8 +20,8 @@ const router = Router()
  *       Open registration — no admin needs to have pre-added this phone number.
  *       Does NOT create a database row: the submitted data + a hashed password
  *       are held in Redis for 10 minutes under the `userId` returned below,
- *       and a 6-digit OTP is sent to the given email (a stand-in for WhatsApp
- *       delivery, not yet wired up). The account is only actually created —
+ *       and a 6-digit OTP is sent via WhatsApp to the given phone number. The
+ *       account is only actually created —
  *       and only then does the phone number/email become "taken" — once
  *       /auth/mobile/verify-otp succeeds; an abandoned registration just
  *       expires with its OTP, with nothing left behind to clean up.
@@ -48,7 +48,7 @@ const router = Router()
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { type: string, example: "OTP sent to your email. Verify it to complete registration." }
+ *                 message: { type: string, example: "OTP sent to your WhatsApp. Verify it to complete registration." }
  *                 data:
  *                   type: object
  *                   properties:
@@ -78,7 +78,7 @@ router.post('/register', controller.register)
  *     tags: [Mobile Auth]
  *     summary: Verify the OTP and complete registration
  *     description: >
- *       Confirms the code emailed by /auth/mobile/register. This is the call
+ *       Confirms the code sent via WhatsApp by /auth/mobile/register. This is the call
  *       that actually creates (or, for a phone pre-added by an admin, finishes
  *       claiming) the account in the database — nothing exists yet before
  *       this succeeds. Does NOT log the user in; call POST /auth/login
@@ -157,7 +157,7 @@ router.post('/verify-otp', controller.verifyOtp)
  *               type: object
  *               properties:
  *                 success: { type: boolean, example: true }
- *                 message: { type: string, example: "A new code has been sent to your email." }
+ *                 message: { type: string, example: "A new code has been sent to your WhatsApp." }
  *                 data:
  *                   type: object
  *                   properties:

@@ -95,6 +95,15 @@ export const env = {
   pan: {
     encryptionKey: process.env['PAN_ENCRYPTION_KEY'] ?? '',
   },
+
+  // Registration OTP delivery (src/lib/whatsapp.ts) — third-party WhatsApp
+  // Business API, template-message send.
+  whatsapp: {
+    baseUrl: (process.env['WHATSAPP_API_BASE_URL'] ?? '').replace(/\/$/, ''),
+    apiKey: process.env['WHATSAPP_API_KEY'] ?? '',
+    phoneNoId: process.env['WHATSAPP_PHONE_NO_ID'] ?? '',
+    templateName: process.env['WHATSAPP_AUTH_TEMPLATE_NAME'] ?? 'auth_template',
+  },
 } as const satisfies {
   nodeEnv: 'development' | 'production' | 'test'
   port: number
@@ -112,4 +121,5 @@ export const env = {
   logoDevToken: string
   razorpay: { keyId: string; keySecret: string }
   pan: { encryptionKey: string }
+  whatsapp: { baseUrl: string; apiKey: string; phoneNoId: string; templateName: string }
 }
