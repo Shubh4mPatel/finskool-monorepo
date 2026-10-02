@@ -31,7 +31,14 @@ async function bootstrap() {
 
   const angelOne = new AngelOneClient()
   liveStockFeed.attach(server, angelOne, prisma)
-  angelOne.connect()
+  // The feed stays attached either way (the /ws/stock-prices server and the DB
+  // cmp reads keep working) — disabling only skips the AngelOne login/socket,
+  // so no ticks flow and prices stay at their last stored value.
+  if (env.angelone.enabled) {
+    angelOne.connect()
+  } else {
+    logger.warn('AngelOne live feed disabled (ANGELONE_ENABLED=false) — not connecting')
+  }
 
   liveNotificationsFeed.attach(server)
 

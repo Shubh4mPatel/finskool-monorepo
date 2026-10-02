@@ -229,7 +229,12 @@
       "Bash(break)",
       "Bash(echo \"tsc filtered exit:$? \\(1 = clean\\)\")",
       "Bash(echo \"--- exit:$? ---\")",
-      "Bash(git -C /home/shubh4m/projects/finskool-monorepo status --short)"
+      "Bash(git -C /home/shubh4m/projects/finskool-monorepo status --short)",
+      "Bash(docker volume *)",
+      "Bash(curl -s -m 5 -w ' [%{http_code}]\\\\n' http://localhost:3001/health)",
+      "Bash(awk '{print $1\" \"$2\" \"$3\" \"$4\" \"$5\" \"$6\" \"$7}')",
+      "Bash(awk '{ if \\($0 ~ /connected/\\) c++; else if \\($0 ~ /429/\\) e++; } END {print \"connected=\"c+0, \"429s=\"e+0}')",
+      "Bash(grep -v \"^│\\\\|^┌\\\\|^└\\\\|^$\")"
     ],
     "additionalDirectories": [
       "/tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/8750fbd9-1edb-4d3f-b623-da0dec31a255/scratchpad/node_modules",
