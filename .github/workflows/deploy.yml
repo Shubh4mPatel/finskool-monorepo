@@ -8,7 +8,7 @@
 # Required repository secrets (Settings → Secrets and variables → Actions):
 #   SSH_HOST         server hostname or IP
 #   SSH_USER         SSH user (must be able to run `docker`)
-#   SSH_PRIVATE_KEY  private key whose public half is in the user's authorized_keys
+#   SSH_KEY          private key whose public half is in the user's authorized_keys
 #   DEPLOY_PATH      absolute path of the repo clone on the server
 # Optional:
 #   SSH_PORT         defaults to 22
@@ -36,6 +36,22 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
+      - name: Check required secrets
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          missing=0
+          for name in SSH_HOST SSH_USER SSH_KEY DEPLOY_PATH; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Repository secret $name is not set (Settings → Secrets and variables → Actions → Secrets tab)."
+              missing=1
+            fi
+          done
+          exit $missing
+
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1
         env:
@@ -45,7 +61,7 @@ jobs:
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT || 22 }}
           envs: DEPLOY_PATH,DEPLOY_SHA,FORCE_ALL
           command_timeout: 30m
