@@ -1,0 +1,57 @@
+# Deploys to the production server on every push to main.
+#
+# The runner SSHes into the server, resets the server's clone of this repo to
+# the pushed commit, then runs docker/deploy.sh — which diffs against the last
+# successfully deployed commit and rebuilds/restarts only what changed
+# (backend, frontend, nginx, or the whole stack if the compose file changed).
+#
+# Required repository secrets (Settings → Secrets and variables → Actions):
+#   SSH_HOST         server hostname or IP
+#   SSH_USER         SSH user (must be able to run `docker`)
+#   SSH_PRIVATE_KEY  private key whose public half is in the user's authorized_keys
+#   DEPLOY_PATH      absolute path of the repo clone on the server
+# Optional:
+#   SSH_PORT         defaults to 22
+
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      force_all:
+        description: Rebuild and recreate every service
+        type: boolean
+        default: false
+
+# Never run two deploys against the same server at once; a newer push waits
+# for the running one instead of cancelling it mid-build.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1
+        env:
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          DEPLOY_SHA: ${{ github.sha }}
+          FORCE_ALL: ${{ github.event.inputs.force_all == 'true' && '1' || '0' }}
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          envs: DEPLOY_PATH,DEPLOY_SHA,FORCE_ALL
+          command_timeout: 30m
+          script: |
+            set -euo pipefail
+            cd "$DEPLOY_PATH"
+            git fetch --prune origin main
+            git reset --hard "$DEPLOY_SHA"
+            FORCE_ALL="$FORCE_ALL" bash docker/deploy.sh
