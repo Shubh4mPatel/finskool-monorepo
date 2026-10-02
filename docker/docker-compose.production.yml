@@ -15,10 +15,9 @@ services:
     restart: unless-stopped
     ports:
       # Host port 80 is taken by eqlion-nginx, which proxies this domain here.
-      # Bound to docker0's IP (172.17.0.1) so other containers on the host can
-      # reach it but it isn't exposed on the public interface. Override with
+      # Loopback-only so it isn't exposed on the public interface. Override with
       # NGINX_BIND in .env (e.g. "80" to take the public port 80 directly).
-      - "${NGINX_BIND:-172.17.0.1:8080}:80"
+      - "${NGINX_BIND:-127.0.0.1:8080}:80"
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
