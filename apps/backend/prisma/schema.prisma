@@ -249,10 +249,26 @@ model Community {
   stockRecommendations StockRecommendation[]
   plans         Plan[]
   planOrders    PlanOrder[]
+  kit           CommunityKit?
 
   @@index([slug], name: "idx_communities_slug")
   @@index([createdBy], name: "idx_communities_created_by")
   @@map("communities")
+}
+
+// One-to-one extension of Community holding admin-authored freeform JSON
+// content: the trading setup info and the welcome kit shown to subscribers.
+model CommunityKit {
+  id               String   @id @default(uuid()) @db.Uuid
+  communityId      String   @unique @map("community_id") @db.Uuid
+  tradingSetupInfo Json?    @map("trading_setup_info")
+  welcomeKit       Json?    @map("welcome_kit")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+
+  @@map("community_kits")
 }
 
 model CommunityAdmin {
