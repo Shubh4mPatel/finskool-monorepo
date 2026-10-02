@@ -196,7 +196,9 @@ services:
 
   # ── MinIO ──────────────────────────────────────────────────────────────────
   minio:
-    image: minio/minio:latest
+    # MinIO stopped publishing minio/minio + minio/mc to Docker Hub (now 404);
+    # pgsty/* is a maintained community build of the same binaries, drop-in compatible.
+    image: pgsty/minio:latest
     container_name: finskool-minio
     restart: unless-stopped
     env_file:
@@ -220,7 +222,7 @@ services:
 
   # ── MinIO bucket init (one-shot) ───────────────────────────────────────────
   minio-init:
-    image: minio/mc:latest
+    image: pgsty/mc:latest
     container_name: finskool-minio-init
     depends_on:
       minio:

@@ -118,7 +118,9 @@ services:
       retries: 5
 
   minio:
-    image: minio/minio:latest
+    # MinIO stopped publishing minio/minio + minio/mc to Docker Hub (now 404);
+    # pgsty/* is a maintained community build of the same binaries, drop-in compatible.
+    image: pgsty/minio:latest
     container_name: finskool-minio
     restart: unless-stopped
     ports:
@@ -149,7 +151,7 @@ services:
   # One-shot: creates the bucket the app uploads to and makes objects readable,
   # so host-run `npm run dev` uploads work against this infra.
   minio-init:
-    image: minio/mc:latest
+    image: pgsty/mc:latest
     container_name: finskool-minio-init
     depends_on:
       minio:
