@@ -20,6 +20,11 @@ services:
       - "${NGINX_BIND:-127.0.0.1:8080}:80"
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - default
+      # Shared with eqlion-nginx so it can proxy community.finskool21.in to
+      # http://finskool-nginx:80 by container name, with no host port involved.
+      - eqlion-network
     depends_on:
       finskool-backend:
         condition: service_healthy
@@ -250,3 +255,9 @@ volumes:
     name: finskool-minio-data
   finskool-seed-flag:
     name: finskool-seed-flag
+
+networks:
+  # Created and owned by the EqLion stack (/root/EqLion-Backend) — must exist
+  # before this stack starts.
+  eqlion-network:
+    external: true

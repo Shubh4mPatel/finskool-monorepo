@@ -34,6 +34,11 @@ compose() {
   docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" "$@"
 }
 
+# finskool-nginx joins the EqLion stack's network (eqlion-nginx owns host 80/443
+# and proxies our domain to it). Create it if EqLion hasn't yet, same as
+# EqLion's own deploy does, so `up` never fails on the external network.
+docker network inspect eqlion-network >/dev/null 2>&1 || docker network create eqlion-network
+
 NEW_SHA="$(git rev-parse HEAD)"
 OLD_SHA="$(cat "$STATE_FILE" 2>/dev/null || true)"
 
