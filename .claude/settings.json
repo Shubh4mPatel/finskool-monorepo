@@ -241,7 +241,11 @@
       "Bash(awk '/^model User /,/^}/' prisma/schema.prisma)",
       "Bash(grep -nE \"env_file|\\\\.env|MINIO|^  [a-z-]+:$\" docker-compose.dev.yml)",
       "Bash(sed -i '/^# Local dev reaches MinIO directly on :9002/d; /^MINIO_PUBLIC_PATH_PREFIX=$/d' .env)",
-      "Bash(git check-ignore *)"
+      "Bash(git check-ignore *)",
+      "Bash(docker context *)",
+      "Bash(curl -sk -m 4 -o /dev/null -w \"https://localhost -> %{http_code}\\\\n\" https://localhost/)",
+      "Bash(curl -sk -m 4 -o /dev/null -w \"http://localhost:80 -> %{http_code}\\\\n\" http://localhost/)",
+      "Bash(curl -s -m 4 -o /dev/null -w \"api :3001 health -> %{http_code}\\\\n\" http://localhost:3001/api/v1/health)"
     ],
     "additionalDirectories": [
       "/tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/8750fbd9-1edb-4d3f-b623-da0dec31a255/scratchpad/node_modules",

@@ -51,6 +51,13 @@ async function main() {
     await prisma.community.update({ where: { id: community.id }, data: { badgeUrl: rewrite(community.badgeUrl!) } })
   }
   console.log(`communities.badgeUrl: ${communitiesByBadge.length} rows updated`)
+
+  // Only uploaded files live on MinIO — youtube/instagram rows hold external URLs.
+  const videos = await prisma.postVideo.findMany({ where: { kind: 'file', url: { startsWith: OLD_PREFIX } } })
+  for (const video of videos) {
+    await prisma.postVideo.update({ where: { id: video.id }, data: { url: rewrite(video.url) } })
+  }
+  console.log(`post_videos: ${videos.length} rows updated`)
 }
 
 main()
