@@ -39,6 +39,14 @@ enum UserStatus {
   deleted
 }
 
+// Where a PostVideo comes from: a file uploaded to MinIO, or a link to a video
+// hosted on YouTube / Instagram (embedded, never downloaded).
+enum VideoKind {
+  file
+  youtube
+  instagram
+}
+
 enum PostStatus {
   draft
   published
@@ -334,6 +342,7 @@ model Post {
   likes                 PostLike[]
   reactions             Reaction[]
   commentNotifications  CommentNotification[]
+  videos                PostVideo[]
 
   // (communityId, pinOrder) uniqueness among non-deleted posts is enforced by a
   // partial unique index created directly in migration SQL (Prisma's schema DSL
@@ -343,6 +352,26 @@ model Post {
   @@index([communityId, pinOrder], name: "idx_posts_pinned")
   @@index([authorId], name: "idx_posts_author")
   @@map("posts")
+}
+
+// Ordered list of videos attached to a post (separate from Post.imageUrls).
+// `url` is the public MinIO URL for kind=file, or the canonical watch/post URL
+// for youtube/instagram. `externalId` is the YouTube video ID / Instagram shortcode.
+model PostVideo {
+  id           String    @id @default(uuid()) @db.Uuid
+  postId       String    @map("post_id") @db.Uuid
+  kind         VideoKind
+  url          String    @db.VarChar(1000)
+  externalId   String?   @map("external_id") @db.VarChar(64)
+  title        String?   @db.VarChar(300)
+  thumbnailUrl String?   @map("thumbnail_url") @db.VarChar(1000)
+  position     Int       @db.SmallInt
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId, position], name: "idx_post_videos_post")
+  @@map("post_videos")
 }
 
 model Stock {

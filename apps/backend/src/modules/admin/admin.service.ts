@@ -18,6 +18,7 @@ import type { LiveNotificationEvent } from '../../lib/queue.js'
 import { BadRequestError, ConflictError, NotFoundError, ForbiddenError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
 import { normalizePhone } from '../../lib/phone.js'
+import { toVideoDTO } from '../posts/posts.service.js'
 import { ensureFreeSubscription } from '../../lib/free-community.js'
 import { formatEmailDate } from '../../lib/email-templates.js'
 import { NotificationType } from '../notifications/notifications.dto.js'
@@ -638,6 +639,7 @@ export class AdminService {
         title: true,
         contentMd: true,
         imageUrls: true,
+        videos: { orderBy: { position: 'asc' }, select: { id: true, kind: true, url: true, externalId: true, title: true, thumbnailUrl: true } },
         tags: true,
         publishedAt: true,
         createdAt: true,
@@ -652,6 +654,7 @@ export class AdminService {
       title: p.title,
       contentMd: p.contentMd,
       imageUrls: p.imageUrls,
+      videos: p.videos.map(toVideoDTO),
       tags: p.tags,
       publishedAt: p.publishedAt,
       createdAt: p.createdAt,
@@ -891,6 +894,7 @@ export class AdminService {
         coverImageUrl: true,
         badgeUrl: true,
         paymentLink: true,
+        isFree: true,
         _count: { select: { subscriptions: { where: { isActive: true } } } },
       },
       orderBy: { name: 'asc' },
@@ -936,6 +940,7 @@ export class AdminService {
         coverImageUrl: true,
         badgeUrl: true,
         paymentLink: true,
+        isFree: true,
       },
     })
 
@@ -974,6 +979,7 @@ export class AdminService {
         coverImageUrl: true,
         badgeUrl: true,
         paymentLink: true,
+        isFree: true,
         _count: { select: { subscriptions: { where: { isActive: true } } } },
       },
     })

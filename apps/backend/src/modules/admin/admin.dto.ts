@@ -1,3 +1,4 @@
+import type { PostVideoDTO } from '../posts/posts.dto.js'
 export type DuplicateStrategy = 'skip' | 'overwrite'
 
 export interface AddMemberDTO {
@@ -79,6 +80,7 @@ export interface CommunityDTO {
   coverImageUrl: string | null
   badgeUrl: string | null
   paymentLink: string | null
+  isFree: boolean
   memberCount: number
 }
 
@@ -310,6 +312,7 @@ export interface PostThreadSummaryDTO {
   title: string
   contentMd: string
   imageUrls: string[]
+  videos: PostVideoDTO[]
   tags: string[]
   publishedAt: Date | null
   createdAt: Date

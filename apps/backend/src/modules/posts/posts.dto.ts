@@ -1,9 +1,32 @@
+export const MAX_POST_VIDEOS = 3
+
+export type PostVideoKind = 'file' | 'youtube' | 'instagram'
+
+/** What the admin UI sends. Everything else (ID, embed URL, thumbnail) is derived server-side. */
+export interface PostVideoInput {
+  kind: PostVideoKind
+  url: string
+  title?: string | undefined
+}
+
+export interface PostVideoDTO {
+  id: string
+  kind: PostVideoKind
+  url: string
+  /** Iframe src for youtube/instagram; null for an uploaded file (play `url` in a <video>). */
+  embedUrl: string | null
+  externalId: string | null
+  title: string | null
+  thumbnailUrl: string | null
+}
+
 export interface CreatePostDTO {
   communityId: string
   title: string
   content: string
   tags: string[]
   imageUrls: string[]
+  videos: PostVideoInput[]
 }
 
 export interface UpdatePostDTO {
@@ -11,6 +34,7 @@ export interface UpdatePostDTO {
   content?: string | undefined
   tags?: string[] | undefined
   imageUrls?: string[] | undefined
+  videos?: PostVideoInput[] | undefined
 }
 
 export interface PostResponseDTO {
@@ -20,6 +44,7 @@ export interface PostResponseDTO {
   title: string
   content: string
   imageUrls: string[]
+  videos: PostVideoDTO[]
   tags: string[]
   status: string
   pinOrder: number | null
@@ -39,6 +64,7 @@ export interface PostFeedItemDTO {
   title: string
   content: string
   imageUrls: string[]
+  videos: PostVideoDTO[]
   tags: string[]
   pinOrder: number | null
   publishedAt: Date | null
@@ -67,6 +93,7 @@ export interface CommentedPostItemDTO {
   title: string
   content: string
   imageUrls: string[]
+  videos: PostVideoDTO[]
   tags: string[]
   pinOrder: number | null
   publishedAt: Date | null

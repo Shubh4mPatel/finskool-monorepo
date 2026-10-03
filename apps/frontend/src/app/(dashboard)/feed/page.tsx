@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import type { PostVideo } from "@/lib/post-videos";
 import { DayPicker } from "react-day-picker";
 import "react-day-picker/style.css";
 import { Calendar, ChevronDown, Search, X } from "lucide-react";
@@ -22,6 +23,7 @@ interface FeedPost {
   title: string;
   content: string;
   imageUrls: string[];
+  videos?: PostVideo[];
   tags: string[];
   pinOrder: number | null;
   publishedAt: string | null;
@@ -210,6 +212,7 @@ export default function FeedPage() {
                   body=""
                   bodyHtml={post.content}
                   imageUrls={post.imageUrls}
+                  videos={post.videos}
                   tags={post.tags}
                 />
               </div>

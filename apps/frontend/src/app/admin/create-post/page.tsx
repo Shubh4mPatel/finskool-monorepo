@@ -6,12 +6,13 @@ import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import TextAlign from "@tiptap/extension-text-align";
 import TiptapLink from "@tiptap/extension-link";
-import { ArrowRight, Bold, Check, ChevronLeft, Code, Italic, Link, List, AlignLeft, AlignCenter, AlignRight, X } from "lucide-react";
+import { ArrowRight, Bold, Check, ChevronLeft, Code, Italic, LayoutGrid, Link, List, ListOrdered, Pencil, Users, X } from "lucide-react";
 
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 import { getSession } from "@/lib/session";
-import PostImageUploader from "@/components/admin/PostImageUploader";
+import PostMediaPicker from "@/components/admin/PostMediaPicker";
+import { toVideoInput, type PostVideo } from "@/lib/post-videos";
 import FeedPostCard from "@/components/feed/FeedPostCard";
 import CommunityBadgeIcon from "@/components/CommunityBadgeIcon";
 
@@ -24,12 +25,27 @@ interface Community {
   description: string | null;
   coverImageUrl: string | null;
   badgeUrl: string | null;
+  type: string | null;
+  isFree: boolean;
   memberCount: number;
 }
 
-const COMMUNITY_COLORS = ["bg-primary/10", "bg-accent/10", "bg-lime/30", "bg-amber-100"];
-function communityBg(index: number): string {
-  return COMMUNITY_COLORS[index % COMMUNITY_COLORS.length] ?? "bg-divider";
+// The free community is the open Feed every registered user can see, so the UI
+// presents it as "Feed" rather than as a community.
+function targetName(c: Community): string {
+  return c.isFree ? "Feed" : c.name;
+}
+
+function CheckBox({ checked, className = "" }: { checked: boolean; className?: string }) {
+  return (
+    <span
+      className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] border-2 transition-colors ${
+        checked ? "border-accent bg-accent text-white" : "border-white bg-white/90 text-transparent"
+      } ${className}`}
+    >
+      <Check size={12} strokeWidth={3} />
+    </span>
+  );
 }
 
 const steps = [
@@ -88,14 +104,12 @@ function TipTapToolbar({ editor }: { editor: ReturnType<typeof useEditor> }) {
     { icon: Bold,        action: () => editor.chain().focus().toggleBold().run(),             active: editor.isActive("bold"),                  label: "Bold" },
     { icon: Italic,      action: () => editor.chain().focus().toggleItalic().run(),           active: editor.isActive("italic"),                label: "Italic" },
     { icon: List,        action: () => editor.chain().focus().toggleBulletList().run(),       active: editor.isActive("bulletList"),             label: "Bullet List" },
-    { icon: AlignLeft,   action: () => editor.chain().focus().setTextAlign("left").run(),     active: editor.isActive({ textAlign: "left" }),    label: "Align Left" },
-    { icon: AlignCenter, action: () => editor.chain().focus().setTextAlign("center").run(),   active: editor.isActive({ textAlign: "center" }),  label: "Align Center" },
-    { icon: AlignRight,  action: () => editor.chain().focus().setTextAlign("right").run(),    active: editor.isActive({ textAlign: "right" }),   label: "Align Right" },
+    { icon: ListOrdered, action: () => editor.chain().focus().toggleOrderedList().run(),      active: editor.isActive("orderedList"),            label: "Numbered List" },
     { icon: Link,        action: setLink,                                                     active: editor.isActive("link"),                   label: "Link" },
     { icon: Code,        action: () => editor.chain().focus().toggleCode().run(),             active: editor.isActive("code"),                   label: "Code" },
   ];
   return (
-    <div className="flex items-center gap-0.5 border-b border-divider pb-2.5">
+    <div className="flex items-center gap-0.5 rounded-lg bg-background px-2 py-1.5">
       {tools.map(({ icon: Icon, action, active, label }) => (
         <button key={label} type="button" onClick={action} title={label}
           className={`flex h-8 w-8 items-center justify-center rounded-lg text-sm transition-colors ${active ? "bg-primary/10 text-primary" : "text-muted hover:bg-divider/60 hover:text-primary"}`}>
@@ -109,14 +123,24 @@ function TipTapToolbar({ editor }: { editor: ReturnType<typeof useEditor> }) {
 export default function CreatePostPage() {
   const toast = useToast();
   const [step, setStep] = useState<Step>(1);
-  const [selectedCommunity, setSelectedCommunity] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [headline, setHeadline] = useState("");
   const [tags, setTags] = useState<string[]>(defaultTags);
   const [tagInput, setTagInput] = useState("");
   const [publishing, setPublishing] = useState(false);
   const [imageUrls, setImageUrls] = useState<string[]>([]);
+  const [videos, setVideos] = useState<PostVideo[]>([]);
 
   const [communities, setCommunities] = useState<Community[]>([]);
+  const feed = communities.find((c) => c.isFree);
+  const paidCommunities = communities.filter((c) => !c.isFree);
+  // Keep the order of the grid (Feed first) rather than the order of clicking.
+  const targets = communities.filter((c) => selectedIds.includes(c.id)).sort((a, b) => Number(b.isFree) - Number(a.isFree));
+  const allSelected = communities.length > 0 && selectedIds.length === communities.length;
+
+  const toggleTarget = (id: string) =>
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  const toggleAll = () => setSelectedIds(allSelected ? [] : communities.map((c) => c.id));
 
   useEffect(() => {
     api.get<Community[]>("/api/v1/admin/communities")
@@ -155,32 +179,50 @@ export default function CreatePostPage() {
   }
 
   async function handlePublish() {
-    if (!selectedCommunity || !headline.trim() || !editor?.getText().trim()) {
-      toast.error("Please fill in community, headline and content before publishing.");
+    if (targets.length === 0 || !headline.trim() || !editor?.getText().trim()) {
+      toast.error("Please fill in where to post, headline and content before publishing.");
       return;
     }
     setPublishing(true);
-    try {
-      const post = await api.post<{ id: string }>("/api/v1/posts", {
-        communityId: selectedCommunity,
-        title: headline.trim(),
-        content: editor.getHTML(),
-        tags,
-        imageUrls,
-      });
-      await api.patch(`/api/v1/posts/${post.id}/publish`, {});
-      toast.success({ title: "Post published", message: "Your post is now live in the community." });
-      setStep(1);
-      setSelectedCommunity(null);
-      setHeadline("");
-      setTags(defaultTags);
-      setImageUrls([]);
-      editor.commands.clearContent();
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to publish post");
-    } finally {
-      setPublishing(false);
+    // One independent post per target. Targets that succeed are dropped from the
+    // selection so a retry after a partial failure never creates duplicates.
+    const results = await Promise.allSettled(
+      targets.map(async (c) => {
+        const post = await api.post<{ id: string }>("/api/v1/posts", {
+          communityId: c.id,
+          title: headline.trim(),
+          content: editor.getHTML(),
+          tags,
+          imageUrls,
+          videos: videos.map(toVideoInput),
+        });
+        await api.patch(`/api/v1/posts/${post.id}/publish`, {});
+      }),
+    );
+    const failed = targets.filter((_, i) => results[i]?.status === "rejected");
+    setPublishing(false);
+
+    if (failed.length > 0) {
+      const firstError = results.find((r): r is PromiseRejectedResult => r.status === "rejected")?.reason;
+      const failedIds = failed.map((c) => c.id);
+      setSelectedIds(failedIds);
+      toast.error(
+        `Failed to publish to ${failed.map(targetName).join(", ")}${firstError instanceof ApiError ? `: ${firstError.message}` : ""}. Press Publish to retry.`,
+      );
+      return;
     }
+
+    toast.success({
+      title: "Post published",
+      message: `Your post is now live in ${targets.map(targetName).join(", ")}.`,
+    });
+    setStep(1);
+    setSelectedIds([]);
+    setHeadline("");
+    setTags(defaultTags);
+    setImageUrls([]);
+    setVideos([]);
+    editor.commands.clearContent();
   }
 
   const addTag = (e: React.KeyboardEvent) => {
@@ -206,54 +248,117 @@ export default function CreatePostPage() {
 
       <div className="rounded-2xl bg-white p-6 shadow-card">
         {step === 1 && (
-          <div className="flex flex-col gap-4">
-            <h2 className="text-base font-semibold text-primary">Which community is this post for?</h2>
-            <p className="text-sm text-muted">Members of the other community will not see this post.</p>
-            {communities.length === 0 && (
-              <p className="text-sm text-muted">Loading communities…</p>
-            )}
-            <div className="mt-2 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {communities.map((c, idx) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  onClick={() => setSelectedCommunity(c.id)}
-                  className={`group relative overflow-hidden rounded-2xl border-2 bg-white text-left shadow-card transition-all duration-300 hover:shadow-card-hover ${
-                    selectedCommunity === c.id ? "border-primary shadow-glow" : "border-divider hover:border-accent/60"
+          <div className="flex flex-col gap-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="flex items-center gap-2 font-display text-lg font-bold text-primary">
+                  <Pencil size={15} className="text-muted" />
+                  Where should this post go?
+                </h2>
+                <p className="mt-1 text-sm text-muted">
+                  You can publish to the open Feed, to specific communities, or to both at the same time.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={toggleAll}
+                disabled={communities.length === 0}
+                className="flex items-center gap-2 rounded-full bg-primary px-5 py-2 text-xs font-bold text-white transition-transform hover:scale-105 active:scale-95 disabled:opacity-40"
+              >
+                <span className={`h-2.5 w-2.5 rounded-[3px] ${allSelected ? "bg-lime" : "bg-white"}`} />
+                {allSelected ? "Deselect All" : "Select All"}
+              </button>
+            </div>
+
+            {communities.length === 0 && <p className="text-sm text-muted">Loading communities…</p>}
+
+            {feed && (
+              <button
+                type="button"
+                onClick={() => toggleTarget(feed.id)}
+                aria-pressed={selectedIds.includes(feed.id)}
+                className={`flex items-center gap-4 rounded-xl border px-4 py-3 text-left transition-colors ${
+                  selectedIds.includes(feed.id) ? "border-lime bg-lime/25" : "border-divider bg-lime/10 hover:border-lime"
+                }`}
+              >
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-lime text-primary">
+                  <LayoutGrid size={18} />
+                </span>
+                <span className="flex-1">
+                  <span className="flex items-center gap-2">
+                    <span className="font-display text-sm font-bold text-primary">Feed</span>
+                    <span className="rounded-full bg-lime px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wide text-primary">Public</span>
+                  </span>
+                  <span className="mt-0.5 block text-xs text-muted">
+                    Visible to every registered user, including free members who haven&apos;t subscribed.
+                  </span>
+                </span>
+                <span
+                  className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] border-2 ${
+                    selectedIds.includes(feed.id) ? "border-accent bg-accent text-white" : "border-divider bg-white text-transparent"
                   }`}
                 >
-                  <div className={`relative flex aspect-video items-center justify-center overflow-hidden ${!c.coverImageUrl ? communityBg(idx) : 'bg-slate-100'}`}>
-                    {c.coverImageUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={c.coverImageUrl} alt={c.name} className="absolute inset-0 h-full w-full object-cover" />
-                    ) : (
-                      <span className="font-display text-3xl font-bold text-primary/20">
-                        {c.name.slice(0, 2).toUpperCase()}
-                      </span>
-                    )}
-                    {selectedCommunity === c.id && (
-                      <div className="absolute right-3 top-3 flex h-6 w-6 items-center justify-center rounded-full bg-primary z-10">
-                        <Check size={12} className="text-white" />
-                      </div>
-                    )}
-                  </div>
-                  <div className="p-4">
-                    <p className="font-display font-bold text-primary">{c.name}</p>
-                    {c.description && (
-                      <p className="mt-1 line-clamp-2 text-xs text-muted">{c.description}</p>
-                    )}
-                    <span className="mt-2 inline-block rounded-full bg-divider/60 px-2.5 py-0.5 text-[11px] font-semibold text-muted">
-                      {c.memberCount} member{c.memberCount === 1 ? "" : "s"}
-                    </span>
-                  </div>
-                </button>
-              ))}
-            </div>
-            <div className="mt-4 flex justify-end">
+                  <Check size={12} strokeWidth={3} />
+                </span>
+              </button>
+            )}
+
+            {paidCommunities.length > 0 && (
+              <div className="flex flex-col gap-3">
+                <h3 className="flex items-center gap-2 font-display text-base font-bold text-primary">
+                  <Users size={15} className="text-muted" />
+                  Communities
+                </h3>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  {paidCommunities.map((c) => {
+                    const selected = selectedIds.includes(c.id);
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => toggleTarget(c.id)}
+                        aria-pressed={selected}
+                        className={`group relative flex h-[117px] items-end overflow-hidden rounded-xl text-left text-white transition-all duration-300 hover:shadow-card-hover ${
+                          selected ? "ring-2 ring-accent ring-offset-2" : ""
+                        }`}
+                        style={{ background: "linear-gradient(120deg, #0a5f57, #108b8b)" }}
+                      >
+                        {c.coverImageUrl && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={c.coverImageUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
+                        )}
+                        <span className="absolute inset-0 bg-gradient-to-r from-[#0a5f57]/95 via-[#0a5f57]/70 to-transparent" />
+                        <CheckBox checked={selected} className="absolute right-3 top-3 z-10" />
+                        <span className="absolute left-4 top-4 z-10 flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-white">
+                          <CommunityBadgeIcon badgeUrl={c.badgeUrl} className="h-5 w-5 object-contain" />
+                        </span>
+                        <span className="relative z-10 flex w-full flex-col gap-1 p-4 pt-14">
+                          {c.type && <span className="text-[10px] font-semibold text-white/80">{c.type}</span>}
+                          <span className="font-display text-base font-bold leading-tight">{c.name}</span>
+                          <span className="flex w-fit items-center gap-1 rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-primary">
+                            <Users size={10} />
+                            {c.memberCount} Member{c.memberCount === 1 ? "" : "s"}
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div className="mt-2 flex items-center justify-end gap-3 border-t border-divider pt-5">
               <button
-                onClick={() => selectedCommunity && setStep(2)}
-                disabled={!selectedCommunity}
-                className="flex items-center gap-2 rounded-full px-6 py-2.5 text-sm font-bold text-white shadow-glow transition-all duration-300 hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+                type="button"
+                onClick={() => setSelectedIds([])}
+                className="w-36 rounded-full border border-divider px-6 py-2.5 text-sm font-semibold text-muted transition-colors hover:border-subtle hover:text-primary"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => targets.length > 0 && setStep(2)}
+                disabled={targets.length === 0}
+                className="flex w-44 items-center justify-center gap-2 rounded-full px-6 py-2.5 text-sm font-bold text-white shadow-glow transition-all duration-300 hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
                 style={{ background: "linear-gradient(to right, #c1f26e, #108b8b)" }}
               >
                 Continue
@@ -270,51 +375,63 @@ export default function CreatePostPage() {
               const session = getSession();
               return (
                 <div className="flex items-start gap-3">
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary text-sm font-bold text-white">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary text-sm font-bold text-white">
                     {session?.avatarUrl
                       ? // eslint-disable-next-line @next/next/no-img-element
                         <img src={session.avatarUrl} alt={session?.userName ?? "Admin"} className="h-full w-full object-cover" />
                       : (session?.userInitials ?? "A")
                     }
                   </div>
-                  <div className="flex flex-col gap-1">
-                    <p className="font-display text-sm font-bold text-primary leading-tight">
-                      {session?.userName ?? "Admin"}
-                    </p>
-                    <p className="text-xs text-muted">Super Admin</p>
-                    <span className="flex w-fit items-center gap-1.5 rounded-full border border-accent/50 px-3 py-1 text-xs font-semibold text-accent">
-                      <CommunityBadgeIcon badgeUrl={communities.find((c) => c.id === selectedCommunity)?.badgeUrl} />{" "}
-                      {communities.find((c) => c.id === selectedCommunity)?.name ?? "Community"}
-                    </span>
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex items-center gap-2">
+                      <p className="font-display text-sm font-bold leading-tight text-primary">{session?.userName ?? "Admin"}</p>
+                      <span className="rounded-full bg-accent px-2.5 py-0.5 text-[10px] font-bold text-white">Super Admin</span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-[11px] text-muted">Posting to :</span>
+                      {targets.map((c) => (
+                        <span key={c.id} className="flex w-fit items-center gap-1 rounded-full border border-accent/30 bg-accent/10 px-2.5 py-0.5 text-[11px] font-semibold text-primary">
+                          {c.isFree ? <LayoutGrid size={11} /> : <CommunityBadgeIcon badgeUrl={c.badgeUrl} />}{" "}
+                          {c.isFree ? "Feed" : `${c.name}`}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 </div>
               );
             })()}
 
             {/* Headline */}
-            <input
-              type="text"
-              placeholder="Add a headline e.g. TATASTEEL breakout confirmed, target ₹175"
-              value={headline}
-              onChange={(e) => setHeadline(e.target.value)}
-              className="w-full rounded-xl border border-divider bg-background px-4 py-3 text-sm text-primary placeholder:text-subtle focus:border-accent focus:outline-none transition-colors"
-            />
-
-            {/* Editor */}
-            <div className="rounded-xl border border-divider bg-background px-4 pt-3 pb-2">
-              <TipTapToolbar editor={editor} />
-              <EditorContent
-                editor={editor}
-                className="mt-3 min-h-24 text-sm text-primary [&_.ProseMirror]:outline-none [&_.ProseMirror]:min-h-24 [&_.ProseMirror_ul]:list-disc [&_.ProseMirror_ul]:pl-5 [&_.ProseMirror_ol]:list-decimal [&_.ProseMirror_ol]:pl-5 [&_.ProseMirror_li]:my-0.5 [&_.ProseMirror_a]:text-accent [&_.ProseMirror_a]:underline [&_.ProseMirror_p.is-editor-empty:first-child::before]:text-subtle [&_.ProseMirror_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.ProseMirror_p.is-editor-empty:first-child::before]:float-none [&_.ProseMirror_p.is-editor-empty:first-child::before]:pointer-events-none"
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="post-headline" className="text-sm font-bold text-primary">Headline</label>
+              <input
+                id="post-headline"
+                type="text"
+                placeholder="Add a headline e.g. TATASTEEL breakout confirmed, target ₹175"
+                value={headline}
+                onChange={(e) => setHeadline(e.target.value)}
+                className="w-full rounded-xl border border-divider bg-background px-4 py-3 text-sm text-primary placeholder:text-subtle focus:border-accent focus:outline-none transition-colors"
               />
             </div>
 
-            {/* Add Images */}
-            <PostImageUploader imageUrls={imageUrls} onChange={setImageUrls} />
+            {/* Editor */}
+            <div className="flex flex-col gap-1.5">
+              <p className="text-sm font-bold text-primary">Post Body</p>
+              <div className="rounded-xl border border-divider bg-white px-3 pt-3 pb-2">
+                <TipTapToolbar editor={editor} />
+                <EditorContent
+                  editor={editor}
+                  className="mt-3 min-h-32 px-1 text-sm text-primary [&_.ProseMirror]:outline-none [&_.ProseMirror]:min-h-32 [&_.ProseMirror_ul]:list-disc [&_.ProseMirror_ul]:pl-5 [&_.ProseMirror_ol]:list-decimal [&_.ProseMirror_ol]:pl-5 [&_.ProseMirror_li]:my-0.5 [&_.ProseMirror_a]:text-accent [&_.ProseMirror_a]:underline [&_.ProseMirror_p.is-editor-empty:first-child::before]:text-subtle [&_.ProseMirror_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.ProseMirror_p.is-editor-empty:first-child::before]:float-none [&_.ProseMirror_p.is-editor-empty:first-child::before]:pointer-events-none"
+                />
+              </div>
+            </div>
+
+            {/* Media / Video */}
+            <PostMediaPicker imageUrls={imageUrls} onImageUrlsChange={setImageUrls} videos={videos} onVideosChange={setVideos} />
 
             {/* Tags */}
             <div>
-              <p className="mb-2 text-sm font-semibold text-primary">Add tags</p>
+              <p className="mb-1.5 text-sm font-bold text-primary">Add tags</p>
               <div className="flex flex-wrap items-center gap-2 rounded-xl border border-divider bg-background px-3 py-2.5 focus-within:border-accent transition-colors">
                 {tags.map((tag) => (
                   <span key={tag} className="flex items-center gap-1 rounded-full bg-divider/60 px-2.5 py-0.5 text-xs font-semibold text-primary">
@@ -336,13 +453,13 @@ export default function CreatePostPage() {
             </div>
 
             {/* Footer */}
-            <div className="flex items-center justify-between pt-2">
+            <div className="mt-2 flex items-center justify-center gap-3 border-t border-divider pt-5">
               <button onClick={() => setStep(1)}
-                className="rounded-full border border-divider px-6 py-2.5 text-sm font-semibold text-muted transition-colors hover:border-subtle hover:text-primary">
+                className="w-36 rounded-full border border-divider px-6 py-2.5 text-sm font-semibold text-muted transition-colors hover:border-subtle hover:text-primary">
                 Cancel
               </button>
               <button onClick={handleContinueToReview}
-                className="flex items-center gap-2 rounded-full px-6 py-2.5 text-sm font-bold text-white shadow-glow transition-transform hover:scale-105 active:scale-95"
+                className="flex items-center justify-center gap-2 rounded-full px-6 py-2.5 text-sm font-bold text-white shadow-glow transition-transform hover:scale-105 active:scale-95"
                 style={{ background: "linear-gradient(to right, #c1f26e, #108b8b)" }}>
                 Continue to review →
               </button>
@@ -358,13 +475,16 @@ export default function CreatePostPage() {
           <div className="flex flex-col gap-6">
             <div>
               <span className="rounded-full bg-lime/40 px-3 py-1 text-xs font-bold text-primary">Post preview</span>
+              <p className="mt-3 text-xs text-muted">
+                Will be published to: <span className="font-semibold text-primary">{targets.map(targetName).join(", ")}</span>
+              </p>
               <div className="mt-4">
                 {(() => {
                   const session = getSession();
                   return (
                     <FeedPostCard
-                      communityName={communities.find((c) => c.id === selectedCommunity)?.name}
-                      communityBadgeUrl={communities.find((c) => c.id === selectedCommunity)?.badgeUrl}
+                      communityName={targets[0] ? targetName(targets[0]) : undefined}
+                      communityBadgeUrl={targets[0]?.badgeUrl}
                       authorName={session?.userName ?? "Admin"}
                       authorAvatarUrl={session?.avatarUrl}
                       timestamp=""
@@ -372,6 +492,7 @@ export default function CreatePostPage() {
                       body=""
                       bodyHtml={previewBodyHtml}
                       imageUrls={imageUrls}
+                      videos={videos}
                       tags={tags}
                     />
                   );

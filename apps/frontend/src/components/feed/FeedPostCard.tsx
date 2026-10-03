@@ -2,6 +2,8 @@ import { Calendar, Clock, Pin } from "lucide-react";
 import type { ReactNode } from "react";
 import PostThreads from "./PostThreads";
 import PostImageGallery from "./PostImageGallery";
+import PostVideoList from "./PostVideoList";
+import type { PostVideo } from "@/lib/post-videos";
 import { initials } from "@/lib/session";
 import CommunityBadgeIcon from "@/components/CommunityBadgeIcon";
 
@@ -18,6 +20,7 @@ type FeedPostCardProps = {
   body: string;
   bodyHtml?: string;
   imageUrls?: string[];
+  videos?: PostVideo[];
   tags: string[];
   children?: ReactNode;
   actions?: ReactNode;
@@ -45,6 +48,7 @@ export default function FeedPostCard({
   body,
   bodyHtml,
   imageUrls,
+  videos,
   tags,
   children,
   actions,
@@ -108,6 +112,9 @@ export default function FeedPostCard({
 
         {/* Image */}
         {imageUrls && imageUrls.length > 0 && <PostImageGallery imageUrls={imageUrls} />}
+
+        {/* Videos */}
+        {videos && videos.length > 0 && <PostVideoList videos={videos} />}
 
         {/* Footer: tags left | date+time right */}
         <div className="mt-4 flex items-center justify-between gap-4">

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import type { PostVideo } from "@/lib/post-videos";
 import { Check, CheckCheck, ChevronDown, Loader2 } from "lucide-react";
 import FeedPostCard from "@/components/feed/FeedPostCard";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
@@ -12,6 +13,7 @@ interface PendingPostThread {
   title: string;
   contentMd: string;
   imageUrls: string[];
+  videos?: PostVideo[];
   tags: string[];
   publishedAt: string | null;
   createdAt: string;
@@ -187,6 +189,7 @@ export default function UnresolvedThreadsPage() {
               body=""
               bodyHtml={post.contentMd}
               imageUrls={post.imageUrls}
+              videos={post.videos}
               tags={post.tags}
               isAdmin
               defaultThreadsOpen

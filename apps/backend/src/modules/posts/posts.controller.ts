@@ -1,12 +1,13 @@
 import type { Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
 import type { PostsService } from './posts.service.js'
-import { createPostSchema, updatePostSchema } from './posts.validator.js'
-import { generateUploadUrl } from '../../lib/minio.js'
-import { ForbiddenError } from '../../shared/errors/index.js'
+import { createPostSchema, updatePostSchema, videoPreviewSchema } from './posts.validator.js'
+import { generateUploadUrl, VIDEO_FOLDER, VIDEO_TYPES_BY_EXT } from '../../lib/minio.js'
+import { BadRequestError, ForbiddenError } from '../../shared/errors/index.js'
 
 const uploadUrlQuerySchema = z.object({
   filename: z.string().min(1, 'filename is required'),
+  kind: z.enum(['image', 'video']).default('image'),
 })
 
 const listQuerySchema = z.object({
@@ -118,9 +119,22 @@ export class PostsController {
 
   getUploadUrl = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const { filename } = uploadUrlQuerySchema.parse(req.query)
-      const urls = await generateUploadUrl(filename)
+      const { filename, kind } = uploadUrlQuerySchema.parse(req.query)
+      if (kind === 'video') {
+        const ext = filename.split('.').pop()?.toLowerCase() ?? ''
+        if (!(ext in VIDEO_TYPES_BY_EXT)) throw new BadRequestError('Only MP4 and MOV videos can be uploaded')
+      }
+      const urls = await generateUploadUrl(filename, kind === 'video' ? VIDEO_FOLDER : 'posts')
       res.json({ success: true, data: urls })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  videoPreview = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { url } = videoPreviewSchema.parse(req.body)
+      res.json({ success: true, data: await this.service.previewVideoLink(url) })
     } catch (err) {
       next(err)
     }

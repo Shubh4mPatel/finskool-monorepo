@@ -21,6 +21,7 @@ router.get('/my-comments', controller.listCommented)
 // Admin-only — requireRole applied inline so it doesn't bleed into comment routes
 // that share the /api/v1/posts prefix (e.g. POST /api/v1/posts/:id/comments)
 router.get('/upload-url', admin, controller.getUploadUrl)
+router.post('/video-preview', admin, controller.videoPreview)
 router.post('/', admin, controller.create)
 router.patch('/:id', admin, controller.update)
 router.delete('/:id', admin, controller.delete)

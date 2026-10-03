@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import type { PostVideo } from "@/lib/post-videos";
 import { MessagesSquare } from "lucide-react";
 import FeedPostCard from "@/components/feed/FeedPostCard";
 import { api } from "@/lib/api";
@@ -16,6 +17,7 @@ interface CommentedPost {
   title: string;
   content: string;
   imageUrls: string[];
+  videos?: PostVideo[];
   tags: string[];
   pinOrder: number | null;
   publishedAt: string | null;
@@ -87,6 +89,7 @@ export default function RepliesPage() {
               body=""
               bodyHtml={post.content}
               imageUrls={post.imageUrls}
+              videos={post.videos}
               tags={post.tags}
               defaultThreadsOpen
               onThreadsChange={load}

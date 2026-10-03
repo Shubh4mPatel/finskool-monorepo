@@ -1,13 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { PostVideo } from "@/lib/post-videos";
 import { Bold, Calendar, Code, ChevronDown, Italic, MoreHorizontal, Pencil, Pin, Save, Search, Trash2, X } from "lucide-react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { DayPicker } from "react-day-picker";
 import "react-day-picker/style.css";
 import FeedPostCard from "@/components/feed/FeedPostCard";
-import PostImageUploader from "@/components/admin/PostImageUploader";
+import PostMediaPicker from "@/components/admin/PostMediaPicker";
+import { toVideoInput } from "@/lib/post-videos";
 import MarketTodayWidget from "@/components/MarketTodayWidget";
 import CommunityRulesWidget from "@/components/CommunityRulesWidget";
 import { api, ApiError } from "@/lib/api";
@@ -31,6 +33,7 @@ interface FeedPost {
   title: string;
   content: string;
   imageUrls: string[];
+  videos?: PostVideo[];
   tags: string[];
   pinOrder: number | null;
   publishedAt: string | null;
@@ -74,6 +77,7 @@ function EditModal({ post, onClose, onSaved }: { post: FeedPost; onClose: () => 
   const [tagInput, setTagInput] = useState("");
   const [saving, setSaving] = useState(false);
   const [imageUrls, setImageUrls] = useState<string[]>(post.imageUrls);
+  const [videos, setVideos] = useState<PostVideo[]>(post.videos ?? []);
 
   const editor = useEditor({ extensions: [StarterKit], content: post.content });
 
@@ -81,7 +85,7 @@ function EditModal({ post, onClose, onSaved }: { post: FeedPost; onClose: () => 
     if (!title.trim()) { toast.error("Title is required."); return; }
     setSaving(true);
     try {
-      await api.patch(`/api/v1/posts/${post.id}`, { title: title.trim(), content: editor?.getHTML() ?? post.content, tags, imageUrls });
+      await api.patch(`/api/v1/posts/${post.id}`, { title: title.trim(), content: editor?.getHTML() ?? post.content, tags, imageUrls, videos: videos.map(toVideoInput) });
       toast.success("Post updated.");
       onSaved(); onClose();
     } catch (err) { toast.error(err instanceof ApiError ? err.message : "Failed to update post"); }
@@ -123,8 +127,8 @@ function EditModal({ post, onClose, onSaved }: { post: FeedPost; onClose: () => 
           </div>
         </div>
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-semibold text-muted">Images</label>
-          <PostImageUploader imageUrls={imageUrls} onChange={setImageUrls} />
+          <label className="text-xs font-semibold text-muted">Media</label>
+          <PostMediaPicker imageUrls={imageUrls} onImageUrlsChange={setImageUrls} videos={videos} onVideosChange={setVideos} />
         </div>
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-semibold text-muted">Tags</label>
@@ -380,6 +384,7 @@ export default function AdminFeedPage() {
                   body=""
                   bodyHtml={post.content}
                   imageUrls={post.imageUrls}
+                  videos={post.videos}
                   tags={post.tags}
                   isAdmin
                   actions={

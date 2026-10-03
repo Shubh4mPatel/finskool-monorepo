@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { PostVideo } from "@/lib/post-videos";
 import Link from "next/link";
 import { Bold, Calendar, ChevronDown, Code, Italic, MoreHorizontal, Pencil, Pin, Plus, Save, Search, Trash2, X } from "lucide-react";
 import { useEditor, EditorContent } from "@tiptap/react";
@@ -8,7 +9,8 @@ import StarterKit from "@tiptap/starter-kit";
 import { DayPicker } from "react-day-picker";
 import "react-day-picker/style.css";
 import FeedPostCard from "@/components/feed/FeedPostCard";
-import PostImageUploader from "@/components/admin/PostImageUploader";
+import PostMediaPicker from "@/components/admin/PostMediaPicker";
+import { toVideoInput } from "@/lib/post-videos";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
@@ -24,6 +26,7 @@ interface FeedPost {
   title: string;
   content: string;
   imageUrls: string[];
+  videos?: PostVideo[];
   tags: string[];
   pinOrder: number | null;
   publishedAt: string | null;
@@ -76,6 +79,7 @@ function EditModal({
   const [tagInput, setTagInput] = useState("");
   const [saving, setSaving] = useState(false);
   const [imageUrls, setImageUrls] = useState<string[]>(post.imageUrls);
+  const [videos, setVideos] = useState<PostVideo[]>(post.videos ?? []);
 
   const editor = useEditor({
     extensions: [StarterKit],
@@ -94,6 +98,7 @@ function EditModal({
         content: editor?.getHTML() ?? post.content,
         tags,
         imageUrls,
+        videos: videos.map(toVideoInput),
       });
       toast.success("Post updated.");
       onSaved();
@@ -172,8 +177,8 @@ function EditModal({
 
         {/* Image */}
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-semibold text-muted">Images</label>
-          <PostImageUploader imageUrls={imageUrls} onChange={setImageUrls} />
+          <label className="text-xs font-semibold text-muted">Media</label>
+          <PostMediaPicker imageUrls={imageUrls} onImageUrlsChange={setImageUrls} videos={videos} onVideosChange={setVideos} />
         </div>
 
         {/* Tags */}
@@ -513,6 +518,7 @@ export default function AllPostsPage() {
                 body=""
                 bodyHtml={post.content}
                 imageUrls={post.imageUrls}
+                videos={post.videos}
                 tags={post.tags}
                 isAdmin
                 actions={

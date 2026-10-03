@@ -25,13 +25,14 @@ const publicClient = new Minio.Client({
 (publicClient as unknown as { regionMap: Record<string, string> }).regionMap[env.minio.bucket] = 'us-east-1'
 
 // Nginx proxies /assets/ to the internal MinIO service, stripping the prefix before
-// forwarding — so every browser-facing MinIO URL needs "/assets" inserted after the host.
+// forwarding — so every browser-facing MinIO URL needs "/assets" inserted after the host
+// (env.minio.publicPathPrefix; empty in local dev, where nothing strips it).
 // This must happen without touching the signed path/query: MinIO validates a presigned
 // request's signature against the path it actually receives (post-strip), which still
 // matches what publicClient signed, since the prefix never reaches MinIO itself.
 function toPublicUrl(objectName: string): string {
   const protocol = env.minio.publicUseSSL ? 'https' : 'http'
-  return `${protocol}://${env.minio.publicEndPoint}:${env.minio.publicPort}/assets/${env.minio.bucket}/${objectName}`
+  return `${protocol}://${env.minio.publicEndPoint}:${env.minio.publicPort}${env.minio.publicPathPrefix}/${env.minio.bucket}/${objectName}`
 }
 
 export async function uploadFile(
@@ -61,15 +62,38 @@ export async function generateUploadUrl(
   // Presigning is purely local — no network call is made to MinIO here.
   const signedUrl = await publicClient.presignedPutObject(env.minio.bucket, objectName, 5 * 60)
   const uploadUrl = new URL(signedUrl)
-  uploadUrl.pathname = `/assets${uploadUrl.pathname}`
+  uploadUrl.pathname = `${env.minio.publicPathPrefix}${uploadUrl.pathname}`
 
   return { uploadUrl: uploadUrl.toString(), publicUrl: toPublicUrl(objectName) }
 }
 
+function objectNameFromUrl(url: string): string | undefined {
+  return url.split(`/${env.minio.bucket}/`)[1] || undefined
+}
+
 export async function deleteFile(url: string): Promise<void> {
-  const objectName = url.split(`/${env.minio.bucket}/`)[1]
+  const objectName = objectNameFromUrl(url)
   if (!objectName) return
   await client.removeObject(env.minio.bucket, objectName)
+}
+
+// Post videos are uploaded straight from the browser via a presigned PUT, which can't
+// constrain size or type — so these limits are enforced after the fact, when the post
+// is saved (see statUploadedVideo).
+export const VIDEO_FOLDER = 'post-videos'
+export const MAX_VIDEO_BYTES = 200 * 1024 * 1024
+export const VIDEO_TYPES_BY_EXT: Record<string, string> = { mp4: 'video/mp4', mov: 'video/quicktime' }
+
+/** Size/type of an uploaded post video, or null if `url` isn't an existing object under post-videos/. */
+export async function statUploadedVideo(url: string): Promise<{ size: number; contentType: string } | null> {
+  const objectName = objectNameFromUrl(url)
+  if (!objectName?.startsWith(`${VIDEO_FOLDER}/`)) return null
+  try {
+    const stat = await client.statObject(env.minio.bucket, objectName)
+    return { size: stat.size, contentType: String(stat.metaData?.['content-type'] ?? '') }
+  } catch {
+    return null
+  }
 }
 
 export default client

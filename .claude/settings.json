@@ -235,7 +235,13 @@
       "Bash(awk '{print $1\" \"$2\" \"$3\" \"$4\" \"$5\" \"$6\" \"$7}')",
       "Bash(awk '{ if \\($0 ~ /connected/\\) c++; else if \\($0 ~ /429/\\) e++; } END {print \"connected=\"c+0, \"429s=\"e+0}')",
       "Bash(grep -v \"^│\\\\|^┌\\\\|^└\\\\|^$\")",
-      "Bash(git -C .. status --short)"
+      "Bash(git -C .. status --short)",
+      "Bash(sed -i 's/icon: typeof Youtube }\\\\[\\\\] = \\\\[/icon: React.ComponentType<IconProps> }[]= [/; s/const SOURCES: { id: VideoSource; label: string; icon: typeof Youtube }\\\\[\\\\] = \\\\[/const SOURCES: { id: VideoSource; label: string; icon: React.ComponentType<IconProps> }[] = [/' src/components/admin/PostMediaPicker.tsx)",
+      "Bash(sed -i 's/}\\\\[\\\\]= \\\\[/}[] = [/' src/components/admin/PostMediaPicker.tsx)",
+      "Bash(awk '/^model User /,/^}/' prisma/schema.prisma)",
+      "Bash(grep -nE \"env_file|\\\\.env|MINIO|^  [a-z-]+:$\" docker-compose.dev.yml)",
+      "Bash(sed -i '/^# Local dev reaches MinIO directly on :9002/d; /^MINIO_PUBLIC_PATH_PREFIX=$/d' .env)",
+      "Bash(git check-ignore *)"
     ],
     "additionalDirectories": [
       "/tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/8750fbd9-1edb-4d3f-b623-da0dec31a255/scratchpad/node_modules",

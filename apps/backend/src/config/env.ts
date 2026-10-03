@@ -47,6 +47,9 @@ export const env = {
     // Scheme used for browser-facing URLs (presigned + public), proxied through nginx at
     // /assets/ — independent of useSSL above since nginx terminates TLS, not MinIO itself.
     publicUseSSL: process.env['MINIO_PUBLIC_USE_SSL'] === 'true',
+    // Path nginx proxies to MinIO under (stripped before forwarding). Set to an empty string
+    // when browsers reach MinIO directly with no nginx in front, e.g. local dev on :9002.
+    publicPathPrefix: process.env['MINIO_PUBLIC_PATH_PREFIX'] ?? '/assets',
     accessKey: process.env['MINIO_ACCESS_KEY'] ?? '',
     secretKey: process.env['MINIO_SECRET_KEY'] ?? '',
     bucket: process.env['MINIO_BUCKET'] ?? 'finskool',
@@ -119,7 +122,7 @@ export const env = {
   redis: { host: string; port: number; password: string; db: number }
   jwt: { secret: string; accessExpiresIn: string }
   cookie: { secure: boolean }
-  minio: { endPoint: string; publicEndPoint: string; port: number; publicPort: number; useSSL: boolean; publicUseSSL: boolean; accessKey: string; secretKey: string; bucket: string }
+  minio: { endPoint: string; publicEndPoint: string; port: number; publicPort: number; useSSL: boolean; publicUseSSL: boolean; publicPathPrefix: string; accessKey: string; secretKey: string; bucket: string }
   smtp: { host: string; port: number; secure: boolean; user: string; password: string; from: string }
   email: { logoUrl: string }
   angelone: { enabled: boolean; apiKey: string; clientCode: string; pin: string; totpSecret: string }

@@ -28,6 +28,8 @@ services:
       # Browser-facing URLs must use the host-mapped port (.env's MINIO_PORT), not the
       # in-network port above — otherwise uploaded image URLs are unreachable from outside.
       MINIO_PUBLIC_PORT: "${MINIO_PORT}"
+      # Browsers hit MinIO directly in dev (no nginx stripping the production /assets/ prefix).
+      MINIO_PUBLIC_PATH_PREFIX: ""
       SMTP_HOST: mailhog
       SMTP_PORT: "1025"
     command: sh -c "npx prisma generate && npx prisma migrate deploy && npm run dev"
