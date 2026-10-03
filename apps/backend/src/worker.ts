@@ -39,7 +39,7 @@ const worker = new Worker(
     if (job.name === MEMBER_SUSPENDED_EMAIL_JOB) return service.sendMemberSuspendedEmail(job.data)
     if (job.name === MEMBER_REINSTATED_EMAIL_JOB) return service.sendMemberReinstatedEmail(job.data)
     if (job.name === OTP_EMAIL_JOB) return service.sendOtpEmail(job.data)
-    if (job.name === OTP_WHATSAPP_JOB) return service.sendOtpWhatsapp(job.data)
+    if (job.name === OTP_WHATSAPP_JOB) return service.sendOtpWhatsapp(job.data, job.attemptsMade + 1 >= (job.opts.attempts ?? 1))
     if (job.name === PASSWORD_RESET_OTP_EMAIL_JOB) return service.sendPasswordResetOtpEmail(job.data)
     if (job.name === MOBILE_NEW_LOGIN_EMAIL_JOB) return service.sendMobileNewLoginEmail(job.data)
   },

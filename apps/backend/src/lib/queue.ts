@@ -128,6 +128,10 @@ export const OTP_WHATSAPP_JOB = 'otp-whatsapp'
 export interface OtpWhatsappJobPayload {
   phone: string   // E.164, with leading '+' (lib/phone.ts's normalizePhone output)
   otp: string
+  // Only used by the WHATSAPP_EMAIL_FALLBACK_ENABLED fallback — the OTP is emailed here if WhatsApp delivery fails.
+  email?: string
+  name?: string
+  expiryMinutes?: number
 }
 
 export const PASSWORD_RESET_OTP_EMAIL_JOB = 'password-reset-otp-email'

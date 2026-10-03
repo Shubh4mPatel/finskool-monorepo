@@ -307,8 +307,25 @@ export class NotificationsService {
     await sendMail({ to: payload.toEmail, subject, html })
   }
 
-  async sendOtpWhatsapp(payload: OtpWhatsappJobPayload): Promise<void> {
-    await sendWhatsappOtp(payload.phone, payload.otp)
+  /**
+   * `isFinalAttempt` is true on the job's last BullMQ attempt. The email fallback
+   * (WHATSAPP_EMAIL_FALLBACK_ENABLED) only kicks in then, so a transient WhatsApp
+   * blip that a retry would fix never results in the user getting the code twice.
+   * If the fallback email also fails, that error is thrown so the job is marked failed.
+   */
+  async sendOtpWhatsapp(payload: OtpWhatsappJobPayload, isFinalAttempt = true): Promise<void> {
+    try {
+      await sendWhatsappOtp(payload.phone, payload.otp)
+    } catch (err) {
+      if (!isFinalAttempt || !env.whatsapp.emailFallback || !payload.email) throw err
+      logger.warn({ err, email: payload.email }, 'WhatsApp OTP delivery failed — falling back to email')
+      await this.sendOtpEmail({
+        toEmail: payload.email,
+        name: payload.name ?? '',
+        otp: payload.otp,
+        expiryMinutes: payload.expiryMinutes ?? 10,
+      })
+    }
   }
 
   async sendPasswordResetOtpEmail(payload: PasswordResetOtpEmailJobPayload): Promise<void> {

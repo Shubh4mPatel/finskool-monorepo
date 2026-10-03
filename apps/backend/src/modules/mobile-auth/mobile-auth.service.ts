@@ -728,7 +728,7 @@ export class MobileAuthService {
     try {
       await notificationsQueue.add(
         OTP_WHATSAPP_JOB,
-        { phone: data.phone, otp },
+        { phone: data.phone, otp, email: data.email, name: data.fullName, expiryMinutes: OTP_TTL_SECONDS / 60 },
         { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
       )
     } catch (err) {

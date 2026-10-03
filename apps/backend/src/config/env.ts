@@ -107,6 +107,8 @@ export const env = {
     apiKey: process.env['WHATSAPP_API_KEY'] ?? '',
     phoneNoId: process.env['WHATSAPP_PHONE_NO_ID'] ?? '',
     templateName: process.env['WHATSAPP_AUTH_TEMPLATE_NAME'] ?? 'auth_template',
+    // When true, a registration OTP whose WhatsApp delivery fails (all retries) is emailed instead.
+    emailFallback: process.env['WHATSAPP_EMAIL_FALLBACK_ENABLED'] === 'true',
   },
 } as const satisfies {
   nodeEnv: 'development' | 'production' | 'test'
@@ -125,5 +127,5 @@ export const env = {
   logoDevToken: string
   razorpay: { keyId: string; keySecret: string }
   pan: { encryptionKey: string }
-  whatsapp: { baseUrl: string; apiKey: string; phoneNoId: string; templateName: string }
+  whatsapp: { baseUrl: string; apiKey: string; phoneNoId: string; templateName: string; emailFallback: boolean }
 }
