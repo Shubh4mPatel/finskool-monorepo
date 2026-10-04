@@ -1,6 +1,7 @@
 import { Calendar, Clock, Pin } from "lucide-react";
 import type { ReactNode } from "react";
 import PostThreads from "./PostThreads";
+import PostReactions from "./PostReactions";
 import PostImageGallery from "./PostImageGallery";
 import PostVideoList from "./PostVideoList";
 import type { PostVideo } from "@/lib/post-videos";
@@ -10,6 +11,8 @@ import CommunityBadgeIcon from "@/components/CommunityBadgeIcon";
 type FeedPostCardProps = {
   postId?: string;
   commentCount?: number;
+  // When given, the card shows who reacted (admin pages) in place of the comment threads.
+  reactionCounts?: Record<string, number>;
   badge?: { label: string; icon?: "pin" | "idea" };
   communityName?: string;
   communityBadgeUrl?: string | null;
@@ -38,6 +41,7 @@ function formatDateParts(ts: string): { date: string; time: string } {
 export default function FeedPostCard({
   postId,
   commentCount,
+  reactionCounts,
   badge,
   communityName,
   communityBadgeUrl,
@@ -146,8 +150,13 @@ export default function FeedPostCard({
 
       {children}
 
-      {/* Threads */}
-      {postId && (
+      {/* Reactions (admin) or threads */}
+      {postId && reactionCounts !== undefined && (
+        <div className="px-5 pb-4">
+          <PostReactions postId={postId} reactionCounts={reactionCounts} />
+        </div>
+      )}
+      {postId && reactionCounts === undefined && (
         <div className="px-5 pb-4">
           <PostThreads
             postId={postId}

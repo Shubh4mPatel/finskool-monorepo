@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { Plus, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
+import { MAX_POST_VIDEOS, MAX_VIDEO_MB } from "@/lib/post-videos";
 
 const MAX_IMAGES = 6;
 
@@ -113,7 +114,7 @@ export default function PostImageUploader({
       </div>
 
       <p className="text-xs text-subtle">
-        Add up to {MAX_IMAGES} images{onVideoFile ? " and 3 videos (MP4 or MOV, max 200 MB each)" : ""}.
+        Add up to {MAX_IMAGES} images{onVideoFile ? ` and ${MAX_POST_VIDEOS} videos (MP4 or MOV, max ${MAX_VIDEO_MB} MB each)` : ""}.
       </p>
     </div>
   );

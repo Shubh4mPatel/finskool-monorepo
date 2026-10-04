@@ -13,7 +13,8 @@ export interface PostVideo {
 }
 
 export const MAX_POST_VIDEOS = 3;
-export const MAX_VIDEO_MB = 200;
+// Matches MAX_VIDEO_BYTES on the backend and the 50 MB body limits on both nginx hops.
+export const MAX_VIDEO_MB = 50;
 export const VIDEO_TYPES_BY_EXT: Record<string, string> = { mp4: "video/mp4", mov: "video/quicktime" };
 
 /** What the create/update post APIs expect — the server re-derives everything else. */

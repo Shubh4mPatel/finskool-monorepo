@@ -118,17 +118,25 @@ function useVideoFileUpload(videos: PostVideo[], onChange: (v: PostVideo[]) => v
     const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
     const contentType = VIDEO_TYPES_BY_EXT[ext];
     if (!contentType) return void toast.error("Only MP4 and MOV videos can be uploaded.");
-    if (file.size > MAX_VIDEO_MB * 1024 * 1024) return void toast.error(`Videos can be at most ${MAX_VIDEO_MB} MB.`);
+    if (file.size > MAX_VIDEO_MB * 1024 * 1024) {
+      return void toast.error(`"${file.name}" is ${(file.size / 1024 / 1024).toFixed(1)} MB — videos can be at most ${MAX_VIDEO_MB} MB.`);
+    }
 
     setPct(0);
     try {
       const { uploadUrl, publicUrl } = await api.get<{ uploadUrl: string; publicUrl: string }>(
-        `/api/v1/posts/upload-url?kind=video&filename=${encodeURIComponent(file.name)}`,
+        `/api/v1/posts/upload-url?kind=video&size=${file.size}&filename=${encodeURIComponent(file.name)}`,
       );
       await putWithProgress(uploadUrl, file, contentType, setPct);
       onChange([...latest.current, { kind: "file", url: publicUrl, embedUrl: null, title: file.name, thumbnailUrl: null }]);
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to upload the video. Please try again.");
+      toast.error(
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error && err.message.includes("(413)")
+            ? `The server rejected "${file.name}" as too large — videos can be at most ${MAX_VIDEO_MB} MB.`
+            : "Failed to upload the video. Please try again.",
+      );
     } finally {
       setPct(null);
     }

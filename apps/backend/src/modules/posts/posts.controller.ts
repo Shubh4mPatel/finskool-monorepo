@@ -2,12 +2,15 @@ import type { Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
 import type { PostsService } from './posts.service.js'
 import { createPostSchema, updatePostSchema, videoPreviewSchema } from './posts.validator.js'
-import { generateUploadUrl, VIDEO_FOLDER, VIDEO_TYPES_BY_EXT } from '../../lib/minio.js'
+import { generateUploadUrl, VIDEO_FOLDER, VIDEO_TYPES_BY_EXT, MAX_VIDEO_BYTES } from '../../lib/minio.js'
 import { BadRequestError, ForbiddenError } from '../../shared/errors/index.js'
 
 const uploadUrlQuerySchema = z.object({
   filename: z.string().min(1, 'filename is required'),
   kind: z.enum(['image', 'video']).default('image'),
+  // Optional size hint (bytes) so an oversized video is refused up front, before the upload.
+  // Not trusted — the real size is re-checked from storage when the post is saved.
+  size: z.coerce.number().int().min(0).optional(),
 })
 
 const listQuerySchema = z.object({
@@ -119,10 +122,13 @@ export class PostsController {
 
   getUploadUrl = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const { filename, kind } = uploadUrlQuerySchema.parse(req.query)
+      const { filename, kind, size } = uploadUrlQuerySchema.parse(req.query)
       if (kind === 'video') {
         const ext = filename.split('.').pop()?.toLowerCase() ?? ''
         if (!(ext in VIDEO_TYPES_BY_EXT)) throw new BadRequestError('Only MP4 and MOV videos can be uploaded')
+        if (size !== undefined && size > MAX_VIDEO_BYTES) {
+          throw new BadRequestError(`Videos can be at most ${Math.round(MAX_VIDEO_BYTES / 1024 / 1024)} MB`)
+        }
       }
       const urls = await generateUploadUrl(filename, kind === 'video' ? VIDEO_FOLDER : 'posts')
       res.json({ success: true, data: urls })

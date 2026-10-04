@@ -81,7 +81,10 @@ export async function deleteFile(url: string): Promise<void> {
 // constrain size or type — so these limits are enforced after the fact, when the post
 // is saved (see statUploadedVideo).
 export const VIDEO_FOLDER = 'post-videos'
-export const MAX_VIDEO_BYTES = 200 * 1024 * 1024
+// Keep in step with the 50 MB body limits on both nginx hops — EqLion's nginx in front
+// (finskool-locations.inc: client_max_body_size 50m) and docker/nginx.conf. Anything
+// larger is rejected there with a 413 before it ever reaches MinIO.
+export const MAX_VIDEO_BYTES = 50 * 1024 * 1024
 export const VIDEO_TYPES_BY_EXT: Record<string, string> = { mp4: 'video/mp4', mov: 'video/quicktime' }
 
 /** Size/type of an uploaded post video, or null if `url` isn't an existing object under post-videos/. */

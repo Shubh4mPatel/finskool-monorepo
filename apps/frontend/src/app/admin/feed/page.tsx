@@ -34,6 +34,7 @@ interface FeedPost {
   content: string;
   imageUrls: string[];
   videos?: PostVideo[];
+  reactionCounts?: Record<string, number>;
   tags: string[];
   pinOrder: number | null;
   publishedAt: string | null;
@@ -385,6 +386,7 @@ export default function AdminFeedPage() {
                   bodyHtml={post.content}
                   imageUrls={post.imageUrls}
                   videos={post.videos}
+                  reactionCounts={post.reactionCounts ?? {}}
                   tags={post.tags}
                   isAdmin
                   actions={
