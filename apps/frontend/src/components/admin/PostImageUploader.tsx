@@ -7,20 +7,34 @@ import { useToast } from "@/components/ui/Toast";
 
 const MAX_IMAGES = 6;
 
+const IMAGE_ACCEPT = "image/jpeg,image/png,image/webp,image/gif";
+const VIDEO_ACCEPT = "video/mp4,video/quicktime,.mp4,.mov";
+
 export default function PostImageUploader({
   imageUrls,
   onChange,
+  onVideoFile,
+  videoUploadPct = null,
 }: {
   imageUrls: string[];
   onChange: (urls: string[]) => void;
+  // When given, the picker also accepts videos and hands each one to this callback
+  // (which uploads it and adds it to the post's video list) instead of treating it as an image.
+  onVideoFile?: (file: File) => Promise<void>;
+  videoUploadPct?: number | null;
 }) {
   const toast = useToast();
   const [uploading, setUploading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   async function handleFilesChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? []);
+    const picked = Array.from(e.target.files ?? []);
     if (inputRef.current) inputRef.current.value = "";
+    const isVideo = (f: File) => f.type.startsWith("video/") || /\.(mp4|mov)$/i.test(f.name);
+    const files = onVideoFile ? picked.filter((f) => !isVideo(f)) : picked;
+    if (onVideoFile) {
+      for (const video of picked.filter(isVideo)) await onVideoFile(video);
+    }
     if (files.length === 0) return;
 
     const room = MAX_IMAGES - imageUrls.length;
@@ -63,7 +77,7 @@ export default function PostImageUploader({
         ref={inputRef}
         type="file"
         multiple
-        accept="image/jpeg,image/png,image/webp,image/gif"
+        accept={onVideoFile ? `${IMAGE_ACCEPT},${VIDEO_ACCEPT}` : IMAGE_ACCEPT}
         className="hidden"
         onChange={handleFilesChange}
       />
@@ -87,16 +101,20 @@ export default function PostImageUploader({
           <button
             type="button"
             onClick={() => inputRef.current?.click()}
-            disabled={uploading}
+            disabled={uploading || videoUploadPct !== null}
             className="flex aspect-square flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-divider text-subtle transition-colors hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Plus size={18} />
-            <span className="text-xs font-semibold">{uploading ? "Uploading…" : "Add Image"}</span>
+            <span className="text-xs font-semibold">
+              {videoUploadPct !== null ? `Video ${videoUploadPct}%` : uploading ? "Uploading…" : onVideoFile ? "Add Image / Video" : "Add Image"}
+            </span>
           </button>
         )}
       </div>
 
-      <p className="text-xs text-subtle">Add up to {MAX_IMAGES} images.</p>
+      <p className="text-xs text-subtle">
+        Add up to {MAX_IMAGES} images{onVideoFile ? " and 3 videos (MP4 or MOV, max 200 MB each)" : ""}.
+      </p>
     </div>
   );
 }

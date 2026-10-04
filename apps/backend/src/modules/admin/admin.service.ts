@@ -692,7 +692,7 @@ export class AdminService {
       this.db.subscription.count({
         where: {
           isActive: true,
-          user: { passwordHash: { not: null }, isActive: true },
+          user: { passwordHash: { not: null }, status: 'active' },
         },
       }),
 
@@ -730,7 +730,7 @@ export class AdminService {
         by: ['communityId'],
         where: {
           isActive: true,
-          user: { passwordHash: { not: null }, isActive: true },
+          user: { passwordHash: { not: null }, status: 'active' },
         },
         _count: { userId: true },
       }),

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Image as ImageIcon, Play, Plus, UploadCloud, Video, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
@@ -99,12 +99,80 @@ function VideoThumb({ video }: { video: PostVideo }) {
   );
 }
 
-function VideoEditor({ videos, onChange }: { videos: PostVideo[]; onChange: (v: PostVideo[]) => void }) {
+/** Uploads one MP4/MOV straight to storage and appends it to `videos`. Shared by both tabs. */
+function useVideoFileUpload(videos: PostVideo[], onChange: (v: PostVideo[]) => void) {
+  const toast = useToast();
+  const [pct, setPct] = useState<number | null>(null);
+  // Several files can be picked at once and uploaded one after another — each must append
+  // to the list as it is *now*, not as it was when the first upload started.
+  const latest = useRef(videos);
+  useEffect(() => {
+    latest.current = videos;
+  }, [videos]);
+
+  async function upload(file: File): Promise<void> {
+    if (latest.current.length >= MAX_POST_VIDEOS) {
+      toast.error(`You can add up to ${MAX_POST_VIDEOS} videos per post.`);
+      return;
+    }
+    const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+    const contentType = VIDEO_TYPES_BY_EXT[ext];
+    if (!contentType) return void toast.error("Only MP4 and MOV videos can be uploaded.");
+    if (file.size > MAX_VIDEO_MB * 1024 * 1024) return void toast.error(`Videos can be at most ${MAX_VIDEO_MB} MB.`);
+
+    setPct(0);
+    try {
+      const { uploadUrl, publicUrl } = await api.get<{ uploadUrl: string; publicUrl: string }>(
+        `/api/v1/posts/upload-url?kind=video&filename=${encodeURIComponent(file.name)}`,
+      );
+      await putWithProgress(uploadUrl, file, contentType, setPct);
+      onChange([...latest.current, { kind: "file", url: publicUrl, embedUrl: null, title: file.name, thumbnailUrl: null }]);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to upload the video. Please try again.");
+    } finally {
+      setPct(null);
+    }
+  }
+
+  return { upload, pct, full: videos.length >= MAX_POST_VIDEOS };
+}
+
+function VideoCard({ video, onRemove }: { video: PostVideo; onRemove: () => void }) {
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-divider bg-background p-2">
+      <VideoThumb video={video} />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-xs font-semibold text-primary">{video.title ?? (video.kind === "instagram" ? "Instagram post" : "Video")}</p>
+        <p className="truncate text-[10px] text-muted">{video.kind === "file" ? "Uploaded video" : video.url}</p>
+        <p className="text-[10px] text-subtle">{video.kind === "file" ? "finskool21.in" : hostOf(video.url)}</p>
+      </div>
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label="Remove video"
+        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-divider text-muted hover:text-primary"
+      >
+        <X size={11} />
+      </button>
+    </div>
+  );
+}
+
+function VideoEditor({
+  videos,
+  onChange,
+  uploadVideo,
+  uploadPct,
+}: {
+  videos: PostVideo[];
+  onChange: (v: PostVideo[]) => void;
+  uploadVideo: (file: File) => Promise<void>;
+  uploadPct: number | null;
+}) {
   const toast = useToast();
   const [source, setSource] = useState<VideoSource>("youtube");
   const [link, setLink] = useState("");
   const [adding, setAdding] = useState(false);
-  const [uploadPct, setUploadPct] = useState<number | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const full = videos.length >= MAX_POST_VIDEOS;
 
@@ -138,26 +206,7 @@ function VideoEditor({ videos, onChange }: { videos: PostVideo[]; onChange: (v: 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (fileRef.current) fileRef.current.value = "";
-    if (!file) return;
-    if (full) return toast.error(`You can add up to ${MAX_POST_VIDEOS} videos per post.`);
-
-    const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
-    const contentType = VIDEO_TYPES_BY_EXT[ext];
-    if (!contentType) return toast.error("Only MP4 and MOV videos can be uploaded.");
-    if (file.size > MAX_VIDEO_MB * 1024 * 1024) return toast.error(`Videos can be at most ${MAX_VIDEO_MB} MB.`);
-
-    setUploadPct(0);
-    try {
-      const { uploadUrl, publicUrl } = await api.get<{ uploadUrl: string; publicUrl: string }>(
-        `/api/v1/posts/upload-url?kind=video&filename=${encodeURIComponent(file.name)}`,
-      );
-      await putWithProgress(uploadUrl, file, contentType, setUploadPct);
-      onChange([...videos, { kind: "file", url: publicUrl, embedUrl: null, title: file.name, thumbnailUrl: null }]);
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to upload the video. Please try again.");
-    } finally {
-      setUploadPct(null);
-    }
+    if (file) await uploadVideo(file);
   }
 
   return (
@@ -227,23 +276,8 @@ function VideoEditor({ videos, onChange }: { videos: PostVideo[]; onChange: (v: 
         </div>
       )}
 
-      {videos.map((v, i) => (
-        <div key={v.id ?? v.url} className="flex items-center gap-3 rounded-xl border border-divider bg-background p-2">
-          <VideoThumb video={v} />
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-xs font-semibold text-primary">{v.title ?? (v.kind === "instagram" ? "Instagram post" : "Video")}</p>
-            <p className="truncate text-[10px] text-muted">{v.kind === "file" ? "Uploaded video" : v.url}</p>
-            <p className="text-[10px] text-subtle">{v.kind === "file" ? "finskool21.in" : hostOf(v.url)}</p>
-          </div>
-          <button
-            type="button"
-            onClick={() => onChange(videos.filter((_, j) => j !== i))}
-            aria-label="Remove video"
-            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-divider text-muted hover:text-primary"
-          >
-            <X size={11} />
-          </button>
-        </div>
+      {videos.map((v) => (
+        <VideoCard key={v.id ?? v.url} video={v} onRemove={() => onChange(videos.filter((x) => x !== v))} />
       ))}
 
       <p className="text-xs text-subtle">
@@ -266,6 +300,8 @@ export default function PostMediaPicker({
   onVideosChange: (videos: PostVideo[]) => void;
 }) {
   const [tab, setTab] = useState<Tab>("media");
+  const { upload: uploadVideo, pct: uploadPct } = useVideoFileUpload(videos, onVideosChange);
+  const uploadedFiles = videos.filter((v) => v.kind === "file");
   const tabs: { id: Tab; label: string; icon: typeof Video; count: number }[] = [
     { id: "media", label: "Media", icon: ImageIcon, count: imageUrls.length },
     { id: "video", label: "Video", icon: Video, count: videos.length },
@@ -293,10 +329,22 @@ export default function PostMediaPicker({
       </div>
       {/* Both stay mounted so a half-finished upload/link isn't lost when switching tabs. */}
       <div hidden={tab !== "media"}>
-        <PostImageUploader imageUrls={imageUrls} onChange={onImageUrlsChange} />
+        <PostImageUploader
+          imageUrls={imageUrls}
+          onChange={onImageUrlsChange}
+          onVideoFile={uploadVideo}
+          videoUploadPct={uploadPct}
+        />
+        {uploadedFiles.length > 0 && (
+          <div className="mt-3 flex flex-col gap-2">
+            {uploadedFiles.map((v) => (
+              <VideoCard key={v.id ?? v.url} video={v} onRemove={() => onVideosChange(videos.filter((x) => x !== v))} />
+            ))}
+          </div>
+        )}
       </div>
       <div hidden={tab !== "video"}>
-        <VideoEditor videos={videos} onChange={onVideosChange} />
+        <VideoEditor videos={videos} onChange={onVideosChange} uploadVideo={uploadVideo} uploadPct={uploadPct} />
       </div>
     </div>
   );
