@@ -46,6 +46,8 @@ export interface KitListItem {
   communityId: string;
   name: string;
   slug: string;
+  type: string | null;
+  coverImageUrl: string | null;
   badgeUrl: string | null;
   hasKit: boolean;
   updatedAt: string | null;
@@ -107,8 +109,11 @@ export function validateForm(f: KitForm): string | null {
   }
   if (f.introMarkdown.length > 5000) return "The intro paragraph is too long (max 5000 characters).";
   if (f.heroStat.trim().length > 50) return "Hero stat can be at most 50 characters.";
-  if (f.strategies.some((s) => !s.value.trim() || !s.label.trim())) return "Every strategy needs both a value and a label.";
-  if (f.notices.some((n) => !n.heading.trim())) return "Every strategy notice needs a heading.";
-  if (f.pointers.some((p) => !p.text.trim())) return "Every “What you get” pointer needs some text.";
+  const strategy = f.strategies.findIndex((s) => !s.value.trim() || !s.label.trim());
+  if (strategy >= 0) return `Strategy ${strategy + 1} needs both a value and a label.`;
+  const notice = f.notices.findIndex((n) => !n.heading.trim());
+  if (notice >= 0) return `Strategy notice ${notice + 1} needs a heading.`;
+  const pointer = f.pointers.findIndex((p) => !p.text.trim());
+  if (pointer >= 0) return `“What you get” pointer ${pointer + 1} needs some text.`;
   return null;
 }

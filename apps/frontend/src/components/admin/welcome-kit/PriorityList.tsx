@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
 import { GripVertical, Pencil, Plus, Trash2 } from "lucide-react";
+import { useDragReorder } from "./useDragReorder";
 
 /**
  * A reorderable list of editable rows — the position in the list is the item's priority.
@@ -23,50 +23,19 @@ export default function PriorityList<T extends { id: string }>({
   addLabel: string;
   max: number;
 }) {
-  const [dragId, setDragId] = useState<string | null>(null);
-  const rows = useRef(new Map<string, HTMLDivElement>());
-
-  function move(from: number, to: number) {
-    if (from === to || from < 0 || to < 0 || to >= items.length) return;
-    const next = [...items];
-    const [moved] = next.splice(from, 1);
-    next.splice(to, 0, moved!);
-    onChange(next);
-  }
+  const drag = useDragReorder(items, (i) => i.id, onChange);
 
   return (
     <div className="flex flex-col gap-2">
       {items.map((item, index) => (
         <div
           key={item.id}
-          ref={(el) => {
-            if (el) rows.current.set(item.id, el);
-            else rows.current.delete(item.id);
-          }}
-          onDragOver={(e) => dragId && e.preventDefault()}
-          onDrop={() => {
-            if (dragId) move(items.findIndex((i) => i.id === dragId), index);
-            setDragId(null);
-          }}
-          className={`flex items-start gap-2 transition-opacity ${dragId === item.id ? "opacity-40" : ""}`}
+          {...drag.rowProps(item.id, index)}
+          className={`flex items-start gap-2 transition-opacity ${drag.dragKey === item.id ? "opacity-40" : ""}`}
         >
           <button
             type="button"
-            draggable
-            aria-label="Drag to reorder (or use the up and down arrow keys)"
-            title="Drag to reorder"
-            onDragStart={(e) => {
-              setDragId(item.id);
-              e.dataTransfer.effectAllowed = "move";
-              e.dataTransfer.setData("text/plain", item.id);
-              const row = rows.current.get(item.id);
-              if (row) e.dataTransfer.setDragImage(row, 0, 0);
-            }}
-            onDragEnd={() => setDragId(null)}
-            onKeyDown={(e) => {
-              if (e.key === "ArrowUp") { e.preventDefault(); move(index, index - 1); }
-              if (e.key === "ArrowDown") { e.preventDefault(); move(index, index + 1); }
-            }}
+            {...drag.handleProps(item.id, index)}
             className="mt-2 flex h-6 w-5 shrink-0 cursor-grab items-center justify-center text-subtle hover:text-primary active:cursor-grabbing"
           >
             <GripVertical size={14} />
@@ -80,7 +49,7 @@ export default function PriorityList<T extends { id: string }>({
             type="button"
             title="Edit"
             aria-label="Edit"
-            onClick={() => rows.current.get(item.id)?.querySelector<HTMLElement>("input, textarea, select")?.focus()}
+            onClick={() => drag.rowElement(item.id)?.querySelector<HTMLElement>("input, textarea, select")?.focus()}
             className="mt-1.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-accent/10 text-accent transition-colors hover:bg-accent/20"
           >
             <Pencil size={12} />

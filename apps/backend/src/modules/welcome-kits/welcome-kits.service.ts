@@ -66,6 +66,8 @@ export class WelcomeKitsService {
         id: true,
         name: true,
         slug: true,
+        type: true,
+        coverImageUrl: true,
         badgeUrl: true,
         kit: {
           select: { watchBeforeYouStart: true, capitalAllocation: true, strategyNotices: true, whatYouGet: true, updatedAt: true },
@@ -79,6 +81,8 @@ export class WelcomeKitsService {
         communityId: c.id,
         name: c.name,
         slug: c.slug,
+        type: c.type,
+        coverImageUrl: c.coverImageUrl,
         badgeUrl: c.badgeUrl,
         hasKit: kit !== null,
         updatedAt: kit?.updatedAt ?? null,

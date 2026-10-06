@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Play, Plus, X } from "lucide-react";
+import { GripVertical, Plus, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 import { MAX_YOUTUBE_URLS, type KitVideo } from "@/lib/welcome-kit";
+import { useDragReorder } from "./useDragReorder";
 
 interface LinkPreview {
   kind: "youtube" | "instagram";
@@ -13,11 +14,15 @@ interface LinkPreview {
   title: string | null;
 }
 
-/** Add/remove YouTube links. Title and thumbnail are looked up for display only — just the URL is saved. */
+/**
+ * Add/remove/reorder YouTube links. Title and thumbnail are looked up for display only — just the
+ * URLs are saved, in this order.
+ */
 export default function YoutubeLinkList({ videos, onChange }: { videos: KitVideo[]; onChange: (v: KitVideo[]) => void }) {
   const toast = useToast();
   const [link, setLink] = useState("");
   const [adding, setAdding] = useState(false);
+  const drag = useDragReorder(videos, (v) => v.url, onChange);
   const full = videos.length >= MAX_YOUTUBE_URLS;
 
   async function add() {
@@ -40,8 +45,8 @@ export default function YoutubeLinkList({ videos, onChange }: { videos: KitVideo
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center gap-2">
-        <div className="flex flex-1 items-center rounded-xl border border-divider bg-background px-3 py-2.5 focus-within:border-accent">
+      <div className="flex items-center gap-3">
+        <div className="flex h-[46px] flex-1 items-center rounded-xl bg-[#f3f3f3] px-4">
           <input
             type="url"
             value={link}
@@ -57,7 +62,12 @@ export default function YoutubeLinkList({ videos, onChange }: { videos: KitVideo
             className="min-w-0 flex-1 bg-transparent text-sm text-primary placeholder:text-subtle focus:outline-none"
           />
           {link && (
-            <button type="button" onClick={() => setLink("")} aria-label="Clear" className="flex h-5 w-5 items-center justify-center rounded-full bg-divider text-muted hover:text-primary">
+            <button
+              type="button"
+              onClick={() => setLink("")}
+              aria-label="Clear"
+              className="flex h-5 w-5 items-center justify-center rounded-full bg-white text-muted shadow hover:text-primary"
+            >
               <X size={10} />
             </button>
           )}
@@ -67,43 +77,45 @@ export default function YoutubeLinkList({ videos, onChange }: { videos: KitVideo
           onClick={() => void add()}
           disabled={!link.trim() || adding || full}
           aria-label="Add video"
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white shadow-glow transition-transform hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
-          style={{ background: "linear-gradient(135deg, #1fc77a, #108b8b)" }}
+          className="flex h-[46px] w-14 shrink-0 items-center justify-center rounded-xl text-white shadow-glow transition-transform hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+          style={{ background: "linear-gradient(135deg, #22c58b, #0b8f86)" }}
         >
-          {adding ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" /> : <Plus size={18} />}
+          {adding ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" /> : <Plus size={20} />}
         </button>
       </div>
 
-      {videos.map((v) => (
-        <div key={v.url} className="flex items-center gap-3 rounded-xl border border-divider bg-background p-2">
-          <div className="relative h-[54px] w-[84px] shrink-0 overflow-hidden rounded-lg bg-primary/90">
-            {v.thumbnailUrl && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={v.thumbnailUrl} alt="" className="h-full w-full object-cover" />
-            )}
-            <span className="absolute inset-0 flex items-center justify-center">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/90 text-primary shadow">
-                <Play size={11} className="ml-0.5 fill-current" />
-              </span>
-            </span>
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-xs font-semibold text-primary">{v.title ?? "YouTube video"}</p>
-            <p className="truncate text-[10px] text-muted">{v.url}</p>
-            <p className="text-[10px] text-subtle">youtube.com</p>
-          </div>
+      {videos.map((v, index) => (
+        <div
+          key={v.url}
+          {...drag.rowProps(v.url, index)}
+          className={`flex items-center gap-2 transition-opacity ${drag.dragKey === v.url ? "opacity-40" : ""}`}
+        >
           <button
             type="button"
-            onClick={() => onChange(videos.filter((x) => x.url !== v.url))}
-            aria-label="Remove video"
-            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-divider text-muted hover:text-primary"
+            {...drag.handleProps(v.url, index)}
+            className="flex h-6 w-4 shrink-0 cursor-grab items-center justify-center text-subtle hover:text-primary active:cursor-grabbing"
           >
-            <X size={11} />
+            <GripVertical size={13} />
           </button>
+          <div className="flex flex-1 items-center gap-4 rounded-xl bg-[#f3f3f3] px-3 py-2.5">
+            {v.thumbnailUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={v.thumbnailUrl} alt="" className="h-[52px] w-[92px] shrink-0 rounded-sm object-cover" />
+            ) : (
+              <div className="h-[52px] w-[92px] shrink-0 rounded-sm bg-primary/80" />
+            )}
+            <p className="line-clamp-3 w-44 text-xs leading-snug text-primary">{v.title ?? v.url}</p>
+            <button
+              type="button"
+              onClick={() => onChange(videos.filter((x) => x.url !== v.url))}
+              aria-label="Remove video"
+              className="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white text-muted shadow hover:text-primary"
+            >
+              <X size={11} />
+            </button>
+          </div>
         </div>
       ))}
-
-      <p className="text-xs text-subtle">{videos.length}/{MAX_YOUTUBE_URLS} videos{full ? " — remove one to add another." : "."}</p>
     </div>
   );
 }

@@ -39,6 +39,8 @@ const router = Router()
  *                       communityId: { type: string, format: uuid }
  *                       name: { type: string }
  *                       slug: { type: string }
+ *                       type: { type: string, nullable: true, example: "Short Term Investment" }
+ *                       coverImageUrl: { type: string, nullable: true }
  *                       badgeUrl: { type: string, nullable: true }
  *                       hasKit: { type: boolean }
  *                       updatedAt: { type: string, format: date-time, nullable: true }
@@ -137,7 +139,9 @@ mobileWelcomeKitsRouter.use(authenticate, requireMobileAuth)
  *     description: >
  *       Mobile-only (403 MOBILE_ONLY for a web JWT). Members need an active, unexpired subscription to the
  *       community (else 403 SUBSCRIPTION_REQUIRED); admins need access to it. 404 if the community has no
- *       kit yet, or is the free community. Lists are sorted by `priority`. `introMarkdown` is raw markdown.
+ *       kit yet, or is the free community. Lists are sorted by `priority`. `introMarkdown`,
+ *       `capitalAllocation.description`, each notice's `description` and each `whatYouGet` text are
+ *       raw markdown (bold, italic, lists, links) — render them as markdown.
  *       Each video carries a ready-to-use `embedUrl` and `thumbnailUrl`.
  *     parameters:
  *       - { name: communityId, in: path, required: true, schema: { type: string, format: uuid } }

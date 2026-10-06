@@ -1,87 +1,71 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { Bold, Italic, Link as LinkIcon, List, ListOrdered } from "lucide-react";
-import MarkdownView from "./MarkdownView";
+import { useEffect } from "react";
+import { EditorContent, useEditor } from "@tiptap/react";
+import StarterKit from "@tiptap/starter-kit";
+import Placeholder from "@tiptap/extension-placeholder";
+import { Markdown } from "@tiptap/markdown";
+import { Bold } from "lucide-react";
 
-type Action = { label: string; icon: typeof Bold; apply: (selected: string) => { text: string; select?: [number, number] } };
-
-// Each action rewrites the selected text and (optionally) says what to select afterwards.
-const ACTIONS: Action[] = [
-  { label: "Bold", icon: Bold, apply: (s) => ({ text: `**${s || "bold text"}**` }) },
-  { label: "Italic", icon: Italic, apply: (s) => ({ text: `_${s || "italic text"}_` }) },
-  { label: "Bullet list", icon: List, apply: (s) => ({ text: (s || "item").split("\n").map((l) => `- ${l}`).join("\n") }) },
-  { label: "Numbered list", icon: ListOrdered, apply: (s) => ({ text: (s || "item").split("\n").map((l, i) => `${i + 1}. ${l}`).join("\n") }) },
-  { label: "Link", icon: LinkIcon, apply: (s) => ({ text: `[${s || "link text"}](https://)` }) },
-];
-
-/** Markdown textarea with a small formatting toolbar and a Write / Preview switch. The value is raw markdown. */
+/**
+ * Rich-text box (bold shows as you type) whose value is plain markdown — that is what gets stored
+ * and what the mobile app renders. Limited to what markdown expresses well: bold, italic, lists, links.
+ */
 export default function MarkdownField({
   value,
   onChange,
   placeholder,
-  maxLength = 5000,
 }: {
   value: string;
-  onChange: (v: string) => void;
+  onChange: (markdown: string) => void;
   placeholder?: string;
-  maxLength?: number;
 }) {
-  const ref = useRef<HTMLTextAreaElement>(null);
-  const [preview, setPreview] = useState(false);
+  const editor = useEditor({
+    extensions: [
+      StarterKit.configure({
+        heading: false,
+        blockquote: false,
+        code: false,
+        codeBlock: false,
+        horizontalRule: false,
+        strike: false,
+        underline: false,
+      }),
+      Markdown,
+      Placeholder.configure({ placeholder: placeholder ?? "" }),
+    ],
+    content: value,
+    contentType: "markdown",
+    immediatelyRender: false, // Next renders this on the server first
+    onUpdate: ({ editor }) => onChange(editor.getMarkdown()),
+    editorProps: { attributes: { class: "outline-none" } },
+  });
 
-  function run(action: Action) {
-    const el = ref.current;
-    if (!el) return;
-    const { selectionStart: a, selectionEnd: b } = el;
-    const { text } = action.apply(value.slice(a, b));
-    onChange(value.slice(0, a) + text + value.slice(b));
-    requestAnimationFrame(() => {
-      el.focus();
-      el.setSelectionRange(a, a + text.length);
-    });
-  }
+  // Pick up a value changed from outside (not by typing here, which already matches).
+  useEffect(() => {
+    if (editor && value !== editor.getMarkdown()) editor.commands.setContent(value, { contentType: "markdown" });
+  }, [editor, value]);
 
-  const tab = (active: boolean) =>
-    `rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors ${active ? "bg-primary text-white" : "text-muted hover:text-primary"}`;
+  const bold = editor?.isActive("bold") ?? false;
 
   return (
-    <div className="rounded-xl border border-divider bg-white px-3 pb-2 pt-2.5 focus-within:border-accent">
-      <div className="flex items-center justify-between gap-2 rounded-lg bg-background px-2 py-1.5">
-        <div className="flex items-center gap-0.5">
-          {ACTIONS.map((action) => (
-            <button
-              key={action.label}
-              type="button"
-              title={action.label}
-              disabled={preview}
-              onClick={() => run(action)}
-              className="flex h-7 w-7 items-center justify-center rounded-lg text-muted transition-colors hover:bg-divider/60 hover:text-primary disabled:opacity-40"
-            >
-              <action.icon size={14} />
-            </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-1">
-          <button type="button" onClick={() => setPreview(false)} className={tab(!preview)}>Write</button>
-          <button type="button" onClick={() => setPreview(true)} className={tab(preview)}>Preview</button>
-        </div>
-      </div>
-      {preview ? (
-        <div className="min-h-24 px-1 pt-2">
-          {value.trim() ? <MarkdownView markdown={value} /> : <p className="text-sm text-subtle">Nothing to preview yet.</p>}
-        </div>
-      ) : (
-        <textarea
-          ref={ref}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-          maxLength={maxLength}
-          rows={4}
-          className="mt-2 min-h-24 w-full resize-y bg-transparent px-1 text-sm text-primary placeholder:text-subtle focus:outline-none"
-        />
-      )}
+    <div className="rounded-lg border border-[#d4d4d4] bg-white px-3 pb-3 pt-3 transition-colors focus-within:border-accent">
+      <button
+        type="button"
+        title="Bold"
+        aria-label="Bold"
+        aria-pressed={bold}
+        onClick={() => editor?.chain().focus().toggleBold().run()}
+        className={`flex h-[30px] w-[38px] items-center justify-center rounded-lg text-sm transition-colors ${
+          bold ? "bg-primary/10 text-primary" : "bg-[#f1f1f1] text-[#9a9a9a] hover:text-primary"
+        }`}
+      >
+        <Bold size={14} strokeWidth={2.5} />
+      </button>
+      <EditorContent
+        editor={editor}
+        className="mt-3 min-h-14 text-[15px] leading-relaxed text-[#1d2b27] [&_.ProseMirror]:min-h-14 [&_.ProseMirror]:outline-none [&_.ProseMirror_p]:my-0 [&_.ProseMirror_strong]:font-bold [&_.ProseMirror_ul]:list-disc [&_.ProseMirror_ul]:pl-5 [&_.ProseMirror_ol]:list-decimal [&_.ProseMirror_ol]:pl-5 [&_.ProseMirror_a]:text-accent [&_.ProseMirror_a]:underline [&_.ProseMirror_p.is-editor-empty:first-child::before]:pointer-events-none [&_.ProseMirror_p.is-editor-empty:first-child::before]:float-left [&_.ProseMirror_p.is-editor-empty:first-child::before]:h-0 [&_.ProseMirror_p.is-editor-empty:first-child::before]:text-subtle [&_.ProseMirror_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)]"
+      />
     </div>
   );
 }

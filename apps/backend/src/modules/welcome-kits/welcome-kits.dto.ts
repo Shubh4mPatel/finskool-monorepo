@@ -58,6 +58,8 @@ export interface WelcomeKitListItemDTO {
   communityId: string
   name: string
   slug: string
+  type: string | null
+  coverImageUrl: string | null
   badgeUrl: string | null
   hasKit: boolean
   updatedAt: Date | null

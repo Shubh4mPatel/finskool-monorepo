@@ -1,103 +1,117 @@
-import { AlertTriangle, Check, Info, Play } from "lucide-react";
+import { AlertTriangle, Check } from "lucide-react";
 import type { KitForm } from "@/lib/welcome-kit";
 import { hasCapitalContent, hasWatchContent } from "@/lib/welcome-kit";
 import MarkdownView from "./MarkdownView";
 
-function Heading({ children }: { children: React.ReactNode }) {
-  return <h3 className="font-display text-base font-bold text-primary">{children}</h3>;
+/** A teal-headed card, as in the app. */
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="overflow-hidden rounded-xl border border-accent/40 bg-[#f5f7f6]">
+      <h3 className="bg-accent px-4 py-2.5 font-display text-[15px] font-bold text-white">{title}</h3>
+      <div className="flex flex-col gap-3 p-3">{children}</div>
+    </section>
+  );
 }
 
-/** Approximate render of the kit as members will see it in the app. */
-export default function WelcomeKitPreview({ communityName, form }: { communityName: string; form: KitForm }) {
+/** How members will see the kit in the app (narrow, mobile-width column). */
+export default function WelcomeKitPreview({ form }: { form: KitForm }) {
+  const hasHero = form.heroStat.trim() !== "" || form.description.trim() !== "";
+
   return (
-    <div className="mx-auto flex w-full max-w-sm flex-col gap-6 rounded-[28px] border-4 border-primary/15 bg-background p-5">
-      <div>
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-accent">Welcome kit</p>
-        <h2 className="font-display text-xl font-bold text-primary">{communityName}</h2>
-      </div>
+    <div className="flex flex-col gap-5">
+      <h2 className="w-fit border-b-2 border-accent pb-1 font-display text-xl font-medium text-primary">Welcome Kit</h2>
 
       {hasWatchContent(form) && (
-        <section className="flex flex-col gap-3">
-          <Heading>Watch before you start</Heading>
-          {form.introMarkdown.trim() && <MarkdownView markdown={form.introMarkdown} />}
+        <Section title="Watch before you start">
+          {form.introMarkdown.trim() && <MarkdownView markdown={form.introMarkdown} size="xs" />}
           {form.videos.map((v) => (
-            <div key={v.url} className="overflow-hidden rounded-xl bg-white shadow-card">
-              <div className="relative aspect-video bg-primary/90">
-                {v.thumbnailUrl && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={v.thumbnailUrl} alt="" className="h-full w-full object-cover" />
-                )}
-                <span className="absolute inset-0 flex items-center justify-center">
-                  <span className="flex h-11 w-11 items-center justify-center rounded-full bg-white/90 text-primary shadow">
-                    <Play size={18} className="ml-0.5 fill-current" />
-                  </span>
-                </span>
-              </div>
-              {v.title && <p className="px-3 py-2 text-xs font-semibold text-primary">{v.title}</p>}
+            <div key={v.url} className="flex items-center gap-3 rounded-lg bg-white p-2 shadow-sm">
+              {v.thumbnailUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={v.thumbnailUrl} alt="" className="h-[42px] w-[74px] shrink-0 rounded-sm object-cover" />
+              ) : (
+                <div className="h-[42px] w-[74px] shrink-0 rounded-sm bg-primary/80" />
+              )}
+              <p className="line-clamp-3 text-[11px] leading-snug text-primary">{v.title ?? v.url}</p>
             </div>
           ))}
-        </section>
+        </Section>
       )}
 
       {hasCapitalContent(form) && (
-        <section className="flex flex-col gap-3">
-          <Heading>Capital Allocation</Heading>
-          {form.heroStat.trim() && (
-            <div className="rounded-xl bg-primary px-4 py-4 text-white">
-              <p className="font-display text-3xl font-bold">{form.heroStat}</p>
-              {form.description.trim() && <p className="mt-1.5 text-xs leading-relaxed text-white/80">{form.description}</p>}
+        <Section title="Capital Allocation">
+          {hasHero && (
+            <div className="rounded-lg bg-white p-3 shadow-sm">
+              {form.heroStat.trim() && <p className="font-display text-xl font-bold text-primary">{form.heroStat}</p>}
+              {form.description.trim() && <MarkdownView markdown={form.description} size="xs" className="mt-1" />}
             </div>
           )}
-          {!form.heroStat.trim() && form.description.trim() && <p className="text-sm text-[#5a6a60]">{form.description}</p>}
           {form.strategies.length > 0 && (
-            <div className="rounded-xl bg-white p-4 shadow-card">
-              {form.strategyTitle.trim() && <p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted">{form.strategyTitle}</p>}
-              <ul className="flex flex-col divide-y divide-divider">
+            <>
+              {form.strategyTitle.trim() && <p className="mt-1 font-display text-sm font-bold text-primary">{form.strategyTitle}</p>}
+              <div className="grid grid-cols-2 gap-3">
                 {form.strategies.map((s) => (
-                  <li key={s.id} className="flex items-baseline gap-3 py-2">
-                    <span className="min-w-12 font-display text-lg font-bold text-accent">{s.value}</span>
-                    <span className="text-sm text-primary">{s.label}</span>
-                  </li>
+                  <div key={s.id} className="rounded-lg bg-white p-3 shadow-sm">
+                    <p className="break-words font-display text-lg font-bold text-primary">{s.value}</p>
+                    <p className="mt-1 text-[11px] leading-snug text-[#5a6a60]">{s.label}</p>
+                  </div>
                 ))}
-              </ul>
-            </div>
+              </div>
+            </>
           )}
-        </section>
+        </Section>
       )}
 
-      {form.notices.length > 0 && (
-        <section className="flex flex-col gap-3">
-          <Heading>Strategy Notice</Heading>
-          {form.notices.map((n) => (
-            <div
-              key={n.id}
-              className={`flex gap-3 rounded-xl border p-3 ${n.type === "warning" ? "border-amber-300 bg-amber-50" : "border-accent/30 bg-accent/5"}`}
-            >
-              {n.type === "warning" ? <AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-600" /> : <Info size={16} className="mt-0.5 shrink-0 text-accent" />}
-              <div>
-                <p className="text-sm font-bold text-primary">{n.heading}</p>
-                {n.description.trim() && <p className="mt-0.5 text-xs leading-relaxed text-[#5a6a60]">{n.description}</p>}
-              </div>
+      {form.notices.map((n) => {
+        const warning = n.type === "warning";
+        return (
+          <div
+            key={n.id}
+            className={`flex gap-2.5 rounded-xl border p-3 ${warning ? "border-red-200 bg-red-50" : "border-amber-200 bg-amber-50"}`}
+          >
+            {warning ? (
+              <AlertTriangle size={18} className="mt-0.5 shrink-0 fill-red-500 text-white" />
+            ) : (
+              <span className="mt-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-amber-500 text-[11px] font-bold text-white">
+                i
+              </span>
+            )}
+            <div className="min-w-0">
+              <p className={`text-[13px] font-bold ${warning ? "text-red-600" : "text-amber-700"}`}>{n.heading}</p>
+              {n.description.trim() && <MarkdownView markdown={n.description} size="xs" tone={warning ? "red" : "amber"} className="mt-1" />}
             </div>
-          ))}
-        </section>
-      )}
+          </div>
+        );
+      })}
 
       {form.pointers.length > 0 && (
-        <section className="flex flex-col gap-3">
-          <Heading>What You get</Heading>
+        <Section title="What You get">
           <ul className="flex flex-col gap-2">
             {form.pointers.map((p) => (
-              <li key={p.id} className="flex items-start gap-2.5 text-sm text-primary">
-                <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-accent text-white">
-                  <Check size={10} strokeWidth={3} />
+              <li key={p.id} className="flex items-start gap-2 text-primary">
+                <span className="mt-px flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-accent text-white">
+                  <Check size={9} strokeWidth={3.5} />
                 </span>
-                {p.text}
+                <MarkdownView markdown={p.text} size="xs" className="min-w-0 !text-primary" />
               </li>
             ))}
           </ul>
-        </section>
+        </Section>
       )}
+
+      {/* Fixed closing text — the same for every community's kit. */}
+      <div className="flex items-start gap-2.5 rounded-xl border border-accent/40 bg-white p-3">
+        <span className="mt-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-accent text-[11px] font-bold text-white">
+          i
+        </span>
+        <p className="text-xs leading-snug text-primary">
+          Please ensure that you <strong>understand the trading</strong> process and associated risks before participating in any trade.
+        </p>
+      </div>
+      <div className="flex flex-col items-center gap-0.5 pb-1 text-center text-xs font-bold leading-snug text-accent">
+        <p>Saath Mein Seekhenge... Saath Mein Grow Karenge!!</p>
+        <p>Our Mission: Har Ghar Ek Smart Investor!!</p>
+      </div>
     </div>
   );
 }
