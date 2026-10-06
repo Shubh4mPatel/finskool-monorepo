@@ -30,10 +30,15 @@ export default function WelcomeKitListPage() {
 
   async function handleDelete(c: KitListItem) {
     const ok = await confirm({
-      title: "Delete welcome kit?",
-      message: `This removes the welcome kit for "${c.name}". Members will no longer see it in the app. You can add a new one afterwards.`,
+      title: "Delete Welcome Kit?",
+      message: (
+        <>
+          Are you sure you want to <strong className="font-bold">delete this Welcome Kit</strong>? This action cannot be undone.
+        </>
+      ),
       confirmLabel: "Yes, Delete",
-      variant: "destructive",
+      variant: "danger",
+      icon: <Trash2 size={22} />,
     });
     if (!ok) return;
     setDeletingId(c.communityId);
