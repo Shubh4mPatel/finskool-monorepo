@@ -115,8 +115,11 @@ export class PostsService {
     communityIds?: string[]
     date?: string
     order?: 'asc' | 'desc'
+    // Admin web only — adds groupReactionCounts/groupSize to each item (see PostFeedItemDTO).
+    // `accessibleCommunityIds` is the admin's grant (null = every community).
+    groupReactions?: { accessibleCommunityIds: string[] | null }
   }): Promise<ListPostsResponseDTO> {
-    const { userId, page, pageSize, communityId, communityIds, date, order = 'desc' } = params
+    const { userId, page, pageSize, communityId, communityIds, date, order = 'desc', groupReactions } = params
     // Anchored to IST (+05:30), not UTC — the frontend displays/labels dates in
     // en-IN local time, so a "day" here must match what the user sees on a post
     // card, not the UTC calendar day the timestamp happens to fall on.
@@ -151,32 +154,74 @@ export class PostsService {
       this.db.post.count({ where }),
     ])
 
+    const groups = groupReactions ? await this.sumGroupReactions(posts, groupReactions.accessibleCommunityIds) : null
+
     return {
-      posts: posts.map(p => ({
-        id: p.id,
-        communityId: p.communityId,
-        communityName: p.community.name,
-        communitySlug: p.community.slug,
-        communityBadgeUrl: p.community.badgeUrl,
-        authorName: p.author.name,
-        authorAvatarUrl: p.author.avatarUrl,
-        title: p.title,
-        content: p.contentMd,
-        imageUrls: p.imageUrls,
-        videos: p.videos.map(toVideoDTO),
-        tags: p.tags,
-        pinOrder: p.pinOrder,
-        publishedAt: p.publishedAt,
-        createdAt: p.createdAt,
-        commentCount: p._count.comments,
-        reactionCounts: (p.reactionCounts as Record<string, number> | null) ?? {},
-        myReaction: p.reactions[0]?.reactionType.name ?? null,
-      })),
+      posts: posts.map(p => {
+        const reactionCounts = (p.reactionCounts as Record<string, number> | null) ?? {}
+        const group = p.publishGroupId ? groups?.get(p.publishGroupId) : undefined
+        return {
+          id: p.id,
+          communityId: p.communityId,
+          communityName: p.community.name,
+          communitySlug: p.community.slug,
+          communityBadgeUrl: p.community.badgeUrl,
+          authorName: p.author.name,
+          authorAvatarUrl: p.author.avatarUrl,
+          title: p.title,
+          content: p.contentMd,
+          imageUrls: p.imageUrls,
+          videos: p.videos.map(toVideoDTO),
+          tags: p.tags,
+          pinOrder: p.pinOrder,
+          publishedAt: p.publishedAt,
+          createdAt: p.createdAt,
+          commentCount: p._count.comments,
+          reactionCounts,
+          myReaction: p.reactions[0]?.reactionType.name ?? null,
+          ...(groups && {
+            groupReactionCounts: group?.counts ?? reactionCounts,
+            groupSize: group?.size ?? 1,
+          }),
+        }
+      }),
       total,
       page,
       pageSize,
       totalPages: Math.max(1, Math.ceil(total / pageSize)),
     }
+  }
+
+  /**
+   * Reactions summed over each post's publish group — the copies one publish made in several
+   * communities — limited to the communities the admin can access. Keyed by publishGroupId.
+   */
+  private async sumGroupReactions(
+    posts: { publishGroupId: string | null }[],
+    accessibleCommunityIds: string[] | null,
+  ): Promise<Map<string, { counts: Record<string, number>; size: number }>> {
+    const groupIds = [...new Set(posts.map(p => p.publishGroupId).filter((g): g is string => g !== null))]
+    const sums = new Map<string, { counts: Record<string, number>; size: number }>()
+    if (groupIds.length === 0) return sums
+
+    const members = await this.db.post.findMany({
+      where: {
+        publishGroupId: { in: groupIds },
+        deletedAt: null,
+        status: 'published',
+        ...(accessibleCommunityIds !== null && { communityId: { in: accessibleCommunityIds } }),
+      },
+      select: { publishGroupId: true, reactionCounts: true },
+    })
+    for (const m of members) {
+      const sum = sums.get(m.publishGroupId!) ?? { counts: {}, size: 0 }
+      sum.size += 1
+      for (const [type, n] of Object.entries((m.reactionCounts as Record<string, number> | null) ?? {})) {
+        sum.counts[type] = (sum.counts[type] ?? 0) + n
+      }
+      sums.set(m.publishGroupId!, sum)
+    }
+    return sums
   }
 
   async listCommentedPosts(userId: string): Promise<CommentedPostItemDTO[]> {
@@ -247,6 +292,7 @@ export class PostsService {
         imageUrls: data.imageUrls,
         tags: data.tags,
         videos: { create: videos.map((v, position) => ({ ...v, position })) },
+        publishGroupId: data.groupId ?? null,
       },
       include: VIDEO_INCLUDE,
     })

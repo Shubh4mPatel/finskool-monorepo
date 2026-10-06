@@ -15,6 +15,9 @@ export interface ReactionResultDTO {
 }
 
 export interface PostReactionItemDTO {
+  postId: string
+  communityName: string
+  communityIsFree: boolean
   userId: string
   userName: string
   userAvatarUrl: string | null

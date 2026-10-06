@@ -28,6 +28,8 @@ interface FeedPost {
   imageUrls: string[];
   videos?: PostVideo[];
   reactionCounts?: Record<string, number>;
+  groupReactionCounts?: Record<string, number>;
+  groupSize?: number;
   tags: string[];
   pinOrder: number | null;
   publishedAt: string | null;
@@ -520,7 +522,8 @@ export default function AllPostsPage() {
                 bodyHtml={post.content}
                 imageUrls={post.imageUrls}
                 videos={post.videos}
-                reactionCounts={post.reactionCounts ?? {}}
+                reactionCounts={post.groupReactionCounts ?? post.reactionCounts ?? {}}
+                reactionGroupSize={post.groupSize}
                 tags={post.tags}
                 isAdmin
                 actions={

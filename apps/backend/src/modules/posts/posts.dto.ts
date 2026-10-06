@@ -27,6 +27,8 @@ export interface CreatePostDTO {
   tags: string[]
   imageUrls: string[]
   videos: PostVideoInput[]
+  /** Shared by every copy created in one publish — see Post.publishGroupId. */
+  groupId?: string | undefined
 }
 
 export interface UpdatePostDTO {
@@ -72,6 +74,10 @@ export interface PostFeedItemDTO {
   commentCount: number
   reactionCounts: Record<string, number>
   myReaction: string | null
+  /** Admin list only: reactions summed over this post's publish group (just its own for a standalone post). */
+  groupReactionCounts?: Record<string, number> | undefined
+  /** Admin list only: how many posts that sum covers. */
+  groupSize?: number | undefined
 }
 
 export interface ListPostsResponseDTO {

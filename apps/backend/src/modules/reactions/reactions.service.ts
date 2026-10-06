@@ -162,10 +162,11 @@ export class ReactionsService {
     page: number,
     pageSize: number,
     reactionType?: string,
+    scope: 'post' | 'group' = 'post',
   ): Promise<ListPostReactionsResponseDTO> {
     const post = await this.db.post.findUnique({
       where: { id: postId, deletedAt: null, status: 'published' },
-      select: { id: true, communityId: true },
+      select: { id: true, communityId: true, publishGroupId: true },
     })
     if (!post) throw new NotFoundError('Post not found or not published')
 
@@ -178,7 +179,22 @@ export class ReactionsService {
       reactionTypeId = type.id
     }
 
-    const where = { postId, ...(reactionTypeId !== undefined && { reactionTypeId }) }
+    // Group scope: every copy from the same publish that this admin can see, this post included.
+    let postIds = [postId]
+    if (scope === 'group' && userRole === 'admin' && post.publishGroupId) {
+      const siblings = await this.db.post.findMany({
+        where: {
+          publishGroupId: post.publishGroupId,
+          deletedAt: null,
+          status: 'published',
+          ...(accessibleCommunityIds !== null && { communityId: { in: accessibleCommunityIds } }),
+        },
+        select: { id: true },
+      })
+      postIds = siblings.map(s => s.id)
+    }
+
+    const where = { postId: { in: postIds }, ...(reactionTypeId !== undefined && { reactionTypeId }) }
 
     const [reactions, total] = await Promise.all([
       this.db.reaction.findMany({
@@ -186,6 +202,7 @@ export class ReactionsService {
         include: {
           user: { select: { id: true, name: true, avatarUrl: true } },
           reactionType: { select: { name: true, emoji: true } },
+          post: { select: { community: { select: { name: true, isFree: true } } } },
         },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
@@ -196,6 +213,9 @@ export class ReactionsService {
 
     return {
       reactions: reactions.map(r => ({
+        postId: r.postId,
+        communityName: r.post.community.name,
+        communityIsFree: r.post.community.isFree,
         userId: r.user.id,
         userName: r.user.name,
         userAvatarUrl: r.user.avatarUrl,

@@ -63,6 +63,8 @@ export const swaggerSpec = swaggerJSDoc({
     new URL('../modules/reactions/*.routes.js', import.meta.url).pathname,
     new URL('../modules/payments/*.routes.ts', import.meta.url).pathname,
     new URL('../modules/payments/*.routes.js', import.meta.url).pathname,
+    new URL('../modules/welcome-kits/*.routes.ts', import.meta.url).pathname,
+    new URL('../modules/welcome-kits/*.routes.js', import.meta.url).pathname,
     // GET /mobile/communities lives inline in app.ts rather than a .routes.ts
     // file (see the comment on that route) — scanned individually here.
     new URL('../app.ts', import.meta.url).pathname,

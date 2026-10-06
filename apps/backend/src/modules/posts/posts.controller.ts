@@ -43,6 +43,7 @@ export class PostsController {
         communityIds?: string[]
         date?: string
         order: 'asc' | 'desc'
+        groupReactions?: { accessibleCommunityIds: string[] | null }
       }
 
       const dateParam = date !== undefined ? { date } : {}
@@ -77,6 +78,8 @@ export class PostsController {
         // No community selected yet — fall back to all subscribed communities
         listParams = { userId: user.id, page, pageSize, communityIds: user.communityIds, order, ...dateParam }
       }
+
+      if (user.role === 'admin') listParams.groupReactions = { accessibleCommunityIds: user.accessibleCommunityIds }
 
       const result = await this.service.listPosts(listParams)
       res.json({ success: true, data: result })

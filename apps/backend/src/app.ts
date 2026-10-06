@@ -17,6 +17,7 @@ import notificationsRoutes from './modules/notifications/notifications.routes.js
 import stocksRoutes from './modules/stocks/stocks.routes.js'
 import stockRecommendationsRoutes from './modules/stock-recommendations/stock-recommendations.routes.js'
 import paymentsRoutes from './modules/payments/payments.routes.js'
+import welcomeKitsRoutes, { mobileWelcomeKitsRouter } from './modules/welcome-kits/welcome-kits.routes.js'
 import type { PlanListItemDTO } from './modules/payments/payments.dto.js'
 import prisma from './lib/prisma.js'
 import { authenticate, requireMobileAuth } from './middlewares/auth.middleware.js'
@@ -52,6 +53,7 @@ export function createApp() {
   app.use('/api/v1/auth', authRoutes)
   app.use('/api/v1/auth/mobile', mobileAuthRoutes)
   app.use('/api/v1/admin', adminRoutes)
+  app.use('/api/v1/admin', welcomeKitsRoutes)
   app.use('/api/v1/posts', postsRoutes)
   app.use('/api/v1', commentsRoutes)
   app.use('/api/v1', reactionsRoutes)
@@ -64,6 +66,7 @@ export function createApp() {
   // reactions.routes.ts for why these are separate from the shared routes.
   app.use('/api/v1/mobile', mobilePostsRouter)
   app.use('/api/v1/mobile', mobileReactionsRouter)
+  app.use('/api/v1/mobile', mobileWelcomeKitsRouter)
 
   // Community discovery/paywall listing — mobile-only (requireMobileAuth):
   // no web consumer exists, and it's built for the mobile app's subscription

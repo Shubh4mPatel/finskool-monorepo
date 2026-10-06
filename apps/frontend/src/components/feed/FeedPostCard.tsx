@@ -13,6 +13,7 @@ type FeedPostCardProps = {
   commentCount?: number;
   // When given, the card shows who reacted (admin pages) in place of the comment threads.
   reactionCounts?: Record<string, number>;
+  reactionGroupSize?: number;
   badge?: { label: string; icon?: "pin" | "idea" };
   communityName?: string;
   communityBadgeUrl?: string | null;
@@ -42,6 +43,7 @@ export default function FeedPostCard({
   postId,
   commentCount,
   reactionCounts,
+  reactionGroupSize,
   badge,
   communityName,
   communityBadgeUrl,
@@ -153,7 +155,7 @@ export default function FeedPostCard({
       {/* Reactions (admin) or threads */}
       {postId && reactionCounts !== undefined && (
         <div className="px-5 pb-4">
-          <PostReactions postId={postId} reactionCounts={reactionCounts} />
+          <PostReactions postId={postId} reactionCounts={reactionCounts} groupSize={reactionGroupSize} />
         </div>
       )}
       {postId && reactionCounts === undefined && (

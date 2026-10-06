@@ -271,6 +271,16 @@ model CommunityKit {
   communityId      String   @unique @map("community_id") @db.Uuid
   tradingSetupInfo Json?    @map("trading_setup_info")
   welcomeKit       Json?    @map("welcome_kit")
+  // Welcome kit shown to subscribers of a paid community (admin: /admin/communities/:id/welcome-kit).
+  // Each column is one section; list items carry an explicit `priority` (1..n, = display order).
+  //   watchBeforeYouStart: { introMarkdown, youtubeUrls[] }
+  //   capitalAllocation:   { heroStat, description, strategyTitle, strategies[{ priority, value, label }] }
+  //   strategyNotices:     [{ priority, type: 'normal' | 'warning', heading, description }]
+  //   whatYouGet:          [{ priority, text }]
+  watchBeforeYouStart Json? @map("watch_before_you_start")
+  capitalAllocation   Json? @map("capital_allocation")
+  strategyNotices     Json? @map("strategy_notices")
+  whatYouGet          Json? @map("what_you_get")
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
@@ -334,6 +344,9 @@ model Post {
   // MobileSession.accessibleCommunityIds, cast to a hand-written TS type at
   // the point of use.
   reactionCounts Json?   @map("reaction_counts")
+  // Posts created by one publish to several communities/Feed are independent copies; this
+  // shared id lets the admin side show their reactions together. Null for a single-target post.
+  publishGroupId String? @map("publish_group_id") @db.Uuid
 
   community             Community             @relation(fields: [communityId], references: [id], onDelete: Cascade)
   author                User                  @relation("PostAuthor", fields: [authorId], references: [id])
@@ -351,6 +364,7 @@ model Post {
   @@index([communityId, status, publishedAt(sort: Desc)], name: "idx_posts_community_feed")
   @@index([communityId, pinOrder], name: "idx_posts_pinned")
   @@index([authorId], name: "idx_posts_author")
+  @@index([publishGroupId], name: "idx_posts_publish_group")
   @@map("posts")
 }
 

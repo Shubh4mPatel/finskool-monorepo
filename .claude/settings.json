@@ -248,7 +248,8 @@
       "Bash(curl -s -m 4 -o /dev/null -w \"api :3001 health -> %{http_code}\\\\n\" http://localhost:3001/api/v1/health)",
       "Bash(grep -nE \"^  [a-z-]+:$|container_name|env_file\" docker/docker-compose.production.yml)",
       "Bash(awk '/^model Subscription /,/^}/' prisma/schema.prisma)",
-      "Bash(git log *)"
+      "Bash(git log *)",
+      "Bash(grep -vE \"^ \\\\* *$\")"
     ],
     "additionalDirectories": [
       "/tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/8750fbd9-1edb-4d3f-b623-da0dec31a255/scratchpad/node_modules",

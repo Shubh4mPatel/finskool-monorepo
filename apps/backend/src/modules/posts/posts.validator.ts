@@ -18,6 +18,7 @@ export const createPostSchema = z.object({
   tags: z.array(z.string().min(1).max(50)).default([]),
   imageUrls: z.array(z.string().url('Invalid image URL')).default([]),
   videos: videosSchema.default([]),
+  groupId: z.string().uuid('Invalid group ID').optional(),
 })
 
 export const updatePostSchema = z.object({

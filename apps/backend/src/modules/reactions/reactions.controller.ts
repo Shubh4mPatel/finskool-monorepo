@@ -7,6 +7,9 @@ const listReactionsQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(50).default(20),
   reactionType: z.string().min(1).optional(),
+  // 'group' (admins only, ignored otherwise): also include reactions on the sibling copies
+  // that one publish created in other communities.
+  scope: z.enum(['post', 'group']).default('post'),
 })
 
 function getParam(req: Request, name: string): string {
@@ -44,7 +47,7 @@ export class ReactionsController {
 
   list = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const { page, pageSize, reactionType } = listReactionsQuerySchema.parse(req.query)
+      const { page, pageSize, reactionType, scope } = listReactionsQuerySchema.parse(req.query)
       const result = await this.service.listPostReactions(
         req.user!.id,
         req.user!.role,
@@ -53,6 +56,7 @@ export class ReactionsController {
         page,
         pageSize,
         reactionType,
+        scope,
       )
       res.json({ success: true, data: result })
     } catch (err) {

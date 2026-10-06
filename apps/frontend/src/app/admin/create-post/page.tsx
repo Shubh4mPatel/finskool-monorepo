@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -128,6 +128,9 @@ export default function CreatePostPage() {
   const [tags, setTags] = useState<string[]>(defaultTags);
   const [tagInput, setTagInput] = useState("");
   const [publishing, setPublishing] = useState(false);
+  // Links the copies made by one publish so the admin side can show their reactions together.
+  // Kept across a retry of failed targets (so late copies still join the group), cleared on success.
+  const groupIdRef = useRef<string | null>(null);
   const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [videos, setVideos] = useState<PostVideo[]>([]);
 
@@ -184,6 +187,7 @@ export default function CreatePostPage() {
       return;
     }
     setPublishing(true);
+    const groupId = (groupIdRef.current ??= crypto.randomUUID());
     // One independent post per target. Targets that succeed are dropped from the
     // selection so a retry after a partial failure never creates duplicates.
     const results = await Promise.allSettled(
@@ -195,6 +199,7 @@ export default function CreatePostPage() {
           tags,
           imageUrls,
           videos: videos.map(toVideoInput),
+          groupId,
         });
         await api.patch(`/api/v1/posts/${post.id}/publish`, {});
       }),
@@ -216,6 +221,7 @@ export default function CreatePostPage() {
       title: "Post published",
       message: `Your post is now live in ${targets.map(targetName).join(", ")}.`,
     });
+    groupIdRef.current = null;
     setStep(1);
     setSelectedIds([]);
     setHeadline("");
