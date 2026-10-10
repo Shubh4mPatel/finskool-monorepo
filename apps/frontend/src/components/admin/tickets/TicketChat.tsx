@@ -10,6 +10,7 @@ import {
   MAX_ATTACHMENT_BYTES,
   formatBytes,
   formatTicketTime,
+  randomId,
   type AdminTicketDetail,
   type TicketAttachment,
   type TicketMessage,
@@ -126,7 +127,7 @@ export default function TicketChat({ ticket, messages, hasOlder, loadingOlder, o
   const [sending, setSending] = useState(false);
   // One key per logical message: reused on retry so a request that actually succeeded
   // server-side (but whose response was lost) is deduped instead of posted twice.
-  const clientMessageId = useRef<string>(crypto.randomUUID());
+  const clientMessageId = useRef<string>(randomId());
 
   // Keep the view pinned to the newest message unless the admin scrolled up; when older
   // messages are prepended, hold the viewport where it was.
@@ -169,7 +170,7 @@ export default function TicketChat({ ticket, messages, hasOlder, loadingOlder, o
         toast.error(`${file.name}: only JPG, PNG, WebP or PDF files are allowed.`);
         continue;
       }
-      const localId = crypto.randomUUID();
+      const localId = randomId();
       setFiles((prev) => [...prev, { localId, name: file.name, size: file.size, status: "uploading" }]);
       try {
         const { uploadUrl, objectKey } = await api.post<{ uploadUrl: string; objectKey: string }>(
@@ -202,7 +203,7 @@ export default function TicketChat({ ticket, messages, hasOlder, loadingOlder, o
       onSent(message);
       setText("");
       setFiles([]);
-      clientMessageId.current = crypto.randomUUID();
+      clientMessageId.current = randomId();
       stickToBottom.current = true;
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Couldn't send the message. Please try again.");
