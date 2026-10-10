@@ -53,6 +53,9 @@ export const env = {
     accessKey: process.env['MINIO_ACCESS_KEY'] ?? '',
     secretKey: process.env['MINIO_SECRET_KEY'] ?? '',
     bucket: process.env['MINIO_BUCKET'] ?? 'finskool',
+    // Support-ticket attachments live in their own bucket with NO anonymous-read policy
+    // (the main bucket is world-readable) — served only via short-lived presigned GETs.
+    ticketsBucket: process.env['MINIO_TICKETS_BUCKET'] ?? 'finskool-tickets',
   },
 
   smtp: {
@@ -122,7 +125,7 @@ export const env = {
   redis: { host: string; port: number; password: string; db: number }
   jwt: { secret: string; accessExpiresIn: string }
   cookie: { secure: boolean }
-  minio: { endPoint: string; publicEndPoint: string; port: number; publicPort: number; useSSL: boolean; publicUseSSL: boolean; publicPathPrefix: string; accessKey: string; secretKey: string; bucket: string }
+  minio: { endPoint: string; publicEndPoint: string; port: number; publicPort: number; useSSL: boolean; publicUseSSL: boolean; publicPathPrefix: string; accessKey: string; secretKey: string; bucket: string; ticketsBucket: string }
   smtp: { host: string; port: number; secure: boolean; user: string; password: string; from: string }
   email: { logoUrl: string }
   angelone: { enabled: boolean; apiKey: string; clientCode: string; pin: string; totpSecret: string }

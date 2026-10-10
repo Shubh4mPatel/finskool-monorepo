@@ -186,6 +186,22 @@ export interface LiveNotificationEvent {
   postId?: string
 }
 
+// Published by the tickets services (API process) and consumed by
+// lib/live-tickets-feed.ts to push ticket activity to the right users' open
+// sockets. `userIds` is the already-resolved audience; it is stripped before
+// the event is forwarded to clients.
+export const TICKETS_PUBSUB_CHANNEL = 'tickets:live'
+
+export type LiveTicketEventName = 'ticket.created' | 'ticket.message' | 'ticket.updated' | 'ticket.read'
+
+export interface LiveTicketEvent {
+  userIds: string[]
+  event: LiveTicketEventName
+  ticketId: string
+  communityId: string
+  data: unknown
+}
+
 // BullMQ requires maxRetriesPerRequest: null on any Redis connection it manages —
 // a different tuning than lib/redis.ts's client (used for refresh tokens/caching).
 // Passed as plain options (not a shared ioredis.Redis instance) so BullMQ builds

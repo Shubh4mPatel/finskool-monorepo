@@ -26,6 +26,7 @@ const definition: swaggerJSDoc.OAS3Definition = {
     { name: 'Reactions', description: 'Emoji reactions on posts (like, love, haha, wow, sad, angry)' },
     { name: 'Payments', description: 'Community plan purchases via Razorpay Orders (list plans, create order, verify payment)' },
     { name: 'Communities', description: 'Community discovery/paywall listing (mobile-only)' },
+    { name: 'Support Tickets', description: 'Mobile support tickets + per-ticket chat. Realtime updates arrive on the /ws/tickets WebSocket (see docs/support-tickets.md).' },
   ],
   components: {
     schemas: {
@@ -58,6 +59,8 @@ export const swaggerSpec = swaggerJSDoc({
     new URL('../modules/mobile-auth/*.routes.ts', import.meta.url).pathname,
     new URL('../modules/mobile-auth/*.routes.js', import.meta.url).pathname,
     new URL('../modules/posts/*.routes.ts', import.meta.url).pathname,
+    new URL('../modules/tickets/*.routes.ts', import.meta.url).pathname,
+    new URL('../modules/tickets/*.routes.js', import.meta.url).pathname,
     new URL('../modules/posts/*.routes.js', import.meta.url).pathname,
     new URL('../modules/reactions/*.routes.ts', import.meta.url).pathname,
     new URL('../modules/reactions/*.routes.js', import.meta.url).pathname,

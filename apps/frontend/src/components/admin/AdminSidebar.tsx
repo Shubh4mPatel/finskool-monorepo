@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { clearSession, getSession, type SessionInfo } from "@/lib/session";
 import { notificationSocketStore } from "@/store/notifications/notificationSocketStore";
+import { ticketSocketStore } from "@/store/tickets/ticketSocketStore";
 import {
   LayoutDashboard,
   Pencil,
@@ -19,6 +20,7 @@ import {
   Building2,
   Gift,
   Bell,
+  LifeBuoy,
   LogOut,
   Menu,
   X,
@@ -34,6 +36,7 @@ const navItems = [
   { href: "/admin/all-posts", label: "All Posts", icon: List },
   { href: "/admin/unresolved-threads", label: "Unreplied Threads", icon: MessagesSquare, badge: undefined as number | undefined },
   { href: "/admin/members", label: "Members", icon: Users },
+  { href: "/admin/tickets", label: "Support Tickets", icon: LifeBuoy, badge: undefined as number | undefined },
   { href: "/admin/import-csv", label: "Import CSV", icon: Upload },
   { href: "/admin/stock-recommendations", label: "Stock Recommendation", icon: TrendingUp },
   { href: "/admin/roles-admins", label: "Roles & Admins", icon: ShieldCheck, superAdminOnly: true },
@@ -44,6 +47,7 @@ function SidebarContent({ onNav }: { onNav?: () => void }) {
   const router = useRouter();
   const [unresolvedThreads, setUnresolvedThreads] = useState<number | undefined>(undefined);
   const [unreadNotifications, setUnreadNotifications] = useState<number | undefined>(undefined);
+  const [ticketsNeedingAttention, setTicketsNeedingAttention] = useState<number | undefined>(undefined);
   const [session, setSession] = useState<SessionInfo | null>(null);
 
   useEffect(() => {
@@ -88,6 +92,29 @@ function SidebarContent({ onNav }: { onNav?: () => void }) {
     };
   }, []);
 
+  // Support-ticket badge: unassigned tickets awaiting a taker + my tickets with unread member messages.
+  useEffect(() => {
+    const load = () =>
+      api
+        .get<{ unassigned: number; mineUnread: number }>("/api/v1/admin/tickets/stats")
+        .then((s) => setTicketsNeedingAttention(s.unassigned + s.mineUnread))
+        .catch(() => {});
+    load();
+    const interval = setInterval(load, 60_000);
+    window.addEventListener("admin-tickets:updated", load);
+
+    ticketSocketStore.connect();
+    const offEvents = ticketSocketStore.subscribe(load);
+    const offReconnect = ticketSocketStore.onReconnect(load);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("admin-tickets:updated", load);
+      offEvents();
+      offReconnect();
+    };
+  }, []);
+
   const displayName = session?.userName ?? "Admin";
   const displayInitials = session?.userInitials ?? "A";
   const avatarUrl = session?.avatarUrl ?? null;
@@ -121,6 +148,7 @@ function SidebarContent({ onNav }: { onNav?: () => void }) {
           const Icon = item.icon;
           const badge = item.href === "/admin/unresolved-threads" ? unresolvedThreads
             : item.href === "/admin/notifications" ? unreadNotifications
+            : item.href === "/admin/tickets" ? ticketsNeedingAttention
             : item.badge;
           return (
             <Link

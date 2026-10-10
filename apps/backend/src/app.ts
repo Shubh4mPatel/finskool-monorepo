@@ -18,6 +18,7 @@ import stocksRoutes from './modules/stocks/stocks.routes.js'
 import stockRecommendationsRoutes from './modules/stock-recommendations/stock-recommendations.routes.js'
 import paymentsRoutes from './modules/payments/payments.routes.js'
 import welcomeKitsRoutes, { mobileWelcomeKitsRouter } from './modules/welcome-kits/welcome-kits.routes.js'
+import adminTicketsRoutes, { mobileTicketsRouter } from './modules/tickets/tickets.routes.js'
 import type { PlanListItemDTO } from './modules/payments/payments.dto.js'
 import prisma from './lib/prisma.js'
 import { authenticate, requireMobileAuth } from './middlewares/auth.middleware.js'
@@ -54,6 +55,7 @@ export function createApp() {
   app.use('/api/v1/auth/mobile', mobileAuthRoutes)
   app.use('/api/v1/admin', adminRoutes)
   app.use('/api/v1/admin', welcomeKitsRoutes)
+  app.use('/api/v1/admin/tickets', adminTicketsRoutes)
   app.use('/api/v1/posts', postsRoutes)
   app.use('/api/v1', commentsRoutes)
   app.use('/api/v1', reactionsRoutes)
@@ -64,6 +66,9 @@ export function createApp() {
   // Mobile app's own copies of the feed/reactions endpoints above, gated to
   // MobileSession auth only (requireMobileAuth) — see posts.routes.ts and
   // reactions.routes.ts for why these are separate from the shared routes.
+  // Mounted before the shared /api/v1/mobile routers below: those apply authenticate router-wide, which
+  // would otherwise re-run the MobileSession lookup on every ticket request before reaching this router.
+  app.use('/api/v1/mobile/tickets', mobileTicketsRouter)
   app.use('/api/v1/mobile', mobilePostsRouter)
   app.use('/api/v1/mobile', mobileReactionsRouter)
   app.use('/api/v1/mobile', mobileWelcomeKitsRouter)

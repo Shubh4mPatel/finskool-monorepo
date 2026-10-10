@@ -23,6 +23,7 @@ const publicClient = new Minio.Client({
   secretKey: env.minio.secretKey,
 });
 (publicClient as unknown as { regionMap: Record<string, string> }).regionMap[env.minio.bucket] = 'us-east-1'
+;(publicClient as unknown as { regionMap: Record<string, string> }).regionMap[env.minio.ticketsBucket] = 'us-east-1'
 
 // Nginx proxies /assets/ to the internal MinIO service, stripping the prefix before
 // forwarding — so every browser-facing MinIO URL needs "/assets" inserted after the host
@@ -97,6 +98,99 @@ export async function statUploadedVideo(url: string): Promise<{ size: number; co
   } catch {
     return null
   }
+}
+
+// ─── Support-ticket attachments ─────────────────────────────────────────────
+// Private bucket, presigned PUT in / presigned GET out. Like post videos, the PUT
+// can't constrain size or type, so every key is inspected (size + magic bytes)
+// before a ticket/message is allowed to reference it.
+export const TICKET_ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024
+export const TICKET_ATTACHMENT_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'pdf'] as const
+const TICKET_DOWNLOAD_EXPIRY_SECONDS = 5 * 60
+
+let ticketsBucketReady: Promise<void> | null = null
+/** Creates the private bucket on first use if the minio-init job hasn't (idempotent). */
+function ensureTicketsBucket(): Promise<void> {
+  ticketsBucketReady ??= (async () => {
+    if (!(await client.bucketExists(env.minio.ticketsBucket))) {
+      await client.makeBucket(env.minio.ticketsBucket)
+    }
+  })().catch(err => {
+    ticketsBucketReady = null
+    throw err
+  })
+  return ticketsBucketReady
+}
+
+function toBrowserUrl(signedUrl: string): string {
+  const url = new URL(signedUrl)
+  url.pathname = `${env.minio.publicPathPrefix}${url.pathname}`
+  return url.toString()
+}
+
+export function ticketAttachmentExtension(fileName: string): string | null {
+  const ext = fileName.split('.').pop()?.toLowerCase() ?? ''
+  return (TICKET_ATTACHMENT_EXTENSIONS as readonly string[]).includes(ext) ? ext : null
+}
+
+export async function generateTicketUploadUrl(
+  userId: string,
+  ext: string,
+): Promise<{ uploadUrl: string; objectKey: string }> {
+  await ensureTicketsBucket()
+  const objectKey = `tickets/${userId}/${randomUUID()}.${ext}`
+  const signedUrl = await publicClient.presignedPutObject(env.minio.ticketsBucket, objectKey, 5 * 60)
+  return { uploadUrl: toBrowserUrl(signedUrl), objectKey }
+}
+
+function sniffTicketMime(head: Buffer): string | null {
+  if (head.length >= 8 && head.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png'
+  if (head.length >= 3 && head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) return 'image/jpeg'
+  if (head.length >= 12 && head.subarray(0, 4).toString('latin1') === 'RIFF' && head.subarray(8, 12).toString('latin1') === 'WEBP') return 'image/webp'
+  if (head.length >= 4 && head.subarray(0, 4).toString('latin1') === '%PDF') return 'application/pdf'
+  return null
+}
+
+/**
+ * Verifies an uploaded ticket attachment: key must sit under the uploader's own
+ * prefix, exist, be within the size limit and actually be an image/PDF (by magic
+ * bytes, not the client-declared type). Returns the server-detected type, or null.
+ */
+export async function inspectTicketAttachment(
+  objectKey: string,
+  uploaderId: string,
+): Promise<{ size: number; mimeType: string } | null> {
+  if (!objectKey.startsWith(`tickets/${uploaderId}/`) || objectKey.includes('..')) return null
+  try {
+    const stat = await client.statObject(env.minio.ticketsBucket, objectKey)
+    if (stat.size <= 0 || stat.size > TICKET_ATTACHMENT_MAX_BYTES) return null
+    const stream = await client.getPartialObject(env.minio.ticketsBucket, objectKey, 0, 12)
+    const chunks: Buffer[] = []
+    for await (const chunk of stream) chunks.push(chunk as Buffer)
+    const mimeType = sniffTicketMime(Buffer.concat(chunks))
+    return mimeType ? { size: stat.size, mimeType } : null
+  } catch {
+    return null
+  }
+}
+
+export async function deleteTicketObject(objectKey: string): Promise<void> {
+  try {
+    await client.removeObject(env.minio.ticketsBucket, objectKey)
+  } catch {
+    // best-effort cleanup of a rejected / orphaned upload
+  }
+}
+
+/** Short-lived download link for a private ticket attachment. */
+export async function generateTicketDownloadUrl(objectKey: string, fileName: string): Promise<string> {
+  const signedUrl = await publicClient.presignedGetObject(
+    env.minio.ticketsBucket,
+    objectKey,
+    TICKET_DOWNLOAD_EXPIRY_SECONDS,
+    { 'response-content-disposition': `inline; filename="${encodeURIComponent(fileName)}"` },
+  )
+  return toBrowserUrl(signedUrl)
 }
 
 export default client

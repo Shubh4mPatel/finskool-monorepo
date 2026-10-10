@@ -9,6 +9,7 @@ import { ensureStocksSeeded } from './lib/stock-import.js'
 import { AngelOneClient } from './sockets/angelone/angelone.client.js'
 import { liveStockFeed } from './lib/live-stock-feed.js'
 import { liveNotificationsFeed } from './lib/live-notifications-feed.js'
+import { liveTicketsFeed } from './lib/live-tickets-feed.js'
 
 async function bootstrap() {
   await redis.connect()
@@ -41,6 +42,7 @@ async function bootstrap() {
   }
 
   liveNotificationsFeed.attach(server)
+  liveTicketsFeed.attach(server)
 
   async function shutdown(signal: string) {
     logger.info(`${signal} received — shutting down`)

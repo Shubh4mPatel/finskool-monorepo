@@ -107,6 +107,10 @@ model User {
   stockRecommendations StockRecommendation[]
   mobileSession      MobileSession?
   planOrders         PlanOrder[]
+  tickets            Ticket[]        @relation("TicketOwner")
+  assignedTickets    Ticket[]        @relation("TicketAssignee")
+  ticketMessages     TicketMessage[]
+  ticketEvents       TicketEvent[]
 
   @@index([phone], name: "idx_users_phone")
   @@index([email], name: "idx_users_email")
@@ -258,6 +262,7 @@ model Community {
   plans         Plan[]
   planOrders    PlanOrder[]
   kit           CommunityKit?
+  tickets       Ticket[]
 
   @@index([slug], name: "idx_communities_slug")
   @@index([createdBy], name: "idx_communities_created_by")
@@ -591,4 +596,151 @@ model MobileSession {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("mobile_sessions")
+}
+
+// ─── Support tickets ────────────────────────────────────────────────────────
+// A user (mobile app only) raises a ticket against one of their communities;
+// admins with access to that community (or a super admin) answer it in a
+// per-ticket chat. Lifecycle is open -> in_progress -> resolved; resolved is
+// terminal and read-only (no reopen, no further messages — only the rating
+// can still be written).
+
+enum TicketCategory {
+  payments
+  subscription
+  account
+  content
+  app_bug
+  other
+}
+
+enum TicketType {
+  issue
+  question
+  feature_request
+  refund_request
+}
+
+enum TicketStatus {
+  open
+  in_progress
+  resolved
+}
+
+enum TicketSenderRole {
+  user
+  admin
+}
+
+enum TicketEventType {
+  created
+  assigned
+  reassigned
+  resolved
+}
+
+model Ticket {
+  id              String         @id @default(uuid()) @db.Uuid
+  // Human-readable id shown as FS-<number>; gaps are fine.
+  number          Int            @unique @default(autoincrement())
+  userId          String         @map("user_id") @db.Uuid
+  communityId     String         @map("community_id") @db.Uuid
+  category        TicketCategory
+  type            TicketType
+  subject         String         @db.VarChar(150)
+  description     String         @db.VarChar(2000)
+  status          TicketStatus   @default(open)
+  // The one admin responsible for this ticket. Set on claim / first admin
+  // reply; only they (or a super admin) can reply or resolve afterwards.
+  assignedAdminId String?        @map("assigned_admin_id") @db.Uuid
+  // Client-generated key (Idempotency-Key header) so a double-tap / retry on
+  // POST /tickets returns the original ticket instead of creating a second.
+  clientRequestId String         @map("client_request_id") @db.VarChar(64)
+
+  // Denormalised per-side unread counters: bumped when the *other* side
+  // sends a message, zeroed by the mark-read endpoint.
+  userUnreadCount  Int      @default(0) @map("user_unread_count")
+  adminUnreadCount Int      @default(0) @map("admin_unread_count")
+  lastMessageAt    DateTime @default(now()) @map("last_message_at") @db.Timestamptz
+
+  // Written once by the owner after resolve; immutable.
+  rating        Int?      @db.SmallInt
+  ratingComment String?   @map("rating_comment") @db.VarChar(1000)
+  ratedAt       DateTime? @map("rated_at") @db.Timestamptz
+
+  resolvedAt DateTime? @map("resolved_at") @db.Timestamptz
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  user          User               @relation("TicketOwner", fields: [userId], references: [id], onDelete: Cascade)
+  assignedAdmin User?              @relation("TicketAssignee", fields: [assignedAdminId], references: [id], onDelete: SetNull)
+  community     Community          @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  messages      TicketMessage[]
+  attachments   TicketAttachment[]
+  events        TicketEvent[]
+
+  @@unique([userId, clientRequestId], name: "uq_tickets_user_request")
+  @@index([communityId, status], name: "idx_tickets_community_status")
+  @@index([assignedAdminId, status], name: "idx_tickets_assignee_status")
+  @@index([userId, lastMessageAt(sort: Desc)], name: "idx_tickets_user_recent")
+  @@map("tickets")
+}
+
+model TicketMessage {
+  id              String           @id @default(uuid()) @db.Uuid
+  ticketId        String           @map("ticket_id") @db.Uuid
+  senderId        String           @map("sender_id") @db.Uuid
+  senderRole      TicketSenderRole @map("sender_role")
+  // Optional because a message may be attachments-only (service enforces
+  // that at least one of body / attachments is present).
+  body            String?          @db.VarChar(2000)
+  // Client-generated so a retried send doesn't post the message twice.
+  clientMessageId String           @map("client_message_id") @db.VarChar(64)
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz
+
+  ticket      Ticket             @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  sender      User               @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  attachments TicketAttachment[]
+
+  @@unique([ticketId, clientMessageId], name: "uq_ticket_messages_client_id")
+  @@index([ticketId, createdAt(sort: Desc)], name: "idx_ticket_messages_thread")
+  @@map("ticket_messages")
+}
+
+model TicketAttachment {
+  id        String   @id @default(uuid()) @db.Uuid
+  ticketId  String   @map("ticket_id") @db.Uuid
+  // null = attached to the ticket's original description rather than a chat message.
+  messageId String?  @map("message_id") @db.Uuid
+  // Object key inside the private tickets bucket — never a public URL;
+  // download links are presigned per request.
+  objectKey String   @map("object_key") @db.VarChar(300)
+  fileName  String   @map("file_name") @db.VarChar(255)
+  mimeType  String   @map("mime_type") @db.VarChar(100)
+  sizeBytes Int      @map("size_bytes")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  ticket  Ticket         @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  message TicketMessage? @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId], name: "idx_ticket_attachments_ticket")
+  @@index([messageId], name: "idx_ticket_attachments_message")
+  @@map("ticket_attachments")
+}
+
+// Audit trail powering the admin timeline.
+model TicketEvent {
+  id        String          @id @default(uuid()) @db.Uuid
+  ticketId  String          @map("ticket_id") @db.Uuid
+  type      TicketEventType
+  actorId   String          @map("actor_id") @db.Uuid
+  // For assigned / reassigned: { toAdminId, fromAdminId? }.
+  meta      Json?
+  createdAt DateTime        @default(now()) @map("created_at") @db.Timestamptz
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  actor  User   @relation(fields: [actorId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt], name: "idx_ticket_events_ticket")
+  @@map("ticket_events")
 }
