@@ -10,6 +10,8 @@ import { AngelOneClient } from './sockets/angelone/angelone.client.js'
 import { liveStockFeed } from './lib/live-stock-feed.js'
 import { liveNotificationsFeed } from './lib/live-notifications-feed.js'
 import { liveTicketsFeed } from './lib/live-tickets-feed.js'
+import { TicketsService } from './modules/tickets/tickets.service.js'
+import { createTicketSocketHandler } from './modules/tickets/tickets.socket.js'
 
 async function bootstrap() {
   await redis.connect()
@@ -42,7 +44,7 @@ async function bootstrap() {
   }
 
   liveNotificationsFeed.attach(server)
-  liveTicketsFeed.attach(server)
+  liveTicketsFeed.attach(server, createTicketSocketHandler(new TicketsService(prisma)))
 
   async function shutdown(signal: string) {
     logger.info(`${signal} received — shutting down`)

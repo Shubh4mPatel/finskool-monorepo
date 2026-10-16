@@ -1,6 +1,8 @@
 // Per-user authenticated WebSocket channel for live support-ticket updates
-// (new tickets, chat messages, assignment/resolve, read receipts). Receive-only:
-// clients send messages over REST (idempotent via clientMessageId) and listen here.
+// (new tickets, chat messages, assignment/resolve, read receipts). Web admin sockets are
+// receive-only (admins reply over REST). Mobile sockets can also send request frames —
+// message.send / history.get / ticket.read — answered with a correlated ack
+// (see modules/tickets/tickets.socket.ts); the broadcast events below are the same either way.
 //
 // Same shape as live-notifications-feed.ts — Redis pub/sub fan-in so any API
 // instance can publish and the instance holding the socket delivers — except
@@ -20,9 +22,17 @@ import type { LiveTicketEvent } from './queue.js'
 import { validateMobileSession } from './mobile-session.js'
 import type { JwtPayload } from '../middlewares/auth.middleware.js'
 import { logger } from '../shared/logger.js'
+import type { TicketAck, TicketSocketHandler } from '../modules/tickets/tickets.socket.js'
 
 export const TICKETS_WS_PATH = '/ws/tickets'
 const HEARTBEAT_MS = 30_000
+// A message is ≤ 2000 chars + 5 attachment refs; anything bigger is not a legitimate frame.
+const MAX_FRAME_BYTES = 64 * 1024
+// Per-connection flood guard for inbound request frames.
+const RATE_WINDOW_MS = 10_000
+const RATE_MAX_FRAMES = 30
+
+type ClientKind = 'web' | 'mobile'
 
 function getCookie(header: string | undefined, name: string): string | undefined {
   if (!header) return undefined
@@ -34,12 +44,12 @@ function getCookie(header: string | undefined, name: string): string | undefined
   return undefined
 }
 
-async function authenticateUpgrade(req: IncomingMessage): Promise<string | null> {
+async function authenticateUpgrade(req: IncomingMessage): Promise<{ userId: string; kind: ClientKind } | null> {
   const token = getCookie(req.headers.cookie, 'access_token')
   if (token) {
     try {
       const payload = jwt.verify(token, env.jwt.secret) as JwtPayload
-      return payload.type === 'access' ? payload.sub : null
+      return payload.type === 'access' ? { userId: payload.sub, kind: 'web' } : null
     } catch {
       return null
     }
@@ -47,9 +57,13 @@ async function authenticateUpgrade(req: IncomingMessage): Promise<string | null>
   const sessionId = getCookie(req.headers.cookie, 'mobile_session_id')
   if (sessionId) {
     const ctx = await validateMobileSession(prisma, sessionId)
-    return ctx?.userId ?? null
+    return ctx ? { userId: ctx.userId, kind: 'mobile' } : null
   }
   return null
+}
+
+function ackError(id: string | null, code: string, message: string): TicketAck {
+  return { event: 'ack', id, ok: false, error: { code, message } }
 }
 
 /** Fire-and-forget: a failed push must never fail the REST request that caused it. */
@@ -63,24 +77,31 @@ export async function publishTicketEvent(event: LiveTicketEvent): Promise<void> 
 }
 
 class LiveTicketsFeed {
-  private readonly wss = new WebSocketServer({ noServer: true })
+  private readonly wss = new WebSocketServer({ noServer: true, maxPayload: MAX_FRAME_BYTES })
   private readonly connectionsByUser = new Map<string, Set<WebSocket>>()
   private readonly alive = new WeakMap<WebSocket, boolean>()
+  private onMemberFrame: TicketSocketHandler | null = null
 
-  attach(httpServer: HttpServer): void {
+  /**
+   * `onMemberFrame` handles inbound request frames from mobile sockets. It is injected (rather than
+   * imported) because the tickets service imports this module to publish events — a direct import
+   * would be circular.
+   */
+  attach(httpServer: HttpServer, onMemberFrame?: TicketSocketHandler): void {
+    this.onMemberFrame = onMemberFrame ?? null
     httpServer.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
       if (req.url !== TICKETS_WS_PATH) return
 
       void authenticateUpgrade(req).then(
-        userId => {
-          if (!userId) {
+        auth => {
+          if (!auth) {
             socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n')
             socket.destroy()
             return
           }
           this.wss.handleUpgrade(req, socket, head, ws => {
             this.wss.emit('connection', ws, req)
-            this.addConnection(userId, ws)
+            this.addConnection(auth.userId, auth.kind, ws)
           })
         },
         (err: unknown) => {
@@ -127,7 +148,7 @@ class LiveTicketsFeed {
     })
   }
 
-  private addConnection(userId: string, ws: WebSocket): void {
+  private addConnection(userId: string, kind: ClientKind, ws: WebSocket): void {
     let set = this.connectionsByUser.get(userId)
     if (!set) {
       set = new Set()
@@ -136,6 +157,45 @@ class LiveTicketsFeed {
     set.add(ws)
     this.alive.set(ws, true)
     ws.on('pong', () => this.alive.set(ws, true))
+    ws.on('error', (err: unknown) => logger.warn({ err }, 'LiveTicketsFeed: socket error'))
+
+    let windowStart = Date.now()
+    let framesInWindow = 0
+    ws.on('message', (data: Buffer, isBinary: boolean) => {
+      void (async () => {
+        let id: string | null = null
+        try {
+          if (isBinary) return this.reply(ws, ackError(null, 'INVALID_FRAME', 'Send JSON text frames'))
+          // Web admin sockets stay receive-only; they reply over REST.
+          if (kind !== 'mobile' || !this.onMemberFrame) {
+            return this.reply(ws, ackError(null, 'NOT_SUPPORTED', 'This connection is receive-only'))
+          }
+
+          const now = Date.now()
+          if (now - windowStart > RATE_WINDOW_MS) {
+            windowStart = now
+            framesInWindow = 0
+          }
+          let parsed: unknown
+          try {
+            parsed = JSON.parse(data.toString('utf8'))
+          } catch {
+            return this.reply(ws, ackError(null, 'INVALID_FRAME', 'Frame is not valid JSON'))
+          }
+          if (typeof parsed === 'object' && parsed !== null && typeof (parsed as { id?: unknown }).id === 'string') {
+            id = (parsed as { id: string }).id.slice(0, 64)
+          }
+          if (++framesInWindow > RATE_MAX_FRAMES) {
+            return this.reply(ws, ackError(id, 'RATE_LIMITED', 'Too many requests, slow down'))
+          }
+
+          this.reply(ws, await this.onMemberFrame(userId, parsed))
+        } catch (err) {
+          logger.error({ err }, 'LiveTicketsFeed: inbound frame failed')
+          this.reply(ws, ackError(id, 'INTERNAL_ERROR', 'Internal server error'))
+        }
+      })()
+    })
 
     ws.on('close', () => {
       const s = this.connectionsByUser.get(userId)
@@ -143,6 +203,10 @@ class LiveTicketsFeed {
       s.delete(ws)
       if (s.size === 0) this.connectionsByUser.delete(userId)
     })
+  }
+
+  private reply(ws: WebSocket, ack: TicketAck): void {
+    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(ack))
   }
 
   private sendToUser(userId: string, json: string): void {
