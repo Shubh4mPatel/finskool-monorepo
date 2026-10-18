@@ -154,3 +154,40 @@ export function randomId(): string {
   const h = Array.from(b, (x) => x.toString(16).padStart(2, "0"));
   return `${h.slice(0, 4).join("")}-${h.slice(4, 6).join("")}-${h.slice(6, 8).join("")}-${h.slice(8, 10).join("")}-${h.slice(10).join("")}`;
 }
+
+/** "15 min ago" / "3 hours ago" / "Yesterday" / "12 Oct". `now` is passed in so render stays pure. */
+export function timeAgo(iso: string, now: number): string {
+  const minutes = Math.floor((now - new Date(iso).getTime()) / 60000);
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return "Yesterday";
+  if (days < 7) return `${days} days ago`;
+  return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+}
+
+/** "05 Oct, 4:18 PM" — message header time. */
+export function formatChatTime(iso: string): string {
+  const d = new Date(iso);
+  return (
+    d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" }) +
+    ", " +
+    d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true }).toUpperCase()
+  );
+}
+
+/** "05 Oct 2026, 4:18 PM" */
+export function formatLongTime(iso: string): string {
+  const d = new Date(iso);
+  return (
+    d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) +
+    ", " +
+    d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true }).toUpperCase()
+  );
+}
+
+export function fileExtension(fileName: string): string {
+  return (fileName.split(".").pop() ?? "FILE").slice(0, 4).toUpperCase();
+}

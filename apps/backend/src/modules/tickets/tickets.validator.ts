@@ -66,6 +66,8 @@ export const adminListTicketsQuerySchema = z.object({
   category: z.enum(categories).optional(),
   type: z.enum(types).optional(),
   communityId: z.string().uuid().optional(),
+  // One member's tickets (the "previous tickets" panel on the ticket page).
+  userId: z.string().uuid().optional(),
   // 'me' | 'unassigned' | <admin uuid>
   assignee: z.union([z.enum(['me', 'unassigned']), z.string().uuid()]).optional(),
   unread: z.enum(['true', 'false']).optional(),

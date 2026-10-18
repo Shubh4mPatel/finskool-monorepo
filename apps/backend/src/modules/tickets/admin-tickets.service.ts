@@ -56,6 +56,7 @@ export class AdminTicketsService {
     const where: Prisma.TicketWhereInput[] = [this.scope(admin)]
 
     if (query.communityId) where.push({ communityId: query.communityId })
+    if (query.userId) where.push({ userId: query.userId })
     if (query.status) where.push({ status: query.status })
     if (query.category) where.push({ category: query.category })
     if (query.type) where.push({ type: query.type })

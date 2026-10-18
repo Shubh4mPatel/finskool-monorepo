@@ -1,98 +1,143 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { FileText, Loader2, Paperclip, Send, X } from "lucide-react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Loader2, Paperclip, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 import {
   ATTACHMENT_ACCEPT,
   MAX_ATTACHMENTS,
   MAX_ATTACHMENT_BYTES,
+  TYPE_LABEL,
+  fileExtension,
   formatBytes,
+  formatChatTime,
   formatTicketTime,
   randomId,
+  timeAgo,
   type AdminTicketDetail,
+  type AdminTicketEvent,
   type TicketAttachment,
   type TicketMessage,
 } from "@/lib/tickets";
+import { Avatar, StatusBadge } from "@/components/admin/tickets/TicketBadges";
 
 const BASE = "/api/v1/admin/tickets";
 
-function AttachmentView({ ticketId, attachment }: { ticketId: string; attachment: TicketAttachment }) {
+function eventText(e: AdminTicketEvent): string {
+  switch (e.type) {
+    case "assigned":
+      return e.targetName && e.targetName !== e.actorName
+        ? `Assigned to ${e.targetName} by ${e.actorName} · Status changed to In progress`
+        : `${e.actorName} took the ticket · Status changed to In progress`;
+    case "reassigned":
+      return `Reassigned to ${e.targetName ?? "another admin"} by ${e.actorName}`;
+    case "resolved":
+      return `Marked as resolved by ${e.actorName}`;
+    default:
+      return `Ticket created by ${e.actorName}`;
+  }
+}
+
+function AttachmentCard({ ticketId, attachment }: { ticketId: string; attachment: TicketAttachment }) {
   const [url, setUrl] = useState(attachment.url);
   const [retried, setRetried] = useState(false);
   const isImage = attachment.mimeType.startsWith("image/");
 
-  // Signed links last ~5 min; ask for a fresh one right before opening.
-  async function open(e: React.MouseEvent) {
-    e.preventDefault();
+  async function fresh(): Promise<string | null> {
     try {
-      const { url: fresh } = await api.get<{ url: string }>(`${BASE}/${ticketId}/attachments/${attachment.id}/url`);
-      window.open(fresh, "_blank", "noopener,noreferrer");
+      return (await api.get<{ url: string }>(`${BASE}/${ticketId}/attachments/${attachment.id}/url`)).url;
     } catch {
-      window.open(url, "_blank", "noopener,noreferrer");
+      return null;
     }
   }
 
-  async function refreshOnce() {
+  // Signed links last ~5 min; ask for a fresh one right before opening.
+  async function view() {
+    window.open((await fresh()) ?? url, "_blank", "noopener,noreferrer");
+  }
+
+  async function refreshThumbnailOnce() {
     if (retried) return;
     setRetried(true);
-    try {
-      const { url: fresh } = await api.get<{ url: string }>(`${BASE}/${ticketId}/attachments/${attachment.id}/url`);
-      setUrl(fresh);
-    } catch {
-      // leave the broken thumbnail; the link still works
-    }
+    const next = await fresh();
+    if (next) setUrl(next);
   }
 
-  return isImage ? (
-    <a href={url} onClick={open} className="block overflow-hidden rounded-lg border border-divider">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={url} alt={attachment.fileName} onError={refreshOnce} className="max-h-48 max-w-full object-cover" />
-    </a>
-  ) : (
-    <a
-      href={url}
-      onClick={open}
-      className="flex items-center gap-2 rounded-lg border border-divider bg-white px-3 py-2 text-xs font-semibold text-primary hover:border-accent"
-    >
-      <FileText size={16} className="shrink-0 text-accent" />
-      <span className="truncate">{attachment.fileName}</span>
-      <span className="shrink-0 text-muted">{formatBytes(attachment.sizeBytes)}</span>
-    </a>
+  return (
+    <div className="flex w-fit min-w-60 max-w-full items-center gap-3 rounded-xl bg-white px-3 py-2.5 text-primary shadow-sm">
+      {isImage ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={url} alt={attachment.fileName} onError={refreshThumbnailOnce} className="h-9 w-9 shrink-0 rounded-md bg-background object-cover" />
+      ) : (
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-[#dff1ee] text-[10px] font-bold text-accent">
+          {fileExtension(attachment.fileName)}
+        </span>
+      )}
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-xs font-bold">{attachment.fileName}</span>
+        <span className="block text-[11px] text-muted">{formatBytes(attachment.sizeBytes)}</span>
+      </span>
+      <button onClick={view} className="shrink-0 text-xs font-bold text-accent hover:underline">
+        View
+      </button>
+    </div>
   );
 }
 
-function Bubble({
+function MessageRow({
   ticketId,
-  mine,
+  role,
   name,
+  at,
   body,
   attachments,
-  at,
+  isNew,
 }: {
   ticketId: string;
-  mine: boolean;
+  role: "user" | "admin";
   name: string;
+  at: string;
   body: string | null;
   attachments: TicketAttachment[];
-  at: string;
+  isNew: boolean;
 }) {
-  return (
-    <div className={`flex flex-col gap-1 ${mine ? "items-end" : "items-start"}`}>
-      <div
-        className={`flex max-w-[78%] flex-col gap-2 rounded-2xl px-4 py-2.5 text-sm ${
-          mine ? "rounded-br-sm bg-primary text-white" : "rounded-bl-sm bg-divider text-primary"
-        }`}
-      >
-        {body && <p className="whitespace-pre-wrap wrap-break-word">{body}</p>}
-        {attachments.map((a) => (
-          <AttachmentView key={a.id} ticketId={ticketId} attachment={a} />
-        ))}
+  const admin = role === "admin";
+  const content = (
+    <>
+      {body && <p className="whitespace-pre-wrap wrap-break-word">{body}</p>}
+      {attachments.map((a) => (
+        <AttachmentCard key={a.id} ticketId={ticketId} attachment={a} />
+      ))}
+    </>
+  );
+
+  if (admin) {
+    return (
+      <div className="flex items-start justify-end gap-3">
+        <div className="flex min-w-0 max-w-[80%] flex-col items-end">
+          <p className="flex items-center gap-2 text-xs">
+            <span className="font-bold text-primary">{name}</span>
+            <span className="text-muted">Admin · {formatChatTime(at)}</span>
+          </p>
+          <div className="mt-1.5 flex flex-col items-end gap-3 rounded-2xl rounded-tr-md bg-primary px-4 py-3 text-sm text-white">{content}</div>
+        </div>
+        <Avatar name={name} dark className="h-9 w-9" />
       </div>
-      <span className="px-1 text-[10px] text-subtle">
-        {name} · {formatTicketTime(at)}
-      </span>
+    );
+  }
+
+  return (
+    <div className="flex items-start gap-3">
+      <Avatar name={name} className="h-9 w-9" />
+      <div className="min-w-0 max-w-[80%]">
+        <p className="flex items-center gap-2 text-xs">
+          <span className="font-bold text-primary">{name}</span>
+          <span className="text-muted">Member · {formatChatTime(at)}</span>
+          {isNew && <span className="rounded-md bg-[#dff1ee] px-1.5 py-0.5 text-[10px] font-bold text-accent">New</span>}
+        </p>
+        <div className="mt-1.5 flex flex-col items-start gap-3 rounded-2xl rounded-tl-md bg-[#f1efe6] px-4 py-3 text-sm text-primary">{content}</div>
+      </div>
     </div>
   );
 }
@@ -105,17 +150,22 @@ interface PendingFile {
   objectKey?: string;
 }
 
+type ThreadItem =
+  | { kind: "message"; at: string; message: TicketMessage }
+  | { kind: "event"; at: string; event: AdminTicketEvent };
+
 interface Props {
   ticket: AdminTicketDetail;
   messages: TicketMessage[]; // oldest -> newest
+  events: AdminTicketEvent[];
   hasOlder: boolean;
   loadingOlder: boolean;
   onLoadOlder: () => void;
   onSent: (message: TicketMessage) => void;
-  currentUserId: string;
+  now: number;
 }
 
-export default function TicketChat({ ticket, messages, hasOlder, loadingOlder, onLoadOlder, onSent, currentUserId }: Props) {
+export default function TicketChat({ ticket, messages, events, hasOlder, loadingOlder, onLoadOlder, onSent, now }: Props) {
   const toast = useToast();
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -129,6 +179,24 @@ export default function TicketChat({ ticket, messages, hasOlder, loadingOlder, o
   // server-side (but whose response was lost) is deduped instead of posted twice.
   const clientMessageId = useRef<string>(randomId());
 
+  // Messages interleaved with the assignment / resolve events. Same-instant ties put the event
+  // first (a claim and the reply that caused it share a transaction timestamp).
+  const thread = useMemo<ThreadItem[]>(() => {
+    const items: ThreadItem[] = [
+      ...messages.map((message) => ({ kind: "message" as const, at: message.createdAt, message })),
+      ...events.filter((e) => e.type !== "created").map((event) => ({ kind: "event" as const, at: event.createdAt, event })),
+    ];
+    return items.sort((a, b) => a.at.localeCompare(b.at) || (a.kind === b.kind ? 0 : a.kind === "event" ? -1 : 1));
+  }, [messages, events]);
+
+  const resolved = ticket.status === "resolved";
+  // "New" = member messages nobody on the support side has answered yet.
+  const lastAdminAt = useMemo(() => messages.filter((m) => m.senderRole === "admin").at(-1)?.createdAt ?? null, [messages]);
+  const isAwaiting = (at: string) => !resolved && (lastAdminAt === null || at > lastAdminAt);
+
+  const updates = thread.length;
+  const lastMessage = messages.at(-1);
+
   // Keep the view pinned to the newest message unless the admin scrolled up; when older
   // messages are prepended, hold the viewport where it was.
   useLayoutEffect(() => {
@@ -140,7 +208,7 @@ export default function TicketChat({ ticket, messages, hasOlder, loadingOlder, o
     } else if (stickToBottom.current) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [messages]);
+  }, [thread]);
 
   function handleScroll() {
     const el = scrollRef.current;
@@ -212,81 +280,106 @@ export default function TicketChat({ ticket, messages, hasOlder, loadingOlder, o
     }
   }
 
-  // Textarea sizing: grow with content up to a cap.
-  const taRef = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => {
-    const ta = taRef.current;
-    if (!ta) return;
-    ta.style.height = "auto";
-    ta.style.height = `${Math.min(ta.scrollHeight, 140)}px`;
-  }, [text]);
-
-  const resolved = ticket.status === "resolved";
   const assignedToOther = !ticket.canReply && !resolved;
+  const firstName = ticket.user.name.split(" ")[0] ?? "the member";
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div ref={scrollRef} onScroll={handleScroll} className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 py-4">
+    <section className="flex min-w-0 flex-col rounded-3xl bg-white shadow-card">
+      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-divider px-7 py-5">
+        <div>
+          <h2 className="font-display text-xl font-bold text-primary">Conversation</h2>
+          <p className="mt-1 text-xs text-muted">
+            {updates}
+            {hasOlder ? "+" : ""} update{updates === 1 && !hasOlder ? "" : "s"} ·{" "}
+            {lastMessage ? `Last reply ${timeAgo(lastMessage.createdAt, now)}` : "No replies yet"}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="rounded-full bg-background px-3 py-1 text-[11px] font-bold text-primary">{TYPE_LABEL[ticket.type]}</span>
+          <StatusBadge status={ticket.status} />
+        </div>
+      </header>
+
+      <div ref={scrollRef} onScroll={handleScroll} className="flex max-h-[calc(100vh-28rem)] min-h-80 flex-col gap-5 overflow-y-auto px-7 py-6">
         {hasOlder && (
           <button
             onClick={loadOlder}
             disabled={loadingOlder}
-            className="mx-auto flex items-center gap-2 rounded-full border border-divider px-4 py-1.5 text-xs font-semibold text-muted hover:border-accent hover:text-primary disabled:opacity-50"
+            className="mx-auto flex items-center gap-2 rounded-full border border-[#dcd9d0] px-4 py-1.5 text-xs font-semibold text-muted hover:border-accent hover:text-primary disabled:opacity-50"
           >
             {loadingOlder && <Loader2 size={12} className="animate-spin" />}
             Load earlier messages
           </button>
         )}
 
-        {/* The original request is the first bubble of the conversation. */}
-        <Bubble
+        {/* The original request is the first message of the conversation. */}
+        <MessageRow
           ticketId={ticket.id}
-          mine={false}
+          role="user"
           name={ticket.user.name}
+          at={ticket.createdAt}
           body={ticket.description}
           attachments={ticket.attachments}
-          at={ticket.createdAt}
+          isNew={isAwaiting(ticket.createdAt) && messages.length === 0}
         />
 
-        {messages.map((m) => (
-          <Bubble
-            key={m.id}
-            ticketId={ticket.id}
-            mine={m.senderId === currentUserId}
-            name={m.senderRole === "user" ? m.senderName : `${m.senderName} (Support)`}
-            body={m.body}
-            attachments={m.attachments}
-            at={m.createdAt}
-          />
-        ))}
-
-        {resolved && (
-          <p className="mx-auto rounded-full bg-[#4caf50]/10 px-4 py-1 text-xs font-semibold text-[#2e7d32]">
-            Resolved{ticket.resolvedAt ? ` · ${formatTicketTime(ticket.resolvedAt)}` : ""}
-          </p>
+        {thread.map((item) =>
+          item.kind === "event" ? (
+            <p
+              key={`e-${item.event.id}`}
+              title={formatTicketTime(item.at)}
+              className="mx-auto rounded-full bg-[#f1efe6] px-4 py-1 text-center text-[11px] font-semibold text-muted"
+            >
+              {eventText(item.event)}
+            </p>
+          ) : (
+            <MessageRow
+              key={item.message.id}
+              ticketId={ticket.id}
+              role={item.message.senderRole}
+              name={item.message.senderName}
+              at={item.message.createdAt}
+              body={item.message.body}
+              attachments={item.message.attachments}
+              isNew={item.message.senderRole === "user" && isAwaiting(item.message.createdAt)}
+            />
+          ),
         )}
       </div>
 
       {resolved ? (
-        <div className="border-t border-divider px-5 py-3 text-center text-xs font-semibold text-muted">
+        <div className="border-t border-divider px-7 py-4 text-center text-xs font-semibold text-muted">
           This ticket is resolved and the chat is closed.
         </div>
       ) : assignedToOther ? (
-        <div className="border-t border-divider px-5 py-3 text-center text-xs font-semibold text-muted">
+        <div className="border-t border-divider px-7 py-4 text-center text-xs font-semibold text-muted">
           Handled by {ticket.assignedAdmin?.name ?? "another admin"} — only they or a super admin can reply.
         </div>
       ) : (
-        <div className="border-t border-divider px-4 py-3">
-          {!ticket.assignedAdmin && (
-            <p className="mb-2 px-1 text-[11px] font-semibold text-accent">Replying will assign this ticket to you.</p>
-          )}
+        <div className="border-t border-divider px-7 py-5">
+          <h3 className="text-sm font-bold text-primary">Reply to member</h3>
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                send();
+              }
+            }}
+            maxLength={2000}
+            rows={4}
+            placeholder={`Write a reply to ${firstName}…`}
+            className="mt-3 w-full resize-none rounded-xl border border-[#dcd9d0] bg-white px-4 py-3 text-sm text-primary outline-none transition-colors placeholder:text-muted focus:border-accent"
+          />
+
           {files.length > 0 && (
-            <div className="mb-2 flex flex-wrap gap-2">
+            <div className="mt-3 flex flex-wrap gap-2">
               {files.map((f) => (
                 <span
                   key={f.localId}
                   className={`flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${
-                    f.status === "error" ? "border-red-300 text-red-500" : "border-divider text-primary"
+                    f.status === "error" ? "border-red-300 text-red-500" : "border-[#dcd9d0] text-primary"
                   }`}
                 >
                   {f.status === "uploading" ? <Loader2 size={12} className="animate-spin" /> : <Paperclip size={12} />}
@@ -303,49 +396,32 @@ export default function TicketChat({ ticket, messages, hasOlder, loadingOlder, o
               ))}
             </div>
           )}
-          <div className="flex items-end gap-2">
-            <input
-              ref={fileRef}
-              type="file"
-              multiple
-              accept={ATTACHMENT_ACCEPT}
-              className="hidden"
-              onChange={(e) => addFiles(e.target.files)}
-            />
-            <button
-              onClick={() => fileRef.current?.click()}
-              disabled={files.length >= MAX_ATTACHMENTS}
-              aria-label="Attach files"
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-divider text-muted transition-colors hover:border-accent hover:text-primary disabled:opacity-40"
-            >
-              <Paperclip size={16} />
-            </button>
-            <textarea
-              ref={taRef}
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  send();
-                }
-              }}
-              maxLength={2000}
-              rows={1}
-              placeholder="Write a reply…  (Enter to send, Shift+Enter for a new line)"
-              className="max-h-35 min-h-10 flex-1 resize-none rounded-2xl border border-divider bg-white px-4 py-2.5 text-sm text-primary outline-none transition-colors placeholder:text-subtle focus:border-accent"
-            />
+
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <input ref={fileRef} type="file" multiple accept={ATTACHMENT_ACCEPT} className="hidden" onChange={(e) => addFiles(e.target.files)} />
+              <button
+                onClick={() => fileRef.current?.click()}
+                disabled={files.length >= MAX_ATTACHMENTS}
+                className="flex items-center gap-1.5 rounded-full bg-background px-4 py-2 text-xs font-semibold text-primary transition-colors hover:bg-divider disabled:opacity-40"
+              >
+                <Paperclip size={13} /> Attach file
+              </button>
+              <span className="text-[11px] text-muted">
+                {!ticket.assignedAdmin ? "Replying assigns this ticket to you · " : ""}Ctrl+Enter to send
+              </span>
+            </div>
             <button
               onClick={send}
               disabled={!canSend}
-              aria-label="Send"
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-white transition-transform hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100"
+              className="flex h-10 min-w-32 items-center justify-center gap-2 rounded-full bg-linear-to-r from-lime to-accent px-6 text-sm font-bold text-primary shadow-glow transition-transform hover:scale-105 active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
             >
-              {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+              {sending && <Loader2 size={14} className="animate-spin" />}
+              Send reply
             </button>
           </div>
         </div>
       )}
-    </div>
+    </section>
   );
 }
