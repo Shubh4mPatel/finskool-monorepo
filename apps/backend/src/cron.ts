@@ -10,6 +10,7 @@ import {
   ADMIN_UNREPLIED_DIGEST_JOB,
   ADMIN_EXPIRY_DIGEST_JOB,
   EXPIRE_SUBSCRIPTIONS_JOB,
+  TICKET_UPLOAD_CLEANUP_JOB,
   digestQueue,
 } from './lib/queue.js'
 import prisma from './lib/prisma.js'
@@ -18,6 +19,7 @@ import { NotificationsService } from './modules/notifications/notifications.serv
 import { refreshAllStockClosePrices } from './lib/stock-quote-api.js'
 import { runSubscriptionLifecycleSweep, expireLapsedSubscriptions } from './lib/subscription-lifecycle.js'
 import { runAdminUnrepliedDigest, runAdminExpiryDigest } from './lib/admin-digests.js'
+import { sweepOrphanTicketUploads } from './lib/ticket-upload-cleanup.js'
 
 const notificationsService = new NotificationsService(prisma)
 const connection = createBullConnection()
@@ -42,6 +44,7 @@ const digestWorker = new Worker(
     if (job.name === ADMIN_UNREPLIED_DIGEST_JOB) return runAdminUnrepliedDigest(prisma, notificationsService)
     if (job.name === ADMIN_EXPIRY_DIGEST_JOB) return runAdminExpiryDigest(prisma, notificationsService)
     if (job.name === EXPIRE_SUBSCRIPTIONS_JOB) return expireLapsedSubscriptions(prisma, notificationsService)
+    if (job.name === TICKET_UPLOAD_CLEANUP_JOB) return sweepOrphanTicketUploads(prisma)
   },
   { connection, concurrency: 1 },
 )
@@ -89,6 +92,11 @@ async function registerSchedulers() {
     'daily-expire-subscriptions',
     { pattern: '0 2 * * *', tz: 'Asia/Kolkata' }, // every day, 2:00 AM IST
     { name: EXPIRE_SUBSCRIPTIONS_JOB },
+  )
+  await digestQueue.upsertJobScheduler(
+    'daily-ticket-upload-cleanup',
+    { pattern: '0 3 * * *', tz: 'Asia/Kolkata' }, // every day, 3:00 AM IST
+    { name: TICKET_UPLOAD_CLEANUP_JOB },
   )
 }
 

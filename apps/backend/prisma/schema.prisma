@@ -661,7 +661,9 @@ model Ticket {
   // sends a message, zeroed by the mark-read endpoint.
   userUnreadCount  Int      @default(0) @map("user_unread_count")
   adminUnreadCount Int      @default(0) @map("admin_unread_count")
-  lastMessageAt    DateTime @default(now()) @map("last_message_at") @db.Timestamptz
+  // Millisecond precision on purpose: the keyset cursors (tickets.shared.ts) round-trip this
+  // through a JS Date, so sub-millisecond digits would make rows sharing a millisecond skippable.
+  lastMessageAt    DateTime @default(now()) @map("last_message_at") @db.Timestamptz(3)
 
   // Written once by the owner after resolve; immutable.
   rating        Int?      @db.SmallInt
@@ -696,7 +698,8 @@ model TicketMessage {
   body            String?          @db.VarChar(2000)
   // Client-generated so a retried send doesn't post the message twice.
   clientMessageId String           @map("client_message_id") @db.VarChar(64)
-  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  // Millisecond precision — see Ticket.lastMessageAt.
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
 
   ticket      Ticket             @relation(fields: [ticketId], references: [id], onDelete: Cascade)
   sender      User               @relation(fields: [senderId], references: [id], onDelete: Cascade)

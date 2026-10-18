@@ -142,9 +142,24 @@ export default function AdminTicketDetailPage() {
     [ticketId],
   );
 
+  // Initial history (same as loadLatest(true), inline so the effect doesn't set state synchronously).
   useEffect(() => {
-    loadLatest(true);
-  }, [loadLatest]);
+    let cancelled = false;
+    ticketSocketStore
+      .request<TicketPage<TicketMessage>>("history.get", { ticketId, limit: 30 })
+      .then((page) => {
+        if (cancelled) return;
+        setMessages((prev) => mergeMessages(prev, page.items));
+        setOlderCursor(page.nextCursor);
+        setHistoryError(false);
+      })
+      .catch((err) => {
+        if (!cancelled && !(err instanceof TicketSocketError && err.code === "NOT_FOUND")) setHistoryError(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [ticketId]);
 
   // The member's other tickets (within communities this admin can see).
   const memberId = ticket?.user.id;

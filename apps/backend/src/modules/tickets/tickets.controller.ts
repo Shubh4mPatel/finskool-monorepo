@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express'
-import { BadRequestError } from '../../shared/errors/index.js'
+import { BadRequestError, NotFoundError } from '../../shared/errors/index.js'
 import type { TicketsService } from './tickets.service.js'
+import { isUuid } from './tickets.shared.js'
 import {
   clientKeySchema,
   createTicketSchema,
@@ -13,6 +14,16 @@ import {
 export function getParam(req: Request, name: string): string {
   const val = req.params[name]
   return Array.isArray(val) ? (val[0] ?? '') : (val ?? '')
+}
+
+/**
+ * An id route param that must be a uuid. Anything else can't exist, so it is a 404 (same as an
+ * unknown id) rather than reaching a uuid column, where Postgres would reject it as a 500.
+ */
+export function getIdParam(req: Request, name: string, what: string): string {
+  const val = getParam(req, name)
+  if (!isUuid(val)) throw new NotFoundError(`${what} not found`)
+  return val
 }
 
 type Handler = (req: Request, res: Response, next: NextFunction) => Promise<void>
@@ -71,7 +82,7 @@ export class TicketsController {
 
   get: Handler = async (req, res, next) => {
     try {
-      res.json({ success: true, data: await this.service.get(req.user!.id, getParam(req, 'ticketId')) })
+      res.json({ success: true, data: await this.service.get(req.user!.id, getIdParam(req, 'ticketId', 'Ticket')) })
     } catch (err) {
       next(err)
     }
@@ -80,7 +91,7 @@ export class TicketsController {
   rate: Handler = async (req, res, next) => {
     try {
       const body = ratingSchema.parse(req.body)
-      res.json({ success: true, data: await this.service.rate(req.user!.id, getParam(req, 'ticketId'), body) })
+      res.json({ success: true, data: await this.service.rate(req.user!.id, getIdParam(req, 'ticketId', 'Ticket'), body) })
     } catch (err) {
       next(err)
     }
@@ -90,8 +101,8 @@ export class TicketsController {
     try {
       const data = await this.service.getAttachmentUrl(
         req.user!.id,
-        getParam(req, 'ticketId'),
-        getParam(req, 'attachmentId'),
+        getIdParam(req, 'ticketId', 'Ticket'),
+        getIdParam(req, 'attachmentId', 'Attachment'),
       )
       res.json({ success: true, data })
     } catch (err) {

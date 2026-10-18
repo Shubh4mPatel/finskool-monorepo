@@ -54,8 +54,16 @@ export function encodeCursor(at: Date, id: string): string {
 export function decodeCursor(cursor: string): { at: Date; id: string } {
   const [iso, id] = Buffer.from(cursor, 'base64url').toString().split('|')
   const at = new Date(iso ?? '')
-  if (!id || Number.isNaN(at.getTime())) throw new BadRequestError('Invalid cursor', 'INVALID_CURSOR')
+  // The id goes straight into a uuid-column comparison: anything else would surface as a 500.
+  if (!id || !isUuid(id) || Number.isNaN(at.getTime())) throw new BadRequestError('Invalid cursor', 'INVALID_CURSOR')
   return { at, id }
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** Postgres' own idea of a uuid — what a `@db.Uuid` column will accept without throwing. */
+export function isUuid(value: string): boolean {
+  return UUID_RE.test(value)
 }
 
 // ─── Attachments ────────────────────────────────────────────────────────────
@@ -107,12 +115,12 @@ async function mapAttachment(a: AttachmentRow): Promise<TicketAttachmentDTO> {
     fileName: a.fileName,
     mimeType: a.mimeType,
     sizeBytes: a.sizeBytes,
-    url: await generateTicketDownloadUrl(a.objectKey, a.fileName),
+    url: await generateTicketDownloadUrl(a.objectKey, a.fileName, a.mimeType),
   }
 }
 
 export async function freshAttachmentUrl(a: AttachmentRow): Promise<string> {
-  return generateTicketDownloadUrl(a.objectKey, a.fileName)
+  return generateTicketDownloadUrl(a.objectKey, a.fileName, a.mimeType)
 }
 
 // ─── Mapping ────────────────────────────────────────────────────────────────

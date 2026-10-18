@@ -182,13 +182,38 @@ export async function deleteTicketObject(objectKey: string): Promise<void> {
   }
 }
 
-/** Short-lived download link for a private ticket attachment. */
-export async function generateTicketDownloadUrl(objectKey: string, fileName: string): Promise<string> {
+/** Every ticket upload (`tickets/…`) with its upload time — input for the orphan sweep. */
+export async function* listTicketObjects(): AsyncGenerator<{ name: string; lastModified: Date }> {
+  await ensureTicketsBucket()
+  const stream = client.listObjectsV2(env.minio.ticketsBucket, 'tickets/', true)
+  for await (const item of stream as AsyncIterable<{ name?: string; lastModified?: Date }>) {
+    if (item.name && item.lastModified) yield { name: item.name, lastModified: item.lastModified }
+  }
+}
+
+// RFC 6266: a quoted ASCII fallback plus the real name percent-encoded in filename*.
+function contentDisposition(fileName: string): string {
+  const fallback = fileName.replace(/[^\x20-\x7e]|["\\%]/g, '_')
+  return `inline; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(fileName)}`
+}
+
+/**
+ * Short-lived download link for a private ticket attachment.
+ *
+ * `mimeType` must be the type the server detected from the file's magic bytes. The object's own
+ * stored Content-Type is whatever the uploader sent with the presigned PUT (it can't be pinned
+ * there), so without overriding it here a member could store HTML under a `.pdf` key and have it
+ * render on our origin when an admin opens the link.
+ */
+export async function generateTicketDownloadUrl(objectKey: string, fileName: string, mimeType: string): Promise<string> {
   const signedUrl = await publicClient.presignedGetObject(
     env.minio.ticketsBucket,
     objectKey,
     TICKET_DOWNLOAD_EXPIRY_SECONDS,
-    { 'response-content-disposition': `inline; filename="${encodeURIComponent(fileName)}"` },
+    {
+      'response-content-type': mimeType,
+      'response-content-disposition': contentDisposition(fileName),
+    },
   )
   return toBrowserUrl(signedUrl)
 }

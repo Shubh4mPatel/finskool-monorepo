@@ -32,6 +32,9 @@ import {
 } from './tickets.shared.js'
 import type { AdminViewer, TicketRow } from './tickets.shared.js'
 
+// Prisma's `contains` doesn't escape LIKE wildcards, so "%" / "_" in a search would match everything.
+const escapeLike = (s: string): string => s.replace(/[\\%_]/g, '\\$&')
+
 export interface AdminActor extends AdminViewer {
   // null = unrestricted (super admin); otherwise the exact communities this admin may see.
   accessibleCommunityIds: string[] | null
@@ -60,17 +63,22 @@ export class AdminTicketsService {
     if (query.status) where.push({ status: query.status })
     if (query.category) where.push({ category: query.category })
     if (query.type) where.push({ type: query.type })
+    if (query.open === 'true') where.push({ status: { not: 'resolved' } })
     if (query.unread === 'true') where.push({ adminUnreadCount: { gt: 0 } })
     if (query.assignee === 'unassigned') where.push({ assignedAdminId: null })
     else if (query.assignee === 'me') where.push({ assignedAdminId: admin.id })
     else if (query.assignee) where.push({ assignedAdminId: query.assignee })
     if (query.search) {
-      const numeric = Number(query.search.replace(/^fs-/i, ''))
+      // "12" / "FS-12" is a ticket number. Digits only and capped at 9 so it always fits the
+      // 32-bit column (Number() would accept "1e3" / "0x1f" and overflow on long input).
+      const idMatch = /^(?:fs-)?(\d{1,9})$/i.exec(query.search)
+      const number = idMatch ? Number(idMatch[1]) : 0
+      const text = escapeLike(query.search)
       where.push({
         OR: [
-          { subject: { contains: query.search, mode: 'insensitive' } },
-          ...(Number.isInteger(numeric) && numeric > 0 ? [{ number: numeric }] : []),
-          { user: { name: { contains: query.search, mode: 'insensitive' } } },
+          { subject: { contains: text, mode: 'insensitive' } },
+          ...(number > 0 ? [{ number }] : []),
+          { user: { name: { contains: text, mode: 'insensitive' } } },
         ],
       })
     }
@@ -227,14 +235,16 @@ export class AdminTicketsService {
 
   async reply(admin: AdminActor, ticketId: string, dto: SendMessageDTO): Promise<TicketMessageDTO> {
     const ticket = await this.getVisible(admin, ticketId)
-    if (ticket.status === 'resolved') throw this.resolvedError()
-    this.assertCanAct(admin, ticket)
 
+    // Before the resolved / ownership checks: a retry of a message that was already stored (its
+    // ack got lost and the ticket was resolved or reassigned meanwhile) gets that message back.
     const replay = await this.db.ticketMessage.findUnique({
       where: { uq_ticket_messages_client_id: { ticketId, clientMessageId: dto.clientMessageId } },
       include: messageInclude,
     })
     if (replay) return mapMessage(replay)
+    if (ticket.status === 'resolved') throw this.resolvedError()
+    this.assertCanAct(admin, ticket)
 
     const attachments = await resolveAttachments(admin.id, dto.attachments)
 

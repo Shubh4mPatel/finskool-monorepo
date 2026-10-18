@@ -176,10 +176,12 @@ export class TicketsService {
 
   async sendMessage(userId: string, ticketId: string, dto: SendMessageDTO): Promise<TicketMessageDTO> {
     const ticket = await this.getOwned(userId, ticketId)
-    if (ticket.status === 'resolved') throw this.resolvedError()
 
+    // Before the resolved check: a retry of a message that was already stored (its ack got lost
+    // and the ticket was resolved meanwhile) must get that message back, not a "chat closed" error.
     const replay = await this.findMessageByClientId(ticketId, dto.clientMessageId)
     if (replay) return mapMessage(replay)
+    if (ticket.status === 'resolved') throw this.resolvedError()
 
     const attachments = await resolveAttachments(userId, dto.attachments)
 

@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express'
 import type { AdminActor, AdminTicketsService } from './admin-tickets.service.js'
-import { getParam } from './tickets.controller.js'
+import { getIdParam } from './tickets.controller.js'
 import {
   adminListTicketsQuerySchema,
   presignSchema,
@@ -46,7 +46,7 @@ export class AdminTicketsController {
 
   get: Handler = async (req, res, next) => {
     try {
-      res.json({ success: true, data: await this.service.get(actor(req), getParam(req, 'ticketId')) })
+      res.json({ success: true, data: await this.service.get(actor(req), getIdParam(req, 'ticketId', 'Ticket')) })
     } catch (err) {
       next(err)
     }
@@ -54,7 +54,7 @@ export class AdminTicketsController {
 
   claim: Handler = async (req, res, next) => {
     try {
-      res.json({ success: true, data: await this.service.claim(actor(req), getParam(req, 'ticketId')) })
+      res.json({ success: true, data: await this.service.claim(actor(req), getIdParam(req, 'ticketId', 'Ticket')) })
     } catch (err) {
       next(err)
     }
@@ -63,7 +63,7 @@ export class AdminTicketsController {
   reassign: Handler = async (req, res, next) => {
     try {
       const body = reassignSchema.parse(req.body)
-      res.json({ success: true, data: await this.service.reassign(actor(req), getParam(req, 'ticketId'), body.adminId) })
+      res.json({ success: true, data: await this.service.reassign(actor(req), getIdParam(req, 'ticketId', 'Ticket'), body.adminId) })
     } catch (err) {
       next(err)
     }
@@ -71,7 +71,7 @@ export class AdminTicketsController {
 
   resolve: Handler = async (req, res, next) => {
     try {
-      res.json({ success: true, data: await this.service.resolve(actor(req), getParam(req, 'ticketId')) })
+      res.json({ success: true, data: await this.service.resolve(actor(req), getIdParam(req, 'ticketId', 'Ticket')) })
     } catch (err) {
       next(err)
     }
@@ -81,8 +81,8 @@ export class AdminTicketsController {
     try {
       const data = await this.service.getAttachmentUrl(
         actor(req),
-        getParam(req, 'ticketId'),
-        getParam(req, 'attachmentId'),
+        getIdParam(req, 'ticketId', 'Ticket'),
+        getIdParam(req, 'attachmentId', 'Attachment'),
       )
       res.json({ success: true, data })
     } catch (err) {

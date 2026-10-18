@@ -24,6 +24,7 @@ export const SUBSCRIPTION_LIFECYCLE_SWEEP_JOB = 'subscription-lifecycle-sweep'
 export const ADMIN_UNREPLIED_DIGEST_JOB = 'admin-unreplied-digest'
 export const ADMIN_EXPIRY_DIGEST_JOB = 'admin-expiry-report'
 export const EXPIRE_SUBSCRIPTIONS_JOB = 'expire-subscriptions'
+export const TICKET_UPLOAD_CLEANUP_JOB = 'ticket-upload-cleanup'
 
 export interface CommunityPostNotificationJobPayload {
   communityId: string

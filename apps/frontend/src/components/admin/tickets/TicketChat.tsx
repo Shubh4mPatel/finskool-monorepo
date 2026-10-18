@@ -280,6 +280,13 @@ export default function TicketChat({ ticket, messages, events, hasOlder, loading
       clientMessageId.current = randomId();
       stickToBottom.current = true;
     } catch (err) {
+      if (err instanceof TicketSocketError && err.code === "ATTACHMENT_INVALID") {
+        // The server rejected the whole message and deleted the bad upload(s) without saying which,
+        // so every file still listed would keep failing the same way — start the attachments over.
+        setFiles([]);
+        toast.error(`${err.message}. Please attach your files again.`);
+        return;
+      }
       toast.error(err instanceof TicketSocketError || err instanceof ApiError ? err.message : "Couldn't send the message. Please try again.");
     } finally {
       setSending(false);
