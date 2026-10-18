@@ -11,6 +11,7 @@ import { liveStockFeed } from './lib/live-stock-feed.js'
 import { liveNotificationsFeed } from './lib/live-notifications-feed.js'
 import { liveTicketsFeed } from './lib/live-tickets-feed.js'
 import { TicketsService } from './modules/tickets/tickets.service.js'
+import { AdminTicketsService } from './modules/tickets/admin-tickets.service.js'
 import { createTicketSocketHandler } from './modules/tickets/tickets.socket.js'
 
 async function bootstrap() {
@@ -44,7 +45,10 @@ async function bootstrap() {
   }
 
   liveNotificationsFeed.attach(server)
-  liveTicketsFeed.attach(server, createTicketSocketHandler(new TicketsService(prisma)))
+  liveTicketsFeed.attach(
+    server,
+    createTicketSocketHandler({ member: new TicketsService(prisma), admin: new AdminTicketsService(prisma) }),
+  )
 
   async function shutdown(signal: string) {
     logger.info(`${signal} received — shutting down`)

@@ -4,11 +4,9 @@ import type { TicketsService } from './tickets.service.js'
 import {
   clientKeySchema,
   createTicketSchema,
-  listMessagesQuerySchema,
   listTicketsQuerySchema,
   presignSchema,
   ratingSchema,
-  sendMessageSchema,
 } from './tickets.validator.js'
 
 // Express 5 types params as string | string[] — route params are always strings
@@ -74,33 +72,6 @@ export class TicketsController {
   get: Handler = async (req, res, next) => {
     try {
       res.json({ success: true, data: await this.service.get(req.user!.id, getParam(req, 'ticketId')) })
-    } catch (err) {
-      next(err)
-    }
-  }
-
-  listMessages: Handler = async (req, res, next) => {
-    try {
-      const query = listMessagesQuerySchema.parse(req.query)
-      res.json({ success: true, data: await this.service.listMessages(req.user!.id, getParam(req, 'ticketId'), query) })
-    } catch (err) {
-      next(err)
-    }
-  }
-
-  sendMessage: Handler = async (req, res, next) => {
-    try {
-      const body = sendMessageSchema.parse(req.body)
-      const data = await this.service.sendMessage(req.user!.id, getParam(req, 'ticketId'), body)
-      res.status(201).json({ success: true, data })
-    } catch (err) {
-      next(err)
-    }
-  }
-
-  markRead: Handler = async (req, res, next) => {
-    try {
-      res.json({ success: true, data: await this.service.markRead(req.user!.id, getParam(req, 'ticketId')) })
     } catch (err) {
       next(err)
     }

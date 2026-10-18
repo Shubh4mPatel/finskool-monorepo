@@ -4,6 +4,7 @@ import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Loader2, Paperclip, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
+import { ticketSocketStore, TicketSocketError } from "@/store/tickets/ticketSocketStore";
 import {
   ATTACHMENT_ACCEPT,
   MAX_ATTACHMENTS,
@@ -161,11 +162,13 @@ interface Props {
   hasOlder: boolean;
   loadingOlder: boolean;
   onLoadOlder: () => void;
+  historyError: boolean;
+  onRetryHistory: () => void;
   onSent: (message: TicketMessage) => void;
   now: number;
 }
 
-export default function TicketChat({ ticket, messages, events, hasOlder, loadingOlder, onLoadOlder, onSent, now }: Props) {
+export default function TicketChat({ ticket, messages, events, hasOlder, loadingOlder, onLoadOlder, historyError, onRetryHistory, onSent, now }: Props) {
   const toast = useToast();
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -263,7 +266,10 @@ export default function TicketChat({ ticket, messages, events, hasOlder, loading
     if (!canSend) return;
     setSending(true);
     try {
-      const message = await api.post<TicketMessage>(`${BASE}/${ticket.id}/messages`, {
+      // Chat goes over the socket, not REST. The clientMessageId makes a retry (including the store's
+      // automatic one after a reconnect) post the message once.
+      const message = await ticketSocketStore.request<TicketMessage>("message.send", {
+        ticketId: ticket.id,
         clientMessageId: clientMessageId.current,
         body: text.trim() || undefined,
         attachments: ready.map((f) => ({ objectKey: f.objectKey!, fileName: f.name })),
@@ -274,7 +280,7 @@ export default function TicketChat({ ticket, messages, events, hasOlder, loading
       clientMessageId.current = randomId();
       stickToBottom.current = true;
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Couldn't send the message. Please try again.");
+      toast.error(err instanceof TicketSocketError || err instanceof ApiError ? err.message : "Couldn't send the message. Please try again.");
     } finally {
       setSending(false);
     }
@@ -301,6 +307,14 @@ export default function TicketChat({ ticket, messages, events, hasOlder, loading
       </header>
 
       <div ref={scrollRef} onScroll={handleScroll} className="flex max-h-[calc(100vh-28rem)] min-h-80 flex-col gap-5 overflow-y-auto px-7 py-6">
+        {historyError && (
+          <button
+            onClick={onRetryHistory}
+            className="mx-auto rounded-full border border-red-300 px-4 py-1.5 text-xs font-semibold text-red-500 hover:bg-red-50"
+          >
+            Couldn&apos;t load messages — tap to retry
+          </button>
+        )}
         {hasOlder && (
           <button
             onClick={loadOlder}

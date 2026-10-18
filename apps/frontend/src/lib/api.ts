@@ -29,6 +29,9 @@ function refreshAccessToken(): Promise<boolean> {
   return refreshPromise
 }
 
+/** Refreshes the access-token cookie (single-flight with the REST client's own 401 handling). */
+export const refreshSession = (): Promise<boolean> => refreshAccessToken()
+
 async function request<T>(path: string, init: RequestInit = {}, isRetry = false): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     ...init,

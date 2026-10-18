@@ -18,12 +18,9 @@ router.get('/stats', admin.stats)
 router.post('/attachments/presign', admin.presign)
 router.get('/', admin.list)
 router.get('/:ticketId', admin.get)
-router.get('/:ticketId/messages', admin.listMessages)
-router.post('/:ticketId/messages', admin.reply)
 router.post('/:ticketId/claim', admin.claim)
 router.post('/:ticketId/reassign', admin.reassign)
 router.post('/:ticketId/resolve', admin.resolve)
-router.post('/:ticketId/read', admin.markRead)
 router.get('/:ticketId/attachments/:attachmentId/url', admin.attachmentUrl)
 
 export default router
@@ -155,61 +152,8 @@ mobileTicketsRouter.get('/', user.list)
  */
 mobileTicketsRouter.get('/:ticketId', user.get)
 
-/**
- * @openapi
- * /mobile/tickets/{ticketId}/messages:
- *   get:
- *     tags: [Support Tickets]
- *     summary: Chat history, newest first
- *     parameters:
- *       - { in: path, name: ticketId, required: true, schema: { type: string, format: uuid } }
- *       - { in: query, name: before, schema: { type: string }, description: "`nextCursor` — loads older messages." }
- *       - { in: query, name: limit, schema: { type: integer, default: 30, maximum: 100 } }
- *     responses:
- *       200: { description: "`data`: `{ items: Message[], nextCursor }`. Attachment `url`s are presigned and expire in ~5 min." }
- *   post:
- *     tags: [Support Tickets]
- *     summary: Send a chat message
- *     description: >
- *       `clientMessageId` is a client-generated UUID — resend the same one when retrying so the message
- *       isn't posted twice. Rejected with `TICKET_RESOLVED` (409) once the ticket is resolved.
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [clientMessageId]
- *             properties:
- *               clientMessageId: { type: string, minLength: 8, maxLength: 64 }
- *               body: { type: string, maxLength: 2000 }
- *               attachments:
- *                 type: array
- *                 maxItems: 5
- *                 items:
- *                   type: object
- *                   properties:
- *                     objectKey: { type: string }
- *                     fileName: { type: string }
- *     responses:
- *       201: { description: The message (or the original, on a repeated clientMessageId). }
- *       409: { description: TICKET_RESOLVED. }
- */
-mobileTicketsRouter.get('/:ticketId/messages', user.listMessages)
-mobileTicketsRouter.post('/:ticketId/messages', user.sendMessage)
-
-/**
- * @openapi
- * /mobile/tickets/{ticketId}/read:
- *   post:
- *     tags: [Support Tickets]
- *     summary: Mark the ticket's chat as read (clears its unread badge)
- *     parameters:
- *       - { in: path, name: ticketId, required: true, schema: { type: string, format: uuid } }
- *     responses:
- *       200: { description: "`data`: `{ unreadCount: 0 }`." }
- */
-mobileTicketsRouter.post('/:ticketId/read', user.markRead)
+// Chat (send / history / read) is NOT on REST: it runs over the /ws/tickets WebSocket
+// (message.send, history.get, ticket.read) — see modules/tickets/tickets.socket.ts.
 
 /**
  * @openapi

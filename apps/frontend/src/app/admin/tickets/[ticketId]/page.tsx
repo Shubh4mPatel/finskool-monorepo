@@ -18,7 +18,7 @@ import {
   type TicketStatus,
   STATUS_LABEL,
 } from "@/lib/tickets";
-import { ticketSocketStore } from "@/store/tickets/ticketSocketStore";
+import { ticketSocketStore, TicketSocketError } from "@/store/tickets/ticketSocketStore";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/Toast";
 import { Stars, StatusBadge } from "@/components/admin/tickets/TicketBadges";
@@ -82,6 +82,7 @@ export default function AdminTicketDetailPage() {
   const [messages, setMessages] = useState<TicketMessage[]>([]);
   const [olderCursor, setOlderCursor] = useState<string | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  const [historyError, setHistoryError] = useState(false);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [acting, setActing] = useState<"claim" | "resolve" | "reassign" | null>(null);
@@ -106,29 +107,44 @@ export default function AdminTicketDetailPage() {
     }
   }, [ticketId]);
 
-  // Initial load: ticket + newest page of messages.
+  // Initial load: the ticket record over REST; the chat history over the socket (independent of each other,
+  // so a slow or failed socket never hides the ticket).
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      try {
-        const [t, page] = await Promise.all([
-          api.get<AdminTicketDetail>(`${BASE}/${ticketId}`),
-          api.get<TicketPage<TicketMessage>>(`${BASE}/${ticketId}/messages?limit=30`),
-        ]);
-        if (cancelled) return;
-        setTicket(t);
-        setMessages(mergeMessages([], page.items));
-        setOlderCursor(page.nextCursor);
-      } catch (err) {
+    api
+      .get<AdminTicketDetail>(`${BASE}/${ticketId}`)
+      .then((t) => {
+        if (!cancelled) setTicket(t);
+      })
+      .catch((err) => {
         if (!cancelled && err instanceof ApiError && err.status === 404) setNotFound(true);
-      } finally {
+      })
+      .finally(() => {
         if (!cancelled) setLoading(false);
-      }
-    })();
+      });
     return () => {
       cancelled = true;
     };
   }, [ticketId]);
+
+  // Newest page of messages. `initial` also sets the paging cursor; a re-sync after a reconnect only merges.
+  const loadLatest = useCallback(
+    async (initial: boolean) => {
+      try {
+        const page = await ticketSocketStore.request<TicketPage<TicketMessage>>("history.get", { ticketId, limit: 30 });
+        setMessages((prev) => mergeMessages(prev, page.items));
+        if (initial) setOlderCursor(page.nextCursor);
+        setHistoryError(false);
+      } catch (err) {
+        if (!(err instanceof TicketSocketError && err.code === "NOT_FOUND")) setHistoryError(true);
+      }
+    },
+    [ticketId],
+  );
+
+  useEffect(() => {
+    loadLatest(true);
+  }, [loadLatest]);
 
   // The member's other tickets (within communities this admin can see).
   const memberId = ticket?.user.id;
@@ -170,24 +186,21 @@ export default function AdminTicketDetailPage() {
     // After a dropped connection we may have missed messages — re-sync.
     const offReconnect = ticketSocketStore.onReconnect(() => {
       refreshTicket();
-      api
-        .get<TicketPage<TicketMessage>>(`${BASE}/${ticketId}/messages?limit=30`)
-        .then((page) => setMessages((prev) => mergeMessages(prev, page.items)))
-        .catch(() => {});
+      loadLatest(false);
     });
     return () => {
       off();
       offReconnect();
     };
-  }, [ticketId, refreshTicket]);
+  }, [ticketId, refreshTicket, loadLatest]);
 
   // Clear the unread badge while the assignee has the ticket open.
   const assigneeId = ticket?.assignedAdmin?.id;
   const unread = ticket?.unreadCount ?? 0;
   useEffect(() => {
     if (!meId || assigneeId !== meId || unread === 0) return;
-    api
-      .post(`${BASE}/${ticketId}/read`, {})
+    ticketSocketStore
+      .request("ticket.read", { ticketId })
       .then(() => {
         setTicket((t) => (t ? { ...t, unreadCount: 0 } : t));
         window.dispatchEvent(new Event("admin-tickets:updated"));
@@ -199,9 +212,11 @@ export default function AdminTicketDetailPage() {
     if (!olderCursor || loadingOlder) return;
     setLoadingOlder(true);
     try {
-      const page = await api.get<TicketPage<TicketMessage>>(
-        `${BASE}/${ticketId}/messages?limit=30&before=${encodeURIComponent(olderCursor)}`,
-      );
+      const page = await ticketSocketStore.request<TicketPage<TicketMessage>>("history.get", {
+        ticketId,
+        limit: 30,
+        before: olderCursor,
+      });
       setMessages((prev) => mergeMessages(prev, page.items));
       setOlderCursor(page.nextCursor);
     } catch {
@@ -317,6 +332,8 @@ export default function AdminTicketDetailPage() {
           hasOlder={olderCursor !== null}
           loadingOlder={loadingOlder}
           onLoadOlder={loadOlder}
+          historyError={historyError}
+          onRetryHistory={() => loadLatest(messages.length === 0)}
           onSent={(m) => {
             setMessages((prev) => mergeMessages(prev, [m]));
             refreshTicket();
