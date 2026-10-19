@@ -220,7 +220,7 @@ New sidebar item "Services" with an attention badge (unassigned plus mine with u
 | 1 | Schema and migrations, catalog, request, claim / reassign / close / cancel, chat over the socket, attachments, upload-sweep fix, rating | Done |
 | 2 | Billing settings, quotes (send, supersede, expire sweep), Razorpay ledger, pay / verify / webhook / `settlePayment`, GST invoice numbering and PDF, invoice email | Done |
 | 3 | Admin dashboard pages | Done |
-| 4 | Mobile integration guide (`docs/mobile-services-integration.md`) | Next |
+| 4 | Mobile integration guide (`docs/mobile-services-integration.md`) | Done |
 
 ### Deployment checklist for phase 2
 
