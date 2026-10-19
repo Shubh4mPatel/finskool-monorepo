@@ -2,12 +2,16 @@ import type { Request, Response, NextFunction } from 'express'
 import { BadRequestError } from '../../shared/errors/index.js'
 import { getIdParam } from '../tickets/tickets.controller.js'
 import type { ServicesService } from './services.service.js'
+import type { ServicePaymentsService } from './services.payments.js'
+import { GST_STATES } from './services.billing.js'
 import {
   clientKeySchema,
   createServiceRequestSchema,
   listServiceRequestsQuerySchema,
+  payQuoteSchema,
   presignSchema,
   ratingSchema,
+  verifyPaymentSchema,
 } from './services.validator.js'
 
 type Handler = (req: Request, res: Response, next: NextFunction) => Promise<void>
@@ -16,7 +20,45 @@ const requestId = (req: Request) => getIdParam(req, 'requestId', 'Service reques
 
 /** Member (requester) endpoints. */
 export class ServicesController {
-  constructor(private readonly service: ServicesService) {}
+  constructor(
+    private readonly service: ServicesService,
+    private readonly payments: ServicePaymentsService,
+  ) {}
+
+  gstStates: Handler = async (_req, res, next) => {
+    try {
+      res.json({ success: true, data: GST_STATES })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  payQuote: Handler = async (req, res, next) => {
+    try {
+      const body = payQuoteSchema.parse(req.body)
+      const data = await this.payments.createOrder(req.user!.id, requestId(req), getIdParam(req, 'quoteId', 'Quote'), body.billing)
+      res.json({ success: true, data })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  verifyPayment: Handler = async (req, res, next) => {
+    try {
+      const body = verifyPaymentSchema.parse(req.body)
+      res.json({ success: true, data: await this.payments.verify(req.user!.id, requestId(req), body) })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  invoiceUrl: Handler = async (req, res, next) => {
+    try {
+      res.json({ success: true, data: await this.service.getInvoiceUrl(req.user!.id, requestId(req)) })
+    } catch (err) {
+      next(err)
+    }
+  }
 
   catalog: Handler = async (_req, res, next) => {
     try {

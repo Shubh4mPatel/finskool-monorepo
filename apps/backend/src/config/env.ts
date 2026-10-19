@@ -56,6 +56,8 @@ export const env = {
     // Support-ticket attachments live in their own bucket with NO anonymous-read policy
     // (the main bucket is world-readable) — served only via short-lived presigned GETs.
     ticketsBucket: process.env['MINIO_TICKETS_BUCKET'] ?? 'finskool-tickets',
+    // Private bucket for generated GST invoices (PDF) — presigned GET only, like the tickets bucket.
+    invoicesBucket: process.env['MINIO_INVOICES_BUCKET'] ?? 'finskool-invoices',
   },
 
   smtp: {
@@ -99,6 +101,11 @@ export const env = {
   razorpay: {
     keyId: process.env['RAZORPAY_KEY_ID'] ?? '',
     keySecret: process.env['RAZORPAY_KEY_SECRET'] ?? '',
+    // Secret set on the webhook in the Razorpay dashboard (not the API key secret) — used to verify
+    // the X-Razorpay-Signature header on POST /api/v1/payments/webhooks/razorpay.
+    webhookSecret: process.env['RAZORPAY_WEBHOOK_SECRET'] ?? '',
+    // Testing only: point the Razorpay SDK at a stand-in server. Leave unset in every real environment.
+    apiBaseUrl: process.env['RAZORPAY_API_BASE_URL'] ?? '',
   },
 
   // 32-byte AES-256-GCM key as 64 hex chars — see src/lib/pan-crypto.ts.
@@ -125,13 +132,13 @@ export const env = {
   redis: { host: string; port: number; password: string; db: number }
   jwt: { secret: string; accessExpiresIn: string }
   cookie: { secure: boolean }
-  minio: { endPoint: string; publicEndPoint: string; port: number; publicPort: number; useSSL: boolean; publicUseSSL: boolean; publicPathPrefix: string; accessKey: string; secretKey: string; bucket: string; ticketsBucket: string }
+  minio: { endPoint: string; publicEndPoint: string; port: number; publicPort: number; useSSL: boolean; publicUseSSL: boolean; publicPathPrefix: string; accessKey: string; secretKey: string; bucket: string; ticketsBucket: string; invoicesBucket: string }
   smtp: { host: string; port: number; secure: boolean; user: string; password: string; from: string }
   email: { logoUrl: string }
   angelone: { enabled: boolean; apiKey: string; clientCode: string; pin: string; totpSecret: string }
   stockQuoteApi: { baseUrl: string; apiKey: string; reportEmails: string[] }
   logoDevToken: string
-  razorpay: { keyId: string; keySecret: string }
+  razorpay: { keyId: string; keySecret: string; webhookSecret: string; apiBaseUrl: string }
   pan: { encryptionKey: string }
   whatsapp: { baseUrl: string; apiKey: string; phoneNoId: string; templateName: string; emailFallback: boolean }
 }

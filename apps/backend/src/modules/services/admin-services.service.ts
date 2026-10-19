@@ -13,18 +13,29 @@ import type {
   AdminServiceRequestDetailDTO,
   AdminServiceRequestDTO,
   AdminServiceStatsDTO,
+  BillingSettingsDTO,
   ListPage,
+  QuoteDefaultsDTO,
   ServiceMessageDTO,
+  ServicePaymentDTO,
+  ServiceQuoteDTO,
 } from './services.dto.js'
 import type {
   AdminListServiceRequestsQuery,
+  BillingSettingsInput,
   CreateCatalogServiceDTO,
   ListMessagesQuery,
   PresignDTO,
   SendMessageDTO,
+  SendQuoteDTO,
   UpdateCatalogServiceDTO,
 } from './services.validator.js'
+import { isBillingConfigured, loadBillingSettings, mapBillingSettings, saveBillingSettings } from './billing-settings.js'
+import { computeQuoteAmounts, paiseToDecimal, rupeesToPaise } from './services.billing.js'
+import { getInvoiceDownloadUrl } from './services.invoice.js'
 import {
+  PAYMENT_IN_PROGRESS_WINDOW_MS,
+  mapQuote,
   decodeCursor,
   encodeCursor,
   freshAttachmentUrl,
@@ -161,7 +172,7 @@ export class AdminServicesService {
   /** Numbers for the sidebar badge / inbox header. */
   async stats(admin: AdminViewer): Promise<AdminServiceStatsDTO> {
     const open: Prisma.ServiceRequestWhereInput = { status: { not: 'closed' } }
-    const [unassigned, mine, mineUnread, requested, quoteSent, paid, closed, ratings] = await Promise.all([
+    const [unassigned, mine, mineUnread, requested, quoteSent, paid, closed, needsReview, ratings] = await Promise.all([
       this.db.serviceRequest.count({ where: { ...open, assignedAdminId: null } }),
       this.db.serviceRequest.count({ where: { ...open, assignedAdminId: admin.id } }),
       this.db.serviceRequest.count({ where: { ...open, assignedAdminId: admin.id, adminUnreadCount: { gt: 0 } } }),
@@ -169,6 +180,7 @@ export class AdminServicesService {
       this.db.serviceRequest.count({ where: { status: 'quote_sent' } }),
       this.db.serviceRequest.count({ where: { status: 'paid' } }),
       this.db.serviceRequest.count({ where: { status: 'closed' } }),
+      this.db.serviceRequest.count({ where: { requiresReview: true } }),
       this.db.serviceRequest.aggregate({ where: { rating: { not: null } }, _avg: { rating: true }, _count: { rating: true } }),
     ])
     return {
@@ -179,6 +191,7 @@ export class AdminServicesService {
       quoteSent,
       paid,
       closed,
+      needsReview,
       averageRating: ratings._avg.rating === null ? null : Math.round(ratings._avg.rating * 10) / 10,
       ratingCount: ratings._count.rating,
     }
@@ -197,8 +210,33 @@ export class AdminServicesService {
       ? await this.db.user.findMany({ where: { id: { in: targetIds } }, select: { id: true, name: true } })
       : []
     const targetName = new Map(targets.map(t => [t.id, t.name]))
+    const quotes = await this.db.serviceQuote.findMany({ where: { requestId }, orderBy: { version: 'asc' } })
+    const orders = quotes.length
+      ? await this.db.razorpayOrder.findMany({
+          where: { purpose: 'service_quote', referenceId: { in: quotes.map(q => q.id) } },
+          include: { payments: { orderBy: { createdAt: 'asc' } } },
+        })
+      : []
+    const payments: ServicePaymentDTO[] = orders
+      .flatMap(o =>
+        o.payments.map(p => ({
+          id: p.id,
+          quoteId: o.referenceId,
+          razorpayOrderId: o.razorpayOrderId,
+          razorpayPaymentId: p.razorpayPaymentId,
+          amount: Number(p.amount),
+          status: p.status,
+          method: p.method,
+          settledVia: p.settledVia,
+          errorDescription: p.errorDescription,
+          createdAt: p.createdAt.toISOString(),
+        })),
+      )
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
     return {
       ...(await mapAdminRequest(request, admin)),
+      quotes: quotes.map(q => mapQuote(q)),
+      payments,
       events: events.map(
         (e): AdminServiceEventDTO => ({
           id: e.id,
@@ -397,6 +435,8 @@ export class AdminServicesService {
         })
       }
       if (updated.count === 0) return false
+      // Nothing left to pay: a quote still waiting for the member is withdrawn.
+      await tx.serviceQuote.updateMany({ where: { requestId, status: 'active' }, data: { status: 'cancelled' } })
       await tx.serviceEvent.create({ data: { requestId, type: 'closed', actorId: admin.id, meta: { reason } } })
       return true
     })
@@ -428,6 +468,144 @@ export class AdminServicesService {
       data: { unreadCount: 0 },
     })
     return { unreadCount: 0 }
+  }
+
+  // ─── Quotes ───────────────────────────────────────────────────────────────
+
+  /**
+   * Sends the member a quote: base amount + GST, valid for a number of days. It becomes the one
+   * payable quote (any earlier active one is replaced and shown disabled in the chat) and moves the
+   * request to `quote_sent`. Like a first reply, sending one claims an unassigned request.
+   */
+  async sendQuote(admin: AdminViewer, requestId: string, dto: SendQuoteDTO): Promise<{ request: AdminServiceRequestDTO; quote: ServiceQuoteDTO }> {
+    const settings = await loadBillingSettings(this.db)
+    if (!isBillingConfigured(settings)) {
+      throw new ConflictError('Set up the billing details before sending a quote', 'BILLING_NOT_CONFIGURED')
+    }
+
+    const request = await this.getRequest(requestId)
+    if (request.status === 'closed') throw this.closedError()
+    if (request.status === 'paid') throw this.alreadyPaidError()
+    this.assertCanAct(admin, request)
+
+    const ratePercent = dto.gstRatePercent ?? Number(settings.defaultGstRatePercent)
+    const expiryDays = dto.expiryDays ?? settings.defaultQuoteExpiryDays
+    const { basePaise, gstPaise, totalPaise } = computeQuoteAmounts(rupeesToPaise(dto.baseAmount), Math.round(ratePercent * 100))
+    const now = new Date()
+
+    const outcome = await this.db.$transaction(async tx => {
+      // The same row lock the payment path takes, so a payment that is settling right now either
+      // finishes first (and this fails as "already paid") or waits for this to finish.
+      await tx.$queryRaw`SELECT id FROM service_requests WHERE id = ${requestId}::uuid FOR UPDATE`
+      const fresh = await tx.serviceRequest.findUniqueOrThrow({ where: { id: requestId }, select: { status: true, assignedAdminId: true } })
+      if (fresh.status === 'closed') throw this.closedError()
+      if (fresh.status === 'paid') throw this.alreadyPaidError()
+      if (fresh.assignedAdminId === null) {
+        await this.claimInTx(tx, requestId, admin.id)
+      } else if (!admin.isSuperAdmin && fresh.assignedAdminId !== admin.id) {
+        throw new ForbiddenError('This request is handled by another admin', 'SERVICE_ASSIGNED_TO_OTHER')
+      }
+
+      const active = await tx.serviceQuote.findFirst({ where: { requestId, status: 'active' } })
+      if (active) {
+        const started = active.paymentStartedAt?.getTime() ?? 0
+        if (!dto.confirmReplace && now.getTime() - started < PAYMENT_IN_PROGRESS_WINDOW_MS) {
+          throw new ConflictError(
+            'The member started paying the current quote a few minutes ago. Replacing it now could leave them with a payment that cannot be matched — confirm to replace it anyway.',
+            'QUOTE_PAYMENT_IN_PROGRESS',
+          )
+        }
+        await tx.serviceQuote.update({ where: { id: active.id }, data: { status: 'superseded' } })
+        await tx.serviceEvent.create({ data: { requestId, type: 'quote_superseded', actorId: admin.id, meta: { quoteId: active.id, version: active.version } } })
+      }
+
+      const latest = await tx.serviceQuote.aggregate({ where: { requestId }, _max: { version: true } })
+      const quote = await tx.serviceQuote.create({
+        data: {
+          requestId,
+          version: (latest._max.version ?? 0) + 1,
+          baseAmount: paiseToDecimal(basePaise),
+          gstRatePercent: ratePercent.toFixed(2),
+          gstAmount: paiseToDecimal(gstPaise),
+          totalAmount: paiseToDecimal(totalPaise),
+          note: dto.note || null,
+          expiresAt: new Date(now.getTime() + expiryDays * 24 * 60 * 60 * 1000),
+          createdBy: admin.id,
+        },
+      })
+      await tx.serviceRequest.update({
+        where: { id: requestId },
+        data: { status: 'quote_sent', lastMessageAt: now, userUnreadCount: { increment: 1 } },
+      })
+      const message = await tx.serviceMessage.create({
+        data: { requestId, senderId: admin.id, senderRole: 'admin', kind: 'quote', quoteId: quote.id },
+        select: { id: true },
+      })
+      await tx.serviceEvent.create({
+        data: { requestId, type: 'quote_sent', actorId: admin.id, meta: { quoteId: quote.id, version: quote.version, totalAmount: Number(quote.totalAmount) } },
+      })
+      return { quoteId: quote.id, messageId: message.id, supersededQuoteId: active?.id ?? null }
+    })
+
+    const [message, fresh] = await Promise.all([
+      this.db.serviceMessage.findUniqueOrThrow({ where: { id: outcome.messageId }, include: messageInclude }),
+      this.getRequest(requestId),
+    ])
+    const dtoMessage = await mapMessage(message)
+    const adminIds = await getAllAdminIds(this.db)
+    const publishFor = (userIds: string[], side: 'member' | 'admin') =>
+      publishServiceEvent({
+        userIds,
+        event: 'service.message',
+        requestId,
+        // `supersededQuoteId` tells open chats to grey out the card this one replaced.
+        data: { message: dtoMessage, request: requestSummary(fresh, side), supersededQuoteId: outcome.supersededQuoteId },
+      })
+    await Promise.all([publishFor([fresh.userId], 'member'), publishFor(adminIds, 'admin')])
+    return { request: await mapAdminRequest(fresh, admin), quote: dtoMessage.quote! }
+  }
+
+  /** The admin has paid the money back by hand (or otherwise dealt with it): clear the "needs review" flag. */
+  async resolveReview(admin: AdminViewer, requestId: string): Promise<AdminServiceRequestDTO> {
+    const request = await this.getRequest(requestId)
+    if (!request.requiresReview) return mapAdminRequest(request, admin)
+    const cleared = await this.db.$transaction(async tx => {
+      const updated = await tx.serviceRequest.updateMany({ where: { id: requestId, requiresReview: true }, data: { requiresReview: false } })
+      if (updated.count === 0) return false
+      await tx.serviceEvent.create({ data: { requestId, type: 'review_resolved', actorId: admin.id } })
+      return true
+    })
+    const fresh = await this.getRequest(requestId)
+    if (cleared) await this.publishUpdated(fresh)
+    return mapAdminRequest(fresh, admin)
+  }
+
+  async getInvoiceUrl(requestId: string): Promise<{ url: string; fileName: string }> {
+    const request = await this.getRequest(requestId)
+    if (!request.invoice) throw new NotFoundError('No invoice for this request yet')
+    return getInvoiceDownloadUrl(this.db, request.invoice.id)
+  }
+
+  // ─── Billing settings ─────────────────────────────────────────────────────
+
+  async getBillingSettings(admin: AdminViewer): Promise<BillingSettingsDTO> {
+    this.assertSuperAdmin(admin)
+    return mapBillingSettings(await loadBillingSettings(this.db))
+  }
+
+  async updateBillingSettings(admin: AdminViewer, input: BillingSettingsInput): Promise<BillingSettingsDTO> {
+    this.assertSuperAdmin(admin)
+    return saveBillingSettings(this.db, admin.id, input)
+  }
+
+  /** What the send-quote form pre-fills, and whether quotes can be sent at all yet. */
+  async quoteDefaults(): Promise<QuoteDefaultsDTO> {
+    const settings = await loadBillingSettings(this.db)
+    return {
+      configured: isBillingConfigured(settings),
+      defaultGstRatePercent: Number(settings.defaultGstRatePercent),
+      defaultQuoteExpiryDays: settings.defaultQuoteExpiryDays,
+    }
   }
 
   async getAttachmentUrl(requestId: string, attachmentId: string): Promise<{ url: string }> {
@@ -487,6 +665,14 @@ export class AdminServicesService {
         data: { request: requestSummary(request, 'admin') },
       }),
     ])
+  }
+
+  private assertSuperAdmin(admin: AdminViewer): void {
+    if (!admin.isSuperAdmin) throw new ForbiddenError('Super admin access required', 'SUPER_ADMIN_REQUIRED')
+  }
+
+  private alreadyPaidError(): ConflictError {
+    return new ConflictError('This request is already paid', 'SERVICE_ALREADY_PAID')
   }
 
   private closedError(): ConflictError {

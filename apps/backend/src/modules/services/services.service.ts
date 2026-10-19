@@ -3,6 +3,7 @@ import { getAllAdminIds } from '../../lib/community-access.js'
 import { publishServiceEvent } from '../../lib/live-tickets-feed.js'
 import { ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors/index.js'
 import { createUploadUrl } from '../tickets/tickets.shared.js'
+import { getInvoiceDownloadUrl } from './services.invoice.js'
 import type { TicketUploadUrlDTO } from '../tickets/tickets.dto.js'
 import type {
   ListPage,
@@ -274,6 +275,8 @@ export class ServicesService {
         data: { status: 'closed', closedReason: 'cancelled_by_member', closedAt: now },
       })
       if (updated.count === 0) return false
+      // Nothing left to pay: a quote still waiting for the member is withdrawn.
+      await tx.serviceQuote.updateMany({ where: { requestId, status: 'active' }, data: { status: 'cancelled' } })
       await tx.serviceEvent.create({ data: { requestId, type: 'cancelled', actorId: userId } })
       return true
     })
@@ -313,6 +316,13 @@ export class ServicesService {
       data: { request: requestSummary(request, 'admin') },
     })
     return mapMemberRequest(request)
+  }
+
+  /** Signed link to the GST invoice PDF of a paid request. */
+  async getInvoiceUrl(userId: string, requestId: string): Promise<{ url: string; fileName: string }> {
+    const request = await this.getOwned(userId, requestId)
+    if (!request.invoice) throw new NotFoundError('No invoice for this request yet')
+    return getInvoiceDownloadUrl(this.db, request.invoice.id)
   }
 
   /** Fresh presigned link for an attachment whose earlier one expired. */

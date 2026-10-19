@@ -1,4 +1,5 @@
 import express from 'express'
+import type { Request } from 'express'
 import type { CorsOptions } from 'cors'
 import cors from 'cors'
 import cookieParser from 'cookie-parser'
@@ -20,6 +21,7 @@ import paymentsRoutes from './modules/payments/payments.routes.js'
 import welcomeKitsRoutes, { mobileWelcomeKitsRouter } from './modules/welcome-kits/welcome-kits.routes.js'
 import adminTicketsRoutes, { mobileTicketsRouter } from './modules/tickets/tickets.routes.js'
 import adminServicesRoutes, { mobileServicesRouter } from './modules/services/services.routes.js'
+import razorpayWebhookRoutes, { RAW_BODY_PATH_PREFIX } from './modules/services/razorpay-webhook.routes.js'
 import type { PlanListItemDTO } from './modules/payments/payments.dto.js'
 import prisma from './lib/prisma.js'
 import { authenticate, requireMobileAuth } from './middlewares/auth.middleware.js'
@@ -41,7 +43,15 @@ export function createApp() {
   const app = express()
 
   app.use(cors(buildCorsOptions()))
-  app.use(express.json())
+  // Webhook routes verify an HMAC over the exact bytes Razorpay sent, so keep them next to the parsed body.
+  app.use(
+    express.json({
+      verify: (req, _res, buf) => {
+        const request = req as unknown as Request
+        if (request.url?.startsWith(RAW_BODY_PATH_PREFIX)) request.rawBody = buf
+      },
+    }),
+  )
   app.use(cookieParser())
 
   app.get('/health', (_req, res) => {
@@ -52,6 +62,7 @@ export function createApp() {
   app.use(swaggerDocsPath, swaggerUi.serve, swaggerUi.setup(swaggerSpec))
   app.get('/api/docs.json', (_req, res) => res.json(swaggerSpec))
 
+  app.use('/api/v1/payments/webhooks', razorpayWebhookRoutes)
   app.use('/api/v1/auth', authRoutes)
   app.use('/api/v1/auth/mobile', mobileAuthRoutes)
   app.use('/api/v1/admin', adminRoutes)

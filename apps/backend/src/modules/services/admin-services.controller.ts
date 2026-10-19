@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from 'express'
+import { ForbiddenError } from '../../shared/errors/index.js'
 import { getIdParam } from '../tickets/tickets.controller.js'
 import type { AdminViewer } from '../tickets/tickets.shared.js'
 import type { AdminServicesService } from './admin-services.service.js'
@@ -7,9 +8,12 @@ import {
   catalogImagePresignSchema,
   createCatalogServiceSchema,
   presignSchema,
+  billingSettingsSchema,
   reassignSchema,
+  sendQuoteSchema,
   updateCatalogServiceSchema,
 } from './services.validator.js'
+import { GST_STATES } from './services.billing.js'
 
 type Handler = (req: Request, res: Response, next: NextFunction) => Promise<void>
 
@@ -66,6 +70,68 @@ export class AdminServicesController {
     try {
       const body = catalogImagePresignSchema.parse(req.body)
       res.json({ success: true, data: await this.service.createCatalogImageUploadUrl(body.fileName) })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  // ─── Quotes, billing ──────────────────────────────────────────────────────
+
+  sendQuote: Handler = async (req, res, next) => {
+    try {
+      const body = sendQuoteSchema.parse(req.body)
+      res.status(201).json({ success: true, data: await this.service.sendQuote(actor(req), requestId(req), body) })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  resolveReview: Handler = async (req, res, next) => {
+    try {
+      res.json({ success: true, data: await this.service.resolveReview(actor(req), requestId(req)) })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  invoiceUrl: Handler = async (req, res, next) => {
+    try {
+      res.json({ success: true, data: await this.service.getInvoiceUrl(requestId(req)) })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  quoteDefaults: Handler = async (_req, res, next) => {
+    try {
+      res.json({ success: true, data: await this.service.quoteDefaults() })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  gstStates: Handler = async (_req, res, next) => {
+    try {
+      res.json({ success: true, data: GST_STATES })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  getBillingSettings: Handler = async (req, res, next) => {
+    try {
+      res.json({ success: true, data: await this.service.getBillingSettings(actor(req)) })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  updateBillingSettings: Handler = async (req, res, next) => {
+    try {
+      // Permission before validation: a non-super admin must get 403 whatever they send.
+      if (!actor(req).isSuperAdmin) throw new ForbiddenError('Super admin access required', 'SUPER_ADMIN_REQUIRED')
+      const body = billingSettingsSchema.parse(req.body)
+      res.json({ success: true, data: await this.service.updateBillingSettings(actor(req), body) })
     } catch (err) {
       next(err)
     }

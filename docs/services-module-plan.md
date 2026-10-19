@@ -151,7 +151,7 @@ After the commit it publishes live events and queues two jobs: render and store 
 | Quote was replaced or expired, but money was captured anyway (member had Checkout open) | **Confirmed: the admin pays it back manually.** The payment is recorded, the request gets `requiresReview`, admins see a banner, and **no invoice is issued automatically**. The admin refunds it in the Razorpay dashboard (no refund feature in v1) |
 | Admin is about to replace a quote the member has just started paying | The admin sees a warning first (payment started in the last 15 minutes). The expiry sweep also skips a quote whose payment was started in the last 15 minutes. This makes late payments rare |
 | Admin revises a quote while an order exists | The old order stays unpaid in Razorpay (orders cannot be edited or cancelled); locally the quote is `superseded` and its Pay button is disabled |
-| Webhook secret missing or wrong | Events are stored with `signatureValid = false`, nothing is settled, the response is 400 |
+| Webhook signature missing or wrong | Answered 400 and **not stored**: nothing from an unauthenticated caller is written to the database (this differs from the first draft of this plan, which stored such events) |
 
 An optional third safety net, a sweep that asks Razorpay for orders still `created` after 15 minutes, can be added later without schema changes.
 
@@ -215,12 +215,22 @@ New sidebar item "Services" with an attention badge (unassigned plus mine with u
 
 ## 10. Build phases
 
-| Phase | Content |
-|---|---|
-| 1 | Schema and migrations, catalog, request, claim / reassign / close / cancel, chat over the socket, attachments, upload-sweep fix |
-| 2 | Billing settings, quotes (send, supersede, expire sweep), Razorpay ledger, pay / verify / webhook / `settlePayment`, invoice numbering and PDF, rating |
-| 3 | Admin dashboard pages |
-| 4 | Mobile integration guide (`docs/mobile-services-integration.md`) |
+| Phase | Content | Status |
+|---|---|---|
+| 1 | Schema and migrations, catalog, request, claim / reassign / close / cancel, chat over the socket, attachments, upload-sweep fix, rating | Done |
+| 2 | Billing settings, quotes (send, supersede, expire sweep), Razorpay ledger, pay / verify / webhook / `settlePayment`, GST invoice numbering and PDF, invoice email | Done |
+| 3 | Admin dashboard pages | Next |
+| 4 | Mobile integration guide (`docs/mobile-services-integration.md`) | After 3 |
+
+### Deployment checklist for phase 2
+
+1. Run the migrations (`20261019120000_add_services_module`, `20261019130000_add_service_quotes_payments_invoices`).
+2. Set `RAZORPAY_WEBHOOK_SECRET` and create the webhook in the Razorpay dashboard: URL `https://<domain>/api/v1/payments/webhooks/razorpay`, events `order.paid`, `payment.captured`, `payment.failed`. The account must use **automatic capture**.
+3. Set `MINIO_INVOICES_BUCKET` (default `finskool-invoices`); the bucket is created on first use.
+4. Start the cron process (`npm run cron`): it runs the quote expiry sweep (every 15 minutes) and the orphan-upload sweep (daily).
+5. The invoice email is sent by the worker process (`npm run worker`).
+6. A super admin fills in the billing settings (legal name, address, GSTIN, SAC code, GST rate, quote expiry). Until then admins get `BILLING_NOT_CONFIGURED` when sending a quote.
+7. Never set `RAZORPAY_API_BASE_URL` outside tests.
 
 ## 11. How it will be tested
 

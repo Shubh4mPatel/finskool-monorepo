@@ -15,6 +15,7 @@ import type {
   ThreadReplyEmailJobPayload,
   WelcomeEmailJobPayload,
   SubscriptionExtendedEmailJobPayload,
+  ServiceInvoiceEmailJobPayload,
   CommunityAddedEmailJobPayload,
   CommunityAccessRemovedEmailJobPayload,
   NewMemberRegisteredEmailJobPayload,
@@ -26,6 +27,8 @@ import type {
   MobileNewLoginEmailJobPayload,
   LiveNotificationEvent,
 } from '../../lib/queue.js'
+import { renderInvoicePdf } from '../services/services.invoice.js'
+import { requestLabel } from '../services/services.shared.js'
 import { NotificationType } from './notifications.dto.js'
 import type { ListNotificationsResponseDTO } from './notifications.dto.js'
 
@@ -250,6 +253,31 @@ export class NotificationsService {
       frontend_url: env.frontendUrl,
     })
     await sendMail({ to: payload.toEmail, subject, html })
+  }
+
+  /** "Payment received" with the GST invoice attached. The PDF is rendered here, so it needs no stored file. */
+  async sendServiceInvoiceEmail(payload: ServiceInvoiceEmailJobPayload): Promise<void> {
+    const invoice = await this.db.serviceInvoice.findUnique({
+      where: { id: payload.invoiceId },
+      include: { request: { select: { number: true, service: { select: { title: true } } } } },
+    })
+    if (!invoice) throw new NotFoundError('Invoice not found')
+    const pdf = await renderInvoicePdf(invoice)
+    const { subject, html } = renderEmail('service-invoice', {
+      first_name: firstNameOf(payload.name),
+      service_title: invoice.request.service.title,
+      request_label: requestLabel(invoice.request.number),
+      invoice_number: invoice.number,
+      amount: Number(invoice.total).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+      paid_on: formatEmailDate(invoice.issuedAt),
+      frontend_url: env.frontendUrl,
+    })
+    await sendMail({
+      to: payload.toEmail,
+      subject,
+      html,
+      attachments: [{ filename: `${invoice.number.replace(/\//g, '-')}.pdf`, content: pdf, contentType: 'application/pdf' }],
+    })
   }
 
   async sendCommunityAddedEmail(payload: CommunityAddedEmailJobPayload): Promise<void> {

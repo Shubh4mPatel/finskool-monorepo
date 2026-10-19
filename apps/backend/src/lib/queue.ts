@@ -25,6 +25,7 @@ export const ADMIN_UNREPLIED_DIGEST_JOB = 'admin-unreplied-digest'
 export const ADMIN_EXPIRY_DIGEST_JOB = 'admin-expiry-report'
 export const EXPIRE_SUBSCRIPTIONS_JOB = 'expire-subscriptions'
 export const TICKET_UPLOAD_CLEANUP_JOB = 'ticket-upload-cleanup'
+export const SERVICE_QUOTE_EXPIRY_JOB = 'service-quote-expiry'
 
 export interface CommunityPostNotificationJobPayload {
   communityId: string
@@ -70,6 +71,14 @@ export interface SubscriptionExtendedEmailJobPayload {
   validTill: string
   amount: number
   paidOn: string
+}
+
+export const SERVICE_INVOICE_EMAIL_JOB = 'service-invoice-email'
+
+export interface ServiceInvoiceEmailJobPayload {
+  toEmail: string
+  name: string
+  invoiceId: string
 }
 
 export const COMMUNITY_ADDED_EMAIL_JOB = 'community-added-email'
@@ -159,6 +168,7 @@ export type NotificationJobPayload =
   | ThreadReplyEmailJobPayload
   | WelcomeEmailJobPayload
   | SubscriptionExtendedEmailJobPayload
+  | ServiceInvoiceEmailJobPayload
   | CommunityAddedEmailJobPayload
   | CommunityAccessRemovedEmailJobPayload
   | NewMemberRegisteredEmailJobPayload

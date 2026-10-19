@@ -7,7 +7,10 @@ import type {
   MemberServiceDTO,
   MemberServiceRequestDTO,
   ServiceAttachmentDTO,
+  ServiceInvoiceSummaryDTO,
   ServiceMessageDTO,
+  ServiceQuoteDTO,
+  ServiceQuoteStatusDTO,
 } from './services.dto.js'
 
 // Cursors, unique-violation detection and attachment checks are the same as for tickets.
@@ -18,19 +21,30 @@ export const requestInclude = {
   user: { select: { id: true, name: true, phone: true } },
   assignedAdmin: { select: { id: true, name: true } },
   attachments: { where: { messageId: null }, orderBy: { createdAt: 'asc' } },
+  // Only the latest quote: it is the one that can be payable or paid. History is on the detail call.
+  quotes: { orderBy: { version: 'desc' }, take: 1 },
+  invoice: { select: { id: true, number: true, issuedAt: true, total: true } },
 } satisfies Prisma.ServiceRequestInclude
 
 export const messageInclude = {
   sender: { select: { id: true, name: true } },
   attachments: { orderBy: { createdAt: 'asc' } },
+  quote: true,
 } satisfies Prisma.ServiceMessageInclude
 
 export type ServiceRequestRow = Prisma.ServiceRequestGetPayload<{ include: typeof requestInclude }>
 export type ServiceMessageRow = Prisma.ServiceMessageGetPayload<{ include: typeof messageInclude }>
 type AttachmentRow = Prisma.ServiceAttachmentGetPayload<object>
 type ServiceRow = Prisma.ServiceGetPayload<object>
+export type ServiceQuoteRow = Prisma.ServiceQuoteGetPayload<object>
 
 export const requestLabel = (number: number): string => `SR-${number}`
+
+/**
+ * How long after the member opens the payment sheet their payment is considered "in progress":
+ * an admin is warned before replacing the quote, and the expiry sweep leaves it alone.
+ */
+export const PAYMENT_IN_PROGRESS_WINDOW_MS = 15 * 60 * 1000
 
 /** A request is "open" until it is closed. */
 export const isOpen = (r: { status: string }): boolean => r.status !== 'closed'
@@ -49,6 +63,42 @@ export function mapAdminService(s: ServiceRow): AdminServiceDTO {
     createdAt: s.createdAt.toISOString(),
     updatedAt: s.updatedAt.toISOString(),
   }
+}
+
+// ─── Quotes ─────────────────────────────────────────────────────────────────
+
+/** A quote past its expiry reads as expired even before the sweep records it in the database. */
+export function effectiveQuoteStatus(q: Pick<ServiceQuoteRow, 'status' | 'expiresAt'>, now: Date = new Date()): ServiceQuoteStatusDTO {
+  return q.status === 'active' && q.expiresAt.getTime() <= now.getTime() ? 'expired' : q.status
+}
+
+export function mapQuote(q: ServiceQuoteRow, now: Date = new Date()): ServiceQuoteDTO {
+  return {
+    id: q.id,
+    requestId: q.requestId,
+    version: q.version,
+    baseAmount: Number(q.baseAmount),
+    gstRatePercent: Number(q.gstRatePercent),
+    gstAmount: Number(q.gstAmount),
+    totalAmount: Number(q.totalAmount),
+    currency: 'INR',
+    note: q.note,
+    expiresAt: q.expiresAt.toISOString(),
+    status: effectiveQuoteStatus(q, now),
+    createdAt: q.createdAt.toISOString(),
+  }
+}
+
+/** The quote a request is currently about: the latest one, while it is payable or already paid. */
+function currentQuote(r: ServiceRequestRow): ServiceQuoteRow | null {
+  const latest = r.quotes[0]
+  return latest && (latest.status === 'active' || latest.status === 'paid') ? latest : null
+}
+
+function mapInvoiceSummary(r: ServiceRequestRow): ServiceInvoiceSummaryDTO | null {
+  return r.invoice
+    ? { id: r.invoice.id, number: r.invoice.number, issuedAt: r.invoice.issuedAt.toISOString(), total: Number(r.invoice.total) }
+    : null
 }
 
 // ─── Messages ───────────────────────────────────────────────────────────────
@@ -76,6 +126,7 @@ export async function mapMessage(m: ServiceMessageRow): Promise<ServiceMessageDT
     senderName: m.sender?.name ?? 'Finskool',
     kind: m.kind,
     body: m.body,
+    quote: m.quote ? mapQuote(m.quote) : null,
     clientMessageId: m.clientMessageId,
     attachments: await Promise.all(m.attachments.map(mapAttachment)),
     createdAt: m.createdAt.toISOString(),
@@ -109,6 +160,8 @@ export async function mapMemberRequest(r: ServiceRequestRow): Promise<MemberServ
     service: { id: r.service.id, title: r.service.title, imageUrl: r.service.imageUrl },
     assignedAdminName: r.assignedAdmin?.name ?? null,
     unreadCount: r.userUnreadCount,
+    quote: currentQuote(r) ? mapQuote(currentQuote(r)!) : null,
+    invoice: mapInvoiceSummary(r),
   }
 }
 
@@ -121,6 +174,9 @@ export async function mapAdminRequest(r: ServiceRequestRow, viewer: AdminViewer)
     user: r.user,
     assignedAdmin: r.assignedAdmin,
     unreadCount: r.adminUnreadCount,
+    quote: currentQuote(r) ? mapQuote(currentQuote(r)!) : null,
+    invoice: mapInvoiceSummary(r),
+    requiresReview: r.requiresReview,
     canReply: open && (viewer.isSuperAdmin || isAssignee || r.assignedAdminId === null),
     canClose: open && (viewer.isSuperAdmin || isAssignee),
   }
@@ -145,5 +201,8 @@ export function requestSummary(r: ServiceRequestRow, side: 'member' | 'admin') {
     rating: r.rating,
     paidAt: r.paidAt?.toISOString() ?? null,
     closedAt: r.closedAt?.toISOString() ?? null,
+    quote: currentQuote(r) ? mapQuote(currentQuote(r)!) : null,
+    invoiceNumber: r.invoice?.number ?? null,
+    requiresReview: r.requiresReview,
   }
 }
