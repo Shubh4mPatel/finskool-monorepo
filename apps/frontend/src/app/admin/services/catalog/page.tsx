@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Briefcase, ChevronRight, ImagePlus, Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import type { CatalogService } from "@/lib/services";
+import { useIsSuperAdmin } from "@/lib/session";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/Toast";
 
@@ -141,7 +142,7 @@ function ServiceForm({ editing, onClose, onSaved }: { editing: CatalogService | 
   );
 }
 
-export default function ServiceCatalogPage() {
+function ServiceCatalogManager() {
   const confirm = useConfirm();
   const toast = useToast();
   const [services, setServices] = useState<CatalogService[] | null>(null);
@@ -277,4 +278,18 @@ export default function ServiceCatalogPage() {
       )}
     </div>
   );
+}
+
+export default function ServiceCatalogPage() {
+  const isSuperAdmin = useIsSuperAdmin();
+  if (isSuperAdmin === null) return <div className="flex justify-center py-24 text-muted"><Loader2 className="animate-spin" /></div>;
+  if (!isSuperAdmin) {
+    return (
+      <div className="flex flex-col items-center gap-3 py-24 text-center">
+        <p className="text-sm font-semibold text-primary">Only super admins can manage the service catalog.</p>
+        <Link href="/admin/services" className="rounded-full bg-primary px-5 py-2 text-sm font-bold text-white">Back to services</Link>
+      </div>
+    );
+  }
+  return <ServiceCatalogManager />;
 }

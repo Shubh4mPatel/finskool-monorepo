@@ -212,19 +212,21 @@ export default function AdminServicesPage() {
           <p className="mt-1 text-sm text-muted">Requests members raise for your services — agree the scope in chat, send a quote, get paid, deliver.</p>
         </div>
         <div className="flex items-center gap-2">
-          <Link
-            href="/admin/services/catalog"
-            className="flex h-11 items-center gap-2 rounded-full border border-[#dcd9d0] bg-white px-5 text-sm font-semibold text-primary transition-colors hover:border-accent"
-          >
-            <Briefcase size={15} /> Service catalog
-          </Link>
           {isSuperAdmin && (
-            <Link
+            <>
+              <Link
+                href="/admin/services/catalog"
+                className="flex h-11 items-center gap-2 rounded-full border border-[#dcd9d0] bg-white px-5 text-sm font-semibold text-primary transition-colors hover:border-accent"
+              >
+                <Briefcase size={15} /> Service catalog
+              </Link>
+              <Link
               href="/admin/settings/billing"
               className="flex h-11 items-center gap-2 rounded-full border border-[#dcd9d0] bg-white px-5 text-sm font-semibold text-primary transition-colors hover:border-accent"
             >
               <Settings2 size={15} /> Billing settings
             </Link>
+            </>
           )}
         </div>
       </div>

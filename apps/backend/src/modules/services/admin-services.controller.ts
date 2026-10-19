@@ -22,6 +22,10 @@ function actor(req: Request): AdminViewer {
   return { id: u.id, isSuperAdmin: u.isSuperAdmin }
 }
 
+function requireSuperAdmin(req: Request): void {
+  if (!actor(req).isSuperAdmin) throw new ForbiddenError('Super admin access required', 'SUPER_ADMIN_REQUIRED')
+}
+
 const requestId = (req: Request) => getIdParam(req, 'requestId', 'Service request')
 const serviceId = (req: Request) => getIdParam(req, 'serviceId', 'Service')
 
@@ -41,6 +45,7 @@ export class AdminServicesController {
 
   createService: Handler = async (req, res, next) => {
     try {
+      requireSuperAdmin(req)
       const body = createCatalogServiceSchema.parse(req.body)
       res.status(201).json({ success: true, data: await this.service.createService(actor(req), body) })
     } catch (err) {
@@ -50,6 +55,7 @@ export class AdminServicesController {
 
   updateService: Handler = async (req, res, next) => {
     try {
+      requireSuperAdmin(req)
       const body = updateCatalogServiceSchema.parse(req.body)
       res.json({ success: true, data: await this.service.updateService(serviceId(req), body) })
     } catch (err) {
@@ -59,6 +65,7 @@ export class AdminServicesController {
 
   deleteService: Handler = async (req, res, next) => {
     try {
+      requireSuperAdmin(req)
       await this.service.deleteService(serviceId(req))
       res.json({ success: true, data: null })
     } catch (err) {
@@ -68,6 +75,7 @@ export class AdminServicesController {
 
   catalogImagePresign: Handler = async (req, res, next) => {
     try {
+      requireSuperAdmin(req)
       const body = catalogImagePresignSchema.parse(req.body)
       res.json({ success: true, data: await this.service.createCatalogImageUploadUrl(body.fileName) })
     } catch (err) {
