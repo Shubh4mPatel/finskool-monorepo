@@ -8,6 +8,8 @@ export class ApiError extends Error {
     public readonly status: number,
     message: string,
     public readonly code?: string,
+    // Per-field messages of a 422: { fieldName: ["message", ...] }
+    public readonly errors?: Record<string, string[]>,
   ) {
     super(message)
     this.name = 'ApiError'
@@ -51,7 +53,7 @@ async function request<T>(path: string, init: RequestInit = {}, isRetry = false)
   const json = await res.json().catch(() => ({ success: false, message: 'Unexpected response from server' }))
 
   if (!res.ok) {
-    throw new ApiError(res.status, json.message ?? 'Request failed', json.code)
+    throw new ApiError(res.status, json.message ?? 'Request failed', json.code, json.errors)
   }
 
   return json.data as T

@@ -45,6 +45,8 @@ export const adminListServiceRequestsQuerySchema = z.object({
   // 'me' | 'unassigned' | <admin uuid>
   assignee: z.union([z.enum(['me', 'unassigned']), z.string().uuid()]).optional(),
   unread: z.enum(['true', 'false']).optional(),
+  // 'true' = only requests with a payment that needs an admin's attention
+  review: z.enum(['true', 'false']).optional(),
   search: z.string().trim().max(100).optional(),
   cursor: z.string().max(200).optional(),
   limit,

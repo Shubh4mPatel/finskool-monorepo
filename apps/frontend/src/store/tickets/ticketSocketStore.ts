@@ -1,6 +1,7 @@
 import { refreshSession } from "@/lib/api";
 import { randomId } from "@/lib/tickets";
 import type { LiveTicketEvent } from "@/lib/tickets";
+import type { LiveServiceEvent } from "@/lib/services";
 
 const WS_PATH = "/ws/tickets";
 const MAX_RECONNECT_DELAY_MS = 30000;
@@ -10,6 +11,9 @@ const REQUEST_TIMEOUT_MS = 15000;
 const WS_CLOSE_AUTH = 4401;
 
 type Listener = (event: LiveTicketEvent) => void;
+type ServiceListener = (event: LiveServiceEvent) => void;
+
+type RequestAction = "message.send" | "history.get" | "ticket.read" | "service.message.send" | "service.history.get" | "service.read";
 
 /** A failed chat request: either the server's error ack (code/message) or a transport problem. */
 export class TicketSocketError extends Error {
@@ -45,6 +49,7 @@ class TicketSocketStore {
   private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private listeners = new Set<Listener>();
+  private serviceListeners = new Set<ServiceListener>();
   private reconnectListeners = new Set<() => void>();
   private openWaiters = new Set<() => void>();
   private pending = new Map<string, Pending>();
@@ -56,9 +61,16 @@ class TicketSocketStore {
     this.openSocket();
   }
 
+  /** Support-ticket events (`ticket.*`). Service events go to subscribeServices. */
   subscribe(listener: Listener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  /** Service-request events (`service.*`), carried on the same socket. */
+  subscribeServices(listener: ServiceListener): () => void {
+    this.serviceListeners.add(listener);
+    return () => this.serviceListeners.delete(listener);
   }
 
   /** Fires after a *re*connect (not the first connect) — events may have been missed in the gap. */
@@ -73,7 +85,7 @@ class TicketSocketStore {
    * retries once — safe because message.send carries a clientMessageId (the server dedupes) and
    * history.get / ticket.read are idempotent.
    */
-  async request<T>(action: "message.send" | "history.get" | "ticket.read", payload: unknown): Promise<T> {
+  async request<T>(action: RequestAction, payload: unknown): Promise<T> {
     try {
       return await this.requestOnce<T>(action, payload);
     } catch (err) {
@@ -166,7 +178,12 @@ class TicketSocketStore {
         else p.reject(new TicketSocketError(ack.error?.code ?? "ERROR", ack.error?.message ?? "Request failed", ack.error?.errors));
         return;
       }
-      this.listeners.forEach((l) => l(data as LiveTicketEvent));
+      // Service and ticket pages each hear only their own events.
+      if ((data as { event?: string }).event?.startsWith("service.")) {
+        this.serviceListeners.forEach((l) => l(data as LiveServiceEvent));
+      } else {
+        this.listeners.forEach((l) => l(data as LiveTicketEvent));
+      }
     };
 
     ws.onclose = (e: CloseEvent) => {

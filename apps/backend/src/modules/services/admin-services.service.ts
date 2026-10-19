@@ -133,6 +133,7 @@ export class AdminServicesService {
     if (query.serviceId) where.push({ serviceId: query.serviceId })
     if (query.userId) where.push({ userId: query.userId })
     if (query.unread === 'true') where.push({ adminUnreadCount: { gt: 0 } })
+    if (query.review === 'true') where.push({ requiresReview: true })
     if (query.assignee === 'unassigned') where.push({ assignedAdminId: null })
     else if (query.assignee === 'me') where.push({ assignedAdminId: admin.id })
     else if (query.assignee) where.push({ assignedAdminId: query.assignee })
