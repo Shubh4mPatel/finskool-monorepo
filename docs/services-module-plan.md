@@ -1,8 +1,8 @@
 # Services Module: Plan
 
-A member requests a **service** (for example portfolio management) from an admin. They chat to agree what is needed, the admin sends a **quote**, the member pays it through Razorpay, the admin delivers the service outside the app, and the admin closes the request. It reuses the support-ticket module's design: one admin owns each request, chat over the same WebSocket, community-scoped access.
+A member requests a **service** (for example portfolio management) from an admin. They chat to agree what is needed, the admin sends a **quote**, the member pays it through Razorpay, the admin delivers the service outside the app, and the admin closes the request. It reuses the support-ticket module's design: one admin owns each request and chat runs over the same WebSocket. Unlike tickets, **services are global (not tied to a community) and every admin sees every request.**
 
-Status: **plan for review, nothing is built yet.** Section 12 lists the few assumptions to confirm.
+Status: **approved, in build.** Decisions made after review are in section 12.
 
 ## 1. Scope
 
@@ -25,7 +25,8 @@ Status: **plan for review, nothing is built yet.** Section 12 lists the few assu
 | Business details | Legal name, address, GSTIN and SAC code are entered by a super admin in the dashboard |
 | Quote | Only an admin sends one. Default expiry 5 days, configurable |
 | New quote | The old quote stays in the chat as a disabled card labelled "Replaced by a newer quote" |
-| Admin access | Same as tickets: community scoped, claim, super admin reassigns |
+| Admin access | **Every admin sees every service request** (no community scoping). Claim and super-admin reassign work as in tickets |
+| Services | Global catalog (not per community). Any active member can request any active service |
 | Closing | Admin closes after delivery. Member can cancel before paying. Member rates after it closes |
 | Razorpay data | New separate tables (not `plan_orders`) that keep the history of orders, payments and webhook events |
 | Payment confirmation | Both the client verify call and the webhook, each safe to run twice, each a fallback for the other |
@@ -55,7 +56,7 @@ stateDiagram-v2
 
 Rules:
 
-- **One owner.** The first admin to claim a request or reply becomes its assignee. Only that admin or a super admin can reply, quote or close (same rules as tickets).
+- **One owner.** The first admin to claim a request or reply becomes its assignee. Only that admin or a super admin can reply, quote or close (same rules as tickets). Every admin can read every request.
 - **One active quote.** Sending a new quote supersedes the current one in the same transaction.
 - **Expiry returns the request to `requested`** (the four states you defined stay the only four). The sweep job marks the quote `expired` and logs an event.
 - **Cancel:** the member can cancel in `requested` or `quote_sent`. Once `paid`, only the admin closes.
@@ -70,9 +71,9 @@ All new tables, defined in `apps/backend/prisma/schema.prisma`. Money is `Decima
 
 | Table | One row is | Key columns |
 |---|---|---|
-| `services` | A catalog item | `communityId`, `name` (internal), `title` (shown to members), `description`, `imageUrl`, `isActive`, `createdBy`, `deletedAt` |
-| `service_requests` | One member request (the "ticket") | `number` (shown as `SR-n`), `userId`, `serviceId`, `communityId`, `status`, `closedReason`, `needs` (the member's description), `assignedAdminId`, `clientRequestId`, `userUnreadCount`, `adminUnreadCount`, `lastMessageAt`, `activeQuoteId`, `requiresReview`, `paidAt`, `closedAt`, `rating`, `ratingComment`, `ratedAt` |
-| `service_messages` | A chat message | `requestId`, `senderId`, `senderRole`, `kind` (`text` / `quote` / `system`), `body`, `quoteId` (for quote cards), `clientMessageId`, `createdAt` |
+| `services` | A catalog item (global) | `name` (internal), `title` (shown to members), `description`, `imageUrl`, `isActive`, `createdBy`, `deletedAt` |
+| `service_requests` | One member request (the "ticket") | `number` (shown as `SR-n`), `userId`, `serviceId`, `status`, `closedReason`, `needs` (the member's description), `assignedAdminId`, `clientRequestId`, `userUnreadCount`, `adminUnreadCount`, `lastMessageAt`, `activeQuoteId`, `requiresReview`, `paidAt`, `closedAt`, `rating`, `ratingComment`, `ratedAt` |
+| `service_messages` | A chat message | `requestId`, `senderId` (empty for system messages), `senderRole` (`user` / `admin` / `system`), `kind` (`text` / `quote` / `system`), `body`, `quoteId` (for quote cards, added in phase 2), `clientMessageId`, `createdAt` |
 | `service_attachments` | An uploaded file | like `ticket_attachments` |
 | `service_events` | Audit trail | `created`, `assigned`, `reassigned`, `quote_sent`, `quote_superseded`, `quote_expired`, `paid`, `closed`, `cancelled`, `payment_flagged` |
 
@@ -147,7 +148,8 @@ After the commit it publishes live events and queues two jobs: render and store 
 |---|---|
 | Member pays twice or taps pay twice | One order per quote is reused while unpaid and unexpired; a paid order cannot be paid again |
 | Verify fails and the webhook arrives (or the reverse) | Whichever comes first settles it; the other is a no-op |
-| Quote was replaced or expired, but money was captured anyway (member had Checkout open) | The payment is recorded, the request gets `requiresReview`, admins see a banner, and **no invoice is issued automatically**. With no refund feature in v1 a super admin refunds it manually in the Razorpay dashboard |
+| Quote was replaced or expired, but money was captured anyway (member had Checkout open) | **Confirmed: the admin pays it back manually.** The payment is recorded, the request gets `requiresReview`, admins see a banner, and **no invoice is issued automatically**. The admin refunds it in the Razorpay dashboard (no refund feature in v1) |
+| Admin is about to replace a quote the member has just started paying | The admin sees a warning first (payment started in the last 15 minutes). The expiry sweep also skips a quote whose payment was started in the last 15 minutes. This makes late payments rare |
 | Admin revises a quote while an order exists | The old order stays unpaid in Razorpay (orders cannot be edited or cancelled); locally the quote is `superseded` and its Pay button is disabled |
 | Webhook secret missing or wrong | Events are stored with `signatureValid = false`, nothing is settled, the response is 400 |
 
@@ -169,9 +171,9 @@ Chat reuses the existing `/ws/tickets` connection with new actions (`service.mes
 
 | Method and path | Purpose |
 |---|---|
-| `GET /catalog` | Active services for the member's communities |
+| `GET /catalog` | Active services |
 | `POST /attachments/presign` | Upload link for a file |
-| `POST /` | Request a service (`Idempotency-Key`; body: `serviceId`, `needs`, attachments) |
+| `POST /` | Request a service (`Idempotency-Key`; body: `serviceId`, `needs`, attachments). 409 `SERVICE_REQUEST_ALREADY_OPEN` if the member already has an open request for that service |
 | `GET /` , `GET /:id` , `GET /unread-count` | List, detail, badge |
 | `POST /:id/cancel` | Cancel before payment |
 | `POST /:id/quotes/:quoteId/pay` | Create the Razorpay order (billing details in the body). Returns `orderId`, `amount`, `currency`, `keyId` |
@@ -187,9 +189,9 @@ Chat reuses the existing `/ws/tickets` connection with new actions (`service.mes
 | `GET /`, `GET /stats`, `GET /:id` | Inbox, counters, detail with audit timeline and payment info |
 | `POST /:id/claim`, `POST /:id/reassign` | Same rules as tickets |
 | `POST /:id/quotes` | Send a quote: `baseAmount`, `note`, optional `expiryDays`, optional `gstRatePercent` |
-| `POST /:id/close` | Close with a reason (`completed` or `declined`) |
+| `POST /:id/close` | Close the request. The reason is derived: from `paid` it is `completed`; from `requested` / `quote_sent` it is `declined` |
 | `GET /:id/invoice`, `POST /attachments/presign`, `GET /:id/attachments/:attachmentId/url` | As above |
-| `GET /catalog`, `POST /catalog`, `PATCH /catalog/:id`, `DELETE /catalog/:id`, `POST /catalog/image/presign` | Catalog management |
+| `GET /catalog`, `POST /catalog`, `PATCH /catalog/:id`, `DELETE /catalog/:id`, `POST /catalog/image/presign` | Catalog management (any admin) |
 | `GET /billing-settings`, `PUT /billing-settings` | Super admin only |
 
 **Payments (no auth, signed):** `POST /api/v1/payments/webhooks/razorpay`.
@@ -205,7 +207,7 @@ New sidebar item "Services" with an attention badge (unassigned plus mine with u
 
 ## 9. Things this touches in existing code
 
-- **Orphan upload cleanup.** The daily sweep I added for tickets deletes any `tickets/` upload no ticket references. Service files would be deleted after 24 hours unless the sweep also checks `service_attachments` (or services use their own prefix). Part of phase 1.
+- **Orphan upload cleanup.** The daily sweep I added for tickets deletes any upload no ticket references. Service files use their own `services/` prefix and the sweep now checks both attachment tables, so they are not deleted. Part of phase 1.
 - **Raw body for the webhook:** a small change in `app.ts`.
 - **New dependency:** `pdfkit` in the backend.
 - **New environment values:** `RAZORPAY_WEBHOOK_SECRET`, `MINIO_INVOICES_BUCKET`, plus the webhook URL registered in the Razorpay dashboard with events `order.paid`, `payment.captured`, `payment.failed`.
@@ -230,12 +232,8 @@ As with the ticket module, against a real Postgres and Redis with the running ba
 - The admin UI in a real browser.
 - Not testable here: the real Razorpay Checkout sheet and a real webhook delivery. Those need test-mode keys on staging, and I will list the exact steps.
 
-## 12. Assumptions to confirm
+## 12. Decisions after review
 
-1. **Catalog scope.** Each service belongs to **one community**, and a member sees services of communities they are subscribed to. Say so if you want them global instead.
-2. **Name versus title.** `name` is the internal label for admins and `title` is what the member sees. If you only need one, I will drop the other.
-3. **Catalog permissions.** Any admin with access to a community can manage that community's services; super admins manage all.
-4. **Expiry resets the status** to `requested`, as in section 3.
-5. **Late payments** on an expired or replaced quote are recorded and flagged for a manual refund, with no automatic invoice (section 5).
-6. **Duplicate requests.** A member can have only one open request per service at a time, to prevent duplicates. Say so if you want to allow several.
-7. **Regulatory.** Portfolio management is regulated by SEBI. I can add a consent or disclaimer step when requesting a service if you want one.
+1. **Services are global**, not per community. Every admin sees every request. Any active member can request any active service.
+2. **Late payments:** recorded and flagged, the admin pays the member back manually, no automatic invoice. Warning and expiry-sweep guards added (section 5).
+3. **Defaults accepted:** `name` (admin label) plus `title` (member-facing); any admin manages the catalog; an expired quote returns the request to `requested`; one open request per member per service; no SEBI disclaimer step for now (can be added later).

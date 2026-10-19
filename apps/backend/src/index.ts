@@ -13,6 +13,8 @@ import { liveTicketsFeed } from './lib/live-tickets-feed.js'
 import { TicketsService } from './modules/tickets/tickets.service.js'
 import { AdminTicketsService } from './modules/tickets/admin-tickets.service.js'
 import { createTicketSocketHandler } from './modules/tickets/tickets.socket.js'
+import { ServicesService } from './modules/services/services.service.js'
+import { AdminServicesService } from './modules/services/admin-services.service.js'
 
 async function bootstrap() {
   await redis.connect()
@@ -47,7 +49,12 @@ async function bootstrap() {
   liveNotificationsFeed.attach(server)
   liveTicketsFeed.attach(
     server,
-    createTicketSocketHandler({ member: new TicketsService(prisma), admin: new AdminTicketsService(prisma) }),
+    createTicketSocketHandler({
+      member: new TicketsService(prisma),
+      admin: new AdminTicketsService(prisma),
+      serviceMember: new ServicesService(prisma),
+      serviceAdmin: new AdminServicesService(prisma),
+    }),
   )
 
   async function shutdown(signal: string) {

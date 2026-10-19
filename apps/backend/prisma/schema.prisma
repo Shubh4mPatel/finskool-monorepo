@@ -111,6 +111,11 @@ model User {
   assignedTickets    Ticket[]        @relation("TicketAssignee")
   ticketMessages     TicketMessage[]
   ticketEvents       TicketEvent[]
+  servicesCreated         Service[]
+  serviceRequests         ServiceRequest[]  @relation("ServiceRequester")
+  assignedServiceRequests ServiceRequest[]  @relation("ServiceAssignee")
+  serviceMessages         ServiceMessage[]
+  serviceEvents           ServiceEvent[]
 
   @@index([phone], name: "idx_users_phone")
   @@index([email], name: "idx_users_email")
@@ -746,4 +751,175 @@ model TicketEvent {
 
   @@index([ticketId, createdAt], name: "idx_ticket_events_ticket")
   @@map("ticket_events")
+}
+
+// ─── Services ───────────────────────────────────────────────────────────────
+// A global catalog of services (not tied to a community) that members request
+// from the support team. A request is worked like a ticket: one admin owns it,
+// they chat, the admin sends a quote, the member pays, the admin delivers the
+// service outside the platform and closes the request. Phase 1 covers the
+// catalog, requests and chat; quotes, payments and invoices come next.
+
+enum ServiceRequestStatus {
+  requested
+  quote_sent
+  paid
+  closed
+}
+
+enum ServiceClosedReason {
+  completed
+  declined
+  cancelled_by_member
+}
+
+enum ServiceSenderRole {
+  user
+  admin
+  system
+}
+
+enum ServiceMessageKind {
+  text
+  quote
+  system
+}
+
+enum ServiceEventType {
+  created
+  assigned
+  reassigned
+  quote_sent
+  quote_superseded
+  quote_expired
+  paid
+  closed
+  cancelled
+  payment_flagged
+}
+
+model Service {
+  id          String    @id @default(uuid()) @db.Uuid
+  // Internal label for admins; `title` is what members see.
+  name        String    @db.VarChar(150)
+  title       String    @db.VarChar(200)
+  description String    @db.VarChar(5000)
+  imageUrl    String?   @map("image_url") @db.VarChar(500)
+  isActive    Boolean   @default(true) @map("is_active")
+  createdBy   String    @map("created_by") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz
+
+  creator  User             @relation(fields: [createdBy], references: [id])
+  requests ServiceRequest[]
+
+  @@index([isActive, deletedAt], name: "idx_services_active")
+  @@map("services")
+}
+
+model ServiceRequest {
+  id              String               @id @default(uuid()) @db.Uuid
+  // Human-readable id shown as SR-<number>; gaps are fine.
+  number          Int                  @unique @default(autoincrement())
+  userId          String               @map("user_id") @db.Uuid
+  serviceId       String               @map("service_id") @db.Uuid
+  status          ServiceRequestStatus @default(requested)
+  // Set when status becomes closed.
+  closedReason    ServiceClosedReason? @map("closed_reason")
+  // What the member needs, in their own words (the first "message" of the conversation).
+  needs           String               @db.VarChar(2000)
+  // The one admin responsible for this request. Set on claim / first admin reply;
+  // only they (or a super admin) can reply or close afterwards.
+  assignedAdminId String?              @map("assigned_admin_id") @db.Uuid
+  // Client-generated key (Idempotency-Key header) so a retry returns the original request.
+  clientRequestId String               @map("client_request_id") @db.VarChar(64)
+
+  userUnreadCount  Int      @default(0) @map("user_unread_count")
+  adminUnreadCount Int      @default(0) @map("admin_unread_count")
+  // Millisecond precision on purpose: keyset cursors round-trip this through a JS Date.
+  lastMessageAt    DateTime @default(now()) @map("last_message_at") @db.Timestamptz(3)
+
+  paidAt        DateTime? @map("paid_at") @db.Timestamptz
+  closedAt      DateTime? @map("closed_at") @db.Timestamptz
+  // Written once by the member after a completed request; immutable.
+  rating        Int?      @db.SmallInt
+  ratingComment String?   @map("rating_comment") @db.VarChar(1000)
+  ratedAt       DateTime? @map("rated_at") @db.Timestamptz
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  user          User                @relation("ServiceRequester", fields: [userId], references: [id], onDelete: Cascade)
+  service       Service             @relation(fields: [serviceId], references: [id])
+  assignedAdmin User?               @relation("ServiceAssignee", fields: [assignedAdminId], references: [id], onDelete: SetNull)
+  messages      ServiceMessage[]
+  attachments   ServiceAttachment[]
+  events        ServiceEvent[]
+
+  @@unique([userId, clientRequestId], name: "uq_service_requests_user_request")
+  @@index([status], name: "idx_service_requests_status")
+  @@index([assignedAdminId, status], name: "idx_service_requests_assignee_status")
+  @@index([userId, lastMessageAt(sort: Desc)], name: "idx_service_requests_user_recent")
+  @@index([serviceId], name: "idx_service_requests_service")
+  @@map("service_requests")
+}
+
+model ServiceMessage {
+  id              String             @id @default(uuid()) @db.Uuid
+  requestId       String             @map("request_id") @db.Uuid
+  // Empty for system messages (e.g. "Payment received").
+  senderId        String?            @map("sender_id") @db.Uuid
+  senderRole      ServiceSenderRole  @map("sender_role")
+  kind            ServiceMessageKind @default(text)
+  // Optional because a message may be attachments-only.
+  body            String?            @db.VarChar(2000)
+  // Client-generated so a retried send doesn't post twice. Empty for system messages.
+  clientMessageId String?            @map("client_message_id") @db.VarChar(64)
+  // Millisecond precision — see ServiceRequest.lastMessageAt.
+  createdAt       DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  request     ServiceRequest      @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  sender      User?               @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  attachments ServiceAttachment[]
+
+  @@unique([requestId, clientMessageId], name: "uq_service_messages_client_id")
+  @@index([requestId, createdAt(sort: Desc)], name: "idx_service_messages_thread")
+  @@map("service_messages")
+}
+
+model ServiceAttachment {
+  id        String   @id @default(uuid()) @db.Uuid
+  requestId String   @map("request_id") @db.Uuid
+  // null = attached to the request's original description rather than a chat message.
+  messageId String?  @map("message_id") @db.Uuid
+  // Object key inside the private bucket (services/<userId>/…) — never a public URL.
+  objectKey String   @map("object_key") @db.VarChar(300)
+  fileName  String   @map("file_name") @db.VarChar(255)
+  mimeType  String   @map("mime_type") @db.VarChar(100)
+  sizeBytes Int      @map("size_bytes")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  request ServiceRequest  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  message ServiceMessage? @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([requestId], name: "idx_service_attachments_request")
+  @@index([messageId], name: "idx_service_attachments_message")
+  @@index([objectKey], name: "idx_service_attachments_object")
+  @@map("service_attachments")
+}
+
+model ServiceEvent {
+  id        String           @id @default(uuid()) @db.Uuid
+  requestId String           @map("request_id") @db.Uuid
+  type      ServiceEventType
+  actorId   String?          @map("actor_id") @db.Uuid
+  meta      Json?
+  createdAt DateTime         @default(now()) @map("created_at") @db.Timestamptz
+
+  request ServiceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  actor   User?          @relation(fields: [actorId], references: [id], onDelete: Cascade)
+
+  @@index([requestId, createdAt], name: "idx_service_events_request")
+  @@map("service_events")
 }

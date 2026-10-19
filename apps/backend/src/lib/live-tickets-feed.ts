@@ -21,7 +21,7 @@ import { env } from '../config/env.js'
 import prisma from './prisma.js'
 import redis from './redis.js'
 import { TICKETS_PUBSUB_CHANNEL } from './queue.js'
-import type { LiveTicketEvent } from './queue.js'
+import type { LiveServiceEvent, LiveTicketEvent } from './queue.js'
 import { validateMobileSession } from './mobile-session.js'
 import type { JwtPayload } from '../middlewares/auth.middleware.js'
 import { logger } from '../shared/logger.js'
@@ -129,14 +129,18 @@ async function stillAuthenticated(auth: ConnectionAuth): Promise<boolean> {
 }
 
 /** Fire-and-forget: a failed push must never fail the request that caused it. */
-export async function publishTicketEvent(event: LiveTicketEvent): Promise<void> {
+async function publishLiveEvent(event: LiveTicketEvent | LiveServiceEvent): Promise<void> {
   if (event.userIds.length === 0) return
   try {
     await redis.publish(TICKETS_PUBSUB_CHANNEL, JSON.stringify(event))
   } catch (err) {
-    logger.error({ err, ticketId: event.ticketId, event: event.event }, 'publishTicketEvent: failed to publish')
+    const id = 'ticketId' in event ? { ticketId: event.ticketId } : { requestId: event.requestId }
+    logger.error({ err, ...id, event: event.event }, 'publishLiveEvent: failed to publish')
   }
 }
+
+export const publishTicketEvent: (event: LiveTicketEvent) => Promise<void> = publishLiveEvent
+export const publishServiceEvent: (event: LiveServiceEvent) => Promise<void> = publishLiveEvent
 
 class LiveTicketsFeed {
   private readonly wss = new WebSocketServer({ noServer: true, maxPayload: MAX_FRAME_BYTES })
@@ -209,7 +213,7 @@ class LiveTicketsFeed {
     )
     subscriber.on('message', (_channel: string, raw: string) => {
       try {
-        const { userIds, ...payload } = JSON.parse(raw) as LiveTicketEvent
+        const { userIds, ...payload } = JSON.parse(raw) as LiveTicketEvent | LiveServiceEvent
         const json = JSON.stringify(payload)
         for (const userId of userIds) this.sendToUser(userId, json)
       } catch (err) {

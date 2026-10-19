@@ -19,6 +19,7 @@ import stockRecommendationsRoutes from './modules/stock-recommendations/stock-re
 import paymentsRoutes from './modules/payments/payments.routes.js'
 import welcomeKitsRoutes, { mobileWelcomeKitsRouter } from './modules/welcome-kits/welcome-kits.routes.js'
 import adminTicketsRoutes, { mobileTicketsRouter } from './modules/tickets/tickets.routes.js'
+import adminServicesRoutes, { mobileServicesRouter } from './modules/services/services.routes.js'
 import type { PlanListItemDTO } from './modules/payments/payments.dto.js'
 import prisma from './lib/prisma.js'
 import { authenticate, requireMobileAuth } from './middlewares/auth.middleware.js'
@@ -56,6 +57,7 @@ export function createApp() {
   app.use('/api/v1/admin', adminRoutes)
   app.use('/api/v1/admin', welcomeKitsRoutes)
   app.use('/api/v1/admin/tickets', adminTicketsRoutes)
+  app.use('/api/v1/admin/services', adminServicesRoutes)
   app.use('/api/v1/posts', postsRoutes)
   app.use('/api/v1', commentsRoutes)
   app.use('/api/v1', reactionsRoutes)
@@ -69,6 +71,7 @@ export function createApp() {
   // Mounted before the shared /api/v1/mobile routers below: those apply authenticate router-wide, which
   // would otherwise re-run the MobileSession lookup on every ticket request before reaching this router.
   app.use('/api/v1/mobile/tickets', mobileTicketsRouter)
+  app.use('/api/v1/mobile/services', mobileServicesRouter)
   app.use('/api/v1/mobile', mobilePostsRouter)
   app.use('/api/v1/mobile', mobileReactionsRouter)
   app.use('/api/v1/mobile', mobileWelcomeKitsRouter)

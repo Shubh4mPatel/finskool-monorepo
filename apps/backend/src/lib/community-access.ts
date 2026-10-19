@@ -32,6 +32,12 @@ export async function getCommunityAdminIds(db: PrismaClient, communityId: string
   return admins.map(a => a.id)
 }
 
+/** Every active admin account. Services are global, so every admin sees every service request. */
+export async function getAllAdminIds(db: PrismaClient): Promise<string[]> {
+  const admins = await db.user.findMany({ where: { role: 'admin', deletedAt: null }, select: { id: true } })
+  return admins.map(a => a.id)
+}
+
 export async function assertCommunityAccess(db: PrismaClient, adminId: string, communityId: string): Promise<void> {
   if (await isSuperAdmin(db, adminId)) return
   const access = await db.communityAdmin.findUnique({

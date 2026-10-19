@@ -133,12 +133,16 @@ export function ticketAttachmentExtension(fileName: string): string | null {
   return (TICKET_ATTACHMENT_EXTENSIONS as readonly string[]).includes(ext) ? ext : null
 }
 
+/** Folder inside the private bucket: support tickets and service requests keep their uploads apart. */
+export type AttachmentPrefix = 'tickets' | 'services'
+
 export async function generateTicketUploadUrl(
   userId: string,
   ext: string,
+  prefix: AttachmentPrefix = 'tickets',
 ): Promise<{ uploadUrl: string; objectKey: string }> {
   await ensureTicketsBucket()
-  const objectKey = `tickets/${userId}/${randomUUID()}.${ext}`
+  const objectKey = `${prefix}/${userId}/${randomUUID()}.${ext}`
   const signedUrl = await publicClient.presignedPutObject(env.minio.ticketsBucket, objectKey, 5 * 60)
   return { uploadUrl: toBrowserUrl(signedUrl), objectKey }
 }
@@ -159,8 +163,9 @@ function sniffTicketMime(head: Buffer): string | null {
 export async function inspectTicketAttachment(
   objectKey: string,
   uploaderId: string,
+  prefix: AttachmentPrefix = 'tickets',
 ): Promise<{ size: number; mimeType: string } | null> {
-  if (!objectKey.startsWith(`tickets/${uploaderId}/`) || objectKey.includes('..')) return null
+  if (!objectKey.startsWith(`${prefix}/${uploaderId}/`) || objectKey.includes('..')) return null
   try {
     const stat = await client.statObject(env.minio.ticketsBucket, objectKey)
     if (stat.size <= 0 || stat.size > TICKET_ATTACHMENT_MAX_BYTES) return null
@@ -182,10 +187,10 @@ export async function deleteTicketObject(objectKey: string): Promise<void> {
   }
 }
 
-/** Every ticket upload (`tickets/…`) with its upload time — input for the orphan sweep. */
+/** Every upload in the private bucket (tickets and services) with its upload time — input for the orphan sweep. */
 export async function* listTicketObjects(): AsyncGenerator<{ name: string; lastModified: Date }> {
   await ensureTicketsBucket()
-  const stream = client.listObjectsV2(env.minio.ticketsBucket, 'tickets/', true)
+  const stream = client.listObjectsV2(env.minio.ticketsBucket, '', true)
   for await (const item of stream as AsyncIterable<{ name?: string; lastModified?: Date }>) {
     if (item.name && item.lastModified) yield { name: item.name, lastModified: item.lastModified }
   }

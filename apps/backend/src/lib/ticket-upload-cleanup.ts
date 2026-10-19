@@ -13,7 +13,7 @@ interface SweepDeps {
 }
 
 /**
- * Deletes ticket uploads that no ticket / message ended up referencing: files the member removed
+ * Deletes ticket and service uploads that no ticket / service request / message ended up referencing: files the member removed
  * from the composer before sending, or sent in a request that was then rejected. Uploads happen
  * before the ticket / message exists, so these can't be cleaned up at request time.
  */
@@ -27,8 +27,11 @@ export async function sweepOrphanTicketUploads(
 
   const flush = async () => {
     if (batch.length === 0) return
-    const used = await db.ticketAttachment.findMany({ where: { objectKey: { in: batch } }, select: { objectKey: true } })
-    const usedKeys = new Set(used.map(a => a.objectKey))
+    const [ticketFiles, serviceFiles] = await Promise.all([
+      db.ticketAttachment.findMany({ where: { objectKey: { in: batch } }, select: { objectKey: true } }),
+      db.serviceAttachment.findMany({ where: { objectKey: { in: batch } }, select: { objectKey: true } }),
+    ])
+    const usedKeys = new Set([...ticketFiles, ...serviceFiles].map(a => a.objectKey))
     const orphans = batch.filter(key => !usedKeys.has(key))
     await Promise.all(orphans.map(remove))
     removed += orphans.length

@@ -203,6 +203,17 @@ export interface LiveTicketEvent {
   data: unknown
 }
 
+// Service-request activity travels over the same Redis channel and the same /ws/tickets socket,
+// so the app keeps a single connection. `service.*` names keep the two feeds apart for clients.
+export type LiveServiceEventName = 'service.created' | 'service.message' | 'service.updated' | 'service.read'
+
+export interface LiveServiceEvent {
+  userIds: string[]
+  event: LiveServiceEventName
+  requestId: string
+  data: unknown
+}
+
 // BullMQ requires maxRetriesPerRequest: null on any Redis connection it manages —
 // a different tuning than lib/redis.ts's client (used for refresh tokens/caching).
 // Passed as plain options (not a shared ioredis.Redis instance) so BullMQ builds
