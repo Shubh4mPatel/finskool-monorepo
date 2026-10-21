@@ -75,7 +75,7 @@ Lock-screen text is deliberately short and never contains amounts, invoice links
 ## 6. Handling pushes in the app
 
 - **App closed or in the background:** the system shows the banner. When the user taps it, read `message.data` and navigate using the table above.
-- **App open (foreground):** FCM does not show a banner by itself. Either show one with `flutter_local_notifications` or ignore the push and rely on the live socket (`/ws/tickets`) which already updates open chats instantly. The backend always sends the push, even when the app is open, so the app decides how to show it.
+- **App open (foreground):** FCM does not show a banner by itself. Either show one with `flutter_local_notifications` or ignore the push and rely on the live notification socket (`/ws/notifications`, section 7b), which updates the inbox and badge instantly (open chat screens keep using `/ws/tickets` for the messages themselves). The backend always sends the push, even when the app is open, so the app decides how to show it.
 - **Cold start from a tap:** use `FirebaseMessaging.instance.getInitialMessage()`.
 
 ```dart
