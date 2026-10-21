@@ -392,7 +392,7 @@ export class NotificationsService {
     for (let i = 0; i < targets.length; i += FCM_BATCH_SIZE) {
       const chunk = targets.slice(i, i + FCM_BATCH_SIZE)
       const outcomes = await sendPushBatch(
-        chunk.map(t => ({ token: t.token, title: payload.title, body: payload.body, data: payload.data, collapseKey: payload.collapseKey })),
+        chunk.map(t => ({ token: t.token, title: payload.title, body: payload.body, data: payload.data, threadId: payload.threadId })),
       )
       outcomes.forEach((outcome, idx) => {
         const target = chunk[idx]

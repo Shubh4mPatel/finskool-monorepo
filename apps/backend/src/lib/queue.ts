@@ -162,7 +162,7 @@ export interface PushNotificationJobPayload {
   body: string
   // Routing info for the app, e.g. { type: 'ticket', id: '...' }; values are stringified at send time.
   data: Record<string, string>
-  collapseKey?: string
+  threadId?: string
 }
 
 export const MOBILE_NEW_LOGIN_EMAIL_JOB = 'mobile-new-login-email'

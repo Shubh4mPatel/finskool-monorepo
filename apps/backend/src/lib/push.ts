@@ -7,7 +7,7 @@ export interface PushRequest {
   title: string
   body: string
   data: Record<string, string>
-  collapseKey?: string
+  threadId?: string
 }
 
 /**
@@ -22,7 +22,7 @@ export async function enqueuePush(req: PushRequest): Promise<void> {
     title: req.title,
     body: req.body,
     data: req.data,
-    ...(req.collapseKey ? { collapseKey: req.collapseKey } : {}),
+    ...(req.threadId ? { threadId: req.threadId } : {}),
   }
   try {
     await notificationsQueue.add(PUSH_NOTIFICATION_JOB, payload, {

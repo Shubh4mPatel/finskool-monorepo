@@ -55,7 +55,7 @@ export async function notifyMemberThread(n: ThreadNotification): Promise<void> {
   } catch (err) {
     logger.error({ err, userId: n.userId }, 'notifyMemberThread: live publish failed')
   }
-  await enqueuePush({ userIds: [n.userId], title: n.title, body: n.message, data, collapseKey: `${n.kind}:${n.threadId}` })
+  await enqueuePush({ userIds: [n.userId], title: n.title, body: n.message, data, threadId: `${n.kind}:${n.threadId}` })
 }
 
 /** Short lock-screen text for a chat message: the start of its text, or a placeholder for attachment-only messages. */

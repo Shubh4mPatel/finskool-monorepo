@@ -68,7 +68,7 @@ Every push has a visible title and body (so the system shows it even when the ap
 | `service` | service request id | `reply`, `quote`, `paid`, `closed`, `quote-expired` | none | That service request's chat |
 | `subscription` | community id | `expiring-7`, `expiring-1`, `expired`, `extended`, `community-added` | `communityId` | Subscription / community screen |
 
-Ticket and service pushes **replace** the previous banner for the same ticket or request, so a long chat does not stack ten banners.
+Every event is its own push with its own text, so if the admin sends five messages the member gets five banners and can see all five. On iPhone the banners of one ticket or service request are grouped together (the push carries a conversation `thread-id`). On Android the system groups them automatically when there are several. The app does not need to do anything for this.
 
 Lock-screen text is deliberately short and never contains amounts, invoice links or personal details. For example a quote push says "Your quote is ready", not the price.
 
@@ -165,7 +165,7 @@ Members never get a push for their own actions. Admins do not receive mobile pus
 
 1. Log in, grant permission, confirm `PUT /push-token` returns 200.
 2. Send a ticket reply from the admin dashboard with the app closed: a banner arrives and tapping it opens that ticket.
-3. Send a second reply: the banner is replaced, and the inbox now has a separate row for each reply.
+3. Send three replies quickly: three separate banners arrive, each with its own text (grouped under the ticket on iPhone), and the inbox has a separate row for each.
 4. Send a quote from the admin dashboard: banner "Your quote is ready", no amount shown. Tapping opens the service chat.
 5. Pay a quote: "Payment received" arrives.
 6. Turn the master switch off: no pushes, but the inbox still gets rows.

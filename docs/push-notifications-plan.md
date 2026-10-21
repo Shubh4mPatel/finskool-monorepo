@@ -162,3 +162,7 @@ A separate mobile developer document will be written when the backend is built.
 Decision (2026-10-21): every ticket or service event gets its own inbox row, so the inbox keeps full history. Each row's `source_id` is the id of the event (message id, quote id, invoice id, system message id; the ticket id or request id for the terminal events "resolved" and "closed"), which keeps the existing unique key `(user_id, type, source_id)` meaningful: retrying the same event never creates a second row or a second push. Push banners still replace the previous one for the same thread (`collapseKey`).
 
 All member notifications also travel on one live socket, `/ws/notifications`, which accepts both the web and the mobile login (see `docs/mobile-push-integration.md`, section 7b).
+
+## 15. Update: one banner per event (no replacing)
+
+Decision (2026-10-21): chat replies are not collapsed. Every message is its own push with its own text, so a member who gets five messages sees five banners and knows exactly what was sent. The push carries a conversation id (`thread-id` on iPhone) so the banners of one ticket or request are grouped. The earlier collapse key was removed.

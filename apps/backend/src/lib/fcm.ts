@@ -12,8 +12,8 @@ export interface PushMessage {
   body: string
   // FCM data values must be strings.
   data: Record<string, string>
-  // Replaces an earlier, still-visible push with the same key (one banner per ticket / service request).
-  collapseKey?: string | undefined
+  // Groups banners of one conversation together on iPhone (each message still gets its own banner).
+  threadId?: string | undefined
 }
 
 export type PushOutcome =
@@ -84,11 +84,10 @@ function toFirebaseMessage(m: PushMessage): Message {
     data: m.data,
     android: {
       priority: 'high',
-      ...(m.collapseKey ? { collapseKey: m.collapseKey, notification: { tag: m.collapseKey } } : {}),
     },
     apns: {
-      headers: { 'apns-priority': '10', ...(m.collapseKey ? { 'apns-collapse-id': m.collapseKey } : {}) },
-      payload: { aps: { sound: 'default' } },
+      headers: { 'apns-priority': '10' },
+      payload: { aps: { sound: 'default', ...(m.threadId ? { 'thread-id': m.threadId } : {}) } },
     },
   }
 }

@@ -17,7 +17,7 @@ export interface NotificationRowParams {
   // Routing info stored on the row for the mobile inbox.
   data?: Record<string, string>
   // When set, a push goes out for this notification too (title/message as the banner, `push.data` for the tap).
-  push?: { data: Record<string, string>; collapseKey?: string }
+  push?: { data: Record<string, string>; threadId?: string }
 }
 
 // Shared by notifyOnce (below) and by digest jobs whose sourceId is always a
@@ -40,7 +40,7 @@ export async function createAndPublishNotification(params: NotificationRowParams
     logger.error({ err, userId, type, sourceId }, 'createAndPublishNotification: live publish failed')
   }
   if (push) {
-    await enqueuePush({ userIds: [userId], title, body: message, data: push.data, ...(push.collapseKey ? { collapseKey: push.collapseKey } : {}) })
+    await enqueuePush({ userIds: [userId], title, body: message, data: push.data, ...(push.threadId ? { threadId: push.threadId } : {}) })
   }
   return row.id
 }
