@@ -121,7 +121,7 @@ Things to handle:
 
 - `communityId` can be `null` (service requests belong to no community).
 - `data` is the same routing information as in the push. Use it to open the right screen when an inbox row is tapped. It is `null` on older rows, so fall back to `type`.
-- New `type` values: `ticket-update` and `service-update`. There is **one inbox row per ticket and per service request**. A new reply updates that row, marks it unread again and moves it to the top, instead of adding a row per message.
+- New `type` values: `ticket-update` and `service-update`. **Every event gets its own inbox row**, so the inbox is a full history: each admin reply, each quote, the payment, the closing and so on. A long chat adds one row per admin message. Rows for the same ticket or request share `data.id`, so the app can group or filter them by thread if it wants to.
 - Load the inbox on app launch and when the app returns to the foreground, so nothing is missed if a push was dropped.
 
 ## 7b. The live notification socket (while the app is open)
@@ -138,7 +138,7 @@ Each time a notification is created or refreshed for the member, the server send
 }
 ```
 
-- `notification` has exactly the same shape as an item in `GET /api/v1/notifications`. If the inbox already holds that `id` (a thread row that was refreshed), replace it and move it to the top; otherwise insert it at the top.
+- `notification` has exactly the same shape as an item in `GET /api/v1/notifications`. Insert it at the top of the inbox list. (If the app already holds that `id`, for example after a reconnect and refetch, ignore the duplicate.)
 - `unreadCount` is the member's new total, so set the bell badge from it.
 - If the session ends (logout, or a login on another phone), the server closes the socket with code **4401**. Do not reconnect until the member logs in again. Any other close: reconnect with a short backoff, then refetch the inbox once.
 - Load the inbox with REST on app start, then keep it current from the socket. The socket only covers the time the app is open and connected.
@@ -165,7 +165,7 @@ Members never get a push for their own actions. Admins do not receive mobile pus
 
 1. Log in, grant permission, confirm `PUT /push-token` returns 200.
 2. Send a ticket reply from the admin dashboard with the app closed: a banner arrives and tapping it opens that ticket.
-3. Send a second reply: the banner is replaced, and the inbox still has one row for that ticket, now unread.
+3. Send a second reply: the banner is replaced, and the inbox now has a separate row for each reply.
 4. Send a quote from the admin dashboard: banner "Your quote is ready", no amount shown. Tapping opens the service chat.
 5. Pay a quote: "Payment received" arrives.
 6. Turn the master switch off: no pushes, but the inbox still gets rows.

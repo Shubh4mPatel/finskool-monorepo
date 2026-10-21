@@ -62,6 +62,7 @@ export async function expireServiceQuotes(db: PrismaClient, now: Date = new Date
         userId: request.userId,
         kind: 'service',
         threadId: requestId,
+        eventId: messageId,
         communityId: null,
         title: 'Your quote expired',
         message: 'Ask for a new quote in your service request chat.',

@@ -1,4 +1,5 @@
 import type { PrismaClient } from '../generated/prisma/client.js'
+import { Prisma } from '../generated/prisma/client.js'
 import redis from './redis.js'
 import { NOTIFICATIONS_PUBSUB_CHANNEL } from './queue.js'
 import type { LiveNotificationEvent } from './queue.js'
@@ -10,8 +11,14 @@ export interface ThreadNotification {
   db: PrismaClient
   userId: string
   kind: 'ticket' | 'service'
-  /** The ticket / service request id. */
+  /** The ticket / service request id, sent to the app so it can open the right chat. */
   threadId: string
+  /**
+   * Identifies this one event (a message id, quote id, payment id...). It becomes the inbox row's
+   * sourceId, so every event gets its own row and a retry of the same event never doubles it.
+   * Must be unique per member and kind across events.
+   */
+  eventId: string
   /** Ticket community; null for service requests, which belong to no community. */
   communityId: string | null
   title: string
@@ -21,30 +28,29 @@ export interface ThreadNotification {
 }
 
 /**
- * Tells a member about activity on one of their tickets or service requests: updates their single inbox
- * row for that thread (so a long chat is one inbox entry, not one per message), pushes it to the open
- * app over the live socket, and queues a push notification. Never throws; this is a side effect of
- * the real action and must not fail it.
+ * Tells a member about activity on one of their tickets or service requests: adds one inbox row for the
+ * event (so the inbox keeps the full history), pushes it to the open app over the live socket, and
+ * queues a push notification. Never throws; this is a side effect of the real action and must not fail it.
  *
- * One row per thread works through the (userId, type, sourceId) unique key. The row is reset to unread
- * and moved to the top every time there is something new.
+ * Rows are unique per (member, type, eventId). If the same event is reported twice, the second call
+ * finds the row already there and does nothing, so the member is neither shown nor pushed it twice.
  */
 export async function notifyMemberThread(n: ThreadNotification): Promise<void> {
   const type = n.kind === 'ticket' ? NotificationType.TicketUpdate : NotificationType.ServiceUpdate
   const data = { type: n.kind, id: n.threadId, event: n.event, ...(n.communityId ? { communityId: n.communityId } : {}) }
   try {
-    await n.db.notification.upsert({
-      where: { uq_notifications_user_type_source: { userId: n.userId, type, sourceId: n.threadId } },
-      create: { userId: n.userId, communityId: n.communityId, type, sourceId: n.threadId, title: n.title, message: n.message, data },
-      update: { title: n.title, message: n.message, data, isRead: false, createdAt: new Date() },
+    await n.db.notification.create({
+      data: { userId: n.userId, communityId: n.communityId, type, sourceId: n.eventId, title: n.title, message: n.message, data },
     })
   } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') return
     logger.error({ err, userId: n.userId, kind: n.kind, threadId: n.threadId }, 'notifyMemberThread: inbox row failed')
+    return
   }
   try {
     await redis.publish(
       NOTIFICATIONS_PUBSUB_CHANNEL,
-      JSON.stringify({ userId: n.userId, type, communityId: n.communityId, message: n.message, sourceId: n.threadId } satisfies LiveNotificationEvent),
+      JSON.stringify({ userId: n.userId, type, communityId: n.communityId, message: n.message, sourceId: n.eventId } satisfies LiveNotificationEvent),
     )
   } catch (err) {
     logger.error({ err, userId: n.userId }, 'notifyMemberThread: live publish failed')

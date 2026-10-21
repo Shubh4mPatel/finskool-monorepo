@@ -156,3 +156,9 @@ A separate mobile developer document will be written when the backend is built.
 - **Pushes are best effort**: iOS especially may drop or delay. The inbox covers it. Critical messages (OTP, payments) keep using email and WhatsApp.
 - **Volume**: a post to a large community enqueues one push job per chunk and sends up to 500 tokens per FCM call. Fine at current scale; revisit with FCM topics if a community grows to tens of thousands.
 - **Quiet hours and per-category mute** are not in v1.
+
+## 14. Update: inbox rows are per event, not per thread
+
+Decision (2026-10-21): every ticket or service event gets its own inbox row, so the inbox keeps full history. Each row's `source_id` is the id of the event (message id, quote id, invoice id, system message id; the ticket id or request id for the terminal events "resolved" and "closed"), which keeps the existing unique key `(user_id, type, source_id)` meaningful: retrying the same event never creates a second row or a second push. Push banners still replace the previous one for the same thread (`collapseKey`).
+
+All member notifications also travel on one live socket, `/ws/notifications`, which accepts both the web and the mobile login (see `docs/mobile-push-integration.md`, section 7b).

@@ -323,6 +323,7 @@ export class AdminTicketsService {
       userId: fresh.userId,
       kind: 'ticket',
       threadId: ticketId,
+      eventId: dtoMessage.id,
       communityId: fresh.communityId,
       title: 'Support replied to your ticket',
       message: messagePreview(dtoMessage.body, dtoMessage.attachments.length),
@@ -369,6 +370,8 @@ export class AdminTicketsService {
       userId: fresh.userId,
       kind: 'ticket',
       threadId: ticketId,
+      // Resolving is terminal, so the ticket id identifies this event.
+      eventId: ticketId,
       communityId: fresh.communityId,
       title: 'Your ticket was resolved',
       message: 'Tap to see the outcome and rate the support you got.',

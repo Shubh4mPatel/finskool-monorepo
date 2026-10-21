@@ -418,6 +418,7 @@ export class ServicePaymentsService {
       userId,
       kind: 'service',
       threadId: requestId,
+      eventId: invoiceId,
       communityId: null,
       title: 'Payment received',
       message: 'Thank you. Your GST invoice is ready in your service request.',
