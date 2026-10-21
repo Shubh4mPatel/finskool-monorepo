@@ -1,4 +1,5 @@
 import { Prisma } from '../../generated/prisma/client.js'
+import { notifyMemberThread, messagePreview } from '../../lib/member-notify.js'
 import type { PrismaClient } from '../../generated/prisma/client.js'
 import { getCommunityAdminIds, hasCommunityAccess } from '../../lib/community-access.js'
 import { publishTicketEvent } from '../../lib/live-tickets-feed.js'
@@ -317,6 +318,16 @@ export class AdminTicketsService {
         data: { message: dtoMessage, ticket: ticketSummary(fresh, 'admin') },
       }),
     ])
+    await notifyMemberThread({
+      db: this.db,
+      userId: fresh.userId,
+      kind: 'ticket',
+      threadId: ticketId,
+      communityId: fresh.communityId,
+      title: 'Support replied to your ticket',
+      message: messagePreview(dtoMessage.body, dtoMessage.attachments.length),
+      event: 'reply',
+    })
     return dtoMessage
   }
 
@@ -353,6 +364,16 @@ export class AdminTicketsService {
 
     const fresh = await this.getVisible(admin, ticketId)
     await this.publishUpdated(fresh)
+    await notifyMemberThread({
+      db: this.db,
+      userId: fresh.userId,
+      kind: 'ticket',
+      threadId: ticketId,
+      communityId: fresh.communityId,
+      title: 'Your ticket was resolved',
+      message: 'Tap to see the outcome and rate the support you got.',
+      event: 'resolved',
+    })
     return mapAdminTicket(fresh, admin)
   }
 

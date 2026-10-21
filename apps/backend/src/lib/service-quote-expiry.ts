@@ -1,4 +1,5 @@
 import type { PrismaClient } from '../generated/prisma/client.js'
+import { notifyMemberThread } from './member-notify.js'
 import { getAllAdminIds } from './community-access.js'
 import { publishServiceEvent } from './live-tickets-feed.js'
 import { logger } from '../shared/logger.js'
@@ -56,6 +57,16 @@ export async function expireServiceQuotes(db: PrismaClient, now: Date = new Date
           publishServiceEvent({ userIds, event: 'service.updated', requestId, data: { request: requestSummary(request, side) } }),
         ])
       await Promise.all([publishFor([request.userId], 'member'), publishFor(adminIds, 'admin')])
+      await notifyMemberThread({
+        db,
+        userId: request.userId,
+        kind: 'service',
+        threadId: requestId,
+        communityId: null,
+        title: 'Your quote expired',
+        message: 'Ask for a new quote in your service request chat.',
+        event: 'quote-expired',
+      })
     } catch (err) {
       // One bad row must not stop the rest; the next run retries it.
       logger.error({ err, quoteId: id }, 'service-quote-expiry: failed to expire quote')

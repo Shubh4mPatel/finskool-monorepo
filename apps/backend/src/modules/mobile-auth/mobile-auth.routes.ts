@@ -205,6 +205,8 @@ router.post('/resend-otp', controller.resendOtp)
  *               password: { type: string, format: password, example: SecurePass123 }
  *               deviceId: { type: string, example: "device-uuid-from-client" }
  *               deviceType: { type: string, enum: [ios, android] }
+ *               fcmToken: { type: string, description: FCM device token for push notifications }
+ *               appVersion: { type: string }
  *     responses:
  *       200:
  *         description: Logged in. The session id is set as an httpOnly `mobile_session_id` cookie, not returned in the body.

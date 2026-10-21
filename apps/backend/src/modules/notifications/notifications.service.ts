@@ -26,7 +26,10 @@ import type {
   PasswordResetOtpEmailJobPayload,
   MobileNewLoginEmailJobPayload,
   LiveNotificationEvent,
+  PushNotificationJobPayload,
 } from '../../lib/queue.js'
+import { FCM_BATCH_SIZE, isPushConfigured, sendPushBatch } from '../../lib/fcm.js'
+import { enqueuePush } from '../../lib/push.js'
 import { renderInvoicePdf } from '../services/services.invoice.js'
 import { requestLabel } from '../services/services.shared.js'
 import { NotificationType } from './notifications.dto.js'
@@ -104,6 +107,7 @@ export class NotificationsService {
         type: n.type,
         title: n.title,
         message: n.message,
+        data: (n.data as Record<string, string> | null) ?? null,
         isRead: n.isRead,
         createdAt: n.createdAt,
         updatedAt: n.updatedAt,
@@ -211,6 +215,10 @@ export class NotificationsService {
       await Promise.all([
         this.sendEmailBatch(emails, email.subject, email.html),
         this.publishLiveBatch(chunk.map(r => r.userId), { type, communityId, message, sourceId }),
+        // Only when this chunk really created rows: a retried fan-out job finds them all existing and stays quiet.
+        result.count > 0
+          ? enqueuePush({ userIds: chunk.map(r => r.userId), title, body: message, data: { type, id: sourceId, communityId } })
+          : Promise.resolve(),
       ])
     }
 
@@ -363,6 +371,53 @@ export class NotificationsService {
       expiry_minutes: String(payload.expiryMinutes),
     })
     await sendMail({ to: payload.toEmail, subject, html })
+  }
+
+  /**
+   * Delivers one push job. Recipients who muted pushes, or have no registered device, are skipped.
+   * Tokens FCM reports as dead are cleared (never retried). If some sends failed for a temporary reason,
+   * the job's recipients are narrowed to just those members and the job is failed so BullMQ retries it,
+   * which means a retry never re-sends to someone who already got it.
+   */
+  async sendPush(payload: PushNotificationJobPayload, job?: { updateData(data: PushNotificationJobPayload): Promise<void> }): Promise<{ sent: number; invalid: number; skipped: number }> {
+    const sessions = await this.db.mobileSession.findMany({
+      where: { userId: { in: payload.userIds }, fcmToken: { not: null }, user: { pushEnabled: true, status: 'active', deletedAt: null } },
+      select: { userId: true, fcmToken: true },
+    })
+    const targets = sessions.flatMap(s => (s.fcmToken ? [{ userId: s.userId, token: s.fcmToken }] : []))
+    const skipped = payload.userIds.length - targets.length
+    if (targets.length === 0) return { sent: 0, invalid: 0, skipped }
+    if (!isPushConfigured()) {
+      logger.warn({ recipients: targets.length, type: payload.data['type'] }, 'notifications.sendPush: FCM not configured, push skipped')
+      return { sent: 0, invalid: 0, skipped: payload.userIds.length }
+    }
+
+    let sent = 0
+    const deadTokens: string[] = []
+    const retryUserIds: string[] = []
+    for (let i = 0; i < targets.length; i += FCM_BATCH_SIZE) {
+      const chunk = targets.slice(i, i + FCM_BATCH_SIZE)
+      const outcomes = await sendPushBatch(
+        chunk.map(t => ({ token: t.token, title: payload.title, body: payload.body, data: payload.data, collapseKey: payload.collapseKey })),
+      )
+      outcomes.forEach((outcome, idx) => {
+        const target = chunk[idx]
+        if (!target) return
+        if (outcome.ok) sent++
+        else if (outcome.kind === 'invalid-token') deadTokens.push(target.token)
+        else if (outcome.kind === 'transient') retryUserIds.push(target.userId)
+        else logger.error({ userId: target.userId, code: outcome.code }, 'notifications.sendPush: send failed')
+      })
+    }
+
+    if (deadTokens.length > 0) {
+      await this.db.mobileSession.updateMany({ where: { fcmToken: { in: deadTokens } }, data: { fcmToken: null, fcmTokenUpdatedAt: null } })
+    }
+    if (retryUserIds.length > 0) {
+      await job?.updateData({ ...payload, userIds: retryUserIds })
+      throw new Error(`push: ${retryUserIds.length} send(s) failed temporarily; will retry`)
+    }
+    return { sent, invalid: deadTokens.length, skipped }
   }
 
   async sendMobileNewLoginEmail(payload: MobileNewLoginEmailJobPayload): Promise<void> {

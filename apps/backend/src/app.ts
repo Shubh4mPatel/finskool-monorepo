@@ -9,6 +9,7 @@ import { swaggerSpec, swaggerDocsPath } from './config/swagger.js'
 import { errorMiddleware } from './middlewares/error.middleware.js'
 import { NotFoundError } from './shared/errors/index.js'
 import authRoutes from './modules/auth/auth.routes.js'
+import mobilePushRoutes from './modules/push/push.routes.js'
 import mobileAuthRoutes from './modules/mobile-auth/mobile-auth.routes.js'
 import adminRoutes from './modules/admin/admin.routes.js'
 import postsRoutes, { mobilePostsRouter } from './modules/posts/posts.routes.js'
@@ -81,6 +82,7 @@ export function createApp() {
   // reactions.routes.ts for why these are separate from the shared routes.
   // Mounted before the shared /api/v1/mobile routers below: those apply authenticate router-wide, which
   // would otherwise re-run the MobileSession lookup on every ticket request before reaching this router.
+  app.use('/api/v1/mobile', mobilePushRoutes)
   app.use('/api/v1/mobile/tickets', mobileTicketsRouter)
   app.use('/api/v1/mobile/services', mobileServicesRouter)
   app.use('/api/v1/mobile', mobilePostsRouter)

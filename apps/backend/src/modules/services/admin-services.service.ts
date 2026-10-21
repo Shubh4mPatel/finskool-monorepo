@@ -1,4 +1,5 @@
 import { Prisma } from '../../generated/prisma/client.js'
+import { notifyMemberThread, messagePreview } from '../../lib/member-notify.js'
 import type { PrismaClient } from '../../generated/prisma/client.js'
 import { getAllAdminIds } from '../../lib/community-access.js'
 import { publishServiceEvent } from '../../lib/live-tickets-feed.js'
@@ -399,6 +400,16 @@ export class AdminServicesService {
         data: { message: dtoMessage, request: requestSummary(fresh, 'admin') },
       }),
     ])
+    await notifyMemberThread({
+      db: this.db,
+      userId: fresh.userId,
+      kind: 'service',
+      threadId: requestId,
+      communityId: null,
+      title: 'New message about your service request',
+      message: messagePreview(dtoMessage.body, dtoMessage.attachments.length),
+      event: 'reply',
+    })
     return dtoMessage
   }
 
@@ -449,6 +460,16 @@ export class AdminServicesService {
 
     const fresh = await this.getRequest(requestId)
     await this.publishUpdated(fresh)
+    await notifyMemberThread({
+      db: this.db,
+      userId: fresh.userId,
+      kind: 'service',
+      threadId: requestId,
+      communityId: null,
+      title: fresh.closedReason === 'completed' ? 'Your service is complete' : 'Your service request was closed',
+      message: fresh.closedReason === 'completed' ? 'Tap to see the details and rate it.' : 'Tap to see why.',
+      event: 'closed',
+    })
     return mapAdminRequest(fresh, admin)
   }
 
@@ -563,6 +584,16 @@ export class AdminServicesService {
         data: { message: dtoMessage, request: requestSummary(fresh, side), supersededQuoteId: outcome.supersededQuoteId },
       })
     await Promise.all([publishFor([fresh.userId], 'member'), publishFor(adminIds, 'admin')])
+    await notifyMemberThread({
+      db: this.db,
+      userId: fresh.userId,
+      kind: 'service',
+      threadId: requestId,
+      communityId: null,
+      title: outcome.supersededQuoteId ? 'Your quote was updated' : 'Your quote is ready',
+      message: 'Open your service request to review it and pay.',
+      event: 'quote',
+    })
     return { request: await mapAdminRequest(fresh, admin), quote: dtoMessage.quote! }
   }
 

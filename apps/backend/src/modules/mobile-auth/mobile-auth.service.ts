@@ -277,11 +277,20 @@ export class MobileAuthService {
       // "field omitted") — Prisma.JsonNull is the explicit "store JSON null"
       // sentinel, used here for the super-admin/"unrestricted" case.
       accessibleCommunityIds: accessibleCommunityIds ?? Prisma.JsonNull,
+      // A new login replaces the session, so the previous phone's push token is dropped
+      // (null) unless this login brings its own.
+      fcmToken: data.fcmToken ?? null,
+      fcmTokenUpdatedAt: data.fcmToken ? new Date() : null,
+      appVersion: data.appVersion ?? null,
     }
-    await this.db.mobileSession.upsert({
-      where: { userId: user.id },
-      create: { userId: user.id, ...sessionData },
-      update: sessionData,
+    await this.db.$transaction(async tx => {
+      // A phone belongs to one logged-in member: if another account still holds this token, take it over.
+      if (data.fcmToken) await tx.mobileSession.updateMany({ where: { fcmToken: data.fcmToken, NOT: { userId: user.id } }, data: { fcmToken: null, fcmTokenUpdatedAt: null } })
+      await tx.mobileSession.upsert({
+        where: { userId: user.id },
+        create: { userId: user.id, ...sessionData },
+        update: sessionData,
+      })
     })
 
     try {

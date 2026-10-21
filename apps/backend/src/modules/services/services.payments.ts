@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { notifyMemberThread, messagePreview } from '../../lib/member-notify.js'
 import type { Prisma, PrismaClient } from '../../generated/prisma/client.js'
 import { env } from '../../config/env.js'
 import { getAllAdminIds } from '../../lib/community-access.js'
@@ -412,6 +413,16 @@ export class ServicePaymentsService {
     }
 
     if (!invoiceId) return
+    await notifyMemberThread({
+      db: this.db,
+      userId,
+      kind: 'service',
+      threadId: requestId,
+      communityId: null,
+      title: 'Payment received',
+      message: 'Thank you. Your GST invoice is ready in your service request.',
+      event: 'paid',
+    })
     renderInvoiceInBackground(this.db, invoiceId)
     try {
       const user = await this.db.user.findUnique({ where: { id: userId }, select: { name: true, email: true } })

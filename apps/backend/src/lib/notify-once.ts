@@ -3,16 +3,21 @@ import { Prisma } from '../generated/prisma/client.js'
 import redis from './redis.js'
 import { NOTIFICATIONS_PUBSUB_CHANNEL } from './queue.js'
 import type { LiveNotificationEvent } from './queue.js'
+import { enqueuePush } from './push.js'
 import { logger } from '../shared/logger.js'
 
 export interface NotificationRowParams {
   db: PrismaClient
-  communityId: string
+  communityId: string | null
   userId: string
   type: string
   sourceId: string
   title: string
   message: string
+  // Routing info stored on the row for the mobile inbox.
+  data?: Record<string, string>
+  // When set, a push goes out for this notification too (title/message as the banner, `push.data` for the tap).
+  push?: { data: Record<string, string>; collapseKey?: string }
 }
 
 // Shared by notifyOnce (below) and by digest jobs whose sourceId is always a
@@ -21,9 +26,9 @@ export interface NotificationRowParams {
 // behavior in one place, mirroring admin.service.ts's notifyImportComplete /
 // NotificationsService's publishLiveBatch.
 export async function createAndPublishNotification(params: NotificationRowParams): Promise<string> {
-  const { db, communityId, userId, type, sourceId, title, message } = params
+  const { db, communityId, userId, type, sourceId, title, message, data, push } = params
   const row = await db.notification.create({
-    data: { communityId, userId, type, sourceId, title, message },
+    data: { communityId, userId, type, sourceId, title, message, ...(data ? { data } : {}) },
     select: { id: true },
   })
   try {
@@ -33,6 +38,9 @@ export async function createAndPublishNotification(params: NotificationRowParams
     )
   } catch (err) {
     logger.error({ err, userId, type, sourceId }, 'createAndPublishNotification: live publish failed')
+  }
+  if (push) {
+    await enqueuePush({ userIds: [userId], title, body: message, data: push.data, ...(push.collapseKey ? { collapseKey: push.collapseKey } : {}) })
   }
   return row.id
 }

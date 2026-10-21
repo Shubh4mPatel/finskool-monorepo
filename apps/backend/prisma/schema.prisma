@@ -85,6 +85,8 @@ model User {
   suspensionReason String? @map("suspension_reason") @db.Text
   avatarUrl    String?   @map("avatar_url") @db.VarChar(500)
   postNotificationsEnabled Boolean @default(true) @map("post_notifications_enabled")
+  // Master mute for mobile push notifications (FCM); separate from the post-notification email/in-app flag above.
+  pushEnabled Boolean @default(true) @map("push_enabled")
   // Submitted once from the mobile app (POST /auth/mobile/me/kyc), then locked.
   // panEncrypted is AES-256-GCM ciphertext (see lib/pan-crypto.ts), decryptable
   // only with PAN_ENCRYPTION_KEY — never select or return it from a normal query.
@@ -540,18 +542,21 @@ model Reaction {
 
 model Notification {
   id          String   @id @default(uuid()) @db.Uuid
-  communityId String   @map("community_id") @db.Uuid
+  // Null for events that belong to no community (service requests).
+  communityId String?  @map("community_id") @db.Uuid
   userId      String   @map("user_id") @db.Uuid
   type        String   @db.VarChar(50)
   sourceId    String   @map("source_id") @db.Uuid
   title       String   @db.Text
   message     String   @db.Text
+  // Routing info the mobile app reads when a notification (or its push) is tapped, e.g. { "type": "ticket", "id": "..." }.
+  data        Json?
   isRead      Boolean  @default(false) @map("is_read")
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  community Community? @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, type, sourceId], name: "uq_notifications_user_type_source")
   @@index([userId, createdAt(sort: Desc)], name: "idx_notifications_user_feed")
@@ -597,11 +602,20 @@ model MobileSession {
   // `string[] | null` in application code (see src/lib/mobile-session.ts).
   accessibleCommunityIds Json? @map("accessible_community_ids")
 
+  // FCM device token for push notifications. One session per user means one
+  // token per user: a logout deletes this row (token gone), a login on another
+  // phone overwrites it. fcmToken is cleared by the push worker when FCM reports
+  // it dead, and by the cleanup job when it hasn't been refreshed for 90 days.
+  fcmToken          String?   @map("fcm_token") @db.VarChar(512)
+  fcmTokenUpdatedAt DateTime? @map("fcm_token_updated_at") @db.Timestamptz
+  appVersion        String?   @map("app_version") @db.VarChar(32)
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([fcmToken], name: "idx_mobile_sessions_fcm_token")
   @@map("mobile_sessions")
 }
 

@@ -1,6 +1,6 @@
 # Push notifications (FCM): feasibility and implementation plan
 
-Status: **plan, nothing built yet.** Decisions below were confirmed by the product owner on 2026-10-21.
+Status: **built on `feat/push-notifications`** (phases 1 to 4 below). Decisions were confirmed by the product owner on 2026-10-21. Mobile guide: `docs/mobile-push-integration.md`.
 
 ## 1. Verdict
 
@@ -66,7 +66,7 @@ All endpoints below require the normal mobile session, like every other mobile c
 
 | Endpoint | Purpose |
 |---|---|
-| `PUT /api/v1/mobile/push-token` body `{ token, platform: "android"\|"ios", appVersion }` | Register or refresh. Saves the token on the caller's `MobileSession` and clears it from any other session. Idempotent. |
+| `PUT /api/v1/mobile/push-token` body `{ token, platform?, appVersion? }` | Register or refresh. Saves the token on the caller's `MobileSession` and clears it from any other session. Idempotent. |
 | `DELETE /api/v1/mobile/push-token` | Remove (for example when the user turns notifications off in the OS). Logout needs no call: deleting the session removes the token. |
 | `PATCH /api/v1/mobile/push-settings` body `{ pushEnabled }` | Master mute. |
 | `POST /auth/mobile/login` (existing) | Add optional `fcmToken`. |
@@ -131,10 +131,10 @@ A separate mobile developer document will be written when the backend is built.
 
 | Phase | Scope | Notes |
 |---|---|---|
-| 1 | Token storage: migration, `PUT/DELETE push-token`, `fcmToken` on login, push settings | Testable without Firebase. |
-| 2 | `fcm.ts`, `push.ts`, queue job, error handling, cleanup cron | Tested with a fake FCM transport. |
-| 3 | Hook community posts and recommendations, then tickets, then services, then subscription reminders; make `Notification.communityId` nullable and add `data` | One event group at a time. |
-| 4 | Mobile integration guide (`docs/mobile-push-integration.md`) | After backend is verified. |
+| 1 (done) | Token storage: migration, `PUT/DELETE push-token`, `fcmToken` on login, push settings | Testable without Firebase. |
+| 2 (done) | `fcm.ts`, `push.ts`, queue job, error handling, cleanup cron | Tested with a fake FCM transport. |
+| 3 (done) | Hook community posts and recommendations, then tickets, then services, then subscription reminders; make `Notification.communityId` nullable and add `data` | One event group at a time. |
+| 4 (done) | Mobile integration guide (`docs/mobile-push-integration.md`) | Written. |
 
 ## 11. Testing plan
 

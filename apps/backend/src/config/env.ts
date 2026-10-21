@@ -108,6 +108,14 @@ export const env = {
     apiBaseUrl: process.env['RAZORPAY_API_BASE_URL'] ?? '',
   },
 
+  // Firebase Cloud Messaging for mobile push — see src/lib/fcm.ts. Both empty disables sending.
+  fcm: {
+    serviceAccountJson: process.env['FCM_SERVICE_ACCOUNT_JSON'] ?? '',
+    serviceAccountFile: process.env['FCM_SERVICE_ACCOUNT_FILE'] ?? '',
+    // Testing only: POST push messages to a stand-in server instead of Firebase. Leave unset in every real environment.
+    fakeUrl: process.env['FCM_FAKE_URL'] ?? '',
+  },
+
   // 32-byte AES-256-GCM key as 64 hex chars — see src/lib/pan-crypto.ts.
   pan: {
     encryptionKey: process.env['PAN_ENCRYPTION_KEY'] ?? '',
@@ -139,6 +147,7 @@ export const env = {
   stockQuoteApi: { baseUrl: string; apiKey: string; reportEmails: string[] }
   logoDevToken: string
   razorpay: { keyId: string; keySecret: string; webhookSecret: string; apiBaseUrl: string }
+  fcm: { serviceAccountJson: string; serviceAccountFile: string; fakeUrl: string }
   pan: { encryptionKey: string }
   whatsapp: { baseUrl: string; apiKey: string; phoneNoId: string; templateName: string; emailFallback: boolean }
 }

@@ -1,4 +1,5 @@
 import type { PrismaClient } from '../../generated/prisma/client.js'
+import { enqueuePush } from '../../lib/push.js'
 import { env } from '../../config/env.js'
 import { getRazorpayClient, verifyPaymentSignature } from '../../lib/razorpay.js'
 import { recomputeActiveSubCount } from '../../lib/community-stats.js'
@@ -248,6 +249,13 @@ export class PaymentsService {
     } catch (err) {
       logger.error({ err, subscriptionId: subscription.id }, 'payments.verifyPayment: failed to publish live notification')
     }
+
+    await enqueuePush({
+      userIds: [userId],
+      title: isNewGrant ? `You've been added to ${community.name}` : 'Access extended',
+      body: `You're active until ${formatEmailDate(subscription.validUntil)}.`,
+      data: { type: 'subscription', id: order.communityId, event: isNewGrant ? 'community-added' : 'extended', communityId: order.communityId },
+    })
 
     logger.info(
       { userId, subscriptionId: subscription.id, communityId: order.communityId, isNewGrant },

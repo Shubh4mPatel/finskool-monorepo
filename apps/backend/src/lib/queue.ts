@@ -26,6 +26,7 @@ export const ADMIN_EXPIRY_DIGEST_JOB = 'admin-expiry-report'
 export const EXPIRE_SUBSCRIPTIONS_JOB = 'expire-subscriptions'
 export const TICKET_UPLOAD_CLEANUP_JOB = 'ticket-upload-cleanup'
 export const SERVICE_QUOTE_EXPIRY_JOB = 'service-quote-expiry'
+export const PUSH_TOKEN_CLEANUP_JOB = 'push-token-cleanup'
 
 export interface CommunityPostNotificationJobPayload {
   communityId: string
@@ -153,6 +154,17 @@ export interface PasswordResetOtpEmailJobPayload {
   expiryMinutes: number
 }
 
+export const PUSH_NOTIFICATION_JOB = 'push-notification'
+
+export interface PushNotificationJobPayload {
+  userIds: string[]
+  title: string
+  body: string
+  // Routing info for the app, e.g. { type: 'ticket', id: '...' }; values are stringified at send time.
+  data: Record<string, string>
+  collapseKey?: string
+}
+
 export const MOBILE_NEW_LOGIN_EMAIL_JOB = 'mobile-new-login-email'
 
 export interface MobileNewLoginEmailJobPayload {
@@ -178,6 +190,7 @@ export type NotificationJobPayload =
   | OtpWhatsappJobPayload
   | PasswordResetOtpEmailJobPayload
   | MobileNewLoginEmailJobPayload
+  | PushNotificationJobPayload
 
 // Published by NotificationsService (running in the worker process) whenever a
 // new notification row is created, and consumed by lib/live-notifications-feed.ts
@@ -188,7 +201,7 @@ export const NOTIFICATIONS_PUBSUB_CHANNEL = 'notifications:live'
 export interface LiveNotificationEvent {
   userId: string
   type: string
-  communityId: string
+  communityId: string | null
   message: string
   sourceId: string
   // Set for comment-related events ('thread', 'new-member-reply',
