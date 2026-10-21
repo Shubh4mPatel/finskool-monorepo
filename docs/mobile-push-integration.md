@@ -55,7 +55,7 @@ GET   /api/v1/mobile/push-settings          -> { "pushEnabled": true }
 PATCH /api/v1/mobile/push-settings          { "pushEnabled": false }
 ```
 
-Use it for a "Push notifications" toggle in the app's settings screen. When off, nothing is pushed, but the inbox still fills. (The existing "post notifications" setting separately controls community post and recommendation notifications.)
+Use it for a "Push notifications" toggle in the app's settings screen. When off, nothing is pushed, but the inbox still fills. (The existing "post notifications" setting separately controls community post notifications.)
 
 ## 5. What a push looks like
 
@@ -64,7 +64,6 @@ Every push has a visible title and body (so the system shows it even when the ap
 | `data.type` | `data.id` | `data.event` | Other keys | Open this screen |
 |---|---|---|---|---|
 | `post` | post id | none | `communityId` | The post / announcements |
-| `recommendation` | recommendation id | none | `communityId` | The recommendation |
 | `ticket` | ticket id | `reply`, `resolved` | `communityId` | That ticket's chat |
 | `service` | service request id | `reply`, `quote`, `paid`, `closed`, `quote-expired` | none | That service request's chat |
 | `subscription` | community id | `expiring-7`, `expiring-1`, `expired`, `extended`, `community-added` | `communityId` | Subscription / community screen |
@@ -89,7 +88,6 @@ void route(Map<String, dynamic> d) {
     case 'ticket':       openTicket(d['id']); break;
     case 'service':      openServiceRequest(d['id']); break;
     case 'post':         openPost(d['id']); break;
-    case 'recommendation': openRecommendation(d['id']); break;
     case 'subscription': openSubscription(d['communityId'] ?? d['id']); break;
   }
 }
@@ -130,7 +128,7 @@ Things to handle:
 
 | Event | Push |
 |---|---|
-| New community post or recommendation | To members of that community who have post notifications on |
+| New community post | To members of that community who have post notifications on (recommendations are not pushed) |
 | Admin replies to a ticket | "Support replied to your ticket" |
 | Ticket resolved | "Your ticket was resolved" |
 | Admin message in a service chat | "New message about your service request" |

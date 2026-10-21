@@ -15,7 +15,7 @@ Estimated work: about 3 to 4 days backend (plus Firebase/APNs setup by whoever o
 | Who gets pushes | Members only. No admin pushes in v1. |
 | Devices per user | **One**, stored on `MobileSession` (matches the single-session rule). |
 | App open (socket connected) | **Always send** the push; the app decides how to show it in the foreground. |
-| Events | Community posts and recommendations; ticket replies and resolution from admin; service updates; subscription reminders. |
+| Events | Community posts (not recommendations); ticket replies and resolution from admin; service updates; subscription reminders. |
 
 ## 3. How it fits what we already have
 
@@ -25,7 +25,7 @@ Estimated work: about 3 to 4 days backend (plus Firebase/APNs setup by whoever o
 | `POST /auth/mobile/login` (already takes `deviceId`, `deviceType`) | Accept an optional `fcmToken` here too, so the very first push after login works without a second call. |
 | BullMQ `notificationsQueue` + `worker.ts` | New job `PUSH_NOTIFICATION_JOB`. Sending always goes through the queue with retries and backoff, never inline in an API request. |
 | `Notification` table + `createAndPublishNotification` / `notifyOnce` | The in-app inbox ("source of truth"). Push is a nudge on top of it. |
-| `fanOutCommunity` (posts and recommendations) | Already computes recipients and respects `User.postNotificationsEnabled`. Add one push enqueue per chunk. |
+| `fanOutCommunity` (posts; recommendations are in-app and email only, no push) | Already computes recipients and respects `User.postNotificationsEnabled`. Add one push enqueue per chunk. |
 | Live sockets (`/ws/tickets`, `/ws/notifications`) | Unchanged. Always-send means push does not need to know about socket presence. |
 
 ## 4. Things to know before building (gaps found in the code)
@@ -100,7 +100,6 @@ Send a notification message (title and body, so the OS shows it when the app is 
 | Event | Recipient | Hook point | Collapse key |
 |---|---|---|---|
 | New community post | Community members | `NotificationsService.fanOutCommunity` (posts) | none |
-| New recommendation | Community members | `fanOutCommunity` (recommendations) | none |
 | Admin replies to a ticket | Ticket owner | `AdminTicketsService.reply` | `ticket:<id>` |
 | Ticket resolved | Ticket owner | `AdminTicketsService.resolve` | `ticket:<id>` |
 | Admin reply in a service chat | Request owner | `AdminServicesService.reply` | `service:<id>` |

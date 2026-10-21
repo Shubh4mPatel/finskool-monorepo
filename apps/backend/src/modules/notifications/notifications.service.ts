@@ -155,6 +155,7 @@ export class NotificationsService {
       triggeredByUserId: payload.triggeredByUserId,
       type: NotificationType.Post,
       email: { subject, html },
+      push: true,
     })
   }
 
@@ -168,6 +169,8 @@ export class NotificationsService {
       triggeredByUserId: payload.triggeredByUserId,
       type: NotificationType.Recommendation,
       email: { subject: payload.message, html },
+      // Recommendations stay in-app and email only; no mobile push.
+      push: false,
     })
   }
 
@@ -179,8 +182,9 @@ export class NotificationsService {
     triggeredByUserId: string
     type: string
     email: { subject: string; html: string }
+    push: boolean
   }): Promise<{ created: number }> {
-    const { communityId, sourceId, title, message, triggeredByUserId, type, email } = params
+    const { communityId, sourceId, title, message, triggeredByUserId, type, email, push } = params
 
     const subs = await this.db.subscription.findMany({
       where: { communityId, isActive: true, validUntil: { gte: startOfToday() } },
@@ -216,7 +220,7 @@ export class NotificationsService {
         this.sendEmailBatch(emails, email.subject, email.html),
         this.publishLiveBatch(chunk.map(r => r.userId), { type, communityId, message, sourceId }),
         // Only when this chunk really created rows: a retried fan-out job finds them all existing and stays quiet.
-        result.count > 0
+        push && result.count > 0
           ? enqueuePush({ userIds: chunk.map(r => r.userId), title, body: message, data: { type, id: sourceId, communityId } })
           : Promise.resolve(),
       ])
