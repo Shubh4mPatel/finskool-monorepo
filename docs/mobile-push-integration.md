@@ -124,6 +124,26 @@ Things to handle:
 - New `type` values: `ticket-update` and `service-update`. There is **one inbox row per ticket and per service request**. A new reply updates that row, marks it unread again and moves it to the top, instead of adding a row per message.
 - Load the inbox on app launch and when the app returns to the foreground, so nothing is missed if a push was dropped.
 
+## 7b. The live notification socket (while the app is open)
+
+One WebSocket carries **every** notification (posts, subscription reminders, tickets, services) to the open app: `wss://<host>/ws/notifications`. Send the same `mobile_session_id` cookie as for every other call. Without a valid session the upgrade is refused with HTTP 401.
+
+Each time a notification is created or refreshed for the member, the server sends:
+
+```json
+{
+  "event": "notification.created",
+  "notification": { "id": "…", "communityId": "…" | null, "type": "ticket-update", "title": "…", "message": "…", "data": { "type": "ticket", "id": "…", "event": "reply" }, "isRead": false, "createdAt": "…", "updatedAt": "…" },
+  "unreadCount": 3
+}
+```
+
+- `notification` has exactly the same shape as an item in `GET /api/v1/notifications`. If the inbox already holds that `id` (a thread row that was refreshed), replace it and move it to the top; otherwise insert it at the top.
+- `unreadCount` is the member's new total, so set the bell badge from it.
+- If the session ends (logout, or a login on another phone), the server closes the socket with code **4401**. Do not reconnect until the member logs in again. Any other close: reconnect with a short backoff, then refetch the inbox once.
+- Load the inbox with REST on app start, then keep it current from the socket. The socket only covers the time the app is open and connected.
+- The server sends the push **and** the socket event. While the app is in the foreground FCM shows no banner by itself, so the app shows no duplicate; the socket updates the inbox and badge. When the app is in the background or closed, the system shows the push.
+
 ## 8. When a member gets a push
 
 | Event | Push |

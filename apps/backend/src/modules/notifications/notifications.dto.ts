@@ -38,3 +38,30 @@ export interface ListNotificationsResponseDTO {
   pageSize: number
   totalPages: number
 }
+
+interface NotificationRow {
+  id: string
+  communityId: string | null
+  type: string
+  title: string
+  message: string
+  data: unknown
+  isRead: boolean
+  createdAt: Date
+  updatedAt: Date
+}
+
+/** The inbox item as the apps see it; shared by the REST list and the live mobile socket. */
+export function toNotificationItem(n: NotificationRow): NotificationItemDTO {
+  return {
+    id: n.id,
+    communityId: n.communityId,
+    type: n.type,
+    title: n.title,
+    message: n.message,
+    data: (n.data as Record<string, string> | null) ?? null,
+    isRead: n.isRead,
+    createdAt: n.createdAt,
+    updatedAt: n.updatedAt,
+  }
+}

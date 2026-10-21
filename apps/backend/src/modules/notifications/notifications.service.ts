@@ -32,7 +32,7 @@ import { FCM_BATCH_SIZE, isPushConfigured, sendPushBatch } from '../../lib/fcm.j
 import { enqueuePush } from '../../lib/push.js'
 import { renderInvoicePdf } from '../services/services.invoice.js'
 import { requestLabel } from '../services/services.shared.js'
-import { NotificationType } from './notifications.dto.js'
+import { NotificationType, toNotificationItem } from './notifications.dto.js'
 import type { ListNotificationsResponseDTO } from './notifications.dto.js'
 
 const FAN_OUT_CHUNK_SIZE = 500
@@ -101,17 +101,7 @@ export class NotificationsService {
     ])
 
     return {
-      notifications: notifications.map(n => ({
-        id: n.id,
-        communityId: n.communityId,
-        type: n.type,
-        title: n.title,
-        message: n.message,
-        data: (n.data as Record<string, string> | null) ?? null,
-        isRead: n.isRead,
-        createdAt: n.createdAt,
-        updatedAt: n.updatedAt,
-      })),
+      notifications: notifications.map(toNotificationItem),
       total,
       page,
       pageSize,
