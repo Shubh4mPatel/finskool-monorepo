@@ -54,10 +54,26 @@ A web (dashboard) login gets 403 `MOBILE_ONLY`; an ended session gets 401 `SESSI
 ### Service (catalog entry)
 
 ```json
-{ "id": "7c3e…", "title": "Portfolio Management", "description": "We manage your portfolio…", "imageUrl": "https://…/services/….png" }
+{
+  "id": "7c3e…",
+  "title": "Portfolio Analysis",
+  "description": "Expert **stock-by-stock** review of your portfolio…",
+  "imageUrl": "https://…/services/….png",
+  "iconUrl": "https://…/services/….png",
+  "serviceType": { "key": "expert_advisory", "label": "Expert Advisory" },
+  "tags": ["portfolio", "review"],
+  "highlights": ["Min ₹5,00,000", "2% per transaction", "2-3 years"],
+  "whatMembersGet": ["Stock-by-stock Hold, Sell or Add calls", "Capital redeployment guidance"]
+}
 ```
 
-`imageUrl` may be `null`. Only active services are returned.
+- `title` is the service name. `description` is **markdown** (bold, lists, links), so render it with a markdown widget rather than as plain text.
+- `imageUrl` (big thumbnail) and `iconUrl` (small square icon) may be `null`. `serviceType` may be `null` on older services.
+- `tags` are hashtags **without** the `#`; show them as `#portfolio`. Use them for search and filters.
+- `highlights` are up to 3 short key facts. Show them as chips on the card.
+- `whatMembersGet` is an ordered list (up to 8 short points). Show it on the details screen as the "What you get" checklist.
+- Pricing is always "on request": there is no price on the service. The price comes from the quote the admin sends in the enquiry chat.
+- Only active services are returned.
 
 ### Service request
 
@@ -144,7 +160,7 @@ The status is **always current**: a quote past its expiry already reads `expired
 
 ### `GET /catalog`
 
-Active services. Response `data`: `Service[]`, sorted by title.
+Active services. Response `data`: `Service[]` (shape above), sorted by title.
 
 ### `POST /attachments/presign`
 

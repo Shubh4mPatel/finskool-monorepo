@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { MAX_BODY_LENGTH } from '../tickets/tickets.validator.js'
 import { isGstStateCode, isValidGstin } from './services.billing.js'
+import { MAX_SERVICE_HIGHLIGHTS, MAX_SERVICE_TAGS, MAX_WHAT_MEMBERS_GET, SERVICE_TYPE_KEYS } from './services.catalog.js'
 
 // Chat bodies, attachments, ratings, paging and presign share their rules with the ticket module.
 export {
@@ -56,21 +57,60 @@ export const adminListServiceRequestsQuerySchema = z.object({
 
 const imageUrl = z.string().trim().url().max(500)
 
-export const createCatalogServiceSchema = z.object({
-  name: z.string().trim().min(1, 'Name is required').max(150),
-  title: z.string().trim().min(1, 'Title is required').max(200),
+// Tags are shown as hashtags, so the leading '#' is dropped and case is ignored when de-duplicating.
+const tag = z
+  .string()
+  .trim()
+  .transform(v => v.replace(/^#+/, '').trim())
+  .pipe(z.string().min(1).max(30).regex(/^[\p{L}\p{N}][\p{L}\p{N} &_-]*$/u, 'Tags can use letters, numbers, spaces, & _ -'))
+const tags = z
+  .array(tag)
+  .max(MAX_SERVICE_TAGS, `At most ${MAX_SERVICE_TAGS} tags`)
+  .transform(list => list.filter((t, i) => list.findIndex(o => o.toLowerCase() === t.toLowerCase()) === i))
+const highlights = z.array(z.string().trim().min(1).max(40)).max(MAX_SERVICE_HIGHLIGHTS, `At most ${MAX_SERVICE_HIGHLIGHTS} highlights`)
+const whatMembersGet = z.array(z.string().trim().min(1).max(150)).max(MAX_WHAT_MEMBERS_GET, `At most ${MAX_WHAT_MEMBERS_GET} points`)
+
+const catalogFields = {
+  // "Service name" in the form: what members see on the card and in the chat.
+  title: z.string().trim().min(1, 'Service name is required').max(200),
+  // Optional internal label; defaults to the service name.
+  name: z.string().trim().min(1).max(150),
+  // Markdown.
   description: z.string().trim().min(1, 'Description is required').max(5000),
-  imageUrl: imageUrl.nullish(),
-  isActive: z.boolean().default(true),
+  imageUrl: imageUrl,
+  iconUrl: imageUrl,
+  serviceType: z.enum(SERVICE_TYPE_KEYS),
+  tags,
+  highlights,
+  whatMembersGet,
+  isActive: z.boolean(),
+}
+
+export const createCatalogServiceSchema = z.object({
+  title: catalogFields.title,
+  name: catalogFields.name.optional(),
+  description: catalogFields.description,
+  imageUrl: catalogFields.imageUrl.nullish(),
+  iconUrl: catalogFields.iconUrl.nullish(),
+  serviceType: catalogFields.serviceType,
+  tags: catalogFields.tags.default([]),
+  highlights: catalogFields.highlights.default([]),
+  whatMembersGet: catalogFields.whatMembersGet.default([]),
+  isActive: catalogFields.isActive.default(true),
 })
 
 export const updateCatalogServiceSchema = z
   .object({
-    name: z.string().trim().min(1).max(150),
-    title: z.string().trim().min(1).max(200),
-    description: z.string().trim().min(1).max(5000),
-    imageUrl: imageUrl.nullable(),
-    isActive: z.boolean(),
+    title: catalogFields.title,
+    name: catalogFields.name,
+    description: catalogFields.description,
+    imageUrl: catalogFields.imageUrl.nullable(),
+    iconUrl: catalogFields.iconUrl.nullable(),
+    serviceType: catalogFields.serviceType,
+    tags: catalogFields.tags,
+    highlights: catalogFields.highlights,
+    whatMembersGet: catalogFields.whatMembersGet,
+    isActive: catalogFields.isActive,
   })
   .partial()
   .refine(v => Object.keys(v).length > 0, { message: 'Nothing to update' })

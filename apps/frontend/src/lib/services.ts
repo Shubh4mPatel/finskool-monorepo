@@ -120,16 +120,36 @@ export interface ServiceStats {
   ratingCount: number;
 }
 
+export interface ServiceTypeOption {
+  key: string;
+  label: string;
+}
+
 export interface CatalogService {
   id: string;
+  /** Internal label (defaults to the service name). */
   name: string;
+  /** The service name members see. */
   title: string;
+  /** Markdown. */
   description: string;
   imageUrl: string | null;
+  iconUrl: string | null;
+  serviceType: ServiceTypeOption | null;
+  /** Hashtags without the '#'. */
+  tags: string[];
+  /** Up to 3 short key facts shown as chips on the card. */
+  highlights: string[];
+  /** What the member gets, in display order. */
+  whatMembersGet: string[];
   isActive: boolean;
+  /** Requests for this service that are not closed yet. */
+  openRequests: number;
   createdAt: string;
   updatedAt: string;
 }
+
+export const SERVICE_LIMITS = { tags: 10, highlights: 3, points: 8 } as const;
 
 export interface BillingSettings {
   legalName: string | null;

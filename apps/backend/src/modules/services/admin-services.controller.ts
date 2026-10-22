@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from 'express'
+import { SERVICE_TYPES } from './services.catalog.js'
 import { ForbiddenError } from '../../shared/errors/index.js'
 import { getIdParam } from '../tickets/tickets.controller.js'
 import type { AdminViewer } from '../tickets/tickets.shared.js'
@@ -38,6 +39,22 @@ export class AdminServicesController {
   listCatalog: Handler = async (_req, res, next) => {
     try {
       res.json({ success: true, data: await this.service.listCatalog() })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  getService: Handler = async (req, res, next) => {
+    try {
+      res.json({ success: true, data: await this.service.getService(serviceId(req)) })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  serviceTypes: Handler = async (_req, res, next) => {
+    try {
+      res.json({ success: true, data: SERVICE_TYPES })
     } catch (err) {
       next(err)
     }

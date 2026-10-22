@@ -247,3 +247,7 @@ As with the ticket module, against a real Postgres and Redis with the running ba
 1. **Services are global**, not per community. Every admin sees every request. Any active member can request any active service.
 2. **Late payments:** recorded and flagged, the admin pays the member back manually, no automatic invoice. Warning and expiry-sweep guards added (section 5).
 3. **Defaults accepted:** `name` (admin label) plus `title` (member-facing); any admin manages the catalog; an expired quote returns the request to `requested`; one open request per member per service; no SEBI disclaimer step for now (can be added later).
+
+## Update (2026-10-22): richer service catalog
+
+A service now has: a thumbnail image, an icon, a service name, a service type (fixed list: Long Term Investment, Expert Advisory, Portfolio Management, Trading Strategy, Wealth Planning, Tax & Compliance), a markdown description, tags, up to 3 card highlights, and an ordered "what members get" list (up to 8 points). Pricing is always "on request" (no fixed-price option yet). The admin UI is a two-step form (details, then review and publish) under Services, Services tab (super admin only), with a card grid, edit, hide/show, delete, and "View enquiries" which opens the inbox filtered to that service. No drafts: Publish makes it live.

@@ -1,6 +1,7 @@
 import { Prisma } from '../../generated/prisma/client.js'
 import { generateTicketDownloadUrl } from '../../lib/minio.js'
 import type { AdminViewer } from '../tickets/tickets.shared.js'
+import { serviceTypeOf } from './services.catalog.js'
 import type {
   AdminServiceDTO,
   AdminServiceRequestDTO,
@@ -52,14 +53,25 @@ export const isOpen = (r: { status: string }): boolean => r.status !== 'closed'
 // ─── Catalog ────────────────────────────────────────────────────────────────
 
 export function mapMemberService(s: ServiceRow): MemberServiceDTO {
-  return { id: s.id, title: s.title, description: s.description, imageUrl: s.imageUrl }
+  return {
+    id: s.id,
+    title: s.title,
+    description: s.description,
+    imageUrl: s.imageUrl,
+    iconUrl: s.iconUrl,
+    serviceType: serviceTypeOf(s.serviceType),
+    tags: s.tags,
+    highlights: s.highlights,
+    whatMembersGet: Array.isArray(s.whatMembersGet) ? s.whatMembersGet.filter((p): p is string => typeof p === 'string') : [],
+  }
 }
 
-export function mapAdminService(s: ServiceRow): AdminServiceDTO {
+export function mapAdminService(s: ServiceRow, openRequests = 0): AdminServiceDTO {
   return {
     ...mapMemberService(s),
     name: s.name,
     isActive: s.isActive,
+    openRequests,
     createdAt: s.createdAt.toISOString(),
     updatedAt: s.updatedAt.toISOString(),
   }

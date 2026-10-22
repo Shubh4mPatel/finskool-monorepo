@@ -4,9 +4,16 @@ import type { BillingSettingsInput } from './services.validator.js'
 
 export type BillingSettingsRow = Prisma.BillingSettingsGetPayload<object>
 
-/** The single settings row; created with the defaults (18% GST, 5-day quotes, prefix FS) on first read. */
-export function loadBillingSettings(db: PrismaClient | Prisma.TransactionClient): Promise<BillingSettingsRow> {
-  return db.billingSettings.upsert({ where: { id: 'default' }, create: { id: 'default' }, update: {} })
+/**
+ * The single settings row; created with the defaults (18% GST, 5-day quotes, prefix FS) on first read.
+ * Two first-ever reads can arrive together (the admin form asks for several things at once), so the
+ * insert ignores a duplicate instead of failing: whoever loses the race just reads the winner's row.
+ */
+export async function loadBillingSettings(db: PrismaClient | Prisma.TransactionClient): Promise<BillingSettingsRow> {
+  const existing = await db.billingSettings.findUnique({ where: { id: 'default' } })
+  if (existing) return existing
+  await db.billingSettings.createMany({ data: [{ id: 'default' }], skipDuplicates: true })
+  return db.billingSettings.findUniqueOrThrow({ where: { id: 'default' } })
 }
 
 /** Seller details with every field a GST invoice needs. Quotes can't be sent and invoices can't be issued without them. */

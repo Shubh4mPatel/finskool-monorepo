@@ -91,15 +91,26 @@ export interface ListPage<T> {
 /** A catalog entry as members see it (no internal `name`). */
 export interface MemberServiceDTO {
   id: string
+  /** The service name. */
   title: string
+  /** Markdown. */
   description: string
   imageUrl: string | null
+  iconUrl: string | null
+  serviceType: { key: string; label: string } | null
+  tags: string[]
+  /** Up to 3 short key facts for the card. */
+  highlights: string[]
+  /** What the member gets, in display order. */
+  whatMembersGet: string[]
 }
 
 /** A catalog entry as admins see it. */
 export interface AdminServiceDTO extends MemberServiceDTO {
   name: string
   isActive: boolean
+  /** Requests for this service that are not closed yet. */
+  openRequests: number
   createdAt: string
   updatedAt: string
 }

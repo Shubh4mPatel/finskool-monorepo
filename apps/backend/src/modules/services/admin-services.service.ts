@@ -67,20 +67,36 @@ export class AdminServicesService {
   // ─── Catalog ──────────────────────────────────────────────────────────────
 
   async listCatalog(): Promise<AdminServiceDTO[]> {
-    const rows = await this.db.service.findMany({
-      where: { deletedAt: null },
-      orderBy: [{ isActive: 'desc' }, { title: 'asc' }, { id: 'asc' }],
-    })
-    return rows.map(mapAdminService)
+    const [rows, open] = await Promise.all([
+      this.db.service.findMany({
+        where: { deletedAt: null },
+        orderBy: [{ isActive: 'desc' }, { title: 'asc' }, { id: 'asc' }],
+      }),
+      this.db.serviceRequest.groupBy({ by: ['serviceId'], where: { status: { not: 'closed' } }, _count: { _all: true } }),
+    ])
+    const openByService = new Map(open.map(o => [o.serviceId, o._count._all]))
+    return rows.map(r => mapAdminService(r, openByService.get(r.id) ?? 0))
+  }
+
+  async getService(serviceId: string): Promise<AdminServiceDTO> {
+    const row = await this.db.service.findFirst({ where: { id: serviceId, deletedAt: null } })
+    if (!row) throw new NotFoundError('Service not found')
+    const open = await this.db.serviceRequest.count({ where: { serviceId, status: { not: 'closed' } } })
+    return mapAdminService(row, open)
   }
 
   async createService(admin: AdminViewer, dto: CreateCatalogServiceDTO): Promise<AdminServiceDTO> {
     const row = await this.db.service.create({
       data: {
-        name: dto.name,
+        name: dto.name ?? dto.title,
         title: dto.title,
         description: dto.description,
         imageUrl: dto.imageUrl ?? null,
+        iconUrl: dto.iconUrl ?? null,
+        serviceType: dto.serviceType,
+        tags: dto.tags,
+        highlights: dto.highlights,
+        whatMembersGet: dto.whatMembersGet,
         isActive: dto.isActive,
         createdBy: admin.id,
       },
@@ -97,9 +113,15 @@ export class AdminServicesService {
     if (dto.title !== undefined) data.title = dto.title
     if (dto.description !== undefined) data.description = dto.description
     if (dto.imageUrl !== undefined) data.imageUrl = dto.imageUrl
+    if (dto.iconUrl !== undefined) data.iconUrl = dto.iconUrl
+    if (dto.serviceType !== undefined) data.serviceType = dto.serviceType
+    if (dto.tags !== undefined) data.tags = dto.tags
+    if (dto.highlights !== undefined) data.highlights = dto.highlights
+    if (dto.whatMembersGet !== undefined) data.whatMembersGet = dto.whatMembersGet
     if (dto.isActive !== undefined) data.isActive = dto.isActive
     const row = await this.db.service.update({ where: { id: serviceId }, data })
-    return mapAdminService(row)
+    const open = await this.db.serviceRequest.count({ where: { serviceId, status: { not: 'closed' } } })
+    return mapAdminService(row, open)
   }
 
   /** Soft delete: requests already raised keep pointing at the service, new ones can't. */

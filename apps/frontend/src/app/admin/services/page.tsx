@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { AlertTriangle, Briefcase, ChevronRight, FileText, Inbox, Loader2, Search, Settings2, Star } from "lucide-react";
+import { AlertTriangle, ChevronRight, FileText, Inbox, Loader2, Search, Settings2, Star } from "lucide-react";
 import { api } from "@/lib/api";
 import { useIsSuperAdmin } from "@/lib/session";
 import { formatInr } from "@/lib/services";
@@ -11,6 +12,7 @@ import { timeAgo } from "@/lib/tickets";
 import type { TicketPage } from "@/lib/tickets";
 import { ticketSocketStore } from "@/store/tickets/ticketSocketStore";
 import { Avatar } from "@/components/admin/tickets/TicketBadges";
+import ServicesTabs from "@/components/admin/services/ServicesTabs";
 import { RequestStatusBadge } from "@/components/admin/services/ServiceBadges";
 
 type Tab = "all" | "unassigned" | "mine" | "requested" | "quote_sent" | "paid" | "closed" | "review";
@@ -65,8 +67,11 @@ function StatCard({ label, value, caption, captionClass }: { label: string; valu
   );
 }
 
-export default function AdminServicesPage() {
+function AdminServicesInbox() {
   const isSuperAdmin = useIsSuperAdmin();
+  // Set when arriving from a service card's "View enquiries".
+  const serviceId = useSearchParams().get("serviceId");
+  const [serviceTitle, setServiceTitle] = useState<string | null>(null);
 
   const [tab, setTab] = useState<Tab>("all");
   const [unreadOnly, setUnreadOnly] = useState(false);
@@ -93,15 +98,32 @@ export default function AdminServicesPage() {
     return () => clearTimeout(t);
   }, [searchInput]);
 
+  useEffect(() => {
+    if (!serviceId) return;
+    let cancelled = false;
+    api
+      .get<{ title: string }>(`/api/v1/admin/services/catalog/${serviceId}`)
+      .then((svc) => {
+        if (!cancelled) setServiceTitle(svc.title);
+      })
+      .catch(() => {
+        if (!cancelled) setServiceTitle(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [serviceId]);
+
   const buildQuery = useCallback(
     (cursor?: string) => {
       const params = new URLSearchParams({ limit: String(PAGE_SIZE), ...tabParams(tab) });
       if (unreadOnly) params.set("unread", "true");
       if (search) params.set("search", search);
+      if (serviceId) params.set("serviceId", serviceId);
       if (cursor) params.set("cursor", cursor);
       return params.toString();
     },
-    [tab, unreadOnly, search],
+    [tab, unreadOnly, search, serviceId],
   );
 
   // Guards against an older, slower response overwriting a newer one (fast tab switching).
@@ -213,23 +235,24 @@ export default function AdminServicesPage() {
         </div>
         <div className="flex items-center gap-2">
           {isSuperAdmin && (
-            <>
-              <Link
-                href="/admin/services/catalog"
-                className="flex h-11 items-center gap-2 rounded-full border border-[#dcd9d0] bg-white px-5 text-sm font-semibold text-primary transition-colors hover:border-accent"
-              >
-                <Briefcase size={15} /> Service catalog
-              </Link>
-              <Link
+            <Link
               href="/admin/settings/billing"
               className="flex h-11 items-center gap-2 rounded-full border border-[#dcd9d0] bg-white px-5 text-sm font-semibold text-primary transition-colors hover:border-accent"
             >
               <Settings2 size={15} /> Billing settings
             </Link>
-            </>
           )}
         </div>
       </div>
+
+      <ServicesTabs active="enquiries" />
+
+      {serviceId && (
+        <div className="flex items-center gap-3 rounded-2xl bg-[#e8f4ef] px-5 py-3 text-sm text-primary">
+          Showing enquiries for <strong>{serviceTitle ?? "this service"}</strong>
+          <Link href="/admin/services" className="ml-auto text-xs font-bold text-accent hover:underline">Show all</Link>
+        </div>
+      )}
 
       {stats && stats.needsReview > 0 && (
         <button
@@ -380,5 +403,14 @@ export default function AdminServicesPage() {
         )}
       </section>
     </div>
+  );
+}
+
+export default function AdminServicesPage() {
+  // useSearchParams needs a Suspense boundary for static rendering.
+  return (
+    <Suspense fallback={<div className="flex justify-center py-24 text-muted"><Loader2 className="animate-spin" /></div>}>
+      <AdminServicesInbox />
+    </Suspense>
   );
 }

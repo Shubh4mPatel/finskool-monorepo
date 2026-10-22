@@ -830,6 +830,16 @@ model Service {
   title       String    @db.VarChar(200)
   description String    @db.VarChar(5000)
   imageUrl    String?   @map("image_url") @db.VarChar(500)
+  // Small icon shown next to the name (separate from the big thumbnail above).
+  iconUrl     String?   @map("icon_url") @db.VarChar(500)
+  // Key from SERVICE_TYPES (services.catalog.ts).
+  serviceType String?   @map("service_type") @db.VarChar(40)
+  // Search/filter hashtags, stored without the leading '#'.
+  tags        String[]  @default([])
+  // 0 to 3 short key facts shown as chips on the card, e.g. "Min ₹5,00,000".
+  highlights  String[]  @default([])
+  // Ordered list of strings: what the member gets with this service.
+  whatMembersGet Json   @default("[]") @map("what_members_get")
   isActive    Boolean   @default(true) @map("is_active")
   createdBy   String    @map("created_by") @db.Uuid
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz

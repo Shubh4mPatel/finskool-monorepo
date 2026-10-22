@@ -21,6 +21,8 @@ router.get('/billing-settings', admin.getBillingSettings) // super admin
 router.put('/billing-settings', admin.updateBillingSettings) // super admin
 router.post('/attachments/presign', admin.presign)
 router.get('/catalog', admin.listCatalog)
+router.get('/catalog/types', admin.serviceTypes)
+router.get('/catalog/:serviceId', admin.getService)
 router.post('/catalog', admin.createService)
 router.post('/catalog/image/presign', admin.catalogImagePresign)
 router.patch('/catalog/:serviceId', admin.updateService)
