@@ -15,6 +15,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
+    "db:seed:demo": "tsx prisma/seed-demo.ts",
     "db:backfill-minio-domain": "tsx prisma/backfill-minio-domain.ts",
     "db:backfill-member-status": "tsx prisma/backfill-member-status.ts",
     "db:backfill-free-community": "tsx prisma/backfill-free-community.ts",
