@@ -47,7 +47,7 @@ The backend reads one of these environment variables. Use the first one on Docke
    FCM_SERVICE_ACCOUNT_JSON={"type":"service_account","project_id":"finskool",...}
    ```
    (Docker's `env_file` does not strip quotes, so do not wrap the value in `'` or `"`.)
-3. Run the database migrations on the production database (`prisma migrate deploy`, as you do for other releases). The push release adds `20261021120000_add_push_notifications`. The deploy script does not run migrations by itself, so confirm it was applied.
+3. Database migrations need no manual step: the backend container runs `prisma migrate deploy` every time it starts (`docker-entrypoint.sh`), so the push release's `20261021120000_add_push_notifications` is applied by the normal CI/CD deploy.
 4. Restart the **backend, worker and cron** containers so all three read the new variable. The worker is the one that sends pushes.
 5. Check the worker logs. With a bad or missing key you will see `FCM is not configured` or `invalid service account credentials`. With nothing wrong there is no message at all.
 
