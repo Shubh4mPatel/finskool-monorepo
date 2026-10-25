@@ -52,15 +52,20 @@ const ICONS: Record<string, typeof Megaphone> = {
 export function NotificationCard({
   notification,
   onView,
+  className = "",
+  style,
 }: {
   notification: Notification;
   onView: (notification: Notification) => void;
+  /** Extra classes for the card (e.g. an unread highlight or entrance animation). */
+  className?: string;
+  style?: React.CSSProperties;
 }) {
   const Icon = ICONS[notification.type] ?? Megaphone;
   const timestamp = formatRelativeTime(notification.createdAt);
 
   return (
-    <div className="flex items-center gap-4 rounded-2xl bg-white px-5 py-4 shadow-card">
+    <div style={style} className={`flex items-center gap-4 rounded-2xl bg-white px-5 py-4 shadow-card ${className}`}>
       <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
         <Icon size={22} />
       </div>
