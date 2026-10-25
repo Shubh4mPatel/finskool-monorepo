@@ -78,9 +78,10 @@ export function Pill({ tone, dot = false, children }: { tone: StatusTone; dot?: 
   );
 }
 
+/** A panel's head strip: runs edge to edge across its Card, divided from the body by a hairline. */
 export function SectionHeader({ title, subtitle, action }: { title: string; subtitle?: string; action?: ReactNode }) {
   return (
-    <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+    <div className="-mx-5 -mt-5 mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-divider px-5 py-4">
       <div>
         <h2 className="font-display text-[15px] font-bold tracking-tight text-primary">{title}</h2>
         {subtitle && <p className="mt-0.5 text-xs text-muted">{subtitle}</p>}

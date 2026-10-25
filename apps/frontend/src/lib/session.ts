@@ -82,3 +82,35 @@ function subscribeToSession(onChange: () => void): () => void {
 export function useIsSuperAdmin(): boolean | null {
   return useSyncExternalStore<boolean | null>(subscribeToSession, () => getSession()?.isSuperAdmin === true, () => null)
 }
+
+// useSyncExternalStore needs the same object back until the session actually changes, so the parsed
+// value is cached against the raw string it came from.
+let cachedRaw: string | null = null
+let cachedSession: SessionInfo | null = null
+
+function sessionSnapshot(): SessionInfo | null {
+  let raw: string | null
+  try {
+    raw = localStorage.getItem(KEY)
+  } catch {
+    return null
+  }
+  if (raw !== cachedRaw) {
+    cachedRaw = raw
+    try {
+      cachedSession = raw ? (JSON.parse(raw) as SessionInfo) : null
+    } catch {
+      cachedSession = null
+    }
+  }
+  return cachedSession
+}
+
+/**
+ * The signed-in user's session — safe to use while rendering, and live: it updates on
+ * `profile:updated` and on changes from other tabs. `null` on the server and during hydration
+ * (see useIsSuperAdmin for why).
+ */
+export function useSession(): SessionInfo | null {
+  return useSyncExternalStore(subscribeToSession, sessionSnapshot, () => null)
+}

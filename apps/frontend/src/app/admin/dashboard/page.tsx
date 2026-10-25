@@ -1,12 +1,13 @@
 "use client";
 
-import { CalendarDays } from "lucide-react";
+import Link from "next/link";
+import { CalendarDays, Plus, Upload } from "lucide-react";
 import { ExpiringSoon } from "@/components/admin/dashboard/ExpiringSoon";
 import { KpiCards } from "@/components/admin/dashboard/KpiCards";
 import { NewRegistrations } from "@/components/admin/dashboard/NewRegistrations";
 import { RecentTickets } from "@/components/admin/dashboard/RecentTickets";
 import { RevenueChart } from "@/components/admin/dashboard/RevenueChart";
-import { getSession } from "@/lib/session";
+import { useSession } from "@/lib/session";
 
 // Each panel loads from its own /api/v1/admin/dashboard/* endpoint (see lib/dashboard.ts),
 // so one slow or failing panel never blocks the rest of the page. Panels enter in reading
@@ -23,7 +24,7 @@ function formatToday(d: Date): string {
 }
 
 export default function AdminDashboardPage() {
-  const adminName = getSession()?.userName?.split(" ")[0] ?? "Admin";
+  const adminName = useSession()?.userName?.split(" ")[0] ?? "Admin";
   const today = new Date();
 
   return (
@@ -37,13 +38,29 @@ export default function AdminDashboardPage() {
           </h1>
           <p className="mt-1 text-sm text-muted">Here is what is happening across communities, services and tickets.</p>
         </div>
-        <span
-          className="inline-flex items-center gap-2 rounded-full bg-white px-3.5 py-1.5 text-xs font-semibold text-primary shadow-card ring-1 ring-primary/[0.04]"
-          suppressHydrationWarning
-        >
-          <CalendarDays size={14} className="text-accent" aria-hidden />
-          {formatToday(today)}
-        </span>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <span
+            className="hidden items-center gap-2 rounded-xl bg-white px-3.5 py-2 text-xs font-semibold text-primary shadow-card ring-1 ring-primary/[0.04] sm:inline-flex"
+            suppressHydrationWarning
+          >
+            <CalendarDays size={14} className="text-accent" aria-hidden />
+            {formatToday(today)}
+          </span>
+          <Link
+            href="/admin/import-csv"
+            className="inline-flex items-center gap-2 rounded-xl bg-white px-3.5 py-2 text-xs font-bold text-primary shadow-card ring-1 ring-primary/[0.06] transition-all hover:-translate-y-px hover:shadow-card-hover"
+          >
+            <Upload size={14} aria-hidden />
+            Import members
+          </Link>
+          <Link
+            href="/admin/create-post"
+            className="inline-flex items-center gap-2 rounded-xl bg-primary px-3.5 py-2 text-xs font-bold text-white shadow-[0_8px_20px_-10px_rgba(21,61,58,0.7)] transition-all hover:-translate-y-px hover:bg-[#1c4c48]"
+          >
+            <Plus size={14} className="text-lime" aria-hidden />
+            Create post
+          </Link>
+        </div>
       </header>
 
       <KpiCards />
