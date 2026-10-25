@@ -1,563 +1,93 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { PostVideo } from "@/lib/post-videos";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Bold, Calendar, ChevronDown, Code, Italic, MoreHorizontal, Pencil, Pin, Plus, Save, Search, Trash2, X } from "lucide-react";
-import { useEditor, EditorContent } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
-import { DayPicker } from "react-day-picker";
-import "react-day-picker/style.css";
-import FeedPostCard from "@/components/feed/FeedPostCard";
-import PostMediaPicker from "@/components/admin/PostMediaPicker";
-import { toVideoInput } from "@/lib/post-videos";
-import { api, ApiError } from "@/lib/api";
-import { useToast } from "@/components/ui/Toast";
-import { useConfirm } from "@/components/ui/ConfirmDialog";
-
-interface FeedPost {
-  id: string;
-  communityId: string;
-  communityName: string;
-  communitySlug: string;
-  communityBadgeUrl: string | null;
-  authorName: string;
-  authorAvatarUrl: string | null;
-  title: string;
-  content: string;
-  imageUrls: string[];
-  videos?: PostVideo[];
-  reactionCounts?: Record<string, number>;
-  groupReactionCounts?: Record<string, number>;
-  groupSize?: number;
-  tags: string[];
-  pinOrder: number | null;
-  publishedAt: string | null;
-  createdAt: string;
-}
-
-interface ListPostsResponse {
-  posts: FeedPost[];
-  total: number;
-  page: number;
-  pageSize: number;
-  totalPages: number;
-}
-
-interface Community { id: string; name: string }
-
-function formatTimestamp(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  return (
-    d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) +
-    " · " +
-    d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true })
-  );
-}
-
-// Formats using the date's own calendar fields (not toISOString, which shifts
-// to UTC and can land on the wrong day depending on the browser's timezone).
-function toDateParam(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-// ── Edit Modal ──────────────────────────────────────────────────────────────
-
-function EditModal({
-  post,
-  onClose,
-  onSaved,
-}: {
-  post: FeedPost;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const toast = useToast();
-  const [title, setTitle] = useState(post.title);
-  const [tags, setTags] = useState<string[]>(post.tags);
-  const [tagInput, setTagInput] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [imageUrls, setImageUrls] = useState<string[]>(post.imageUrls);
-  const [videos, setVideos] = useState<PostVideo[]>(post.videos ?? []);
-
-  const editor = useEditor({
-    extensions: [StarterKit],
-    content: post.content,
-  });
-
-  async function handleSave() {
-    if (!title.trim()) {
-      toast.error("Title is required.");
-      return;
-    }
-    setSaving(true);
-    try {
-      await api.patch(`/api/v1/posts/${post.id}`, {
-        title: title.trim(),
-        content: editor?.getHTML() ?? post.content,
-        tags,
-        imageUrls,
-        videos: videos.map(toVideoInput),
-      });
-      toast.success("Post updated.");
-      onSaved();
-      onClose();
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to update post");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  function addTag(e: React.KeyboardEvent) {
-    if (e.key === "Enter" && tagInput.trim()) {
-      e.preventDefault();
-      const t = tagInput.trim().startsWith("#") ? tagInput.trim() : `#${tagInput.trim()}`;
-      setTags(prev => [...prev, t]);
-      setTagInput("");
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative z-10 flex w-full max-w-2xl flex-col gap-5 rounded-2xl bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between">
-          <h2 className="font-display text-lg font-bold text-primary">Edit Post</h2>
-          <button
-            onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-full text-muted transition-colors hover:bg-divider/60 hover:text-primary"
-          >
-            <X size={16} />
-          </button>
-        </div>
-
-        {/* Title */}
-        <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-semibold text-muted">Title</label>
-          <input
-            type="text"
-            value={title}
-            onChange={e => setTitle(e.target.value)}
-            className="w-full rounded-xl border border-divider bg-background px-4 py-2.5 text-sm text-primary placeholder:text-subtle focus:border-accent focus:outline-none"
-            placeholder="Post headline..."
-          />
-        </div>
-
-        {/* Content */}
-        <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-semibold text-muted">Content</label>
-          <div className="rounded-xl border border-divider bg-background p-3">
-            <div className="mb-2 flex items-center gap-1 border-b border-divider pb-2">
-              {[
-                { icon: Bold, action: () => editor?.chain().focus().toggleBold().run(), active: () => editor?.isActive("bold") ?? false, label: "Bold" },
-                { icon: Italic, action: () => editor?.chain().focus().toggleItalic().run(), active: () => editor?.isActive("italic") ?? false, label: "Italic" },
-                { icon: Code, action: () => editor?.chain().focus().toggleCode().run(), active: () => editor?.isActive("code") ?? false, label: "Code" },
-              ].map(({ icon: Icon, action, active, label }) => (
-                <button
-                  key={label}
-                  type="button"
-                  onClick={action}
-                  className={`flex h-7 w-7 items-center justify-center rounded-lg text-sm transition-colors ${
-                    active() ? "bg-primary text-white" : "text-muted hover:bg-divider/60 hover:text-primary"
-                  }`}
-                  title={label}
-                >
-                  <Icon size={13} />
-                </button>
-              ))}
-            </div>
-            <EditorContent
-              editor={editor}
-              className="min-h-30 text-sm text-primary [&_.ProseMirror]:outline-none [&_.ProseMirror_p]:my-1"
-            />
-          </div>
-        </div>
-
-        {/* Image */}
-        <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-semibold text-muted">Media</label>
-          <PostMediaPicker imageUrls={imageUrls} onImageUrlsChange={setImageUrls} videos={videos} onVideosChange={setVideos} />
-        </div>
-
-        {/* Tags */}
-        <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-semibold text-muted">Tags</label>
-          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-divider bg-background px-3 py-2.5">
-            {tags.map(tag => (
-              <span key={tag} className="flex items-center gap-1 rounded-full border border-divider bg-white px-3 py-0.5 text-xs font-medium text-primary">
-                {tag}
-                <button type="button" onClick={() => setTags(t => t.filter(x => x !== tag))} className="text-subtle hover:text-primary">
-                  <X size={10} />
-                </button>
-              </span>
-            ))}
-            <input
-              type="text"
-              value={tagInput}
-              onChange={e => setTagInput(e.target.value)}
-              onKeyDown={addTag}
-              placeholder="Add tag…"
-              className="min-w-20 flex-1 bg-transparent text-xs text-subtle focus:outline-none"
-            />
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="flex justify-end gap-3 pt-1">
-          <button
-            onClick={onClose}
-            className="rounded-full border border-divider px-5 py-2 text-sm font-semibold text-muted transition-colors hover:border-subtle hover:text-primary"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="flex items-center gap-2 rounded-full bg-primary px-5 py-2 text-sm font-bold text-white shadow-glow transition-transform duration-300 hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <Save size={14} />
-            {saving ? "Saving…" : "Save Changes"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Post three-dot menu ──────────────────────────────────────────────────────
-
-function PostMenu({
-  post,
-  onEdit,
-  onDelete,
-  onPin,
-}: {
-  post: FeedPost;
-  onEdit: () => void;
-  onDelete: () => void;
-  onPin: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  const isPinned = post.pinOrder !== null;
-
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    if (open) document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [open]);
-
-  function item(onClick: () => void, icon: React.ReactNode, label: string, danger = false) {
-    return (
-      <button
-        onClick={() => { onClick(); setOpen(false); }}
-        className={`flex w-full items-center gap-2.5 px-4 py-2.5 text-sm font-medium transition-colors hover:bg-divider/60 ${danger ? "text-red-500 hover:text-red-600" : "text-primary"}`}
-      >
-        {icon}
-        {label}
-      </button>
-    );
-  }
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        onClick={() => setOpen(v => !v)}
-        className="flex h-8 w-8 items-center justify-center rounded-full text-muted transition-colors hover:bg-divider/60 hover:text-primary"
-        title="Options"
-      >
-        <MoreHorizontal size={16} />
-      </button>
-
-      {open && (
-        <div className="absolute right-0 top-9 z-30 min-w-40 overflow-hidden rounded-2xl border border-divider bg-white py-1 shadow-xl">
-          {isPinned
-            ? item(onPin, <Pin size={14} className="text-accent" />, "Unpin Post")
-            : item(onPin, <Pin size={14} />, "Pin Post")}
-          {item(onEdit, <Pencil size={14} />, "Edit Post")}
-          {item(onDelete, <Trash2 size={14} />, "Delete Post", true)}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Page ────────────────────────────────────────────────────────────────────
+import { Plus } from "lucide-react";
+import EditPostModal from "@/components/admin/posts/EditPostModal";
+import PostsList, { Pagination } from "@/components/admin/posts/PostsList";
+import PostsToolbar from "@/components/admin/posts/PostsToolbar";
+import type { CommunityOption } from "@/components/admin/posts/types";
+import { useAdminPosts } from "@/components/admin/posts/useAdminPosts";
+import { api } from "@/lib/api";
 
 export default function AllPostsPage() {
-  const toast = useToast();
-  const confirm = useConfirm();
-  const [posts, setPosts] = useState<FeedPost[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [communities, setCommunities] = useState<Community[]>([]);
-  const [communityFilter, setCommunityFilter] = useState("");
-  const [search, setSearch] = useState("");
-  const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [editingPost, setEditingPost] = useState<FeedPost | null>(null);
-  const [pinningId, setPinningId] = useState<string | null>(null);
-
-  const fetchPosts = useCallback(async (pg: number, commId: string, date: Date | undefined) => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({ page: String(pg), pageSize: "20" });
-      if (commId) params.set("communityId", commId);
-      if (date) params.set("date", toDateParam(date));
-      const data = await api.get<ListPostsResponse>(`/api/v1/posts?${params}`);
-      setPosts(data.posts);
-      setTotalPages(data.totalPages);
-
-      const seen = new Map<string, string>();
-      data.posts.forEach(p => seen.set(p.communityId, p.communityName));
-      if (seen.size > 0) {
-        setCommunities(prev => {
-          const merged = new Map(prev.map(c => [c.id, c.name]));
-          seen.forEach((name, id) => merged.set(id, name));
-          return Array.from(merged.entries()).map(([id, name]) => ({ id, name }));
-        });
-      }
-    } catch {
-      setPosts([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const list = useAdminPosts();
+  const [adminCommunities, setAdminCommunities] = useState<CommunityOption[]>([]);
+  const topRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    fetchPosts(page, communityFilter, selectedDate);
-  }, [fetchPosts, page, communityFilter, selectedDate]);
-
-  // Reset to page 1 whenever a filter changes
-  useEffect(() => { setPage(1); }, [communityFilter, selectedDate]);
-
-  function handleSelectDate(date: Date | undefined) {
-    setSelectedDate(date);
-    setShowDatePicker(false);
-  }
-
-  function clearDate(e: React.MouseEvent) {
-    e.stopPropagation();
-    setSelectedDate(undefined);
-  }
-
-  useEffect(() => {
-    api
-      .get<{ id: string; name: string }[]>("/api/v1/admin/communities")
-      .then((all) => {
-        setCommunities((prev) => {
-          const merged = new Map(prev.map((c) => [c.id, c.name]));
-          all.forEach((c) => merged.set(c.id, c.name));
-          return Array.from(merged.entries()).map(([id, name]) => ({ id, name }));
-        });
-      })
+    api.get<CommunityOption[]>("/api/v1/admin/communities")
+      .then(all => setAdminCommunities(all.map(c => ({ id: c.id, name: c.name }))))
       .catch(() => {});
   }, []);
 
-  async function handlePin(post: FeedPost) {
-    if (pinningId) return;
-    setPinningId(post.id);
-    try {
-      await api.patch(`/api/v1/posts/${post.id}/pin`, {});
-      toast.success(post.pinOrder !== null ? "Post unpinned." : "Post pinned.");
-      fetchPosts(page, communityFilter, selectedDate);
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to update pin");
-    } finally {
-      setPinningId(null);
-    }
+  // The filter also offers any community that appears in the loaded posts, even if the
+  // communities list doesn't include it.
+  const communities = useMemo(() => {
+    const merged = new Map(adminCommunities.map(c => [c.id, c.name]));
+    list.posts.forEach(p => { if (!merged.has(p.communityId)) merged.set(p.communityId, p.communityName); });
+    return Array.from(merged, ([id, name]) => ({ id, name }));
+  }, [adminCommunities, list.posts]);
+
+  function goToPage(next: number) {
+    list.setPage(next);
+    topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  async function handleDelete(id: string) {
-    const ok = await confirm({
-      title: "Delete Post?",
-      message: "This will permanently delete the post and all its comments. This cannot be undone.",
-      confirmLabel: "Delete",
-      variant: "destructive",
-    });
-    if (!ok) return;
-    setDeletingId(id);
-    try {
-      await api.delete(`/api/v1/posts/${id}`);
-      toast.success("Post deleted.");
-      fetchPosts(page, communityFilter, selectedDate);
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to delete post");
-    } finally {
-      setDeletingId(null);
-    }
-  }
-
-  const displayed = posts.filter(p =>
-    !search ||
-    p.title.toLowerCase().includes(search.toLowerCase()) ||
-    p.tags.some(t => t.toLowerCase().includes(search.toLowerCase()))
-  );
+  const communityName = communities.find(c => c.id === list.communityId)?.name;
 
   return (
     <>
-      {editingPost && (
-        <EditModal
-          post={editingPost}
-          onClose={() => setEditingPost(null)}
-          onSaved={() => fetchPosts(page, communityFilter, selectedDate)}
-        />
+      {list.editingPost && (
+        <EditPostModal post={list.editingPost} onClose={() => list.setEditingPost(null)} onSaved={list.reload} />
       )}
 
-      <div className="flex max-w-4xl flex-col gap-6">
-        <div>
-          <p className="text-xs font-semibold text-accent">Dashboard &rsaquo; All Posts</p>
-          <div className="mt-1 flex flex-wrap items-center justify-between gap-4">
-            <h1 className="shrink-0 whitespace-nowrap font-display text-2xl font-bold text-primary">All Posts</h1>
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex items-center gap-2 rounded-full border border-divider bg-white px-4 py-2.5 transition-colors focus-within:border-accent">
-                <Search size={16} className="text-subtle shrink-0" />
-                <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search with Title and hashtags..."
-                  className="w-full bg-transparent text-sm text-primary placeholder:text-subtle focus:outline-none sm:w-52" />
-              </div>
-
-              <div className="relative shrink-0">
-                <select
-                  value={communityFilter}
-                  onChange={e => setCommunityFilter(e.target.value)}
-                  className="appearance-none rounded-full border border-divider bg-white pl-4 pr-9 py-2.5 text-sm font-semibold text-muted transition-colors hover:border-accent hover:text-primary focus:outline-none"
-                >
-                  <option value="">All Community</option>
-                  {communities.map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-                <ChevronDown size={14} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-subtle" />
-              </div>
-
-              <div className="relative shrink-0">
-                <button
-                  onClick={() => setShowDatePicker(v => !v)}
-                  type="button"
-                  className="flex shrink-0 items-center gap-2 rounded-full bg-primary px-4 py-2.5 text-sm font-bold text-white"
-                >
-                  {selectedDate
-                    ? selectedDate.toLocaleDateString("en-IN", { day: "numeric", month: "short" })
-                    : "Date"}
-                  {selectedDate ? (
-                    <X size={14} onClick={clearDate} />
-                  ) : (
-                    <Calendar size={14} />
-                  )}
-                </button>
-
-                {showDatePicker && (
-                  <>
-                    <div className="fixed inset-0 z-40" onClick={() => setShowDatePicker(false)} />
-                    <div className="rdp-theme fixed inset-x-4 top-1/2 z-50 -translate-y-1/2 rounded-2xl bg-white p-3 shadow-card-hover sm:absolute sm:inset-x-auto sm:top-full sm:right-0 sm:mt-2 sm:w-auto sm:translate-y-0">
-                      <DayPicker
-                        mode="single"
-                        selected={selectedDate}
-                        onSelect={handleSelectDate}
-                        autoFocus
-                      />
-                    </div>
-                  </>
-                )}
-              </div>
-
-              <Link
-                href="/admin/create-post"
-                className="flex shrink-0 items-center gap-2 rounded-full px-4 py-2.5 text-sm font-bold text-white shadow-glow transition-transform duration-300 hover:scale-105 active:scale-95"
-                style={{ background: "linear-gradient(to right, #c1f26e, #108b8b)" }}
-              >
-                <Plus size={14} />
-                Create Post
-              </Link>
-            </div>
+      <div className="flex max-w-4xl flex-col gap-5">
+        <div ref={topRef} className="animate-enter flex scroll-mt-4 flex-wrap items-end justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold text-accent">Dashboard &rsaquo; All Posts</p>
+            <h1 className="font-display text-2xl font-bold text-primary">All Posts</h1>
+            <p className="mt-1 text-sm text-muted">
+              {list.loading
+                ? "Loading posts…"
+                : `${list.total.toLocaleString("en-IN")} post${list.total === 1 ? "" : "s"} across ${communityName ?? "every community"} — pin, edit or remove them here.`}
+            </p>
           </div>
-          <p className="mt-1 text-sm text-muted">
-            Follow the steps to publish a post to your community
-          </p>
+          <Link
+            href="/admin/create-post"
+            className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2.5 text-sm font-bold text-white shadow-[0_8px_20px_-10px_rgba(21,61,58,0.7)] transition-all hover:-translate-y-px hover:bg-[#1c4c48]"
+          >
+            <Plus size={15} className="text-lime" />
+            Create post
+          </Link>
         </div>
 
-        {loading ? (
-          <div className="space-y-5">
-            {[0, 1, 2].map(i => (
-              <div key={i} className="h-48 animate-pulse rounded-2xl bg-white shadow-card" />
-            ))}
-          </div>
-        ) : displayed.length === 0 ? (
-          <div className="flex h-48 flex-col items-center justify-center rounded-2xl bg-white shadow-card">
-            <p className="font-display text-base font-semibold text-primary">No published posts yet</p>
-            <p className="mt-1 text-sm text-muted">Create and publish a post to see it here.</p>
-            <Link
-              href="/admin/create-post"
-              className="mt-4 flex items-center gap-2 rounded-full bg-primary px-5 py-2 text-sm font-bold text-white shadow-glow"
-            >
-              <Plus size={14} />
-              Create Post
-            </Link>
-          </div>
-        ) : (
-          <div className="space-y-5">
-            {displayed.map(post => (
-              <FeedPostCard
-                key={post.id}
-                postId={post.id}
-                communityName={post.communityName}
-                communityBadgeUrl={post.communityBadgeUrl}
-                authorName={post.authorName}
-                authorAvatarUrl={post.authorAvatarUrl}
-                badge={post.pinOrder !== null ? { label: "PINNED", icon: "pin" } : undefined}
-                timestamp={formatTimestamp(post.publishedAt ?? post.createdAt)}
-                title={post.title}
-                body=""
-                bodyHtml={post.content}
-                imageUrls={post.imageUrls}
-                videos={post.videos}
-                reactionCounts={post.groupReactionCounts ?? post.reactionCounts ?? {}}
-                reactionGroupSize={post.groupSize}
-                tags={post.tags}
-                isAdmin
-                actions={
-                  <PostMenu
-                    post={post}
-                    onEdit={() => setEditingPost(post)}
-                    onDelete={() => handleDelete(post.id)}
-                    onPin={() => handlePin(post)}
-                  />
-                }
-              />
-            ))}
-          </div>
-        )}
-
-        {totalPages > 1 && (
-          <div className="flex items-center justify-center gap-2">
-            <button
-              onClick={() => setPage(p => Math.max(1, p - 1))}
-              disabled={page === 1}
-              className="rounded-full border border-divider px-4 py-2 text-sm font-semibold text-muted transition-colors hover:border-accent hover:text-primary disabled:opacity-40"
-            >
-              Previous
-            </button>
-            <span className="text-sm text-muted">Page {page} of {totalPages}</span>
-            <button
-              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-              disabled={page === totalPages}
-              className="rounded-full border border-divider px-4 py-2 text-sm font-semibold text-muted transition-colors hover:border-accent hover:text-primary disabled:opacity-40"
-            >
-              Next
-            </button>
-          </div>
-        )}
+        <PostsToolbar
+          search={list.search}
+          onSearch={list.setSearch}
+          communities={communities}
+          communityId={list.communityId}
+          onCommunity={list.changeCommunity}
+          date={list.date}
+          onDate={list.changeDate}
+          sortDesc={list.sortDesc}
+          onToggleSort={list.toggleSort}
+          hasFilters={list.hasFilters}
+          onClear={list.clearFilters}
+        />
+        <PostsList
+          loading={list.loading}
+          refreshing={list.refreshing}
+          posts={list.displayed}
+          hasFilters={list.hasFilters}
+          onClearFilters={list.clearFilters}
+          deletingId={list.deletingId}
+          pinningId={list.pinningId}
+          onEdit={list.setEditingPost}
+          onDelete={list.remove}
+          onPin={list.pin}
+        />
+        <Pagination page={list.page} totalPages={list.totalPages} onPage={goToPage} />
       </div>
     </>
   );
