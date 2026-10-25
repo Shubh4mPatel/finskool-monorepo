@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import Link from "next/link";
-import { ChevronDown, ChevronRight, Inbox, Loader2, Search, Star } from "lucide-react";
+import { Bell, CheckCircle2, Clock, Inbox, Loader2, Search, SearchX, Star, UserCheck, X } from "lucide-react";
 import { api } from "@/lib/api";
 import {
   CATEGORY_LABEL,
@@ -15,7 +16,11 @@ import {
   type TicketType,
 } from "@/lib/tickets";
 import { ticketSocketStore } from "@/store/tickets/ticketSocketStore";
-import { Avatar, StatusBadge } from "@/components/admin/tickets/TicketBadges";
+import { StatusBadge } from "@/components/admin/tickets/TicketBadges";
+import Select, { pillClass } from "@/components/ui/Select";
+import { CountUp } from "@/components/admin/dashboard/CountUp";
+import { EmptyState, Skeleton, stagger, TH } from "@/components/admin/dashboard/Panel";
+import { TintAvatar } from "@/components/admin/dashboard/TintAvatar";
 
 type Tab = "all" | "unassigned" | "mine" | "in_progress" | "resolved";
 
@@ -38,59 +43,70 @@ function tabParams(tab: Tab): Record<string, string> {
 }
 
 // One grid shared by the header row and every ticket row so the columns line up.
-const GRID = "grid grid-cols-[110px_minmax(160px,1.1fr)_minmax(200px,2fr)_120px_130px_70px_110px] items-center gap-4";
+const GRID = "grid grid-cols-[100px_minmax(170px,1.1fr)_minmax(210px,2fr)_120px_130px_70px_100px] items-center gap-4";
 
-function FilterSelect({
-  value,
-  onChange,
-  children,
+const focusRing = "focus:outline-none focus-visible:ring-4 focus-visible:ring-accent/15";
+
+function StatTile({
+  icon,
+  iconClass,
   label,
+  value,
+  caption,
+  captionClass,
+  active,
+  onClick,
+  delay,
 }: {
-  value: string;
-  onChange: (v: string) => void;
-  children: React.ReactNode;
+  icon: ReactNode;
+  iconClass: string;
   label: string;
+  value: number | undefined;
+  caption: string;
+  captionClass: string;
+  active: boolean;
+  onClick: () => void;
+  delay: number;
 }) {
   return (
-    <div className="relative">
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        aria-label={label}
-        className="h-11 cursor-pointer appearance-none rounded-full border border-[#dcd9d0] bg-white pl-5 pr-10 text-sm font-medium text-primary outline-none transition-colors hover:border-accent focus:border-accent"
-      >
-        {children}
-      </select>
-      <ChevronDown size={14} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-muted" />
-    </div>
-  );
-}
-
-function Pill({ active, label, count, onClick }: { active: boolean; label: string; count?: number; onClick: () => void }) {
-  return (
     <button
+      type="button"
       onClick={onClick}
-      className={`flex h-10 items-center gap-2 rounded-full border px-4 text-sm font-semibold transition-colors ${
-        active ? "border-primary bg-primary text-white" : "border-[#dcd9d0] bg-white text-primary hover:border-accent"
+      aria-pressed={active}
+      style={{ animationDelay: `${delay}ms` }}
+      className={`animate-enter group flex items-start gap-4 rounded-2xl bg-white p-5 text-left shadow-card ring-1 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-card-hover ${focusRing} ${
+        active ? "ring-accent/40" : "ring-primary/[0.04]"
       }`}
     >
-      {label}
-      {count !== undefined && (
-        <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${active ? "bg-lime text-primary" : "bg-background text-primary"}`}>
-          {count}
+      <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl transition-transform duration-300 group-hover:scale-105 ${iconClass}`}>
+        {icon}
+      </span>
+      <span className="min-w-0">
+        <span className="block text-sm font-medium text-muted">{label}</span>
+        <span className="mt-1 block font-display text-[28px] font-bold leading-none tracking-tight text-primary">
+          {value === undefined ? "–" : <CountUp value={value} />}
         </span>
-      )}
+        <span className={`mt-2 block text-xs font-semibold ${captionClass}`}>{caption}</span>
+      </span>
     </button>
   );
 }
 
-function StatCard({ label, value, caption, captionClass }: { label: string; value: React.ReactNode; caption: string; captionClass: string }) {
+function TabButton({ active, label, count, onClick }: { active: boolean; label: string; count?: number | undefined; onClick: () => void }) {
   return (
-    <div className="rounded-3xl bg-white px-6 py-5 shadow-card">
-      <p className="text-sm text-muted">{label}</p>
-      <p className="mt-2 font-display text-3xl font-bold text-primary">{value}</p>
-      <p className={`mt-1 text-xs font-semibold ${captionClass}`}>{caption}</p>
-    </div>
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={`flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-bold transition-all duration-200 ${
+        active ? "bg-white text-primary shadow-sm" : "text-muted hover:text-primary"
+      }`}
+    >
+      {label}
+      {count !== undefined && (
+        <span className={`rounded-full px-1.5 text-[10px] tabular-nums ${active ? "bg-lime text-primary" : "bg-divider text-muted"}`}>{count}</span>
+      )}
+    </button>
   );
 }
 
@@ -233,173 +249,265 @@ export default function AdminTicketsPage() {
 
   // Every ticket is exactly one of: open (unassigned), in progress, resolved.
   const total = stats ? stats.unassigned + stats.inProgress + stats.resolved : undefined;
-  const dash = "–";
+
+  // `loading` = nothing to show yet. After the first load, a changed filter keeps the current rows on
+  // screen (dimmed) until the new ones arrive, rather than swapping them for a spinner.
+  const firstLoad = loading && loadedKey === null;
+  const refreshing = loading && loadedKey !== null;
+  const hasFilters = !!(category || type || unreadOnly || search || searchInput);
+
+  function clearFilters() {
+    setCategory("");
+    setType("");
+    setUnreadOnly(false);
+    setSearchInput("");
+    setSearch("");
+  }
+
+  const categoryOptions = [
+    { value: "", label: "All categories" },
+    ...Object.entries(CATEGORY_LABEL).map(([v, l]) => ({ value: v, label: l })),
+  ];
+  const typeOptions = [
+    { value: "", label: "All types" },
+    ...Object.entries(TYPE_LABEL).map(([v, l]) => ({ value: v, label: l })),
+  ];
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <p className="flex items-center gap-1 text-xs font-semibold text-accent">
-          Dashboard <ChevronRight size={12} /> Tickets <ChevronRight size={12} /> Support tickets
+      <div className="animate-enter">
+        <p className="text-xs font-semibold text-accent">Dashboard &rsaquo; Tickets</p>
+        <h1 className="font-display text-2xl font-bold text-primary">Support Tickets</h1>
+        <p className="mt-1 text-sm text-muted">
+          View and resolve tickets raised by members from the mobile app
+          {total !== undefined && (
+            <>
+              {" · "}
+              <span className="font-semibold tabular-nums text-primary">{total.toLocaleString("en-IN")}</span> in total
+            </>
+          )}
+          .
         </p>
-        <h1 className="mt-1 font-display text-3xl font-bold text-primary">Tickets</h1>
-        <p className="mt-1 text-sm text-muted">View and resolve tickets raised by members.</p>
       </div>
 
-      {/* Section switcher — Support tickets is the only section so far. */}
-      <div className="flex w-fit items-center gap-1 rounded-full border border-[#dcd9d0] bg-white p-1">
-        <span className="flex h-11 items-center gap-2 rounded-full bg-primary px-5 text-sm font-semibold text-white">
-          Support tickets
-          <span className="rounded-full bg-lime px-2 py-0.5 text-[11px] font-bold text-primary">{total ?? dash}</span>
-        </span>
-      </div>
-
+      {/* Counters — each is a shortcut to the matching tab */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
+        <StatTile
+          icon={<Inbox size={20} />}
+          iconClass="bg-gradient-to-br from-rose-500 to-red-600 text-white"
           label="Unassigned"
-          value={stats?.unassigned ?? dash}
+          value={stats?.unassigned}
           caption="Awaiting first response"
-          captionClass="text-[#e11d48]"
+          captionClass="text-rose-600"
+          active={tab === "unassigned"}
+          onClick={() => setTab("unassigned")}
+          delay={40}
         />
-        <StatCard
+        <StatTile
+          icon={<UserCheck size={20} />}
+          iconClass="bg-gradient-to-br from-amber-400 to-orange-500 text-white"
           label="My open tickets"
-          value={stats?.mine ?? dash}
+          value={stats?.mine}
           caption={stats?.mineUnread ? `${stats.mineUnread} with new messages` : "Assigned to you"}
-          captionClass="text-[#a16207]"
+          captionClass="text-amber-700"
+          active={tab === "mine"}
+          onClick={() => setTab("mine")}
+          delay={100}
         />
-        <StatCard label="In progress" value={stats?.inProgress ?? dash} caption="Being handled by support" captionClass="text-[#1d4ed8]" />
-        <StatCard
+        <StatTile
+          icon={<Clock size={20} />}
+          iconClass="bg-gradient-to-br from-accent to-[#0b6f6f] text-white"
+          label="In progress"
+          value={stats?.inProgress}
+          caption="Being handled by support"
+          captionClass="text-accent"
+          active={tab === "in_progress"}
+          onClick={() => setTab("in_progress")}
+          delay={160}
+        />
+        <StatTile
+          icon={<CheckCircle2 size={20} />}
+          iconClass="bg-gradient-to-br from-lime to-[#a6dc4c] text-primary"
           label="Resolved"
-          value={stats?.resolved ?? dash}
+          value={stats?.resolved}
           caption={
             stats?.averageRating != null
               ? `★ ${stats.averageRating} avg · ${stats.ratingCount} rating${stats.ratingCount === 1 ? "" : "s"}`
               : "No ratings yet"
           }
-          captionClass="text-[#16a34a]"
+          captionClass="text-emerald-700"
+          active={tab === "resolved"}
+          onClick={() => setTab("resolved")}
+          delay={220}
         />
       </div>
 
-      <section className="rounded-3xl bg-white px-7 py-6 shadow-card">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h2 className="font-display text-xl font-bold text-primary">Support Tickets</h2>
-            <p className="mt-1 text-sm text-muted">Created when members raise an issue from the mobile app.</p>
-          </div>
+      <section className="animate-enter rounded-2xl bg-white shadow-card ring-1 ring-primary/[0.04]" style={{ animationDelay: "260ms" }}>
+        {/* Filters */}
+        <div className="flex flex-col gap-3 border-b border-divider p-4 sm:p-5">
           <div className="flex flex-wrap items-center gap-3">
-            <div className="relative">
-              <Search size={15} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
+            <div className="flex min-w-[240px] flex-1 items-center gap-2 rounded-full border border-divider bg-background px-4 py-2.5 transition-all focus-within:border-accent focus-within:bg-white focus-within:ring-4 focus-within:ring-accent/10">
+              <Search size={15} className="shrink-0 text-subtle" />
               <input
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
-                placeholder="Search by ticket ID or member"
-                className="h-11 w-72 rounded-full border border-[#dcd9d0] bg-white pl-11 pr-4 text-sm text-primary outline-none transition-colors placeholder:text-muted focus:border-accent"
+                placeholder="Search by ticket ID or member…"
+                aria-label="Search tickets"
+                className="w-full bg-transparent text-sm text-primary placeholder:text-subtle focus:outline-none"
               />
-            </div>
-            <FilterSelect label="Category" value={category} onChange={(v) => setCategory(v as TicketCategory | "")}>
-              <option value="">Category: All</option>
-              {Object.entries(CATEGORY_LABEL).map(([v, l]) => (
-                <option key={v} value={v}>Category: {l}</option>
-              ))}
-            </FilterSelect>
-            <FilterSelect label="Type" value={type} onChange={(v) => setType(v as TicketType | "")}>
-              <option value="">Type: All</option>
-              {Object.entries(TYPE_LABEL).map(([v, l]) => (
-                <option key={v} value={v}>Type: {l}</option>
-              ))}
-            </FilterSelect>
-          </div>
-        </div>
-
-        <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2.5">
-            <Pill active={tab === "all"} label="All" count={total} onClick={() => setTab("all")} />
-            <Pill active={tab === "unassigned"} label="Unassigned" count={stats?.unassigned} onClick={() => setTab("unassigned")} />
-            <Pill active={tab === "mine"} label="Mine" count={stats?.mine} onClick={() => setTab("mine")} />
-            <Pill active={tab === "in_progress"} label="In progress" count={stats?.inProgress} onClick={() => setTab("in_progress")} />
-            <Pill active={tab === "resolved"} label="Resolved" count={stats?.resolved} onClick={() => setTab("resolved")} />
-          </div>
-          <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-primary">
-            <input type="checkbox" checked={unreadOnly} onChange={(e) => setUnreadOnly(e.target.checked)} className="h-4 w-4 accent-primary" />
-            Unread only
-          </label>
-        </div>
-
-        <div className="mt-5 overflow-x-auto">
-          <div className="min-w-205">
-            <div className={`${GRID} rounded-xl bg-background px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-muted`}>
-              <span>Ticket</span>
-              <span>Member</span>
-              <span>Subject</span>
-              <span>Category</span>
-              <span>Status</span>
-              <span>Rating</span>
-              <span>Last update</span>
-            </div>
-
-            {loading ? (
-              <div className="flex justify-center py-16 text-muted"><Loader2 className="animate-spin" /></div>
-            ) : error ? (
-              <div className="py-16 text-center">
-                <p className="text-sm font-semibold text-primary">Couldn&apos;t load tickets</p>
-                <button
-                  onClick={() => { setLoadedKey(null); pagesLoaded.current = 1; load(1); }}
-                  className="mt-3 rounded-full bg-primary px-5 py-2 text-sm font-bold text-white"
-                >
-                  Retry
+              {searchInput && (
+                <button type="button" onClick={() => { setSearchInput(""); setSearch(""); }} aria-label="Clear search" className="text-subtle transition-colors hover:text-primary">
+                  <X size={14} />
                 </button>
-              </div>
-            ) : tickets.length === 0 ? (
-              <div className="flex flex-col items-center gap-2 py-16 text-center">
-                <Inbox size={28} className="text-subtle" />
-                <p className="text-sm font-semibold text-primary">No tickets here</p>
-                <p className="text-xs text-muted">Nothing matches the current filters.</p>
-              </div>
-            ) : (
-              tickets.map((t) => (
-                <Link
-                  key={t.id}
-                  href={`/admin/tickets/${t.id}`}
-                  title={`${t.subject} · ${t.communityName}${t.assignedAdmin ? ` · Assigned to ${t.assignedAdmin.name}` : " · Unassigned"}`}
-                  className={`${GRID} border-b border-divider px-4 py-3 text-sm text-primary transition-colors last:border-b-0 hover:bg-background/70`}
-                >
-                  <span className="flex items-center gap-2 font-bold">
-                    #{t.label}
-                    {t.unreadCount > 0 && (
-                      <span className="h-2 w-2 rounded-full bg-accent" aria-label={`${t.unreadCount} unread`} />
-                    )}
-                  </span>
-                  <span className="flex min-w-0 items-center gap-3">
-                    <Avatar name={t.user.name} />
-                    <span className="truncate font-medium">{t.user.name}</span>
-                  </span>
-                  <span className={`truncate ${t.unreadCount > 0 ? "font-semibold" : ""}`}>{t.subject}</span>
-                  <span className="truncate text-primary/80">{CATEGORY_LABEL[t.category]}</span>
-                  <span><StatusBadge status={t.status} /></span>
-                  <span className="text-sm font-semibold">
-                    {t.rating !== null ? (
-                      <span className="flex items-center gap-1 text-primary">
-                        <Star size={13} className="text-amber-500" fill="currentColor" /> {t.rating}
-                      </span>
-                    ) : (
-                      <span className="font-normal text-subtle">—</span>
-                    )}
-                  </span>
-                  <span className="text-muted">{timeAgo(t.lastMessageAt, now)}</span>
-                </Link>
-              ))
+              )}
+            </div>
+            <Select
+              value={category}
+              onChange={(v) => setCategory(v as TicketCategory | "")}
+              ariaLabel="Category"
+              options={categoryOptions}
+              triggerClassName={`relative ${pillClass(!!category)} ${focusRing}`}
+            />
+            <Select
+              value={type}
+              onChange={(v) => setType(v as TicketType | "")}
+              ariaLabel="Type"
+              options={typeOptions}
+              triggerClassName={`relative ${pillClass(!!type)} ${focusRing}`}
+            />
+            <button type="button" aria-pressed={unreadOnly} onClick={() => setUnreadOnly((v) => !v)} className={`${pillClass(unreadOnly)} ${focusRing}`}>
+              <Bell size={14} />
+              Unread only
+            </button>
+            {hasFilters && (
+              <button type="button" onClick={clearFilters} className="animate-fade shrink-0 rounded-full px-3 py-2.5 text-sm font-semibold text-accent transition-colors hover:text-primary">
+                Clear filters
+              </button>
             )}
           </div>
+
+          <div role="group" aria-label="Show tickets" className="flex w-fit max-w-full flex-wrap rounded-full bg-background p-1">
+            <TabButton active={tab === "all"} label="All" count={total} onClick={() => setTab("all")} />
+            <TabButton active={tab === "unassigned"} label="Unassigned" count={stats?.unassigned} onClick={() => setTab("unassigned")} />
+            <TabButton active={tab === "mine"} label="Mine" count={stats?.mine} onClick={() => setTab("mine")} />
+            <TabButton active={tab === "in_progress"} label="In progress" count={stats?.inProgress} onClick={() => setTab("in_progress")} />
+            <TabButton active={tab === "resolved"} label="Resolved" count={stats?.resolved} onClick={() => setTab("resolved")} />
+          </div>
         </div>
 
-        {!loading && !error && nextCursor && (
-          <button
-            onClick={loadMore}
-            disabled={loadingMore}
-            className="mx-auto mt-4 flex items-center gap-2 rounded-full border border-[#dcd9d0] bg-white px-6 py-2.5 text-sm font-semibold text-primary transition-colors hover:border-accent disabled:opacity-50"
-          >
-            {loadingMore && <Loader2 size={14} className="animate-spin" />}
-            Load more
-          </button>
+        {/* List */}
+        {firstLoad ? (
+          <div className="space-y-3 p-5" aria-label="Loading tickets">
+            {[0, 1, 2, 3, 4, 5].map((i) => <Skeleton key={i} className="h-14 w-full" />)}
+          </div>
+        ) : error ? (
+          <EmptyState icon={<SearchX size={20} />}>
+            <span className="flex flex-col items-center gap-3">
+              Couldn&apos;t load tickets.
+              <button
+                onClick={() => { setLoadedKey(null); pagesLoaded.current = 1; load(1); }}
+                className="rounded-full bg-primary px-5 py-2 text-sm font-bold text-white transition-all hover:-translate-y-px hover:bg-[#1c4c48]"
+              >
+                Retry
+              </button>
+            </span>
+          </EmptyState>
+        ) : tickets.length === 0 && !refreshing ? (
+          <EmptyState icon={hasFilters || tab !== "all" ? <SearchX size={20} /> : <Inbox size={20} />}>
+            <span className="flex flex-col items-center gap-3">
+              {hasFilters || tab !== "all"
+                ? "No tickets match these filters."
+                : "No tickets yet. They'll appear here when members raise an issue from the app."}
+              {hasFilters && (
+                <button onClick={clearFilters} className="rounded-full border border-divider px-5 py-2 text-sm font-semibold text-primary transition-colors hover:border-accent">
+                  Clear filters
+                </button>
+              )}
+            </span>
+          </EmptyState>
+        ) : (
+          <div aria-busy={refreshing} className={`overflow-x-auto px-2 pb-2 pt-2 transition-opacity duration-300 ${refreshing ? "pointer-events-none opacity-50" : "opacity-100"}`}>
+            <div className="min-w-215">
+              <div className={`${GRID} rounded-xl bg-background px-4 py-2.5`} role="row">
+                {["Ticket", "Member", "Subject", "Category", "Status", "Rating", "Last update"].map((h) => (
+                  <span key={h} className={`${TH} !p-0`} role="columnheader">{h}</span>
+                ))}
+              </div>
+
+              {tickets.map((t, i) => {
+                const unread = t.unreadCount > 0;
+                return (
+                  <Link
+                    key={t.id}
+                    href={`/admin/tickets/${t.id}`}
+                    style={stagger(Math.min(i, 8), 0, 35)}
+                    title={`${t.subject} · ${t.communityName}${t.assignedAdmin ? ` · Assigned to ${t.assignedAdmin.name}` : " · Unassigned"}`}
+                    className={`${GRID} animate-fade group relative border-b border-divider/70 px-4 py-3.5 text-sm text-primary transition-colors last:border-b-0 hover:bg-background/60 ${focusRing} ${
+                      unread ? "bg-accent/[0.04]" : ""
+                    }`}
+                  >
+                    {/* Unread: a teal edge on the row, plus the count for screen readers. */}
+                    {unread && <span aria-hidden className="absolute left-0 top-3 bottom-3 w-1 rounded-r-full bg-accent" />}
+                    <span className="flex items-center gap-2 font-bold tabular-nums transition-colors group-hover:text-accent">
+                      #{t.label}
+                      {unread && (
+                        <span className="rounded-full bg-accent px-1.5 text-[10px] font-bold text-white" aria-label={`${t.unreadCount} unread`}>
+                          {t.unreadCount}
+                        </span>
+                      )}
+                    </span>
+                    <span className="flex min-w-0 items-center gap-3">
+                      <TintAvatar name={t.user.name} className="h-9 w-9" />
+                      <span className="min-w-0">
+                        <span className="block truncate font-semibold">{t.user.name}</span>
+                        <span className={`block truncate text-[11px] ${t.assignedAdmin ? "text-muted" : "font-semibold text-rose-500"}`}>
+                          {t.assignedAdmin ? `Assigned to ${t.assignedAdmin.name}` : "Unassigned"}
+                        </span>
+                      </span>
+                    </span>
+                    <span className="min-w-0">
+                      <span className={`block truncate ${unread ? "font-bold" : "font-medium"}`}>{t.subject}</span>
+                      <span className="block truncate text-[11px] text-muted">
+                        {TYPE_LABEL[t.type]} · {t.communityName}
+                      </span>
+                    </span>
+                    <span className="truncate text-primary/80">{CATEGORY_LABEL[t.category]}</span>
+                    <span><StatusBadge status={t.status} /></span>
+                    <span className="text-sm font-semibold">
+                      {t.rating !== null ? (
+                        <span className="flex items-center gap-1 text-primary">
+                          <Star size={13} className="text-amber-500" fill="currentColor" /> {t.rating}
+                        </span>
+                      ) : (
+                        <span className="font-normal text-subtle">—</span>
+                      )}
+                    </span>
+                    <span className="whitespace-nowrap text-xs text-muted">{timeAgo(t.lastMessageAt, now)}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Footer */}
+        {!firstLoad && !error && tickets.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-divider px-5 py-4">
+            <p className="text-sm text-muted">
+              Showing <span className="font-semibold tabular-nums text-primary">{tickets.length}</span> ticket{tickets.length === 1 ? "" : "s"}
+              {nextCursor ? "" : " — that's all of them"}
+            </p>
+            {nextCursor && (
+              <button
+                onClick={loadMore}
+                disabled={loadingMore}
+                className="flex items-center gap-2 rounded-full border border-divider bg-white px-5 py-2 text-sm font-semibold text-primary transition-all hover:border-accent hover:text-accent disabled:opacity-50"
+              >
+                {loadingMore && <Loader2 size={14} className="animate-spin" />}
+                Load more
+              </button>
+            )}
+          </div>
         )}
       </section>
     </div>
