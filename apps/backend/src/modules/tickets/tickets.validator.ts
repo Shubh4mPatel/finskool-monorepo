@@ -70,6 +70,8 @@ export const adminListTicketsQuerySchema = z.object({
   userId: z.string().uuid().optional(),
   // 'me' | 'unassigned' | <admin uuid>
   assignee: z.union([z.enum(['me', 'unassigned']), z.string().uuid()]).optional(),
+  // 'true' = not resolved yet (matches the open-ticket counters in /stats)
+  open: z.enum(['true', 'false']).optional(),
   unread: z.enum(['true', 'false']).optional(),
   search: z.string().trim().max(100).optional(),
   cursor: z.string().max(200).optional(),

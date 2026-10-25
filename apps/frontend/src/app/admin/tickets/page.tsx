@@ -19,12 +19,15 @@ import { Avatar, StatusBadge } from "@/components/admin/tickets/TicketBadges";
 
 type Tab = "all" | "unassigned" | "mine" | "in_progress" | "resolved";
 
+const PAGE_SIZE = 20;
+
+// "Unassigned" / "Mine" are open-ticket counts in /stats, so those tabs list open tickets only.
 function tabParams(tab: Tab): Record<string, string> {
   switch (tab) {
     case "unassigned":
-      return { assignee: "unassigned" };
+      return { assignee: "unassigned", open: "true" };
     case "mine":
-      return { assignee: "me" };
+      return { assignee: "me", open: "true" };
     case "in_progress":
       return { status: "in_progress" };
     case "resolved":
@@ -122,7 +125,7 @@ export default function AdminTicketsPage() {
 
   const buildQuery = useCallback(
     (cursor?: string) => {
-      const params = new URLSearchParams({ limit: "20", ...tabParams(tab) });
+      const params = new URLSearchParams({ limit: String(PAGE_SIZE), ...tabParams(tab) });
       if (category) params.set("category", category);
       if (type) params.set("type", type);
       if (unreadOnly) params.set("unread", "true");
@@ -135,36 +138,62 @@ export default function AdminTicketsPage() {
 
   // Guards against an older, slower response overwriting a newer one (fast tab switching).
   const requestSeq = useRef(0);
+  // Pages the admin has pulled in with "Load more". A live refresh re-fetches that many pages, so
+  // it updates rows in place instead of collapsing the list back to the first page.
+  const pagesLoaded = useRef(1);
 
   const queryKey = buildQuery();
   const loading = loadedKey !== queryKey;
 
-  const load = useCallback(async () => {
-    const seq = ++requestSeq.current;
-    const key = buildQuery();
-    try {
-      const [page, s] = await Promise.all([
+  // The first `pages` pages plus the counters. Pure fetch — state is applied by `load`.
+  const fetchTickets = useCallback(
+    async (pages: number) => {
+      const [first, s] = await Promise.all([
         api.get<TicketPage<AdminTicket>>(`/api/v1/admin/tickets?${buildQuery()}`),
         api.get<TicketStats>("/api/v1/admin/tickets/stats"),
       ]);
-      if (seq !== requestSeq.current) return;
-      setTickets(page.items);
-      setNextCursor(page.nextCursor);
-      setStats(s);
-      setNow(Date.now());
-      setError(false);
-      setLoadedKey(key);
-      window.dispatchEvent(new Event("admin-tickets:updated"));
-    } catch {
-      if (seq === requestSeq.current) {
-        setError(true);
-        setLoadedKey(key);
+      let items = first.items;
+      let nextCursor = first.nextCursor;
+      for (let i = 1; i < pages && nextCursor; i++) {
+        const page = await api.get<TicketPage<AdminTicket>>(`/api/v1/admin/tickets?${buildQuery(nextCursor)}`);
+        const seen = new Set(items.map((t) => t.id));
+        items = [...items, ...page.items.filter((t) => !seen.has(t.id))];
+        nextCursor = page.nextCursor;
       }
-    }
-  }, [buildQuery]);
+      return { items, nextCursor, stats: s };
+    },
+    [buildQuery],
+  );
 
+  const load = useCallback(
+    (pages: number) => {
+      const seq = ++requestSeq.current;
+      const key = buildQuery();
+      return fetchTickets(pages).then(
+        (res) => {
+          if (seq !== requestSeq.current) return;
+          setTickets(res.items);
+          setNextCursor(res.nextCursor);
+          setStats(res.stats);
+          setNow(Date.now());
+          setError(false);
+          setLoadedKey(key);
+          window.dispatchEvent(new Event("admin-tickets:updated"));
+        },
+        () => {
+          if (seq !== requestSeq.current) return;
+          setError(true);
+          setLoadedKey(key);
+        },
+      );
+    },
+    [buildQuery, fetchTickets],
+  );
+
+  // New filters / search start again from the first page.
   useEffect(() => {
-    load();
+    pagesLoaded.current = 1;
+    load(1);
   }, [load]);
 
   // Live: any ticket activity refreshes the list + counters (coalesced so a burst is one reload).
@@ -175,7 +204,7 @@ export default function AdminTicketsPage() {
       if (timer) return;
       timer = setTimeout(() => {
         timer = null;
-        load();
+        load(pagesLoaded.current);
       }, 400);
     };
     const offEvents = ticketSocketStore.subscribe(refresh);
@@ -194,6 +223,7 @@ export default function AdminTicketsPage() {
       const page = await api.get<TicketPage<AdminTicket>>(`/api/v1/admin/tickets?${buildQuery(nextCursor)}`);
       setTickets((prev) => [...prev, ...page.items.filter((t) => !prev.some((p) => p.id === t.id))]);
       setNextCursor(page.nextCursor);
+      pagesLoaded.current += 1;
     } catch {
       // keep the current list; the button stays so the admin can retry
     } finally {
@@ -312,7 +342,7 @@ export default function AdminTicketsPage() {
               <div className="py-16 text-center">
                 <p className="text-sm font-semibold text-primary">Couldn&apos;t load tickets</p>
                 <button
-                  onClick={() => { setLoadedKey(null); load(); }}
+                  onClick={() => { setLoadedKey(null); pagesLoaded.current = 1; load(1); }}
                   className="mt-3 rounded-full bg-primary px-5 py-2 text-sm font-bold text-white"
                 >
                   Retry

@@ -3,6 +3,8 @@ import { logger } from '../../shared/logger.js'
 import { AppError, ValidationError } from '../../shared/errors/index.js'
 import type { TicketsService } from './tickets.service.js'
 import type { AdminActor, AdminTicketsService } from './admin-tickets.service.js'
+import type { AdminServicesService } from '../services/admin-services.service.js'
+import type { ServicesService } from '../services/services.service.js'
 import { listMessagesQuerySchema, sendMessageSchema } from './tickets.validator.js'
 
 // All chat traffic — sending, history, read receipts — runs over the /ws/tickets socket for both
@@ -16,14 +18,18 @@ import { listMessagesQuerySchema, sendMessageSchema } from './tickets.validator.
 // (TicketsService), a web admin acts as support (AdminTicketsService, with its assignee and
 // community-access rules). Everything else — creating/listing tickets, claim/resolve/reassign,
 // rating, file uploads — stays on REST.
+//
+// Service requests (the services module) chat over this same socket with `service.*` actions,
+// which take `requestId` instead of `ticketId`, so the app keeps a single connection.
 
 const frameSchema = z.object({
   id: z.string().trim().min(1).max(64),
-  action: z.enum(['message.send', 'history.get', 'ticket.read']),
+  action: z.enum(['message.send', 'history.get', 'ticket.read', 'service.message.send', 'service.history.get', 'service.read']),
   payload: z.unknown().optional(),
 })
 
 const ticketIdSchema = z.object({ ticketId: z.string().uuid() })
+const requestIdSchema = z.object({ requestId: z.string().uuid() })
 
 export interface TicketAckError {
   code: string
@@ -70,8 +76,36 @@ function toAckError(err: unknown): TicketAckError {
 export function createTicketSocketHandler(services: {
   member: TicketsService
   admin: AdminTicketsService
+  serviceMember: ServicesService
+  serviceAdmin: AdminServicesService
 }): TicketSocketHandler {
-  const { member, admin } = services
+  const { member, admin, serviceMember, serviceAdmin } = services
+
+  async function handleServiceAction(
+    action: 'service.message.send' | 'service.history.get' | 'service.read',
+    principal: SocketPrincipal,
+    payload: unknown,
+  ): Promise<unknown> {
+    const { requestId } = requestIdSchema.parse(payload)
+    switch (action) {
+      case 'service.message.send': {
+        const dto = sendMessageSchema.parse(payload)
+        return principal.kind === 'member'
+          ? serviceMember.sendMessage(principal.userId, requestId, dto)
+          : serviceAdmin.reply(principal.actor, requestId, dto)
+      }
+      case 'service.history.get': {
+        const query = listMessagesQuerySchema.parse(payload)
+        return principal.kind === 'member'
+          ? serviceMember.listMessages(principal.userId, requestId, query)
+          : serviceAdmin.listMessages(requestId, query)
+      }
+      case 'service.read':
+        return principal.kind === 'member'
+          ? serviceMember.markRead(principal.userId, requestId)
+          : serviceAdmin.markRead(principal.actor, requestId)
+    }
+  }
 
   return async (principal, raw) => {
     const frame = frameSchema.safeParse(raw)
@@ -86,6 +120,11 @@ export function createTicketSocketHandler(services: {
 
     const { id, action, payload } = frame.data
     try {
+      if (action === 'service.message.send' || action === 'service.history.get' || action === 'service.read') {
+        const data = await handleServiceAction(action, principal, payload)
+        return { event: 'ack', id, ok: true, data }
+      }
+
       const { ticketId } = ticketIdSchema.parse(payload)
       let data: unknown
       switch (action) {

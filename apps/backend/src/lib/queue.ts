@@ -24,6 +24,9 @@ export const SUBSCRIPTION_LIFECYCLE_SWEEP_JOB = 'subscription-lifecycle-sweep'
 export const ADMIN_UNREPLIED_DIGEST_JOB = 'admin-unreplied-digest'
 export const ADMIN_EXPIRY_DIGEST_JOB = 'admin-expiry-report'
 export const EXPIRE_SUBSCRIPTIONS_JOB = 'expire-subscriptions'
+export const TICKET_UPLOAD_CLEANUP_JOB = 'ticket-upload-cleanup'
+export const SERVICE_QUOTE_EXPIRY_JOB = 'service-quote-expiry'
+export const PUSH_TOKEN_CLEANUP_JOB = 'push-token-cleanup'
 
 export interface CommunityPostNotificationJobPayload {
   communityId: string
@@ -69,6 +72,14 @@ export interface SubscriptionExtendedEmailJobPayload {
   validTill: string
   amount: number
   paidOn: string
+}
+
+export const SERVICE_INVOICE_EMAIL_JOB = 'service-invoice-email'
+
+export interface ServiceInvoiceEmailJobPayload {
+  toEmail: string
+  name: string
+  invoiceId: string
 }
 
 export const COMMUNITY_ADDED_EMAIL_JOB = 'community-added-email'
@@ -143,6 +154,17 @@ export interface PasswordResetOtpEmailJobPayload {
   expiryMinutes: number
 }
 
+export const PUSH_NOTIFICATION_JOB = 'push-notification'
+
+export interface PushNotificationJobPayload {
+  userIds: string[]
+  title: string
+  body: string
+  // Routing info for the app, e.g. { type: 'ticket', id: '...' }; values are stringified at send time.
+  data: Record<string, string>
+  threadId?: string
+}
+
 export const MOBILE_NEW_LOGIN_EMAIL_JOB = 'mobile-new-login-email'
 
 export interface MobileNewLoginEmailJobPayload {
@@ -158,6 +180,7 @@ export type NotificationJobPayload =
   | ThreadReplyEmailJobPayload
   | WelcomeEmailJobPayload
   | SubscriptionExtendedEmailJobPayload
+  | ServiceInvoiceEmailJobPayload
   | CommunityAddedEmailJobPayload
   | CommunityAccessRemovedEmailJobPayload
   | NewMemberRegisteredEmailJobPayload
@@ -167,6 +190,7 @@ export type NotificationJobPayload =
   | OtpWhatsappJobPayload
   | PasswordResetOtpEmailJobPayload
   | MobileNewLoginEmailJobPayload
+  | PushNotificationJobPayload
 
 // Published by NotificationsService (running in the worker process) whenever a
 // new notification row is created, and consumed by lib/live-notifications-feed.ts
@@ -177,7 +201,7 @@ export const NOTIFICATIONS_PUBSUB_CHANNEL = 'notifications:live'
 export interface LiveNotificationEvent {
   userId: string
   type: string
-  communityId: string
+  communityId: string | null
   message: string
   sourceId: string
   // Set for comment-related events ('thread', 'new-member-reply',
@@ -199,6 +223,17 @@ export interface LiveTicketEvent {
   event: LiveTicketEventName
   ticketId: string
   communityId: string
+  data: unknown
+}
+
+// Service-request activity travels over the same Redis channel and the same /ws/tickets socket,
+// so the app keeps a single connection. `service.*` names keep the two feeds apart for clients.
+export type LiveServiceEventName = 'service.created' | 'service.message' | 'service.updated' | 'service.read'
+
+export interface LiveServiceEvent {
+  userIds: string[]
+  event: LiveServiceEventName
+  requestId: string
   data: unknown
 }
 

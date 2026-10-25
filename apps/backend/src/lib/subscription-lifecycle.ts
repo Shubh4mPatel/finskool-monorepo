@@ -72,6 +72,7 @@ export async function runSubscriptionLifecycleSweep(
     const createdId = await notifyOnce({
       db, communityId: sub.communityId, userId: sub.user.id,
       type, sourceId: sub.id, title, message,
+      push: { data: { type: 'subscription', id: sub.communityId, event: bucket, communityId: sub.communityId } },
     })
     if (createdId === null) continue // already notified for this subscription+type — skip the email too
 
@@ -148,6 +149,7 @@ export async function expireLapsedSubscriptions(
       type: NotificationType.SubscriptionExpired, sourceId: sub.id,
       title: 'Access paused',
       message: `Email support@finskool21.com to restore your ${sub.community.name} access.`,
+      push: { data: { type: 'subscription', id: sub.communityId, event: 'expired', communityId: sub.communityId } },
     })
     if (createdId === null) continue // reminder sweep already notified for this subscription
 

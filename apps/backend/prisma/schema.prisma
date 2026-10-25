@@ -85,6 +85,8 @@ model User {
   suspensionReason String? @map("suspension_reason") @db.Text
   avatarUrl    String?   @map("avatar_url") @db.VarChar(500)
   postNotificationsEnabled Boolean @default(true) @map("post_notifications_enabled")
+  // Master mute for mobile push notifications (FCM); separate from the post-notification email/in-app flag above.
+  pushEnabled Boolean @default(true) @map("push_enabled")
   // Submitted once from the mobile app (POST /auth/mobile/me/kyc), then locked.
   // panEncrypted is AES-256-GCM ciphertext (see lib/pan-crypto.ts), decryptable
   // only with PAN_ENCRYPTION_KEY — never select or return it from a normal query.
@@ -111,6 +113,13 @@ model User {
   assignedTickets    Ticket[]        @relation("TicketAssignee")
   ticketMessages     TicketMessage[]
   ticketEvents       TicketEvent[]
+  servicesCreated         Service[]
+  serviceRequests         ServiceRequest[]  @relation("ServiceRequester")
+  assignedServiceRequests ServiceRequest[]  @relation("ServiceAssignee")
+  serviceMessages         ServiceMessage[]
+  serviceEvents           ServiceEvent[]
+  serviceQuotesCreated    ServiceQuote[]
+  razorpayOrders          RazorpayOrder[]
 
   @@index([phone], name: "idx_users_phone")
   @@index([email], name: "idx_users_email")
@@ -533,18 +542,21 @@ model Reaction {
 
 model Notification {
   id          String   @id @default(uuid()) @db.Uuid
-  communityId String   @map("community_id") @db.Uuid
+  // Null for events that belong to no community (service requests).
+  communityId String?  @map("community_id") @db.Uuid
   userId      String   @map("user_id") @db.Uuid
   type        String   @db.VarChar(50)
   sourceId    String   @map("source_id") @db.Uuid
   title       String   @db.Text
   message     String   @db.Text
+  // Routing info the mobile app reads when a notification (or its push) is tapped, e.g. { "type": "ticket", "id": "..." }.
+  data        Json?
   isRead      Boolean  @default(false) @map("is_read")
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  community Community? @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, type, sourceId], name: "uq_notifications_user_type_source")
   @@index([userId, createdAt(sort: Desc)], name: "idx_notifications_user_feed")
@@ -590,11 +602,20 @@ model MobileSession {
   // `string[] | null` in application code (see src/lib/mobile-session.ts).
   accessibleCommunityIds Json? @map("accessible_community_ids")
 
+  // FCM device token for push notifications. One session per user means one
+  // token per user: a logout deletes this row (token gone), a login on another
+  // phone overwrites it. fcmToken is cleared by the push worker when FCM reports
+  // it dead, and by the cleanup job when it hasn't been refreshed for 90 days.
+  fcmToken          String?   @map("fcm_token") @db.VarChar(512)
+  fcmTokenUpdatedAt DateTime? @map("fcm_token_updated_at") @db.Timestamptz
+  appVersion        String?   @map("app_version") @db.VarChar(32)
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([fcmToken], name: "idx_mobile_sessions_fcm_token")
   @@map("mobile_sessions")
 }
 
@@ -661,7 +682,9 @@ model Ticket {
   // sends a message, zeroed by the mark-read endpoint.
   userUnreadCount  Int      @default(0) @map("user_unread_count")
   adminUnreadCount Int      @default(0) @map("admin_unread_count")
-  lastMessageAt    DateTime @default(now()) @map("last_message_at") @db.Timestamptz
+  // Millisecond precision on purpose: the keyset cursors (tickets.shared.ts) round-trip this
+  // through a JS Date, so sub-millisecond digits would make rows sharing a millisecond skippable.
+  lastMessageAt    DateTime @default(now()) @map("last_message_at") @db.Timestamptz(3)
 
   // Written once by the owner after resolve; immutable.
   rating        Int?      @db.SmallInt
@@ -696,7 +719,8 @@ model TicketMessage {
   body            String?          @db.VarChar(2000)
   // Client-generated so a retried send doesn't post the message twice.
   clientMessageId String           @map("client_message_id") @db.VarChar(64)
-  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  // Millisecond precision — see Ticket.lastMessageAt.
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
 
   ticket      Ticket             @relation(fields: [ticketId], references: [id], onDelete: Cascade)
   sender      User               @relation(fields: [senderId], references: [id], onDelete: Cascade)
@@ -743,4 +767,385 @@ model TicketEvent {
 
   @@index([ticketId, createdAt], name: "idx_ticket_events_ticket")
   @@map("ticket_events")
+}
+
+// ─── Services ───────────────────────────────────────────────────────────────
+// A global catalog of services (not tied to a community) that members request
+// from the support team. A request is worked like a ticket: one admin owns it,
+// they chat, the admin sends a quote, the member pays, the admin delivers the
+// service outside the platform and closes the request. Phase 1 covers the
+// catalog, requests and chat; quotes, payments and invoices come next.
+
+enum ServiceRequestStatus {
+  requested
+  quote_sent
+  paid
+  closed
+}
+
+enum ServiceClosedReason {
+  completed
+  declined
+  cancelled_by_member
+}
+
+enum ServiceSenderRole {
+  user
+  admin
+  system
+}
+
+enum ServiceMessageKind {
+  text
+  quote
+  system
+}
+
+enum ServiceQuoteStatus {
+  active
+  superseded
+  expired
+  paid
+  cancelled
+}
+
+enum ServiceEventType {
+  review_resolved
+  created
+  assigned
+  reassigned
+  quote_sent
+  quote_superseded
+  quote_expired
+  paid
+  closed
+  cancelled
+  payment_flagged
+}
+
+model Service {
+  id          String    @id @default(uuid()) @db.Uuid
+  // Internal label for admins; `title` is what members see.
+  name        String    @db.VarChar(150)
+  title       String    @db.VarChar(200)
+  description String    @db.VarChar(5000)
+  imageUrl    String?   @map("image_url") @db.VarChar(500)
+  // Small icon shown next to the name (separate from the big thumbnail above).
+  iconUrl     String?   @map("icon_url") @db.VarChar(500)
+  // Key from SERVICE_TYPES (services.catalog.ts).
+  serviceType String?   @map("service_type") @db.VarChar(40)
+  // Search/filter hashtags, stored without the leading '#'.
+  tags        String[]  @default([])
+  // 0 to 3 short key facts shown as chips on the card, e.g. "Min ₹5,00,000".
+  highlights  String[]  @default([])
+  // Ordered list of strings: what the member gets with this service.
+  whatMembersGet Json   @default("[]") @map("what_members_get")
+  isActive    Boolean   @default(true) @map("is_active")
+  createdBy   String    @map("created_by") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz
+
+  creator  User             @relation(fields: [createdBy], references: [id])
+  requests ServiceRequest[]
+
+  @@index([isActive, deletedAt], name: "idx_services_active")
+  @@map("services")
+}
+
+model ServiceRequest {
+  id              String               @id @default(uuid()) @db.Uuid
+  // Human-readable id shown as SR-<number>; gaps are fine.
+  number          Int                  @unique @default(autoincrement())
+  userId          String               @map("user_id") @db.Uuid
+  serviceId       String               @map("service_id") @db.Uuid
+  status          ServiceRequestStatus @default(requested)
+  // Set when status becomes closed.
+  closedReason    ServiceClosedReason? @map("closed_reason")
+  // What the member needs, in their own words (the first "message" of the conversation).
+  needs           String               @db.VarChar(2000)
+  // The one admin responsible for this request. Set on claim / first admin reply;
+  // only they (or a super admin) can reply or close afterwards.
+  assignedAdminId String?              @map("assigned_admin_id") @db.Uuid
+  // Client-generated key (Idempotency-Key header) so a retry returns the original request.
+  clientRequestId String               @map("client_request_id") @db.VarChar(64)
+
+  userUnreadCount  Int      @default(0) @map("user_unread_count")
+  adminUnreadCount Int      @default(0) @map("admin_unread_count")
+  // Millisecond precision on purpose: keyset cursors round-trip this through a JS Date.
+  lastMessageAt    DateTime @default(now()) @map("last_message_at") @db.Timestamptz(3)
+
+  paidAt        DateTime? @map("paid_at") @db.Timestamptz
+  closedAt      DateTime? @map("closed_at") @db.Timestamptz
+  // Set when money arrived that the request can't absorb (a payment on a quote that had already
+  // been replaced / expired / cancelled, or no billing details to invoice with). An admin refunds
+  // it by hand in the Razorpay dashboard, then resolves the flag.
+  requiresReview Boolean  @default(false) @map("requires_review")
+  // Written once by the member after a completed request; immutable.
+  rating        Int?      @db.SmallInt
+  ratingComment String?   @map("rating_comment") @db.VarChar(1000)
+  ratedAt       DateTime? @map("rated_at") @db.Timestamptz
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  user          User                @relation("ServiceRequester", fields: [userId], references: [id], onDelete: Cascade)
+  service       Service             @relation(fields: [serviceId], references: [id])
+  assignedAdmin User?               @relation("ServiceAssignee", fields: [assignedAdminId], references: [id], onDelete: SetNull)
+  messages      ServiceMessage[]
+  attachments   ServiceAttachment[]
+  events        ServiceEvent[]
+  quotes        ServiceQuote[]
+  invoice       ServiceInvoice?
+
+  @@unique([userId, clientRequestId], name: "uq_service_requests_user_request")
+  @@index([status], name: "idx_service_requests_status")
+  @@index([assignedAdminId, status], name: "idx_service_requests_assignee_status")
+  @@index([userId, lastMessageAt(sort: Desc)], name: "idx_service_requests_user_recent")
+  @@index([serviceId], name: "idx_service_requests_service")
+  @@map("service_requests")
+}
+
+model ServiceMessage {
+  id              String             @id @default(uuid()) @db.Uuid
+  requestId       String             @map("request_id") @db.Uuid
+  // Empty for system messages (e.g. "Payment received").
+  senderId        String?            @map("sender_id") @db.Uuid
+  senderRole      ServiceSenderRole  @map("sender_role")
+  kind            ServiceMessageKind @default(text)
+  // Optional because a message may be attachments-only.
+  body            String?            @db.VarChar(2000)
+  // Set on kind = quote: the quote this chat card shows.
+  quoteId         String?            @map("quote_id") @db.Uuid
+  // Client-generated so a retried send doesn't post twice. Empty for system messages.
+  clientMessageId String?            @map("client_message_id") @db.VarChar(64)
+  // Millisecond precision — see ServiceRequest.lastMessageAt.
+  createdAt       DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  request     ServiceRequest      @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  sender      User?               @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  quote       ServiceQuote?       @relation(fields: [quoteId], references: [id], onDelete: SetNull)
+  attachments ServiceAttachment[]
+
+  @@unique([requestId, clientMessageId], name: "uq_service_messages_client_id")
+  @@index([requestId, createdAt(sort: Desc)], name: "idx_service_messages_thread")
+  @@map("service_messages")
+}
+
+model ServiceAttachment {
+  id        String   @id @default(uuid()) @db.Uuid
+  requestId String   @map("request_id") @db.Uuid
+  // null = attached to the request's original description rather than a chat message.
+  messageId String?  @map("message_id") @db.Uuid
+  // Object key inside the private bucket (services/<userId>/…) — never a public URL.
+  objectKey String   @map("object_key") @db.VarChar(300)
+  fileName  String   @map("file_name") @db.VarChar(255)
+  mimeType  String   @map("mime_type") @db.VarChar(100)
+  sizeBytes Int      @map("size_bytes")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  request ServiceRequest  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  message ServiceMessage? @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([requestId], name: "idx_service_attachments_request")
+  @@index([messageId], name: "idx_service_attachments_message")
+  @@index([objectKey], name: "idx_service_attachments_object")
+  @@map("service_attachments")
+}
+
+model ServiceEvent {
+  id        String           @id @default(uuid()) @db.Uuid
+  requestId String           @map("request_id") @db.Uuid
+  type      ServiceEventType
+  actorId   String?          @map("actor_id") @db.Uuid
+  meta      Json?
+  createdAt DateTime         @default(now()) @map("created_at") @db.Timestamptz
+
+  request ServiceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  actor   User?          @relation(fields: [actorId], references: [id], onDelete: Cascade)
+
+  @@index([requestId, createdAt], name: "idx_service_events_request")
+  @@map("service_events")
+}
+
+// ─── Services: quotes, payments, invoices (phase 2) ─────────────────────────
+
+model ServiceQuote {
+  id             String             @id @default(uuid()) @db.Uuid
+  requestId      String             @map("request_id") @db.Uuid
+  // 1, 2, 3 … per request; a new quote supersedes the previous active one.
+  version        Int
+  // Amounts in rupees. total = base + GST, and total is what Razorpay charges.
+  baseAmount     Decimal            @map("base_amount") @db.Decimal(12, 2)
+  gstRatePercent Decimal            @map("gst_rate_percent") @db.Decimal(5, 2)
+  gstAmount      Decimal            @map("gst_amount") @db.Decimal(12, 2)
+  totalAmount    Decimal            @map("total_amount") @db.Decimal(12, 2)
+  note           String?            @db.VarChar(1000)
+  expiresAt      DateTime           @map("expires_at") @db.Timestamptz
+  status         ServiceQuoteStatus @default(active)
+  // Billing details the member gave when they started paying (name, state, optional GSTIN / address).
+  billing        Json?
+  // When the member last opened the payment sheet; guards against replacing / expiring a quote mid-payment.
+  paymentStartedAt DateTime?        @map("payment_started_at") @db.Timestamptz
+  createdBy      String             @map("created_by") @db.Uuid
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  request  ServiceRequest   @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  creator  User             @relation(fields: [createdBy], references: [id])
+  messages ServiceMessage[]
+
+  @@unique([requestId, version], name: "uq_service_quotes_version")
+  @@index([requestId, status], name: "idx_service_quotes_request_status")
+  @@index([status, expiresAt], name: "idx_service_quotes_expiry")
+  @@map("service_quotes")
+}
+
+// Razorpay ledger — separate from plan_orders on purpose. One row per order we create, one per
+// payment attempt on it, one per webhook delivery, so the history of orders and purchases survives
+// whatever happens to the business objects they paid for. `purpose` + `referenceId` let later
+// features reuse it.
+
+enum RazorpayOrderPurpose {
+  service_quote
+}
+
+enum RazorpayOrderStatus {
+  created
+  paid
+}
+
+enum RazorpayPaymentStatus {
+  authorized
+  captured
+  failed
+}
+
+enum RazorpaySettleSource {
+  verify
+  webhook
+}
+
+model RazorpayOrder {
+  id              String               @id @default(uuid()) @db.Uuid
+  razorpayOrderId String               @unique @map("razorpay_order_id") @db.VarChar(64)
+  purpose         RazorpayOrderPurpose
+  // The business object this order pays for (for service_quote: the quote id).
+  referenceId     String               @map("reference_id") @db.Uuid
+  userId          String               @map("user_id") @db.Uuid
+  amount          Decimal              @db.Decimal(12, 2)
+  currency        String               @default("INR") @db.VarChar(10)
+  status          RazorpayOrderStatus  @default(created)
+  receipt         String?              @db.VarChar(64)
+  notes           Json?
+  createdAt       DateTime             @default(now()) @map("created_at") @db.Timestamptz
+  paidAt          DateTime?            @map("paid_at") @db.Timestamptz
+
+  user     User              @relation(fields: [userId], references: [id])
+  payments RazorpayPayment[]
+
+  @@index([purpose, referenceId], name: "idx_razorpay_orders_reference")
+  @@index([userId], name: "idx_razorpay_orders_user")
+  @@map("razorpay_orders")
+}
+
+model RazorpayPayment {
+  id                 String                @id @default(uuid()) @db.Uuid
+  razorpayPaymentId  String                @unique @map("razorpay_payment_id") @db.VarChar(64)
+  orderId            String                @map("order_id") @db.Uuid
+  amount             Decimal               @db.Decimal(12, 2)
+  currency           String                @default("INR") @db.VarChar(10)
+  status             RazorpayPaymentStatus
+  method             String?               @db.VarChar(30)
+  // Which path turned this payment into a settled purchase first: the app's verify call or the webhook.
+  settledVia         RazorpaySettleSource? @map("settled_via")
+  errorCode          String?               @map("error_code") @db.VarChar(100)
+  errorDescription   String?               @map("error_description") @db.VarChar(500)
+  raw                Json?
+  createdAt          DateTime              @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  order   RazorpayOrder   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  invoice ServiceInvoice?
+
+  @@index([orderId], name: "idx_razorpay_payments_order")
+  @@map("razorpay_payments")
+}
+
+model RazorpayWebhookEvent {
+  id              String    @id @default(uuid()) @db.Uuid
+  // The X-Razorpay-Event-Id header: Razorpay retries a delivery with the same id.
+  razorpayEventId String    @unique @map("razorpay_event_id") @db.VarChar(100)
+  eventType       String    @map("event_type") @db.VarChar(80)
+  payload         Json
+  signatureValid  Boolean   @map("signature_valid")
+  processedAt     DateTime? @map("processed_at") @db.Timestamptz
+  processingError String?   @map("processing_error")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("razorpay_webhook_events")
+}
+
+// One row, edited by a super admin. Everything is optional until set; quotes can't be sent (and
+// invoices can't be issued) until the seller details are complete.
+model BillingSettings {
+  id                     String   @id @default("default") @db.VarChar(20)
+  legalName              String?  @map("legal_name") @db.VarChar(200)
+  addressLine            String?  @map("address_line") @db.VarChar(300)
+  city                   String?  @db.VarChar(100)
+  pincode                String?  @db.VarChar(10)
+  // GST state code, e.g. "27" for Maharashtra — decides CGST+SGST vs IGST.
+  stateCode              String?  @map("state_code") @db.VarChar(2)
+  gstin                  String?  @db.VarChar(15)
+  sacCode                String?  @map("sac_code") @db.VarChar(10)
+  contactEmail           String?  @map("contact_email") @db.VarChar(255)
+  contactPhone           String?  @map("contact_phone") @db.VarChar(30)
+  footerNote             String?  @map("footer_note") @db.VarChar(500)
+  defaultGstRatePercent  Decimal  @default(18) @map("default_gst_rate_percent") @db.Decimal(5, 2)
+  defaultQuoteExpiryDays Int      @default(5) @map("default_quote_expiry_days")
+  invoicePrefix          String   @default("FS") @map("invoice_prefix") @db.VarChar(10)
+  updatedBy              String?  @map("updated_by") @db.Uuid
+  updatedAt              DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("billing_settings")
+}
+
+// Last invoice number used per financial year (e.g. "2026-27"). Incremented inside the payment
+// transaction, so a rolled-back payment never burns a number and the sequence has no gaps.
+model InvoiceCounter {
+  financialYear String @id @map("financial_year") @db.VarChar(9)
+  lastNumber    Int    @map("last_number")
+
+  @@map("invoice_counters")
+}
+
+model ServiceInvoice {
+  id             String   @id @default(uuid()) @db.Uuid
+  requestId      String   @unique @map("request_id") @db.Uuid
+  quoteId        String   @unique @map("quote_id") @db.Uuid
+  paymentId      String   @unique @map("payment_id") @db.Uuid
+  // FS/2026-27/0001
+  number         String   @unique @db.VarChar(40)
+  financialYear  String   @map("financial_year") @db.VarChar(9)
+  sequence       Int
+  issuedAt       DateTime @default(now()) @map("issued_at") @db.Timestamptz
+  // Snapshots: later edits to billing settings or the member's details never change an issued invoice.
+  seller         Json
+  buyer          Json
+  description    String   @db.VarChar(500)
+  sacCode        String   @map("sac_code") @db.VarChar(10)
+  taxableValue   Decimal  @map("taxable_value") @db.Decimal(12, 2)
+  gstRatePercent Decimal  @map("gst_rate_percent") @db.Decimal(5, 2)
+  cgst           Decimal  @default(0) @db.Decimal(12, 2)
+  sgst           Decimal  @default(0) @db.Decimal(12, 2)
+  igst           Decimal  @default(0) @db.Decimal(12, 2)
+  total          Decimal  @db.Decimal(12, 2)
+  pdfObjectKey   String?  @map("pdf_object_key") @db.VarChar(300)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  request ServiceRequest  @relation(fields: [requestId], references: [id])
+  payment RazorpayPayment @relation(fields: [paymentId], references: [id])
+
+  @@unique([financialYear, sequence], name: "uq_service_invoices_fy_sequence")
+  @@map("service_invoices")
 }

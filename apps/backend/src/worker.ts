@@ -8,6 +8,7 @@ import {
   THREAD_REPLY_EMAIL_JOB,
   WELCOME_EMAIL_JOB,
   SUBSCRIPTION_EXTENDED_EMAIL_JOB,
+  SERVICE_INVOICE_EMAIL_JOB,
   COMMUNITY_ADDED_EMAIL_JOB,
   COMMUNITY_ACCESS_REMOVED_EMAIL_JOB,
   NEW_MEMBER_REGISTERED_EMAIL_JOB,
@@ -17,6 +18,7 @@ import {
   OTP_WHATSAPP_JOB,
   PASSWORD_RESET_OTP_EMAIL_JOB,
   MOBILE_NEW_LOGIN_EMAIL_JOB,
+  PUSH_NOTIFICATION_JOB,
 } from './lib/queue.js'
 import prisma from './lib/prisma.js'
 import { logger } from './shared/logger.js'
@@ -33,6 +35,7 @@ const worker = new Worker(
     if (job.name === THREAD_REPLY_EMAIL_JOB) return service.sendThreadReplyEmail(job.data)
     if (job.name === WELCOME_EMAIL_JOB) return service.sendWelcomeEmail(job.data)
     if (job.name === SUBSCRIPTION_EXTENDED_EMAIL_JOB) return service.sendSubscriptionExtendedEmail(job.data)
+    if (job.name === SERVICE_INVOICE_EMAIL_JOB) return service.sendServiceInvoiceEmail(job.data)
     if (job.name === COMMUNITY_ADDED_EMAIL_JOB) return service.sendCommunityAddedEmail(job.data)
     if (job.name === COMMUNITY_ACCESS_REMOVED_EMAIL_JOB) return service.sendCommunityAccessRemovedEmail(job.data)
     if (job.name === NEW_MEMBER_REGISTERED_EMAIL_JOB) return service.sendNewMemberRegisteredEmail(job.data)
@@ -42,6 +45,7 @@ const worker = new Worker(
     if (job.name === OTP_WHATSAPP_JOB) return service.sendOtpWhatsapp(job.data, job.attemptsMade + 1 >= (job.opts.attempts ?? 1))
     if (job.name === PASSWORD_RESET_OTP_EMAIL_JOB) return service.sendPasswordResetOtpEmail(job.data)
     if (job.name === MOBILE_NEW_LOGIN_EMAIL_JOB) return service.sendMobileNewLoginEmail(job.data)
+    if (job.name === PUSH_NOTIFICATION_JOB) return service.sendPush(job.data, job)
   },
   { connection, concurrency: 5 },
 )

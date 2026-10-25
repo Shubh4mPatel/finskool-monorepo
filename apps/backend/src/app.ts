@@ -1,4 +1,5 @@
 import express from 'express'
+import type { Request } from 'express'
 import type { CorsOptions } from 'cors'
 import cors from 'cors'
 import cookieParser from 'cookie-parser'
@@ -8,6 +9,7 @@ import { swaggerSpec, swaggerDocsPath } from './config/swagger.js'
 import { errorMiddleware } from './middlewares/error.middleware.js'
 import { NotFoundError } from './shared/errors/index.js'
 import authRoutes from './modules/auth/auth.routes.js'
+import mobilePushRoutes from './modules/push/push.routes.js'
 import mobileAuthRoutes from './modules/mobile-auth/mobile-auth.routes.js'
 import adminRoutes from './modules/admin/admin.routes.js'
 import postsRoutes, { mobilePostsRouter } from './modules/posts/posts.routes.js'
@@ -19,6 +21,8 @@ import stockRecommendationsRoutes from './modules/stock-recommendations/stock-re
 import paymentsRoutes from './modules/payments/payments.routes.js'
 import welcomeKitsRoutes, { mobileWelcomeKitsRouter } from './modules/welcome-kits/welcome-kits.routes.js'
 import adminTicketsRoutes, { mobileTicketsRouter } from './modules/tickets/tickets.routes.js'
+import adminServicesRoutes, { mobileServicesRouter } from './modules/services/services.routes.js'
+import razorpayWebhookRoutes, { RAW_BODY_PATH_PREFIX } from './modules/services/razorpay-webhook.routes.js'
 import type { PlanListItemDTO } from './modules/payments/payments.dto.js'
 import prisma from './lib/prisma.js'
 import { authenticate, requireMobileAuth } from './middlewares/auth.middleware.js'
@@ -40,7 +44,15 @@ export function createApp() {
   const app = express()
 
   app.use(cors(buildCorsOptions()))
-  app.use(express.json())
+  // Webhook routes verify an HMAC over the exact bytes Razorpay sent, so keep them next to the parsed body.
+  app.use(
+    express.json({
+      verify: (req, _res, buf) => {
+        const request = req as unknown as Request
+        if (request.url?.startsWith(RAW_BODY_PATH_PREFIX)) request.rawBody = buf
+      },
+    }),
+  )
   app.use(cookieParser())
 
   app.get('/health', (_req, res) => {
@@ -51,11 +63,13 @@ export function createApp() {
   app.use(swaggerDocsPath, swaggerUi.serve, swaggerUi.setup(swaggerSpec))
   app.get('/api/docs.json', (_req, res) => res.json(swaggerSpec))
 
+  app.use('/api/v1/payments/webhooks', razorpayWebhookRoutes)
   app.use('/api/v1/auth', authRoutes)
   app.use('/api/v1/auth/mobile', mobileAuthRoutes)
   app.use('/api/v1/admin', adminRoutes)
   app.use('/api/v1/admin', welcomeKitsRoutes)
   app.use('/api/v1/admin/tickets', adminTicketsRoutes)
+  app.use('/api/v1/admin/services', adminServicesRoutes)
   app.use('/api/v1/posts', postsRoutes)
   app.use('/api/v1', commentsRoutes)
   app.use('/api/v1', reactionsRoutes)
@@ -68,7 +82,9 @@ export function createApp() {
   // reactions.routes.ts for why these are separate from the shared routes.
   // Mounted before the shared /api/v1/mobile routers below: those apply authenticate router-wide, which
   // would otherwise re-run the MobileSession lookup on every ticket request before reaching this router.
+  app.use('/api/v1/mobile', mobilePushRoutes)
   app.use('/api/v1/mobile/tickets', mobileTicketsRouter)
+  app.use('/api/v1/mobile/services', mobileServicesRouter)
   app.use('/api/v1/mobile', mobilePostsRouter)
   app.use('/api/v1/mobile', mobileReactionsRouter)
   app.use('/api/v1/mobile', mobileWelcomeKitsRouter)

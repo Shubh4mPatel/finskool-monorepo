@@ -33,6 +33,9 @@ export interface MobileLoginDTO {
   // display/support purposes only, never used for auth decisions.
   deviceId?: string | undefined
   deviceType?: 'ios' | 'android' | undefined
+  // FCM device token for push notifications (optional; can also be sent later via PUT /mobile/push-token).
+  fcmToken?: string | undefined
+  appVersion?: string | undefined
 }
 
 // Type-only reuse of the web auth module's response shapes (not its logic) —

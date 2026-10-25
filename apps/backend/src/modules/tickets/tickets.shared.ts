@@ -6,6 +6,7 @@ import {
   inspectTicketAttachment,
   ticketAttachmentExtension,
 } from '../../lib/minio.js'
+import type { AttachmentPrefix } from '../../lib/minio.js'
 import { BadRequestError } from '../../shared/errors/index.js'
 import type {
   AdminTicketDTO,
@@ -54,18 +55,30 @@ export function encodeCursor(at: Date, id: string): string {
 export function decodeCursor(cursor: string): { at: Date; id: string } {
   const [iso, id] = Buffer.from(cursor, 'base64url').toString().split('|')
   const at = new Date(iso ?? '')
-  if (!id || Number.isNaN(at.getTime())) throw new BadRequestError('Invalid cursor', 'INVALID_CURSOR')
+  // The id goes straight into a uuid-column comparison: anything else would surface as a 500.
+  if (!id || !isUuid(id) || Number.isNaN(at.getTime())) throw new BadRequestError('Invalid cursor', 'INVALID_CURSOR')
   return { at, id }
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** Postgres' own idea of a uuid — what a `@db.Uuid` column will accept without throwing. */
+export function isUuid(value: string): boolean {
+  return UUID_RE.test(value)
 }
 
 // ─── Attachments ────────────────────────────────────────────────────────────
 
-export async function createUploadUrl(uploaderId: string, dto: PresignDTO): Promise<TicketUploadUrlDTO> {
+export async function createUploadUrl(
+  uploaderId: string,
+  dto: PresignDTO,
+  prefix: AttachmentPrefix = 'tickets',
+): Promise<TicketUploadUrlDTO> {
   const ext = ticketAttachmentExtension(dto.fileName)
   if (!ext) {
     throw new BadRequestError('Only JPG, PNG, WebP images and PDF files are allowed', 'ATTACHMENT_INVALID')
   }
-  return generateTicketUploadUrl(uploaderId, ext)
+  return generateTicketUploadUrl(uploaderId, ext, prefix)
 }
 
 /**
@@ -75,18 +88,19 @@ export async function createUploadUrl(uploaderId: string, dto: PresignDTO): Prom
 export async function resolveAttachments(
   uploaderId: string,
   refs: { objectKey: string; fileName: string }[],
+  prefix: AttachmentPrefix = 'tickets',
 ): Promise<{ objectKey: string; fileName: string; mimeType: string; sizeBytes: number }[]> {
   if (new Set(refs.map(r => r.objectKey)).size !== refs.length) {
     throw new BadRequestError('Duplicate attachment', 'ATTACHMENT_INVALID')
   }
   const checked = await Promise.all(
-    refs.map(async ref => ({ ref, info: await inspectTicketAttachment(ref.objectKey, uploaderId) })),
+    refs.map(async ref => ({ ref, info: await inspectTicketAttachment(ref.objectKey, uploaderId, prefix) })),
   )
   const bad = checked.filter(c => !c.info)
   if (bad.length > 0) {
     // Only ever delete objects under the caller's own prefix.
     await Promise.all(
-      bad.filter(b => b.ref.objectKey.startsWith(`tickets/${uploaderId}/`)).map(b => deleteTicketObject(b.ref.objectKey)),
+      bad.filter(b => b.ref.objectKey.startsWith(`${prefix}/${uploaderId}/`)).map(b => deleteTicketObject(b.ref.objectKey)),
     )
     throw new BadRequestError(
       'An attachment is missing, larger than 5 MB, or not an image/PDF',
@@ -107,12 +121,12 @@ async function mapAttachment(a: AttachmentRow): Promise<TicketAttachmentDTO> {
     fileName: a.fileName,
     mimeType: a.mimeType,
     sizeBytes: a.sizeBytes,
-    url: await generateTicketDownloadUrl(a.objectKey, a.fileName),
+    url: await generateTicketDownloadUrl(a.objectKey, a.fileName, a.mimeType),
   }
 }
 
 export async function freshAttachmentUrl(a: AttachmentRow): Promise<string> {
-  return generateTicketDownloadUrl(a.objectKey, a.fileName)
+  return generateTicketDownloadUrl(a.objectKey, a.fileName, a.mimeType)
 }
 
 // ─── Mapping ────────────────────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { normalizePhone } from '../../lib/phone.js'
+import { fcmTokenSchema } from '../push/push.validator.js'
 
 const phoneSchema = z.string().transform((val, ctx) => {
   const normalized = normalizePhone(val)
@@ -41,6 +42,9 @@ export const mobileLoginSchema = z.object({
   password: z.string().min(1, 'Password is required'),
   deviceId: z.string().max(255).optional(),
   deviceType: z.enum(['ios', 'android']).optional(),
+  // Lets the first push work right after login without a second call.
+  fcmToken: fcmTokenSchema.optional(),
+  appVersion: z.string().trim().max(32).optional(),
 })
 
 export const forgotPasswordSchema = z.object({

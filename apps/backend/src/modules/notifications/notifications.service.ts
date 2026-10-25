@@ -15,6 +15,7 @@ import type {
   ThreadReplyEmailJobPayload,
   WelcomeEmailJobPayload,
   SubscriptionExtendedEmailJobPayload,
+  ServiceInvoiceEmailJobPayload,
   CommunityAddedEmailJobPayload,
   CommunityAccessRemovedEmailJobPayload,
   NewMemberRegisteredEmailJobPayload,
@@ -25,8 +26,13 @@ import type {
   PasswordResetOtpEmailJobPayload,
   MobileNewLoginEmailJobPayload,
   LiveNotificationEvent,
+  PushNotificationJobPayload,
 } from '../../lib/queue.js'
-import { NotificationType } from './notifications.dto.js'
+import { FCM_BATCH_SIZE, isPushConfigured, sendPushBatch } from '../../lib/fcm.js'
+import { enqueuePush } from '../../lib/push.js'
+import { renderInvoicePdf } from '../services/services.invoice.js'
+import { requestLabel } from '../services/services.shared.js'
+import { NotificationType, toNotificationItem } from './notifications.dto.js'
 import type { ListNotificationsResponseDTO } from './notifications.dto.js'
 
 const FAN_OUT_CHUNK_SIZE = 500
@@ -95,16 +101,7 @@ export class NotificationsService {
     ])
 
     return {
-      notifications: notifications.map(n => ({
-        id: n.id,
-        communityId: n.communityId,
-        type: n.type,
-        title: n.title,
-        message: n.message,
-        isRead: n.isRead,
-        createdAt: n.createdAt,
-        updatedAt: n.updatedAt,
-      })),
+      notifications: notifications.map(toNotificationItem),
       total,
       page,
       pageSize,
@@ -148,6 +145,7 @@ export class NotificationsService {
       triggeredByUserId: payload.triggeredByUserId,
       type: NotificationType.Post,
       email: { subject, html },
+      push: true,
     })
   }
 
@@ -161,6 +159,8 @@ export class NotificationsService {
       triggeredByUserId: payload.triggeredByUserId,
       type: NotificationType.Recommendation,
       email: { subject: payload.message, html },
+      // Recommendations stay in-app and email only; no mobile push.
+      push: false,
     })
   }
 
@@ -172,8 +172,9 @@ export class NotificationsService {
     triggeredByUserId: string
     type: string
     email: { subject: string; html: string }
+    push: boolean
   }): Promise<{ created: number }> {
-    const { communityId, sourceId, title, message, triggeredByUserId, type, email } = params
+    const { communityId, sourceId, title, message, triggeredByUserId, type, email, push } = params
 
     const subs = await this.db.subscription.findMany({
       where: { communityId, isActive: true, validUntil: { gte: startOfToday() } },
@@ -208,6 +209,10 @@ export class NotificationsService {
       await Promise.all([
         this.sendEmailBatch(emails, email.subject, email.html),
         this.publishLiveBatch(chunk.map(r => r.userId), { type, communityId, message, sourceId }),
+        // Only when this chunk really created rows: a retried fan-out job finds them all existing and stays quiet.
+        push && result.count > 0
+          ? enqueuePush({ userIds: chunk.map(r => r.userId), title, body: message, data: { type, id: sourceId, communityId } })
+          : Promise.resolve(),
       ])
     }
 
@@ -250,6 +255,31 @@ export class NotificationsService {
       frontend_url: env.frontendUrl,
     })
     await sendMail({ to: payload.toEmail, subject, html })
+  }
+
+  /** "Payment received" with the GST invoice attached. The PDF is rendered here, so it needs no stored file. */
+  async sendServiceInvoiceEmail(payload: ServiceInvoiceEmailJobPayload): Promise<void> {
+    const invoice = await this.db.serviceInvoice.findUnique({
+      where: { id: payload.invoiceId },
+      include: { request: { select: { number: true, service: { select: { title: true } } } } },
+    })
+    if (!invoice) throw new NotFoundError('Invoice not found')
+    const pdf = await renderInvoicePdf(invoice)
+    const { subject, html } = renderEmail('service-invoice', {
+      first_name: firstNameOf(payload.name),
+      service_title: invoice.request.service.title,
+      request_label: requestLabel(invoice.request.number),
+      invoice_number: invoice.number,
+      amount: Number(invoice.total).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+      paid_on: formatEmailDate(invoice.issuedAt),
+      frontend_url: env.frontendUrl,
+    })
+    await sendMail({
+      to: payload.toEmail,
+      subject,
+      html,
+      attachments: [{ filename: `${invoice.number.replace(/\//g, '-')}.pdf`, content: pdf, contentType: 'application/pdf' }],
+    })
   }
 
   async sendCommunityAddedEmail(payload: CommunityAddedEmailJobPayload): Promise<void> {
@@ -335,6 +365,53 @@ export class NotificationsService {
       expiry_minutes: String(payload.expiryMinutes),
     })
     await sendMail({ to: payload.toEmail, subject, html })
+  }
+
+  /**
+   * Delivers one push job. Recipients who muted pushes, or have no registered device, are skipped.
+   * Tokens FCM reports as dead are cleared (never retried). If some sends failed for a temporary reason,
+   * the job's recipients are narrowed to just those members and the job is failed so BullMQ retries it,
+   * which means a retry never re-sends to someone who already got it.
+   */
+  async sendPush(payload: PushNotificationJobPayload, job?: { updateData(data: PushNotificationJobPayload): Promise<void> }): Promise<{ sent: number; invalid: number; skipped: number }> {
+    const sessions = await this.db.mobileSession.findMany({
+      where: { userId: { in: payload.userIds }, fcmToken: { not: null }, user: { pushEnabled: true, status: 'active', deletedAt: null } },
+      select: { userId: true, fcmToken: true },
+    })
+    const targets = sessions.flatMap(s => (s.fcmToken ? [{ userId: s.userId, token: s.fcmToken }] : []))
+    const skipped = payload.userIds.length - targets.length
+    if (targets.length === 0) return { sent: 0, invalid: 0, skipped }
+    if (!isPushConfigured()) {
+      logger.warn({ recipients: targets.length, type: payload.data['type'] }, 'notifications.sendPush: FCM not configured, push skipped')
+      return { sent: 0, invalid: 0, skipped: payload.userIds.length }
+    }
+
+    let sent = 0
+    const deadTokens: string[] = []
+    const retryUserIds: string[] = []
+    for (let i = 0; i < targets.length; i += FCM_BATCH_SIZE) {
+      const chunk = targets.slice(i, i + FCM_BATCH_SIZE)
+      const outcomes = await sendPushBatch(
+        chunk.map(t => ({ token: t.token, title: payload.title, body: payload.body, data: payload.data, threadId: payload.threadId })),
+      )
+      outcomes.forEach((outcome, idx) => {
+        const target = chunk[idx]
+        if (!target) return
+        if (outcome.ok) sent++
+        else if (outcome.kind === 'invalid-token') deadTokens.push(target.token)
+        else if (outcome.kind === 'transient') retryUserIds.push(target.userId)
+        else logger.error({ userId: target.userId, code: outcome.code }, 'notifications.sendPush: send failed')
+      })
+    }
+
+    if (deadTokens.length > 0) {
+      await this.db.mobileSession.updateMany({ where: { fcmToken: { in: deadTokens } }, data: { fcmToken: null, fcmTokenUpdatedAt: null } })
+    }
+    if (retryUserIds.length > 0) {
+      await job?.updateData({ ...payload, userIds: retryUserIds })
+      throw new Error(`push: ${retryUserIds.length} send(s) failed temporarily; will retry`)
+    }
+    return { sent, invalid: deadTokens.length, skipped }
   }
 
   async sendMobileNewLoginEmail(payload: MobileNewLoginEmailJobPayload): Promise<void> {

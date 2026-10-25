@@ -21,7 +21,7 @@ import { env } from '../config/env.js'
 import prisma from './prisma.js'
 import redis from './redis.js'
 import { TICKETS_PUBSUB_CHANNEL } from './queue.js'
-import type { LiveTicketEvent } from './queue.js'
+import type { LiveServiceEvent, LiveTicketEvent } from './queue.js'
 import { validateMobileSession } from './mobile-session.js'
 import type { JwtPayload } from '../middlewares/auth.middleware.js'
 import { logger } from '../shared/logger.js'
@@ -114,20 +114,41 @@ function ackError(id: string | null, code: string, message: string): TicketAck {
   return { event: 'ack', id, ok: false, error: { code, message } }
 }
 
+function isWebExpired(auth: ConnectionAuth): boolean {
+  return auth.kind === 'web' && Date.now() >= auth.expiresAtMs
+}
+
+/**
+ * Whether the connection's credentials are still good, checked before a live push. The upgrade
+ * authenticates once, so without this a logged-out member or an admin whose token expired would
+ * keep receiving ticket messages (and attachment links) until they next sent a frame.
+ */
+async function stillAuthenticated(auth: ConnectionAuth): Promise<boolean> {
+  if (auth.kind === 'web') return !isWebExpired(auth)
+  return (await validateMobileSession(prisma, auth.sessionId)) !== null
+}
+
 /** Fire-and-forget: a failed push must never fail the request that caused it. */
-export async function publishTicketEvent(event: LiveTicketEvent): Promise<void> {
+async function publishLiveEvent(event: LiveTicketEvent | LiveServiceEvent): Promise<void> {
   if (event.userIds.length === 0) return
   try {
     await redis.publish(TICKETS_PUBSUB_CHANNEL, JSON.stringify(event))
   } catch (err) {
-    logger.error({ err, ticketId: event.ticketId, event: event.event }, 'publishTicketEvent: failed to publish')
+    const id = 'ticketId' in event ? { ticketId: event.ticketId } : { requestId: event.requestId }
+    logger.error({ err, ...id, event: event.event }, 'publishLiveEvent: failed to publish')
   }
 }
+
+export const publishTicketEvent: (event: LiveTicketEvent) => Promise<void> = publishLiveEvent
+export const publishServiceEvent: (event: LiveServiceEvent) => Promise<void> = publishLiveEvent
 
 class LiveTicketsFeed {
   private readonly wss = new WebSocketServer({ noServer: true, maxPayload: MAX_FRAME_BYTES })
   private readonly connectionsByUser = new Map<string, Set<WebSocket>>()
   private readonly alive = new WeakMap<WebSocket, boolean>()
+  private readonly authByWs = new WeakMap<WebSocket, ConnectionAuth>()
+  // Pushes to one socket are verified asynchronously; chaining them keeps their order intact.
+  private readonly pushChain = new WeakMap<WebSocket, Promise<void>>()
   private onFrame: TicketSocketHandler | null = null
 
   /**
@@ -159,12 +180,18 @@ class LiveTicketsFeed {
       )
     })
 
-    // Mobile networks drop connections without a close frame — ping and reap.
+    // Mobile networks drop connections without a close frame — ping and reap. A web socket whose
+    // access token has expired is also closed here, so an idle one doesn't outlive its login.
     setInterval(() => {
       for (const sockets of this.connectionsByUser.values()) {
         for (const ws of sockets) {
           if (this.alive.get(ws) === false) {
             ws.terminate()
+            continue
+          }
+          const auth = this.authByWs.get(ws)
+          if (auth && isWebExpired(auth)) {
+            ws.close(WS_CLOSE_AUTH, 'reauthenticate')
             continue
           }
           this.alive.set(ws, false)
@@ -186,7 +213,7 @@ class LiveTicketsFeed {
     )
     subscriber.on('message', (_channel: string, raw: string) => {
       try {
-        const { userIds, ...payload } = JSON.parse(raw) as LiveTicketEvent
+        const { userIds, ...payload } = JSON.parse(raw) as LiveTicketEvent | LiveServiceEvent
         const json = JSON.stringify(payload)
         for (const userId of userIds) this.sendToUser(userId, json)
       } catch (err) {
@@ -203,6 +230,7 @@ class LiveTicketsFeed {
       this.connectionsByUser.set(userId, set)
     }
     set.add(ws)
+    this.authByWs.set(ws, auth)
     this.alive.set(ws, true)
     ws.on('pong', () => this.alive.set(ws, true))
     ws.on('error', (err: unknown) => logger.warn({ err }, 'LiveTicketsFeed: socket error'))
@@ -268,9 +296,24 @@ class LiveTicketsFeed {
   private sendToUser(userId: string, json: string): void {
     const sockets = this.connectionsByUser.get(userId)
     if (!sockets) return
-    for (const ws of sockets) {
-      if (ws.readyState === WebSocket.OPEN) ws.send(json)
-    }
+    for (const ws of sockets) this.push(ws, json)
+  }
+
+  /** Delivers one live event to one socket, but only if its credentials are still valid. */
+  private push(ws: WebSocket, json: string): void {
+    const next = (this.pushChain.get(ws) ?? Promise.resolve())
+      .then(async () => {
+        if (ws.readyState !== WebSocket.OPEN) return
+        const auth = this.authByWs.get(ws)
+        if (!auth) return
+        if (!(await stillAuthenticated(auth))) {
+          ws.close(WS_CLOSE_AUTH, 'reauthenticate')
+          return
+        }
+        if (ws.readyState === WebSocket.OPEN) ws.send(json)
+      })
+      .catch((err: unknown) => logger.warn({ err }, 'LiveTicketsFeed: push failed'))
+    this.pushChain.set(ws, next)
   }
 }
 

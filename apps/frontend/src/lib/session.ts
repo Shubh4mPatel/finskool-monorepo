@@ -1,3 +1,5 @@
+import { useSyncExternalStore } from 'react'
+
 export interface SessionInfo {
   userId: string
   userName: string
@@ -60,3 +62,23 @@ export function clearSession(): void {
 }
 
 export { initials }
+
+function subscribeToSession(onChange: () => void): () => void {
+  window.addEventListener('storage', onChange)
+  window.addEventListener('profile:updated', onChange)
+  return () => {
+    window.removeEventListener('storage', onChange)
+    window.removeEventListener('profile:updated', onChange)
+  }
+}
+
+/**
+ * Whether the signed-in user is a super admin — safe to use while rendering. The session lives in
+ * localStorage, which the server can't see, so reading it directly in render makes the server HTML
+ * differ from the client's first render (a hydration error). This is `null` ("not known yet") on the
+ * server and during hydration, then the real value — so a page can show a spinner rather than
+ * flashing "not allowed" at a super admin.
+ */
+export function useIsSuperAdmin(): boolean | null {
+  return useSyncExternalStore<boolean | null>(subscribeToSession, () => getSession()?.isSuperAdmin === true, () => null)
+}

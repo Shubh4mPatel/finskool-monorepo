@@ -18,6 +18,7 @@ export interface SendMailOptions {
   to: string
   subject: string
   html: string
+  attachments?: { filename: string; content: Buffer; contentType?: string }[]
 }
 
 export async function sendMail(opts: SendMailOptions): Promise<void> {
@@ -28,6 +29,7 @@ export async function sendMail(opts: SendMailOptions): Promise<void> {
       to: opts.to,
       subject: opts.subject,
       html: opts.html,
+      ...(opts.attachments ? { attachments: opts.attachments } : {}),
     })
     // `response` is the raw final line the SMTP server sent back (e.g. Mailgun's
     // "250 Message queued" + queue id) — the one place we can see the send was

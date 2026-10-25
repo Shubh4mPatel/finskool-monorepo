@@ -20,6 +20,7 @@ import {
   Gift,
   Bell,
   LifeBuoy,
+  Briefcase,
   LogOut,
   Menu,
   X,
@@ -35,6 +36,7 @@ const navItems = [
   { href: "/admin/all-posts", label: "All Posts", icon: List },
   { href: "/admin/members", label: "Members", icon: Users },
   { href: "/admin/tickets", label: "Support Tickets", icon: LifeBuoy, badge: undefined as number | undefined },
+  { href: "/admin/services", label: "Services", icon: Briefcase, badge: undefined as number | undefined },
   { href: "/admin/import-csv", label: "Import CSV", icon: Upload },
   { href: "/admin/stock-recommendations", label: "Stock Recommendation", icon: TrendingUp },
   { href: "/admin/roles-admins", label: "Roles & Admins", icon: ShieldCheck, superAdminOnly: true },
@@ -45,6 +47,7 @@ function SidebarContent({ onNav }: { onNav?: () => void }) {
   const router = useRouter();
   const [unreadNotifications, setUnreadNotifications] = useState<number | undefined>(undefined);
   const [ticketsNeedingAttention, setTicketsNeedingAttention] = useState<number | undefined>(undefined);
+  const [servicesNeedingAttention, setServicesNeedingAttention] = useState<number | undefined>(undefined);
   const [session, setSession] = useState<SessionInfo | null>(null);
 
   useEffect(() => {
@@ -97,6 +100,30 @@ function SidebarContent({ onNav }: { onNav?: () => void }) {
     };
   }, []);
 
+  // Services badge: unassigned requests awaiting a taker + my requests with unread member messages
+  // + payments that need review.
+  useEffect(() => {
+    const load = () =>
+      api
+        .get<{ unassigned: number; mineUnread: number; needsReview: number }>("/api/v1/admin/services/stats")
+        .then((s) => setServicesNeedingAttention(s.unassigned + s.mineUnread + s.needsReview))
+        .catch(() => {});
+    load();
+    const interval = setInterval(load, 60_000);
+    window.addEventListener("admin-services:updated", load);
+
+    ticketSocketStore.connect();
+    const offEvents = ticketSocketStore.subscribeServices(load);
+    const offReconnect = ticketSocketStore.onReconnect(load);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("admin-services:updated", load);
+      offEvents();
+      offReconnect();
+    };
+  }, []);
+
   const displayName = session?.userName ?? "Admin";
   const displayInitials = session?.userInitials ?? "A";
   const avatarUrl = session?.avatarUrl ?? null;
@@ -130,6 +157,7 @@ function SidebarContent({ onNav }: { onNav?: () => void }) {
           const Icon = item.icon;
           const badge = item.href === "/admin/notifications" ? unreadNotifications
             : item.href === "/admin/tickets" ? ticketsNeedingAttention
+            : item.href === "/admin/services" ? servicesNeedingAttention
             : item.badge;
           return (
             <Link

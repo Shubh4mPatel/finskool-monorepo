@@ -1,4 +1,5 @@
 import { createRequire } from 'module'
+import { enqueuePush } from '../../lib/push.js'
 import { randomUUID } from 'crypto'
 import bcrypt from 'bcryptjs'
 import type { PrismaClient, Prisma } from '../../generated/prisma/client.js'
@@ -1475,6 +1476,13 @@ export class AdminService {
       logger.error({ err, subscriptionId: created.id }, 'admin.extendSubscription: failed to publish live notification')
     }
 
+    await enqueuePush({
+      userIds: [current.userId],
+      title: 'Access extended',
+      body: `You're active until ${formatEmailDate(created.validUntil)}.`,
+      data: { type: 'subscription', id: current.communityId, event: 'extended', communityId: current.communityId },
+    })
+
     return {
       id: created.id,
       userId: created.userId,
@@ -2101,6 +2109,12 @@ export class AdminService {
         } catch (err) {
           logger.error({ err, userId }, 'admin.updateMember: failed to publish live notification')
         }
+        await enqueuePush({
+          userIds: [user.id],
+          title: `You've been added to ${addedCommunityName}`,
+          body: `Active until ${formatEmailDate(new Date(data.newCommunity.validUntil))}.`,
+          data: { type: 'subscription', id: data.newCommunity.communityId, event: 'community-added', communityId: data.newCommunity.communityId },
+        })
       }
     }
 

@@ -18,8 +18,26 @@ export function getRazorpayClient(): Razorpay {
       throw new Error('Razorpay is not configured — set RAZORPAY_KEY_ID/RAZORPAY_KEY_SECRET')
     }
     client = new Razorpay({ key_id: env.razorpay.keyId, key_secret: env.razorpay.keySecret })
+    // Testing hook: the SDK hard-codes https://api.razorpay.com, so tests that stand in for Razorpay
+    // override the base URL on its HTTP client. Never set in a real environment.
+    if (env.razorpay.apiBaseUrl) {
+      (client as unknown as { api: { rq: { defaults: { baseURL?: string } } } }).api.rq.defaults.baseURL = env.razorpay.apiBaseUrl
+    }
   }
   return client
+}
+
+/**
+ * Webhook verification: HMAC-SHA256 of the exact raw request body keyed with the webhook secret
+ * must equal the X-Razorpay-Signature header. Constant-time compare.
+ */
+export function verifyWebhookSignature(rawBody: Buffer, signature: string): boolean {
+  if (!env.razorpay.webhookSecret || !signature) return false
+  const expected = createHmac('sha256', env.razorpay.webhookSecret).update(rawBody).digest('hex')
+  const expectedBuf = Buffer.from(expected, 'hex')
+  const givenBuf = Buffer.from(signature, 'hex')
+  if (expectedBuf.length !== givenBuf.length) return false
+  return timingSafeEqual(expectedBuf, givenBuf)
 }
 
 /**
