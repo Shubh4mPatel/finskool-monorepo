@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
 import Link from "next/link";
 import { Bell, CheckCircle2, Clock, Inbox, Loader2, Search, SearchX, Star, UserCheck, X } from "lucide-react";
 import { api } from "@/lib/api";
@@ -18,7 +17,7 @@ import {
 import { ticketSocketStore } from "@/store/tickets/ticketSocketStore";
 import { StatusBadge } from "@/components/admin/tickets/TicketBadges";
 import Select, { pillClass } from "@/components/ui/Select";
-import { CountUp } from "@/components/admin/dashboard/CountUp";
+import { StatTile, TabButton, focusRing } from "@/components/admin/inbox/InboxParts";
 import { EmptyState, Skeleton, stagger, TH } from "@/components/admin/dashboard/Panel";
 import { TintAvatar } from "@/components/admin/dashboard/TintAvatar";
 
@@ -44,71 +43,6 @@ function tabParams(tab: Tab): Record<string, string> {
 
 // One grid shared by the header row and every ticket row so the columns line up.
 const GRID = "grid grid-cols-[100px_minmax(170px,1.1fr)_minmax(210px,2fr)_120px_130px_70px_100px] items-center gap-4";
-
-const focusRing = "focus:outline-none focus-visible:ring-4 focus-visible:ring-accent/15";
-
-function StatTile({
-  icon,
-  iconClass,
-  label,
-  value,
-  caption,
-  captionClass,
-  active,
-  onClick,
-  delay,
-}: {
-  icon: ReactNode;
-  iconClass: string;
-  label: string;
-  value: number | undefined;
-  caption: string;
-  captionClass: string;
-  active: boolean;
-  onClick: () => void;
-  delay: number;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      style={{ animationDelay: `${delay}ms` }}
-      className={`animate-enter group flex items-start gap-4 rounded-2xl bg-white p-5 text-left shadow-card ring-1 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-card-hover ${focusRing} ${
-        active ? "ring-accent/40" : "ring-primary/[0.04]"
-      }`}
-    >
-      <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl transition-transform duration-300 group-hover:scale-105 ${iconClass}`}>
-        {icon}
-      </span>
-      <span className="min-w-0">
-        <span className="block text-sm font-medium text-muted">{label}</span>
-        <span className="mt-1 block font-display text-[28px] font-bold leading-none tracking-tight text-primary">
-          {value === undefined ? "–" : <CountUp value={value} />}
-        </span>
-        <span className={`mt-2 block text-xs font-semibold ${captionClass}`}>{caption}</span>
-      </span>
-    </button>
-  );
-}
-
-function TabButton({ active, label, count, onClick }: { active: boolean; label: string; count?: number | undefined; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      aria-pressed={active}
-      onClick={onClick}
-      className={`flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-bold transition-all duration-200 ${
-        active ? "bg-white text-primary shadow-sm" : "text-muted hover:text-primary"
-      }`}
-    >
-      {label}
-      {count !== undefined && (
-        <span className={`rounded-full px-1.5 text-[10px] tabular-nums ${active ? "bg-lime text-primary" : "bg-divider text-muted"}`}>{count}</span>
-      )}
-    </button>
-  );
-}
 
 export default function AdminTicketsPage() {
   const [tab, setTab] = useState<Tab>("all");
