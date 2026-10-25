@@ -17,16 +17,18 @@ export default function AllPostsPage() {
 
   useEffect(() => {
     api.get<CommunityOption[]>("/api/v1/admin/communities")
-      .then(all => setAdminCommunities(all.map(c => ({ id: c.id, name: c.name }))))
+      .then(all => setAdminCommunities(all.map(c => ({ id: c.id, name: c.name, badgeUrl: c.badgeUrl, isFree: c.isFree }))))
       .catch(() => {});
   }, []);
 
   // The filter also offers any community that appears in the loaded posts, even if the
   // communities list doesn't include it.
   const communities = useMemo(() => {
-    const merged = new Map(adminCommunities.map(c => [c.id, c.name]));
-    list.posts.forEach(p => { if (!merged.has(p.communityId)) merged.set(p.communityId, p.communityName); });
-    return Array.from(merged, ([id, name]) => ({ id, name }));
+    const merged = new Map<string, CommunityOption>(adminCommunities.map(c => [c.id, c]));
+    list.posts.forEach(p => {
+      if (!merged.has(p.communityId)) merged.set(p.communityId, { id: p.communityId, name: p.communityName, badgeUrl: p.communityBadgeUrl });
+    });
+    return Array.from(merged.values());
   }, [adminCommunities, list.posts]);
 
   function goToPage(next: number) {

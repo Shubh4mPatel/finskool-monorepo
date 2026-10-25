@@ -35,6 +35,8 @@ export interface ListPostsResponse {
 export interface CommunityOption {
   id: string;
   name: string;
+  badgeUrl?: string | null;
+  isFree?: boolean;
 }
 
 export function formatTimestamp(iso: string | null): string {

@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowDownUp, Calendar, ChevronDown, Search, X } from "lucide-react";
+import { ArrowDownUp, Calendar, LayoutGrid, Search, X } from "lucide-react";
 import { DayPicker } from "react-day-picker";
 import "react-day-picker/style.css";
+import CommunityBadgeIcon from "@/components/CommunityBadgeIcon";
+import Select, { type SelectOption } from "@/components/ui/Select";
 import type { CommunityOption } from "./types";
 import { useEscape } from "./useEscape";
 
@@ -44,6 +46,16 @@ export default function PostsToolbar({
   const [showDatePicker, setShowDatePicker] = useState(false);
   useEscape(showDatePicker, () => setShowDatePicker(false));
 
+  const communityOptions: SelectOption[] = [
+    { value: "", label: "All communities", icon: <LayoutGrid size={13} className="text-accent" /> },
+    ...communities.map(c => ({
+      value: c.id,
+      label: c.name,
+      icon: <CommunityBadgeIcon badgeUrl={c.badgeUrl} className="h-4 w-4 object-contain" />,
+      hint: c.isFree ? "Open feed, every member" : undefined,
+    })),
+  ];
+
   return (
     <div className="sticky top-0 z-20 -mx-1 bg-background/85 px-1 py-2 backdrop-blur">
       <div className="flex flex-wrap items-center gap-2.5 rounded-2xl bg-white p-2.5 shadow-card ring-1 ring-primary/[0.04]">
@@ -63,18 +75,13 @@ export default function PostsToolbar({
           )}
         </div>
 
-        <div className="relative shrink-0">
-          <select
-            value={communityId}
-            onChange={e => onCommunity(e.target.value)}
-            aria-label="Community"
-            className={`${controlClass(!!communityId)} appearance-none pr-9 focus:outline-none`}
-          >
-            <option value="">All communities</option>
-            {communities.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-          <ChevronDown size={14} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-subtle" />
-        </div>
+        <Select
+          value={communityId}
+          onChange={onCommunity}
+          options={communityOptions}
+          ariaLabel="Community"
+          triggerClassName={`relative ${controlClass(!!communityId)} focus:outline-none focus-visible:ring-4 focus-visible:ring-accent/15`}
+        />
 
         <div className="relative flex shrink-0 items-center">
           <button
