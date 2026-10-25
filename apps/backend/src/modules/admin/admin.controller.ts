@@ -180,15 +180,6 @@ export class AdminController {
     }
   }
 
-  getDashboard = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-    try {
-      const data = await this.service.getDashboard(req.user!.accessibleCommunityIds)
-      res.json({ success: true, data })
-    } catch (err) {
-      next(err)
-    }
-  }
-
   importCsv = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       if (!req.file) throw new BadRequestError('No file uploaded. Send a CSV or Excel file in the "file" field.')

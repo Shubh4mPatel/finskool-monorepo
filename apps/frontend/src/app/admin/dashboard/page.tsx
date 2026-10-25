@@ -1,382 +1,51 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { ArrowRight, CheckCircle, Clock, Users } from "lucide-react";
-// import { Plus } from "lucide-react"; // only used by the commented-out Recent Posts panel below
-import Link from "next/link";
-import { api } from "@/lib/api";
+import { ExpiringSoon } from "@/components/admin/dashboard/ExpiringSoon";
+import { KpiCards } from "@/components/admin/dashboard/KpiCards";
+import { NewRegistrations } from "@/components/admin/dashboard/NewRegistrations";
+import { RecentTickets } from "@/components/admin/dashboard/RecentTickets";
+import { RevenueChart } from "@/components/admin/dashboard/RevenueChart";
 import { getSession } from "@/lib/session";
 
-// Recent Posts + Unreplied Threads panels are disabled for now (see JSX below) —
-// their supporting types/helpers are commented out too since nothing else uses them.
-// interface RecentPost {
-//   id: string;
-//   title: string;
-//   communityName: string;
-//   publishedAt: string | null;
-//   createdAt: string;
-// }
-//
-// interface ListPostsResponse {
-//   posts: RecentPost[];
-// }
-//
-// interface PendingCommentPreview {
-//   id: string;
-//   createdAt: string;
-//   comment: {
-//     id: string;
-//     content: string;
-//     author: { name: string };
-//   };
-//   post: {
-//     id: string;
-//     communityName: string;
-//   };
-// }
-//
-// interface CommentNotificationList {
-//   notifications: PendingCommentPreview[];
-// }
-//
-// function timeAgo(iso: string): string {
-//   const diffMs = Date.now() - new Date(iso).getTime();
-//   const hrs = Math.round(diffMs / (1000 * 60 * 60));
-//   if (hrs < 1) return "just now";
-//   if (hrs < 24) return `${hrs} hr${hrs === 1 ? "" : "s"} ago`;
-//   const days = Math.round(hrs / 24);
-//   return `${days} day${days === 1 ? "" : "s"} ago`;
-// }
+// Each panel loads from its own /api/v1/admin/dashboard/* endpoint (see lib/dashboard.ts),
+// so one slow or failing panel never blocks the rest of the page.
 
-interface DashboardStats {
-  totalMembers: number;
-  activeSubscriptions: number;
-  pendingRegistration: number;
-  expiringThisWeek: number;
+function greetingFor(hour: number): string {
+  return hour < 12 ? "Good Morning" : hour < 17 ? "Good Afternoon" : "Good Evening";
 }
 
-interface CommunityBreakdownItem {
-  communityId: string;
-  communityName: string;
-  memberCount: number;
-  registeredCount: number;
-  registrationPercentage: number;
-}
-
-interface ExpiringSoonItem {
-  userId: string;
-  name: string;
-  initials: string;
-  communityId: string;
-  communityName: string;
-  validUntil: string;
-  daysLeft: number;
-}
-
-interface DashboardData {
-  stats: DashboardStats;
-  communityBreakdown: CommunityBreakdownItem[];
-  expiringSoon: ExpiringSoonItem[];
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
-}
-
-function urgencyClass(days: number): string {
-  if (days <= 2) return "bg-red-100 text-red-600";
-  if (days <= 4) return "bg-orange-100 text-orange-600";
-  return "bg-amber-100 text-amber-600";
+function formatToday(d: Date): string {
+  const weekday = d.toLocaleDateString("en-US", { weekday: "long" });
+  const date = d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  return `${weekday}, ${date}`;
 }
 
 export default function AdminDashboardPage() {
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
-  // const [recentPosts, setRecentPosts] = useState<RecentPost[]>([]);
-  // const [pendingComments, setPendingComments] = useState<PendingCommentPreview[]>([]);
-  // const [previewLoading, setPreviewLoading] = useState(true);
-
-  const session = getSession();
-  const adminName = session?.userName?.split(" ")[0] ?? "Admin";
-
-  useEffect(() => {
-    api.get<DashboardData>("/api/v1/admin/dashboard")
-      .then(setData)
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
-
-  // useEffect(() => {
-  //   Promise.all([
-  //     api.get<ListPostsResponse>("/api/v1/posts?page=1&pageSize=4"),
-  //     api.get<CommentNotificationList>("/api/v1/admin/comment-notifications?isReplied=false&limit=4"),
-  //   ])
-  //     .then(([posts, comments]) => {
-  //       setRecentPosts(posts.posts);
-  //       setPendingComments(comments.notifications);
-  //     })
-  //     .catch(() => {})
-  //     .finally(() => setPreviewLoading(false));
-  // }, []);
-
-  const hour = new Date().getHours();
-  const greeting = hour < 12 ? "Good Morning" : hour < 17 ? "Good Afternoon" : "Good Evening";
-
-  const totalSubscribed = data?.communityBreakdown.reduce((s, c) => s + c.memberCount, 0) ?? 0;
-
-  const statCards = [
-    {
-      value: data?.stats.totalMembers ?? "—",
-      label: "Total Members",
-      sub: null,
-      icon: Users,
-      iconBg: "bg-accent/10 text-accent",
-      link: "/admin/members",
-    },
-    {
-      value: data?.stats.activeSubscriptions ?? "—",
-      label: "Active Subscriptions",
-      sub: data ? `${data.stats.pendingRegistration} pending registration` : null,
-      icon: CheckCircle,
-      iconBg: "bg-accent/10 text-accent",
-      link: "/admin/members",
-    },
-    {
-      value: data?.stats.expiringThisWeek ?? "—",
-      label: "Expiring This Week",
-      sub: null,
-      icon: Clock,
-      iconBg: "bg-amber-100 text-amber-500",
-      link: "/admin/members",
-    },
-  ];
-
-  const barColors = ["bg-primary", "bg-accent", "bg-lime-500", "bg-amber-400"];
+  const adminName = getSession()?.userName?.split(" ")[0] ?? "Admin";
+  const today = new Date();
 
   return (
     <div className="flex flex-col gap-5">
-      {/* Heading */}
-      <div>
+      <header>
         <p className="text-xs font-semibold text-accent">› Dashboard</p>
-        <h1 className="font-display text-2xl font-bold text-primary">{greeting}, {adminName} 👋</h1>
+        {/* Rendered on the server too, where the clock/timezone differ — let the client text win. */}
+        <h1 className="font-display text-2xl font-bold text-primary" suppressHydrationWarning>
+          {greetingFor(today.getHours())}, {adminName} 👋
+        </h1>
+        <p className="mt-1 text-sm text-muted" suppressHydrationWarning>
+          {formatToday(today)} · Here is what is happening across communities, services and tickets.
+        </p>
+      </header>
+
+      <KpiCards />
+
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1.7fr_1fr]">
+        <RevenueChart />
+        <ExpiringSoon />
       </div>
 
-      {/* Stat cards */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
-        {statCards.map((stat) => {
-          const Icon = stat.icon;
-          return (
-            <div key={stat.label} className="rounded-2xl bg-white p-5 shadow-card">
-              <div className="flex items-start justify-between">
-                <div className={`flex h-9 w-9 items-center justify-center rounded-full ${stat.iconBg}`}>
-                  <Icon size={16} />
-                </div>
-                <Link href={stat.link} className="text-xs font-semibold text-accent transition-colors hover:text-primary">
-                  View all →
-                </Link>
-              </div>
-              <p className="mt-3 font-display text-3xl font-bold text-primary">
-                {loading ? <span className="inline-block h-8 w-16 animate-pulse rounded-lg bg-divider" /> : stat.value}
-              </p>
-              <p className="mt-0.5 text-xs text-muted">{stat.label}</p>
-              {stat.sub && <p className="mt-0.5 text-[11px] text-subtle">{stat.sub}</p>}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Bottom panels */}
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-
-        {/* Community Breakdown */}
-        <div className="rounded-2xl bg-white p-6 shadow-card">
-          <h2 className="text-sm font-bold text-primary">Community Breakdown</h2>
-
-          {loading ? (
-            <div className="mt-4 space-y-5">
-              {[0, 1].map(i => (
-                <div key={i} className="space-y-2">
-                  <div className="h-4 w-40 animate-pulse rounded bg-divider" />
-                  <div className="h-2 w-full animate-pulse rounded-full bg-divider" />
-                </div>
-              ))}
-            </div>
-          ) : (
-            <>
-              <div className="mt-4 flex flex-col gap-5">
-                {(data?.communityBreakdown ?? []).map((c, i) => (
-                  <div key={c.communityId}>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm font-semibold text-primary">{c.communityName}</span>
-                      <span className="shrink-0 rounded-full bg-lime px-2.5 py-0.5 text-xs font-bold text-primary">
-                        {c.memberCount} members
-                      </span>
-                    </div>
-                    <div className="mt-2 flex items-center gap-3">
-                      <div className="h-2 flex-1 overflow-hidden rounded-full bg-divider">
-                        <div
-                          className={`h-full rounded-full transition-all duration-500 ${barColors[i] ?? "bg-primary"}`}
-                          style={{ width: `${c.registrationPercentage}%` }}
-                        />
-                      </div>
-                      <span className="w-8 shrink-0 text-right text-xs font-medium text-subtle">
-                        {c.registrationPercentage}%
-                      </span>
-                    </div>
-                    <p className="mt-1 text-[11px] text-subtle">
-                      {c.registeredCount} registered of {c.memberCount} total
-                    </p>
-                  </div>
-                ))}
-              </div>
-              <p className="mt-5 text-xs text-subtle">Total: {totalSubscribed} subscribed members</p>
-            </>
-          )}
-        </div>
-
-        {/* Expiring Soon */}
-        <div className="rounded-2xl bg-white p-6 shadow-card">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-bold text-primary">Expiring Soon</h2>
-            <span className="rounded-full bg-lime px-3 py-0.5 text-xs font-semibold text-primary">
-              Next 7 Days
-            </span>
-          </div>
-
-          {loading ? (
-            <div className="mt-4 space-y-3">
-              {[0, 1, 2].map(i => (
-                <div key={i} className="flex items-center gap-3">
-                  <div className="h-8 w-8 animate-pulse rounded-full bg-divider" />
-                  <div className="flex-1 space-y-1.5">
-                    <div className="h-3 w-28 animate-pulse rounded bg-divider" />
-                    <div className="h-2.5 w-20 animate-pulse rounded bg-divider" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (data?.expiringSoon ?? []).length === 0 ? (
-            <p className="mt-4 text-sm text-subtle">No subscriptions expiring in the next 7 days.</p>
-          ) : (
-            <div className="mt-4 flex flex-col gap-1">
-              {(data?.expiringSoon ?? []).map(m => (
-                <div
-                  key={m.userId + m.communityId}
-                  className="flex items-center justify-between gap-3 rounded-xl px-2 py-2 transition-colors hover:bg-background"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-white">
-                      {m.initials}
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-primary">{m.name}</p>
-                      <span className="text-xs font-medium text-accent">{m.communityName}</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="hidden text-xs text-subtle sm:block">{formatDate(m.validUntil)}</span>
-                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${urgencyClass(m.daysLeft)}`}>
-                      {m.daysLeft} days
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <Link
-            href="/admin/members"
-            className="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-accent transition-colors hover:text-primary"
-          >
-            View all subscriptions <ArrowRight size={13} />
-          </Link>
-        </div>
-
-      </div>
-
-      {/* Recent Posts + Unreplied Threads preview — disabled for now, keeping the code for later
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-
-        Recent Posts
-        <div className="rounded-2xl bg-white p-6 shadow-card">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-bold text-primary">Recent Posts</h2>
-            <Link
-              href="/admin/create-post"
-              className="flex items-center gap-1 rounded-full bg-lime px-3 py-1 text-xs font-bold text-primary transition-transform hover:scale-105"
-            >
-              Create New <Plus size={13} />
-            </Link>
-          </div>
-
-          {previewLoading ? (
-            <div className="mt-4 space-y-3">
-              {[0, 1, 2, 3].map(i => (
-                <div key={i} className="h-10 animate-pulse rounded-lg bg-divider/60" />
-              ))}
-            </div>
-          ) : recentPosts.length === 0 ? (
-            <p className="mt-4 text-sm text-subtle">No posts published yet.</p>
-          ) : (
-            <div className="mt-4 flex flex-col divide-y divide-divider">
-              {recentPosts.map(p => (
-                <div key={p.id} className="flex items-center justify-between gap-3 py-2.5">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-primary">{p.title}</p>
-                    <span className="text-xs font-medium text-accent">{p.communityName}</span>
-                  </div>
-                  <span className="shrink-0 text-xs text-subtle">{formatDate(p.publishedAt ?? p.createdAt)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        Unreplied Threads preview
-        <div className="rounded-2xl bg-white p-6 shadow-card">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-bold text-primary">Unreplied Threads</h2>
-            {pendingComments.length > 0 && (
-              <span className="rounded-full bg-[#fdecea] px-3 py-0.5 text-xs font-semibold text-red-500">
-                {pendingComments.length} pending
-              </span>
-            )}
-          </div>
-
-          {previewLoading ? (
-            <div className="mt-4 space-y-3">
-              {[0, 1, 2, 3].map(i => (
-                <div key={i} className="h-10 animate-pulse rounded-lg bg-divider/60" />
-              ))}
-            </div>
-          ) : pendingComments.length === 0 ? (
-            <p className="mt-4 text-sm text-subtle">No unreplied threads. Great work!</p>
-          ) : (
-            <div className="mt-4 flex flex-col divide-y divide-divider">
-              {pendingComments.map(n => (
-                <div key={n.id} className="flex flex-col gap-1 py-2.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-primary">{n.comment.author.name}</span>
-                      <span className="text-xs font-medium text-accent">{n.post.communityName}</span>
-                    </div>
-                    <Link
-                      href="/admin/unresolved-threads"
-                      className="shrink-0 text-xs font-semibold text-accent transition-colors hover:text-primary"
-                    >
-                      Reply →
-                    </Link>
-                  </div>
-                  <p className="truncate text-xs italic text-subtle">&ldquo;{n.comment.content}&rdquo;</p>
-                  <span className="text-[11px] text-subtle">{timeAgo(n.createdAt)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-      </div>
-      */}
+      <RecentTickets />
+      <NewRegistrations />
     </div>
   );
 }

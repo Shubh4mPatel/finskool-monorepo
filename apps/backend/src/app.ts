@@ -12,6 +12,7 @@ import authRoutes from './modules/auth/auth.routes.js'
 import mobilePushRoutes from './modules/push/push.routes.js'
 import mobileAuthRoutes from './modules/mobile-auth/mobile-auth.routes.js'
 import adminRoutes from './modules/admin/admin.routes.js'
+import dashboardRoutes from './modules/dashboard/dashboard.routes.js'
 import postsRoutes, { mobilePostsRouter } from './modules/posts/posts.routes.js'
 import commentsRoutes from './modules/comments/comments.routes.js'
 import reactionsRoutes, { mobileReactionsRouter } from './modules/reactions/reactions.routes.js'
@@ -66,6 +67,7 @@ export function createApp() {
   app.use('/api/v1/payments/webhooks', razorpayWebhookRoutes)
   app.use('/api/v1/auth', authRoutes)
   app.use('/api/v1/auth/mobile', mobileAuthRoutes)
+  app.use('/api/v1/admin/dashboard', dashboardRoutes)
   app.use('/api/v1/admin', adminRoutes)
   app.use('/api/v1/admin', welcomeKitsRoutes)
   app.use('/api/v1/admin/tickets', adminTicketsRoutes)

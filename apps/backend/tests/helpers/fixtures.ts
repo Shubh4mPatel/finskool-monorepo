@@ -91,7 +91,8 @@ export interface SubscriptionSpec {
   communityId: string
   validUntil: string
   payment?: number
-  paidOn?: string
+  /** `null` = no paid-on date on record (some bulk imports), so revenue falls back to createdAt. */
+  paidOn?: string | null
   isActive?: boolean
   createdAt?: Date
 }
@@ -108,6 +109,8 @@ export interface MobileMemberSpec {
   /** 'admin' = added from the dashboard (has an ApprovedPhone row); 'self' = signed up in the app. */
   source?: 'admin' | 'self'
   subscriptions?: SubscriptionSpec[]
+  /** When the account was created. Defaults to now (database clock). */
+  createdAt?: Date
   /** Give the member a live MobileSession, as if they're logged into the app. Default true when registered. */
   loggedIn?: boolean
 }
@@ -139,6 +142,7 @@ export async function createMobileMember(spec: MobileMemberSpec = {}): Promise<T
       passwordHash: password ? await bcrypt.hash(password, TEST_BCRYPT_ROUNDS) : null,
       status: spec.status ?? 'active',
       suspensionReason: spec.suspensionReason ?? null,
+      ...(spec.createdAt ? { createdAt: spec.createdAt } : {}),
     },
   })
 
@@ -155,7 +159,7 @@ export async function createMobileMember(spec: MobileMemberSpec = {}): Promise<T
         userId: user.id,
         communityId: s.communityId,
         payment: s.payment ?? 999,
-        paidOn: new Date(s.paidOn ?? daysFromNow(-10)),
+        paidOn: s.paidOn === null ? null : new Date(s.paidOn ?? daysFromNow(-10)),
         validUntil: new Date(s.validUntil),
         isActive: s.isActive ?? true,
         ...(s.createdAt ? { createdAt: s.createdAt } : {}),
@@ -188,4 +192,135 @@ export async function createMobileMember(spec: MobileMemberSpec = {}): Promise<T
 export function mobileCookie(member: TestMobileMember): string {
   if (!member.sessionId) throw new Error(`${member.name} has no mobile session`)
   return `mobile_session_id=${member.sessionId}`
+}
+
+// ─── Support tickets & service enquiries ────────────────────────────────────
+
+export async function createTicket(opts: {
+  userId: string
+  communityId: string
+  status?: 'open' | 'in_progress' | 'resolved'
+  subject?: string
+  lastMessageAt?: Date
+  /** An admin who has replied — leaves a message from them on the ticket. */
+  repliedBy?: string
+}) {
+  const n = next()
+  const ticket = await prisma.ticket.create({
+    data: {
+      userId: opts.userId,
+      communityId: opts.communityId,
+      category: 'other',
+      type: 'question',
+      subject: opts.subject ?? `Ticket subject ${n}`,
+      description: 'Needs help',
+      status: opts.status ?? 'open',
+      clientRequestId: `req-${n}`,
+      ...(opts.lastMessageAt ? { lastMessageAt: opts.lastMessageAt } : {}),
+    },
+  })
+  await prisma.ticketMessage.create({
+    data: { ticketId: ticket.id, senderId: opts.userId, senderRole: 'user', body: 'Hello', clientMessageId: `m-${n}-u` },
+  })
+  if (opts.repliedBy) {
+    await prisma.ticketMessage.create({
+      data: { ticketId: ticket.id, senderId: opts.repliedBy, senderRole: 'admin', body: 'On it', clientMessageId: `m-${n}-a` },
+    })
+  }
+  return ticket
+}
+
+export async function createService(createdBy: string, title = 'Portfolio Review') {
+  const n = next()
+  return prisma.service.create({ data: { name: `service-${n}`, title, description: 'A service', createdBy } })
+}
+
+/**
+ * A member can have only one open request per service (a partial unique index), so unless a
+ * `serviceId` is given, each request gets its own service — titled `title`.
+ */
+export async function createServiceRequest(opts: {
+  userId: string
+  serviceId?: string
+  title?: string
+  status?: 'requested' | 'quote_sent' | 'paid' | 'closed'
+  lastMessageAt?: Date
+  repliedBy?: string
+}) {
+  const n = next()
+  const serviceId = opts.serviceId ?? (await createService(opts.repliedBy ?? opts.userId, opts.title)).id
+  const request = await prisma.serviceRequest.create({
+    data: {
+      userId: opts.userId,
+      serviceId,
+      needs: 'Please help',
+      status: opts.status ?? 'requested',
+      clientRequestId: `sr-${n}`,
+      ...(opts.lastMessageAt ? { lastMessageAt: opts.lastMessageAt } : {}),
+    },
+  })
+  await prisma.serviceMessage.create({
+    data: { requestId: request.id, senderId: opts.userId, senderRole: 'user', body: 'Hi', clientMessageId: `sm-${n}-u` },
+  })
+  if (opts.repliedBy) {
+    await prisma.serviceMessage.create({
+      data: { requestId: request.id, senderId: opts.repliedBy, senderRole: 'admin', body: 'Sure', clientMessageId: `sm-${n}-a` },
+    })
+  }
+  return request
+}
+
+/** A paid service request's invoice — the dashboard's source of service revenue. */
+export async function createServiceInvoice(opts: {
+  requestId: string
+  userId: string
+  adminId: string
+  total: number
+  issuedAt: Date
+}) {
+  const n = next()
+  const quote = await prisma.serviceQuote.create({
+    data: {
+      requestId: opts.requestId,
+      version: 1,
+      baseAmount: opts.total,
+      gstRatePercent: 0,
+      gstAmount: 0,
+      totalAmount: opts.total,
+      expiresAt: new Date('2030-01-01'),
+      status: 'paid',
+      createdBy: opts.adminId,
+    },
+  })
+  const order = await prisma.razorpayOrder.create({
+    data: {
+      razorpayOrderId: `order_${n}`,
+      purpose: 'service_quote',
+      referenceId: quote.id,
+      userId: opts.userId,
+      amount: opts.total,
+      status: 'paid',
+    },
+  })
+  const payment = await prisma.razorpayPayment.create({
+    data: { razorpayPaymentId: `pay_${n}`, orderId: order.id, amount: opts.total, status: 'captured' },
+  })
+  return prisma.serviceInvoice.create({
+    data: {
+      requestId: opts.requestId,
+      quoteId: quote.id,
+      paymentId: payment.id,
+      number: `INV-${n}`,
+      financialYear: '2026-2027',
+      sequence: n,
+      issuedAt: opts.issuedAt,
+      seller: {},
+      buyer: {},
+      description: 'Service',
+      sacCode: '998313',
+      taxableValue: opts.total,
+      gstRatePercent: 0,
+      total: opts.total,
+    },
+  })
 }
