@@ -173,16 +173,16 @@ export class AdminController {
   importJSON = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const { strategy, rows, reviveRowNums } = importJSONSchema.parse(req.body)
-      const result = await this.service.importUsersFromJSON(rows, req.user!.id, strategy, reviveRowNums)
+      const result = await this.service.importUsersFromJSON(rows, req.user!.id, strategy, reviveRowNums, req.user!.accessibleCommunityIds)
       res.json({ success: true, data: result })
     } catch (err) {
       next(err)
     }
   }
 
-  getDashboard = async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
+  getDashboard = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const data = await this.service.getDashboard()
+      const data = await this.service.getDashboard(req.user!.accessibleCommunityIds)
       res.json({ success: true, data })
     } catch (err) {
       next(err)
@@ -194,7 +194,7 @@ export class AdminController {
       if (!req.file) throw new BadRequestError('No file uploaded. Send a CSV or Excel file in the "file" field.')
 
       const { duplicateStrategy } = importQuerySchema.parse(req.query)
-      const result = await this.service.importUsers(req.file.buffer, req.user!.id, duplicateStrategy)
+      const result = await this.service.importUsers(req.file.buffer, req.user!.id, duplicateStrategy, req.user!.accessibleCommunityIds)
       res.status(200).json({ success: true, data: result })
     } catch (err) {
       next(err)
@@ -294,7 +294,7 @@ export class AdminController {
   validateImport = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const { rows } = validateImportSchema.parse(req.body)
-      const result = await this.service.validateImport(rows)
+      const result = await this.service.validateImport(rows, req.user!.accessibleCommunityIds)
       res.json({ success: true, data: result })
     } catch (err) {
       next(err)
@@ -451,7 +451,7 @@ export class AdminController {
       const parsed = addMemberSchema.safeParse(req.body)
       if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
       assertCommunityAccessFromToken(req.user!.accessibleCommunityIds, parsed.data.communityId)
-      const result = await this.service.addMember(parsed.data, req.user!.id)
+      const result = await this.service.addMember(parsed.data, req.user!.id, req.user!.accessibleCommunityIds)
       res.status(201).json({ success: true, data: result })
     } catch (err) {
       next(err)
@@ -465,7 +465,7 @@ export class AdminController {
       const parsed = addMemberSchema.safeParse(req.body)
       if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
       assertCommunityAccessFromToken(req.user!.accessibleCommunityIds, parsed.data.communityId)
-      const result = await this.service.reviveAndAddMember(parsed.data, req.user!.id)
+      const result = await this.service.reviveAndAddMember(parsed.data, req.user!.id, req.user!.accessibleCommunityIds)
       res.status(201).json({ success: true, data: result })
     } catch (err) {
       next(err)
@@ -478,7 +478,7 @@ export class AdminController {
       const id = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
       const parsed = extendSubscriptionSchema.safeParse(req.body)
       if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
-      const result = await this.service.extendSubscription(id, parsed.data)
+      const result = await this.service.extendSubscription(id, parsed.data, req.user!.accessibleCommunityIds)
       res.status(201).json({ success: true, data: result })
     } catch (err) {
       next(err)
@@ -489,7 +489,7 @@ export class AdminController {
     try {
       const raw = req.params['id']
       const id = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
-      const result = await this.service.deleteMember(id)
+      const result = await this.service.deleteMember(id, req.user!.accessibleCommunityIds)
       res.json({ success: true, data: result })
     } catch (err) {
       next(err)
@@ -500,7 +500,7 @@ export class AdminController {
     try {
       const parsed = bulkDeleteMembersSchema.safeParse(req.body)
       if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
-      const result = await this.service.bulkDeleteMembers(parsed.data.userIds)
+      const result = await this.service.bulkDeleteMembers(parsed.data.userIds, req.user!.accessibleCommunityIds)
       res.json({ success: true, data: result })
     } catch (err) {
       next(err)
@@ -513,7 +513,7 @@ export class AdminController {
       const id = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
       const parsed = suspendMemberSchema.safeParse(req.body)
       if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
-      const result = await this.service.suspendMember(id, parsed.data.reason)
+      const result = await this.service.suspendMember(id, parsed.data.reason, req.user!.accessibleCommunityIds)
       res.json({ success: true, data: result })
     } catch (err) {
       next(err)
@@ -524,7 +524,7 @@ export class AdminController {
     try {
       const raw = req.params['id']
       const id = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
-      const result = await this.service.revokeSuspension(id)
+      const result = await this.service.revokeSuspension(id, req.user!.accessibleCommunityIds)
       res.json({ success: true, data: result })
     } catch (err) {
       next(err)
@@ -572,7 +572,7 @@ export class AdminController {
       const id = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
       const parsed = updateMemberSchema.safeParse(req.body)
       if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
-      const result = await this.service.updateMember(id, parsed.data, req.user!.id)
+      const result = await this.service.updateMember(id, parsed.data, req.user!.id, req.user!.accessibleCommunityIds)
       res.json({ success: true, data: result })
     } catch (err) {
       next(err)
@@ -583,7 +583,7 @@ export class AdminController {
     try {
       const raw = req.params['id']
       const id = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
-      const result = await this.service.getMemberById(id)
+      const result = await this.service.getMemberById(id, req.user!.accessibleCommunityIds)
       res.json({ success: true, data: result })
     } catch (err) {
       next(err)
@@ -596,7 +596,7 @@ export class AdminController {
       const id = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
       const parsed = resetMemberPasswordSchema.safeParse(req.body)
       if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
-      const result = await this.service.resetMemberPassword(id, parsed.data.newPassword)
+      const result = await this.service.resetMemberPassword(id, parsed.data.newPassword, req.user!.accessibleCommunityIds)
       res.json({ success: true, data: result })
     } catch (err) {
       next(err)
@@ -609,6 +609,7 @@ export class AdminController {
       const id = Array.isArray(idRaw) ? (idRaw[0] ?? '') : (idRaw ?? '')
       const communityIdRaw = req.params['communityId']
       const communityId = Array.isArray(communityIdRaw) ? (communityIdRaw[0] ?? '') : (communityIdRaw ?? '')
+      assertCommunityAccessFromToken(req.user!.accessibleCommunityIds, communityId)
       await this.service.revokeMemberCommunity(id, communityId)
       res.json({ success: true })
     } catch (err) {

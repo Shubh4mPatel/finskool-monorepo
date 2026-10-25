@@ -64,6 +64,35 @@ export function assertCommunityAccessFromToken(
   }
 }
 
+/** Whether an admin may act on a specific member. A member isn't owned by any one
+ *  community, so "access" mirrors what GET /admin/members already shows a scoped
+ *  admin: the member has (or had) a subscription row in a community they manage.
+ *  null = unrestricted (super admin). Members with no subscriptions at all are
+ *  therefore super-admin only, same as in the roster. */
+export async function hasMemberAccess(
+  db: PrismaClient,
+  accessibleCommunityIds: string[] | null,
+  userId: string,
+): Promise<boolean> {
+  if (accessibleCommunityIds === null) return true
+  if (accessibleCommunityIds.length === 0) return false
+  const sub = await db.subscription.findFirst({
+    where: { userId, communityId: { in: accessibleCommunityIds } },
+    select: { id: true },
+  })
+  return sub !== null
+}
+
+export async function assertMemberAccess(
+  db: PrismaClient,
+  accessibleCommunityIds: string[] | null,
+  userId: string,
+): Promise<void> {
+  if (!(await hasMemberAccess(db, accessibleCommunityIds, userId))) {
+    throw new ForbiddenError('You do not have access to this member', 'MEMBER_ACCESS_DENIED')
+  }
+}
+
 export async function assertSuperAdmin(db: PrismaClient, adminId: string): Promise<void> {
   if (!(await isSuperAdmin(db, adminId))) {
     throw new ForbiddenError('Super admin access required', 'SUPER_ADMIN_REQUIRED')

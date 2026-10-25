@@ -3,7 +3,14 @@ import { enqueuePush } from '../../lib/push.js'
 import { randomUUID } from 'crypto'
 import bcrypt from 'bcryptjs'
 import type { PrismaClient, Prisma } from '../../generated/prisma/client.js'
-import { assertSuperAdmin, assertCommunityAccessFromToken, getCommunityAdminIds } from '../../lib/community-access.js'
+import {
+  assertSuperAdmin,
+  assertCommunityAccessFromToken,
+  assertMemberAccess,
+  getCommunityAdminIds,
+  hasCommunityAccess,
+  hasMemberAccess,
+} from '../../lib/community-access.js'
 import { generateUploadUrl } from '../../lib/minio.js'
 import {
   notificationsQueue,
@@ -91,6 +98,7 @@ export class AdminService {
     buffer: Buffer,
     adminId: string,
     strategy: DuplicateStrategy,
+    accessibleCommunityIds: string[] | null,
   ): Promise<ImportSummaryDTO> {
     const workbook = XLSX.read(buffer, { type: 'buffer', raw: false })
 
@@ -145,6 +153,10 @@ export class AdminService {
         })
         continue
       }
+      if (!hasCommunityAccess(accessibleCommunityIds, community.id)) {
+        summary.errors.push({ row: rowNum, phone, reason: `You do not have access to community "${community.name}"` })
+        continue
+      }
 
       const rawPayment = (row['Payment'] ?? '').replace(/[^0-9.]/g, '')
       const payment = parseFloat(rawPayment)
@@ -182,6 +194,16 @@ export class AdminService {
             where: { userId: existingUser.id, communityId: community.id, isActive: true },
           })
         : null
+
+      // A suspended/deleted member who isn't already in one of this admin's communities
+      // can't be revived or added to by them — same rule as reviveAndAddMember.
+      if (
+        existingUser && existingUser.status !== 'active' && !existingSub &&
+        !(await hasMemberAccess(this.db, accessibleCommunityIds, existingUser.id))
+      ) {
+        summary.errors.push({ row: rowNum, phone, reason: `Member is ${existingUser.status} and belongs to another community` })
+        continue
+      }
 
       if (existingSub) {
         // This (user + community) combo has an active subscription — skip or overwrite based on strategy
@@ -276,7 +298,8 @@ export class AdminService {
       }
     }
 
-    const targetCommunityId = notifyCommunityId ?? communities[0]?.id ?? null
+    const targetCommunityId =
+      notifyCommunityId ?? communities.find(c => hasCommunityAccess(accessibleCommunityIds, c.id))?.id ?? null
     if (targetCommunityId) {
       await this.notifyImportComplete(adminId, targetCommunityId, summary)
     } else {
@@ -295,7 +318,8 @@ export class AdminService {
     // selected to revive on the review page — see validateImport's existingStatus.
     // A row matching a suspended/deleted user that ISN'T in this set is skipped
     // rather than silently reactivated.
-    reviveRowNums: number[] = [],
+    reviveRowNums: number[],
+    accessibleCommunityIds: string[] | null,
   ): Promise<ImportSummaryDTO> {
     const reviveRowNumSet = new Set(reviveRowNums)
     const summary: ImportSummaryDTO = { total: rows.length, created: 0, updated: 0, skipped: 0, errors: [] }
@@ -311,6 +335,10 @@ export class AdminService {
       const community = communities.find(c => c.name.toLowerCase() === row.service.toLowerCase())
       if (!community) {
         summary.errors.push({ row: rowNum, phone, reason: `Community "${row.service}" not found` })
+        continue
+      }
+      if (!hasCommunityAccess(accessibleCommunityIds, community.id)) {
+        summary.errors.push({ row: rowNum, phone, reason: `You do not have access to community "${community.name}"` })
         continue
       }
       const payment = row.payment
@@ -331,6 +359,14 @@ export class AdminService {
               where: { userId: existingUser.id, communityId: community.id, isActive: true },
             })
           : null
+
+        if (
+          existingUser && existingUser.status !== 'active' && !existingSub &&
+          !(await hasMemberAccess(this.db, accessibleCommunityIds, existingUser.id))
+        ) {
+          summary.errors.push({ row: rowNum, phone, reason: `Member is ${existingUser.status} and belongs to another community` })
+          continue
+        }
 
         if (existingSub) {
           if (strategy === 'skip') { summary.skipped++; continue }
@@ -419,7 +455,8 @@ export class AdminService {
       }
     }
 
-    const targetCommunityId = notifyCommunityId ?? communities[0]?.id ?? null
+    const targetCommunityId =
+      notifyCommunityId ?? communities.find(c => hasCommunityAccess(accessibleCommunityIds, c.id))?.id ?? null
     if (targetCommunityId) {
       await this.notifyImportComplete(adminId, targetCommunityId, summary)
     } else {
@@ -669,11 +706,17 @@ export class AdminService {
     }))
   }
 
-  async getDashboard(): Promise<DashboardDTO> {
+  async getDashboard(accessibleCommunityIds: string[] | null): Promise<DashboardDTO> {
     const today = new Date()
     today.setHours(0, 0, 0, 0)
     const sevenDaysLater = new Date(today)
     sevenDaysLater.setDate(today.getDate() + 7)
+
+    // null = unrestricted (super admin). A scoped admin's numbers cover only the
+    // communities they manage — members counted are those subscribed to one of them.
+    const subScope = accessibleCommunityIds === null ? {} : { communityId: { in: accessibleCommunityIds } }
+    const memberScope = accessibleCommunityIds === null ? {} : { subscriptions: { some: subScope } }
+    const threadScope = accessibleCommunityIds === null ? {} : { post: { communityId: { in: accessibleCommunityIds } } }
 
     const [
       totalMembers,
@@ -687,19 +730,20 @@ export class AdminService {
       expiringSoonRaw,
     ] = await Promise.all([
       // Total users with member role (excludes admins)
-      this.db.user.count({ where: { role: 'member', deletedAt: null } }),
+      this.db.user.count({ where: { role: 'member', deletedAt: null, ...memberScope } }),
 
       // Registered users with active subscription
       this.db.subscription.count({
         where: {
           isActive: true,
           user: { passwordHash: { not: null }, status: 'active' },
+          ...subScope,
         },
       }),
 
       // Added by admin but haven't registered yet
       this.db.user.count({
-        where: { role: 'member', passwordHash: null },
+        where: { role: 'member', passwordHash: null, ...memberScope },
       }),
 
       // Subscriptions expiring within 7 days
@@ -707,22 +751,26 @@ export class AdminService {
         where: {
           isActive: true,
           validUntil: { gte: today, lte: sevenDaysLater },
+          ...subScope,
         },
       }),
 
       // Unresolved comment notifications
-      this.db.commentNotification.count({ where: { isReplied: false } }),
+      this.db.commentNotification.count({ where: { isReplied: false, ...threadScope } }),
 
       // All communities for breakdown
       this.db.community.findMany({
-        where: { deletedAt: null },
+        where: {
+          deletedAt: null,
+          ...(accessibleCommunityIds !== null ? { id: { in: accessibleCommunityIds } } : {}),
+        },
         select: { id: true, name: true },
       }),
 
       // Per-community total subscriptions (all members regardless of registration)
       this.db.subscription.groupBy({
         by: ['communityId'],
-        where: { isActive: true },
+        where: { isActive: true, ...subScope },
         _count: { userId: true },
       }),
 
@@ -732,6 +780,7 @@ export class AdminService {
         where: {
           isActive: true,
           user: { passwordHash: { not: null }, status: 'active' },
+          ...subScope,
         },
         _count: { userId: true },
       }),
@@ -741,6 +790,7 @@ export class AdminService {
         where: {
           isActive: true,
           validUntil: { gte: today, lte: sevenDaysLater },
+          ...subScope,
         },
         select: {
           communityId: true,
@@ -791,12 +841,15 @@ export class AdminService {
     }
   }
 
-  async validateImport(rows: ValidateImportRowInput[]): Promise<ValidateImportDTO> {
+  async validateImport(
+    rows: ValidateImportRowInput[],
+    accessibleCommunityIds: string[] | null,
+  ): Promise<ValidateImportDTO> {
     const communities = await this.db.community.findMany({
       where: { deletedAt: null },
-      select: { name: true },
+      select: { id: true, name: true },
     })
-    const communityNames = new Set(communities.map(c => c.name.toLowerCase()))
+    const communityIdByName = new Map(communities.map(c => [c.name.toLowerCase(), c.id]))
 
     // Batch-fetch existing phones and emails from the DB
     const phones = rows.map(r => r.phone).filter(Boolean)
@@ -841,8 +894,12 @@ export class AdminService {
 
       if (!row.service?.trim()) {
         errors.push('Service is required')
-      } else if (!communityNames.has(row.service.toLowerCase())) {
-        errors.push(`Community "${row.service}" not found`)
+      } else {
+        const communityId = communityIdByName.get(row.service.toLowerCase())
+        if (!communityId) errors.push(`Community "${row.service}" not found`)
+        else if (!hasCommunityAccess(accessibleCommunityIds, communityId)) {
+          errors.push(`You do not have access to community "${row.service}"`)
+        }
       }
 
       if (!row.payment || isNaN(row.payment) || row.payment <= 0) {
@@ -1246,7 +1303,7 @@ export class AdminService {
     logger.info({ targetAdminId }, 'admin.deleteAdmin: success')
   }
 
-  async addMember(data: AddMemberDTO, adminId: string): Promise<AddMemberResultDTO> {
+  async addMember(data: AddMemberDTO, adminId: string, accessibleCommunityIds: string[] | null): Promise<AddMemberResultDTO> {
     const phone = normalizePhone(data.phone)
     if (!phone) throw new BadRequestError('Invalid phone number')
 
@@ -1262,6 +1319,11 @@ export class AdminService {
     // active case already threw above, so reaching here with an existingUser means
     // it's guaranteed to be one of those two.)
     if (existingUser) {
+      // Only offer the revive prompt to an admin who could act on this member afterwards;
+      // anyone else just learns the phone is taken, without another community's member name.
+      if (!(await hasMemberAccess(this.db, accessibleCommunityIds, existingUser.id))) {
+        throw new ConflictError('This phone number is already registered', 'PHONE_EXISTS')
+      }
       throw new ConflictError(
         `This phone belongs to a ${existingUser.status} member (${existingUser.name}). Confirm to reactivate them.`,
         'MEMBER_REVIVE_REQUIRED',
@@ -1330,7 +1392,11 @@ export class AdminService {
   // to reactivate a specific suspended/deleted phone, rather than addMember() doing
   // it silently. Takes the exact same input as addMember() since it's the same form
   // resubmitted after the admin clicks "confirm" on that prompt.
-  async reviveAndAddMember(data: AddMemberDTO, adminId: string): Promise<AddMemberResultDTO> {
+  async reviveAndAddMember(
+    data: AddMemberDTO,
+    adminId: string,
+    accessibleCommunityIds: string[] | null,
+  ): Promise<AddMemberResultDTO> {
     const phone = normalizePhone(data.phone)
     if (!phone) throw new BadRequestError('Invalid phone number')
 
@@ -1344,6 +1410,7 @@ export class AdminService {
     if (existingUser.status === 'active') {
       throw new ConflictError('This member is already active — use the regular add-member flow instead', 'PHONE_EXISTS')
     }
+    await assertMemberAccess(this.db, accessibleCommunityIds, existingUser.id)
     if (data.email) {
       const emailOwner = await this.db.user.findUnique({ where: { email: data.email } })
       if (emailOwner && emailOwner.phone !== phone) {
@@ -1392,12 +1459,17 @@ export class AdminService {
     }
   }
 
-  async extendSubscription(subscriptionId: string, data: ExtendSubscriptionDTO): Promise<ExtendSubscriptionResultDTO> {
+  async extendSubscription(
+    subscriptionId: string,
+    data: ExtendSubscriptionDTO,
+    accessibleCommunityIds: string[] | null,
+  ): Promise<ExtendSubscriptionResultDTO> {
     const current = await this.db.subscription.findUnique({
       where: { id: subscriptionId },
       include: { user: { select: { name: true, email: true } }, community: { select: { name: true } } },
     })
     if (!current) throw new NotFoundError('Subscription not found')
+    assertCommunityAccessFromToken(accessibleCommunityIds, current.communityId)
 
     const paidOn = data.paidOn ? new Date(data.paidOn) : new Date()
     const validUntil = new Date(data.validUntil)
@@ -1494,12 +1566,13 @@ export class AdminService {
     }
   }
 
-  async deleteMember(userId: string): Promise<DeleteMemberResultDTO> {
+  async deleteMember(userId: string, accessibleCommunityIds: string[] | null): Promise<DeleteMemberResultDTO> {
     const user = await this.db.user.findUnique({ where: { id: userId } })
     if (!user) throw new NotFoundError('Member not found')
     if (user.role === 'admin') {
       throw new ForbiddenError('Admin accounts cannot be deactivated from this endpoint')
     }
+    await assertMemberAccess(this.db, accessibleCommunityIds, user.id)
 
     // Linked only by phone (no formal relation) — same lookup pattern used throughout this
     // file. Nullable: a self-registered member has no ApprovedPhone row, which is the normal
@@ -1519,13 +1592,13 @@ export class AdminService {
     return { userId: user.id, approvedPhoneId: ap?.id ?? null, phone: user.phone, isActive: false }
   }
 
-  async bulkDeleteMembers(userIds: string[]): Promise<BulkDeleteMembersResultDTO> {
+  async bulkDeleteMembers(userIds: string[], accessibleCommunityIds: string[] | null): Promise<BulkDeleteMembersResultDTO> {
     const errors: { userId: string; reason: string }[] = []
     let succeeded = 0
 
     for (const id of userIds) {
       try {
-        await this.deleteMember(id)
+        await this.deleteMember(id, accessibleCommunityIds)
         succeeded++
       } catch (err) {
         const reason = err instanceof Error ? err.message : 'Unknown error'
@@ -1540,10 +1613,15 @@ export class AdminService {
     return { total: userIds.length, succeeded, failed: errors.length, errors }
   }
 
-  async suspendMember(userId: string, reason: string): Promise<SuspendMemberResultDTO> {
+  async suspendMember(
+    userId: string,
+    reason: string,
+    accessibleCommunityIds: string[] | null,
+  ): Promise<SuspendMemberResultDTO> {
     const user = await this.db.user.findUnique({ where: { id: userId } })
     if (!user) throw new NotFoundError('Member not found')
     if (user.role === 'admin') throw new ForbiddenError('Admin accounts cannot be suspended')
+    await assertMemberAccess(this.db, accessibleCommunityIds, user.id)
     if (user.status === 'deleted') throw new ConflictError('This member was already deleted, not suspended')
 
     const ap = await this.db.approvedPhone.findUnique({ where: { phone: user.phone } })
@@ -1577,12 +1655,13 @@ export class AdminService {
     }
   }
 
-  async revokeSuspension(userId: string): Promise<RevokeSuspensionResultDTO> {
+  async revokeSuspension(userId: string, accessibleCommunityIds: string[] | null): Promise<RevokeSuspensionResultDTO> {
     // New guard vs. before — see this plan's §1: reachable by any userId now, not just
     // ones that happened to match an ApprovedPhone, so an admin account must be excluded
     // explicitly rather than by accident.
     const user = await this.db.user.findUnique({ where: { id: userId } })
     if (!user || user.role === 'admin') throw new NotFoundError('Member not found')
+    await assertMemberAccess(this.db, accessibleCommunityIds, user.id)
     if (user.status === 'deleted') throw new ConflictError('This member was deleted, not suspended — cannot revoke')
 
     const ap = await this.db.approvedPhone.findUnique({ where: { phone: user.phone } })
@@ -1929,13 +2008,21 @@ export class AdminService {
     }
   }
 
-  async getMemberById(userId: string): Promise<MemberItemDTO> {
-    return this.fetchMemberDTO(userId)
+  async getMemberById(userId: string, accessibleCommunityIds: string[] | null): Promise<MemberItemDTO> {
+    // Fetched first so an unknown id / admin account is still a 404 rather than a 403.
+    const member = await this.fetchMemberDTO(userId)
+    await assertMemberAccess(this.db, accessibleCommunityIds, userId)
+    return member
   }
 
-  async resetMemberPassword(userId: string, newPassword: string): Promise<MemberItemDTO> {
+  async resetMemberPassword(
+    userId: string,
+    newPassword: string,
+    accessibleCommunityIds: string[] | null,
+  ): Promise<MemberItemDTO> {
     const user = await this.db.user.findUnique({ where: { id: userId } })
     if (!user || user.role === 'admin') throw new NotFoundError('Member not found')
+    await assertMemberAccess(this.db, accessibleCommunityIds, user.id)
 
     const passwordHash = await bcrypt.hash(newPassword, 12)
     await this.db.user.update({ where: { id: user.id }, data: { passwordHash } })
@@ -1984,9 +2071,17 @@ export class AdminService {
     }
   }
 
-  async updateMember(userId: string, data: UpdateMemberDTO, adminId: string): Promise<MemberItemDTO> {
+  async updateMember(
+    userId: string,
+    data: UpdateMemberDTO,
+    adminId: string,
+    accessibleCommunityIds: string[] | null,
+  ): Promise<MemberItemDTO> {
     const user = await this.db.user.findUnique({ where: { id: userId } })
     if (!user || user.role === 'admin') throw new NotFoundError('Member not found')
+    await assertMemberAccess(this.db, accessibleCommunityIds, user.id)
+    // Granting access to a community is the same act as POST /members — same rule.
+    if (data.newCommunity) assertCommunityAccessFromToken(accessibleCommunityIds, data.newCommunity.communityId)
 
     // Nullable — a self-registered member has no ApprovedPhone row (yet; see the
     // newCommunity branch below, the one place that can change that).
