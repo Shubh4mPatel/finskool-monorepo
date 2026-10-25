@@ -348,7 +348,7 @@ function SidebarContent({ data, onNav, collapsed = false, onToggleCollapsed }: {
       </nav>
 
       {/* Logout */}
-      <div className={`relative flex border-t border-divider p-3 ${collapsed ? "justify-center" : "justify-end"}`}>
+      <div className={`relative flex border-t border-divider p-3 ${collapsed ? "justify-center" : "justify-start"}`}>
         <div className="flex w-fit items-center rounded-2xl bg-background p-2.5">
           <button
             type="button"
