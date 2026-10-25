@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { CheckCircle2, ChevronRight, HandHelping, Loader2, UserRoundCog } from "lucide-react";
+import { ArrowLeft, CheckCircle2, HandHelping, History, Loader2, SearchX, Star as StarIcon, Ticket as TicketIcon, UserRoundCog } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { getSession } from "@/lib/session";
 import {
@@ -15,14 +15,15 @@ import {
   type AdminTicketDetail,
   type TicketMessage,
   type TicketPage,
-  type TicketStatus,
-  STATUS_LABEL,
 } from "@/lib/tickets";
 import { ticketSocketStore, TicketSocketError } from "@/store/tickets/ticketSocketStore";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/Toast";
 import { Stars, StatusBadge } from "@/components/admin/tickets/TicketBadges";
 import TicketChat from "@/components/admin/tickets/TicketChat";
+import Select from "@/components/ui/Select";
+import { EmptyState, Skeleton } from "@/components/admin/dashboard/Panel";
+import { DetailRow, MemberBlock, SideCard, outlineBtn, solidBtn } from "@/components/admin/chat/DetailParts";
 
 const BASE = "/api/v1/admin/tickets";
 
@@ -38,37 +39,6 @@ function mergeMessages(existing: TicketMessage[], incoming: TicketMessage[]): Ti
   for (const m of incoming) byId.set(m.id, m);
   return [...byId.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
 }
-
-const STATUS_DOT: Record<TicketStatus, string> = {
-  open: "bg-[#e11d48]",
-  in_progress: "bg-accent",
-  resolved: "bg-[#16a34a]",
-};
-
-// Read-only value styled like the mockup's select fields (status/type/category aren't editable here —
-// status moves via Take ticket / Mark as resolved, so no chevron that would suggest otherwise).
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <p className="text-[11px] font-semibold text-muted">{label}</p>
-      <div className="mt-1.5 flex items-center gap-2 rounded-xl border border-[#dcd9d0] bg-white px-3.5 py-2.5 text-sm font-medium text-primary">
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex items-baseline justify-between gap-4 text-xs">
-      <dt className="shrink-0 text-muted">{label}</dt>
-      <dd className="text-right font-semibold text-primary">{children}</dd>
-    </div>
-  );
-}
-
-const card = "rounded-3xl bg-white px-6 py-5 shadow-card";
-const cardTitle = "font-display text-lg font-bold text-primary";
 
 export default function AdminTicketDetailPage() {
   const { ticketId } = useParams<{ ticketId: string }>();
@@ -280,15 +250,32 @@ export default function AdminTicketDetailPage() {
   }
 
   if (loading) {
-    return <div className="flex justify-center py-24 text-muted"><Loader2 className="animate-spin" /></div>;
+    return (
+      <div className="flex flex-col gap-6" aria-label="Loading ticket">
+        <Skeleton className="h-20 w-96 max-w-full" />
+        <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <Skeleton className="h-[480px] rounded-2xl" />
+          <div className="flex flex-col gap-5">
+            <Skeleton className="h-72 rounded-2xl" />
+            <Skeleton className="h-36 rounded-2xl" />
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (notFound || !ticket) {
     return (
-      <div className="flex flex-col items-center gap-3 py-24 text-center">
-        <p className="text-sm font-semibold text-primary">Ticket not found</p>
-        <p className="text-xs text-muted">It may not exist, or you don&apos;t have access to its community.</p>
-        <Link href="/admin/tickets" className="rounded-full bg-primary px-5 py-2 text-sm font-bold text-white">Back to tickets</Link>
+      <div className="flex max-w-xl flex-col rounded-2xl bg-white shadow-card">
+        <EmptyState icon={<SearchX size={20} />}>
+          <span className="flex flex-col gap-1">
+            <strong className="text-primary">Ticket not found</strong>
+            It may not exist, or you don&apos;t have access to its community.
+          </span>
+        </EmptyState>
+        <Link href="/admin/tickets" className="mb-8 self-center rounded-full bg-primary px-5 py-2 text-sm font-bold text-white transition-all hover:-translate-y-px hover:bg-[#1c4c48]">
+          Back to tickets
+        </Link>
       </div>
     );
   }
@@ -304,15 +291,25 @@ export default function AdminTicketDetailPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="animate-enter flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
-          <p className="flex items-center gap-1 text-xs font-semibold text-accent">
-            Dashboard <ChevronRight size={12} />
-            <Link href="/admin/tickets" className="hover:underline">Tickets</Link> <ChevronRight size={12} /> #{ticket.label}
-          </p>
-          <h1 className="mt-1 font-display text-2xl font-bold text-primary wrap-break-word">{ticket.subject}</h1>
+          <div className="flex flex-wrap items-center gap-3">
+            <Link
+              href="/admin/tickets"
+              className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-bold text-primary shadow-card ring-1 ring-primary/[0.04] transition-all hover:-translate-x-0.5 hover:shadow-card-hover"
+            >
+              <ArrowLeft size={14} /> All tickets
+            </Link>
+            <p className="text-xs font-semibold text-accent">
+              Dashboard &rsaquo; <Link href="/admin/tickets" className="hover:underline">Tickets</Link> &rsaquo; <span className="text-primary">#{ticket.label}</span>
+            </p>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <h1 className="font-display text-2xl font-bold text-primary wrap-break-word">{ticket.subject}</h1>
+            <StatusBadge status={ticket.status} />
+          </div>
           <p className="mt-1 text-sm text-muted">
-            Raised by {ticket.user.name} on {formatLongTime(ticket.createdAt)} · {ticket.communityName}
+            Raised by <span className="font-semibold text-primary">{ticket.user.name}</span> on {formatLongTime(ticket.createdAt)} · {ticket.communityName}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -320,19 +317,15 @@ export default function AdminTicketDetailPage() {
             <button
               onClick={() => runAction("claim", () => api.post(`${BASE}/${ticketId}/claim`, {}), "Ticket assigned to you")}
               disabled={acting !== null}
-              className="flex h-11 items-center gap-2 rounded-full border border-primary px-5 text-sm font-bold text-primary transition-colors hover:bg-primary/5 disabled:opacity-50"
+              className={outlineBtn}
             >
               {acting === "claim" ? <Loader2 size={14} className="animate-spin" /> : <HandHelping size={14} />}
               Take ticket
             </button>
           )}
           {ticket.canResolve && (
-            <button
-              onClick={handleResolve}
-              disabled={acting !== null}
-              className="flex h-11 items-center gap-2 rounded-full bg-linear-to-r from-lime to-accent px-6 text-sm font-bold text-primary shadow-glow transition-transform hover:scale-105 active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
-            >
-              {acting === "resolve" && <Loader2 size={14} className="animate-spin" />}
+            <button onClick={handleResolve} disabled={acting !== null} className={solidBtn}>
+              {acting === "resolve" ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} className="text-lime" />}
               Mark as resolved
             </button>
           )}
@@ -340,57 +333,53 @@ export default function AdminTicketDetailPage() {
       </div>
 
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <TicketChat
-          ticket={ticket}
-          messages={messages}
-          events={visibleEvents}
-          hasOlder={olderCursor !== null}
-          loadingOlder={loadingOlder}
-          onLoadOlder={loadOlder}
-          historyError={historyError}
-          onRetryHistory={() => loadLatest(messages.length === 0)}
-          onSent={(m) => {
-            setMessages((prev) => mergeMessages(prev, [m]));
-            refreshTicket();
-          }}
-          now={now}
-        />
+        <div className="animate-enter min-w-0" style={{ animationDelay: "60ms" }}>
+          <TicketChat
+            ticket={ticket}
+            messages={messages}
+            events={visibleEvents}
+            hasOlder={olderCursor !== null}
+            loadingOlder={loadingOlder}
+            onLoadOlder={loadOlder}
+            historyError={historyError}
+            onRetryHistory={() => loadLatest(messages.length === 0)}
+            onSent={(m) => {
+              setMessages((prev) => mergeMessages(prev, [m]));
+              refreshTicket();
+            }}
+            now={now}
+          />
+        </div>
 
         <aside className="flex flex-col gap-5">
-          <div className={card}>
-            <h2 className={cardTitle}>Ticket details</h2>
-            <div className="mt-4 flex flex-col gap-3.5">
-              <Field label="Status">
-                <span className={`h-2 w-2 rounded-full ${STATUS_DOT[ticket.status]}`} />
-                {STATUS_LABEL[ticket.status]}
-              </Field>
-              <Field label="Type">{TYPE_LABEL[ticket.type]}</Field>
-              <Field label="Category">{CATEGORY_LABEL[ticket.category]}</Field>
+          <SideCard title="Ticket details" icon={<TicketIcon size={14} />} delay={100}>
+            <MemberBlock name={ticket.user.name} phone={ticket.user.phone} />
+            <div className="mt-3 flex flex-wrap gap-2">
+              <span className="rounded-full bg-background px-3 py-1 text-[11px] font-bold text-primary">{TYPE_LABEL[ticket.type]}</span>
+              <span className="rounded-full bg-background px-3 py-1 text-[11px] font-bold text-primary">{CATEGORY_LABEL[ticket.category]}</span>
             </div>
-            <dl className="mt-5 flex flex-col gap-2.5 border-t border-divider pt-4">
-              <Row label="Ticket ID">#{ticket.label}</Row>
-              <Row label="Member">{ticket.user.name}</Row>
-              <Row label="Phone">{ticket.user.phone}</Row>
-              <Row label="Community">{ticket.communityName}</Row>
-              <Row label="Raised on">{formatLongTime(ticket.createdAt)}</Row>
-              <Row label="Assigned to">{ticket.assignedAdmin?.name ?? "Unassigned"}</Row>
-              <Row label="Last update">{timeAgo(ticket.lastMessageAt, now)}</Row>
+            <dl className="mt-4 flex flex-col gap-2.5 border-t border-divider pt-4">
+              <DetailRow label="Ticket ID"><span className="tabular-nums">#{ticket.label}</span></DetailRow>
+              <DetailRow label="Community">{ticket.communityName}</DetailRow>
+              <DetailRow label="Raised on">{formatLongTime(ticket.createdAt)}</DetailRow>
+              <DetailRow label="Assigned to">
+                {ticket.assignedAdmin?.name ?? <span className="text-rose-500">Unassigned</span>}
+              </DetailRow>
+              <DetailRow label="Last update">{timeAgo(ticket.lastMessageAt, now)}</DetailRow>
             </dl>
-          </div>
+          </SideCard>
 
           {me?.isSuperAdmin && open && (
-            <div className={card}>
-              <h2 className={cardTitle}>Reassign</h2>
-              <select
+            <SideCard title="Reassign" icon={<UserRoundCog size={14} />} delay={140}>
+              <Select
                 value={reassignTo}
-                onChange={(e) => setReassignTo(e.target.value)}
-                className="mt-3 w-full rounded-xl border border-[#dcd9d0] bg-white px-3.5 py-2.5 text-sm text-primary outline-none focus:border-accent"
-              >
-                <option value="">Choose an admin…</option>
-                {eligibleAdmins.map((a) => (
-                  <option key={a.id} value={a.id}>{a.name}</option>
-                ))}
-              </select>
+                onChange={setReassignTo}
+                placeholder="Choose an admin…"
+                ariaLabel="Admin to reassign to"
+                className="w-full"
+                triggerClassName="relative flex w-full items-center gap-2 text-left rounded-xl border border-divider bg-white px-3.5 py-2.5 text-sm text-primary transition-all focus:outline-none focus-visible:border-accent focus-visible:ring-4 focus-visible:ring-accent/10"
+                options={eligibleAdmins.map((a) => ({ value: a.id, label: a.name }))}
+              />
               <button
                 disabled={!reassignTo || acting !== null}
                 onClick={() =>
@@ -400,40 +389,43 @@ export default function AdminTicketDetailPage() {
                     "Ticket reassigned",
                   ).then(() => setReassignTo(""))
                 }
-                className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-full border border-primary px-4 text-sm font-bold text-primary transition-colors hover:bg-primary/5 disabled:opacity-40"
+                className={`${outlineBtn} mt-3 w-full`}
               >
                 {acting === "reassign" ? <Loader2 size={14} className="animate-spin" /> : <UserRoundCog size={14} />}
                 Reassign
               </button>
-            </div>
+            </SideCard>
           )}
 
           {ticket.status === "resolved" && (
-            <div className={card}>
-              <h2 className={cardTitle}>Member rating</h2>
+            <SideCard title="Member rating" icon={<StarIcon size={14} />} delay={180}>
               {ticket.rating !== null ? (
                 <>
-                  <div className="mt-3"><Stars value={ticket.rating} /></div>
-                  {ticket.ratingComment && <p className="mt-2 text-sm text-primary wrap-break-word">&ldquo;{ticket.ratingComment}&rdquo;</p>}
-                  {ticket.ratedAt && <p className="mt-1 text-[11px] text-subtle">{formatLongTime(ticket.ratedAt)}</p>}
+                  <Stars value={ticket.rating} />
+                  {ticket.ratingComment && (
+                    <p className="mt-2 rounded-xl bg-background px-3 py-2 text-sm text-primary wrap-break-word">&ldquo;{ticket.ratingComment}&rdquo;</p>
+                  )}
+                  {ticket.ratedAt && <p className="mt-1.5 text-[11px] text-subtle">{formatLongTime(ticket.ratedAt)}</p>}
                 </>
               ) : (
-                <p className="mt-2 text-xs text-muted">Not rated yet.</p>
+                <p className="text-xs text-muted">Not rated yet.</p>
               )}
-            </div>
+            </SideCard>
           )}
 
-          <div className={card}>
-            <h2 className={cardTitle}>Previous tickets</h2>
+          <SideCard title="Previous tickets" icon={<History size={14} />} delay={220}>
             {previous.length === 0 ? (
-              <p className="mt-3 text-xs text-muted">No other tickets from this member.</p>
+              <p className="text-xs text-muted">No other tickets from this member.</p>
             ) : (
-              <ul className="mt-3 flex flex-col">
+              <ul className="-mx-2 flex flex-col">
                 {previous.map((t) => (
-                  <li key={t.id} className="border-b border-divider last:border-b-0">
-                    <Link href={`/admin/tickets/${t.id}`} className="flex items-center justify-between gap-3 py-3 hover:opacity-80">
+                  <li key={t.id}>
+                    <Link
+                      href={`/admin/tickets/${t.id}`}
+                      className="flex items-center justify-between gap-3 rounded-xl px-2 py-2.5 transition-colors hover:bg-background"
+                    >
                       <span className="min-w-0">
-                        <span className="block text-xs font-bold text-primary">#{t.label}</span>
+                        <span className="block text-xs font-bold tabular-nums text-primary">#{t.label}</span>
                         <span className="block truncate text-[11px] text-muted">{t.subject}</span>
                       </span>
                       <StatusBadge status={t.status} />
@@ -442,7 +434,7 @@ export default function AdminTicketDetailPage() {
                 ))}
               </ul>
             )}
-          </div>
+          </SideCard>
         </aside>
       </div>
     </div>

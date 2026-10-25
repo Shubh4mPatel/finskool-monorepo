@@ -1,14 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import Link from "next/link";
-import { Loader2, X } from "lucide-react";
+import { AlertTriangle, Loader2, Receipt } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { getSession } from "@/lib/session";
 import { formatInr, previewQuote } from "@/lib/services";
 import type { QuoteDefaults, ServiceQuote } from "@/lib/services";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/Toast";
+import Modal from "@/components/ui/Modal";
+import { FormField, inputCls, primaryBtn, secondaryBtn } from "@/components/admin/members/memberUi";
 
 interface Props {
   requestId: string;
@@ -18,11 +20,10 @@ interface Props {
   onSent: (quote: ServiceQuote) => void;
 }
 
-const field = "mt-1.5 h-11 w-full rounded-xl border border-[#dcd9d0] bg-white px-3.5 text-sm text-primary outline-none transition-colors focus:border-accent";
-
 export default function SendQuoteModal({ requestId, memberName, defaults, onClose, onSent }: Props) {
   const confirm = useConfirm();
   const toast = useToast();
+  const formId = useId();
   const isSuperAdmin = getSession()?.isSuperAdmin ?? false;
 
   // The form is only mounted once the defaults are known, so these can start from them.
@@ -76,83 +77,85 @@ export default function SendQuoteModal({ requestId, memberName, defaults, onClos
   const valid = preview !== null && Number(days) >= 1 && Number.isInteger(Number(days));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-primary/40 px-4" role="dialog" aria-modal="true" aria-label="Send quote">
-      <div className="w-full max-w-md rounded-3xl bg-white p-7 shadow-card">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h2 className="font-display text-xl font-bold text-primary">Send a quote</h2>
-            <p className="mt-1 text-xs text-muted">{memberName} can pay it from the app. GST is added on top of your amount.</p>
-          </div>
-          <button onClick={onClose} aria-label="Close" className="flex h-8 w-8 items-center justify-center rounded-full text-muted hover:bg-divider hover:text-primary">
-            <X size={16} />
-          </button>
-        </div>
-
-        {notConfigured ? (
-          <div className="mt-5 rounded-2xl bg-[#fff6dc] px-4 py-3 text-sm text-[#7a5200]">
+    <Modal
+      title="Send a quote"
+      subtitle={`${memberName} can pay it from the app. GST is added on top of your amount.`}
+      icon={<Receipt size={18} />}
+      onClose={onClose}
+      busy={sending}
+      footer={
+        notConfigured ? (
+          <button type="button" onClick={onClose} className={secondaryBtn}>Close</button>
+        ) : (
+          <>
+            <button type="button" onClick={onClose} disabled={sending} className={secondaryBtn}>Cancel</button>
+            <button type="submit" form={formId} disabled={!valid || sending} className={primaryBtn}>
+              {sending ? (
+                <span className="inline-flex items-center justify-center gap-2"><Loader2 size={14} className="animate-spin" /> Sending…</span>
+              ) : (
+                "Send quote"
+              )}
+            </button>
+          </>
+        )
+      }
+    >
+      {notConfigured ? (
+        <div role="alert" className="flex items-start gap-3 rounded-2xl bg-amber-50 px-4 py-3.5 text-sm text-amber-900">
+          <AlertTriangle size={18} className="mt-0.5 shrink-0 text-amber-600" />
+          <span>
             The seller billing details haven&apos;t been set up yet, so quotes (and invoices) can&apos;t be issued.{" "}
             {isSuperAdmin ? (
               <Link href="/admin/settings/billing" className="font-bold underline">Set them up now</Link>
             ) : (
               "Ask a super admin to fill in Billing settings."
             )}
+          </span>
+        </div>
+      ) : (
+        <form
+          id={formId}
+          className="flex flex-col gap-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (valid && !sending) submit();
+          }}
+        >
+          <FormField label="Amount before GST (₹)" error={fieldErrors["baseAmount"]}>
+            <input autoFocus inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="10000" className={`${inputCls(fieldErrors["baseAmount"])} tabular-nums`} />
+          </FormField>
+
+          <div className="grid grid-cols-2 gap-3">
+            <FormField label="GST rate (%)" error={fieldErrors["gstRatePercent"]}>
+              <input inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} className={`${inputCls(fieldErrors["gstRatePercent"])} tabular-nums`} />
+            </FormField>
+            <FormField label="Valid for (days)" error={fieldErrors["expiryDays"]}>
+              <input inputMode="numeric" value={days} onChange={(e) => setDays(e.target.value)} className={`${inputCls(fieldErrors["expiryDays"])} tabular-nums`} />
+            </FormField>
           </div>
-        ) : (
-          <form
-            className="mt-5 flex flex-col gap-4"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (valid && !sending) submit();
-            }}
-          >
-            <label className="text-xs font-semibold text-muted">
-              Amount before GST (₹)
-              <input autoFocus inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="10000" className={field} />
-              {fieldErrors.baseAmount && <span className="mt-1 block text-[11px] text-red-500">{fieldErrors.baseAmount}</span>}
-            </label>
 
-            <div className="grid grid-cols-2 gap-3">
-              <label className="text-xs font-semibold text-muted">
-                GST rate (%)
-                <input inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} className={field} />
-                {fieldErrors.gstRatePercent && <span className="mt-1 block text-[11px] text-red-500">{fieldErrors.gstRatePercent}</span>}
-              </label>
-              <label className="text-xs font-semibold text-muted">
-                Valid for (days)
-                <input inputMode="numeric" value={days} onChange={(e) => setDays(e.target.value)} className={field} />
-                {fieldErrors.expiryDays && <span className="mt-1 block text-[11px] text-red-500">{fieldErrors.expiryDays}</span>}
-              </label>
+          <FormField label="Note to the member (optional)">
+            <textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              maxLength={1000}
+              rows={3}
+              placeholder="What this covers, how long, anything they should know…"
+              className={`${inputCls()} resize-none`}
+            />
+          </FormField>
+
+          {/* What the member will see and pay — updates as you type. */}
+          <div className="rounded-2xl border border-dashed border-accent/40 bg-accent/5 px-4 py-3.5 text-sm" aria-live="polite">
+            <div className="flex justify-between text-muted"><span>Amount</span><span className="font-semibold tabular-nums text-primary">{preview ? formatInr(base) : "—"}</span></div>
+            <div className="mt-1 flex justify-between text-muted"><span>GST @ {Number(rate) || 0}%</span><span className="font-semibold tabular-nums text-primary">{preview ? formatInr(preview.gst) : "—"}</span></div>
+            <div className="mt-2.5 flex items-baseline justify-between border-t border-dashed border-accent/30 pt-2.5 text-primary">
+              <span className="font-bold">Member pays</span>
+              <span className="font-display text-xl font-bold tabular-nums">{preview ? formatInr(preview.total) : "—"}</span>
             </div>
-
-            <label className="text-xs font-semibold text-muted">
-              Note to the member (optional)
-              <textarea
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                maxLength={1000}
-                rows={3}
-                placeholder="What this covers, how long, anything they should know…"
-                className="mt-1.5 w-full resize-none rounded-xl border border-[#dcd9d0] bg-white px-3.5 py-3 text-sm text-primary outline-none transition-colors placeholder:text-muted focus:border-accent"
-              />
-            </label>
-
-            <div className="rounded-2xl bg-background px-4 py-3 text-sm">
-              <div className="flex justify-between text-muted"><span>Amount</span><span className="font-semibold text-primary">{preview ? formatInr(base) : "—"}</span></div>
-              <div className="mt-1 flex justify-between text-muted"><span>GST @ {Number(rate) || 0}%</span><span className="font-semibold text-primary">{preview ? formatInr(preview.gst) : "—"}</span></div>
-              <div className="mt-2 flex justify-between border-t border-divider pt-2 font-bold text-primary"><span>Member pays</span><span>{preview ? formatInr(preview.total) : "—"}</span></div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={!valid || sending}
-              className="flex h-11 items-center justify-center gap-2 rounded-full bg-linear-to-r from-lime to-accent text-sm font-bold text-primary shadow-glow transition-transform hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
-            >
-              {sending && <Loader2 size={14} className="animate-spin" />}
-              Send quote
-            </button>
-          </form>
-        )}
-      </div>
-    </div>
+          </div>
+        </form>
+      )}
+    </Modal>
   );
 }

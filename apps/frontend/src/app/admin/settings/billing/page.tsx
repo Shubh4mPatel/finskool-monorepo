@@ -1,15 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import Link from "next/link";
-import { CheckCircle2, ChevronRight, Info, Loader2 } from "lucide-react";
+import { Building2, CheckCircle2, Hash, Info, Loader2, Lock, Percent, RotateCcw, SearchX } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useIsSuperAdmin } from "@/lib/session";
 import type { BillingSettings, GstState } from "@/lib/services";
 import { useToast } from "@/components/ui/Toast";
+import Select from "@/components/ui/Select";
+import { EmptyState, Skeleton } from "@/components/admin/dashboard/Panel";
+import { inputCls } from "@/components/admin/members/memberUi";
 
 const BASE = "/api/v1/admin/services";
-const input = "mt-1.5 h-11 w-full rounded-xl border border-[#dcd9d0] bg-white px-3.5 text-sm text-primary outline-none transition-colors placeholder:text-muted focus:border-accent";
 
 interface FormState {
   legalName: string;
@@ -50,11 +53,59 @@ function currentFinancialYear(): string {
   return `${start}-${String((start + 1) % 100).padStart(2, "0")}`;
 }
 
+/** A labelled form row: the label is tied to its control, and an error shows (in red) beneath it. */
+function Field({ id, label, hint, error, children }: { id: string; label: string; hint?: string; error?: string | undefined; children: ReactNode }) {
+  return (
+    <div>
+      <label htmlFor={id} className="text-xs font-bold text-primary">
+        {label}
+      </label>
+      {hint && <span className="ml-1.5 text-[11px] font-medium text-subtle">{hint}</span>}
+      <div className="mt-1.5">{children}</div>
+      {error && (
+        <p role="alert" className="mt-1 text-[11px] font-medium text-red-500">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** An input with a fixed unit shown inside its right edge ("%", "days"). */
+function UnitInput({ unit, className, ...props }: { unit: string; className: string } & React.InputHTMLAttributes<HTMLInputElement>) {
+  return (
+    <div className="relative">
+      <input {...props} className={`${className} pr-14`} />
+      <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-xs font-semibold text-subtle">{unit}</span>
+    </div>
+  );
+}
+
+function Card({ icon, title, subtitle, delay, children }: { icon: ReactNode; title: string; subtitle: string; delay: number; children: ReactNode }) {
+  return (
+    <section
+      style={{ animationDelay: `${delay}ms` }}
+      className="animate-enter flex flex-col rounded-2xl bg-white shadow-card ring-1 ring-primary/[0.04]"
+    >
+      <header className="flex items-center gap-3 border-b border-divider px-6 py-4">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-accent">{icon}</span>
+        <div>
+          <h2 className="font-display text-[15px] font-bold tracking-tight text-primary">{title}</h2>
+          <p className="text-xs text-muted">{subtitle}</p>
+        </div>
+      </header>
+      <div className="flex flex-col gap-4 px-6 py-5">{children}</div>
+    </section>
+  );
+}
+
 export default function BillingSettingsPage() {
   const toast = useToast();
   const isSuperAdmin = useIsSuperAdmin();
 
   const [form, setForm] = useState<FormState | null>(null);
+  // What was last loaded or saved — compared against `form` to spot unsaved edits.
+  const [saved, setSaved] = useState<FormState | null>(null);
   const [configured, setConfigured] = useState(false);
   const [states, setStates] = useState<GstState[]>([]);
   const [loadError, setLoadError] = useState(false);
@@ -68,6 +119,7 @@ export default function BillingSettingsPage() {
       .then(([settings, list]) => {
         if (cancelled) return;
         setForm(fromSettings(settings));
+        setSaved(fromSettings(settings));
         setConfigured(settings.isConfigured);
         setStates(list);
       })
@@ -79,30 +131,65 @@ export default function BillingSettingsPage() {
     };
   }, [isSuperAdmin]);
 
-  if (isSuperAdmin === null) return <div className="flex justify-center py-24 text-muted"><Loader2 className="animate-spin" /></div>;
+  const dirty = form !== null && saved !== null && JSON.stringify(form) !== JSON.stringify(saved);
+
+  // Closing the tab with unsaved edits asks first.
+  useEffect(() => {
+    if (!dirty || saving) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [dirty, saving]);
+
+  if (isSuperAdmin === null) {
+    return (
+      <div className="flex max-w-5xl flex-col gap-5">
+        <Skeleton className="h-16 w-72" />
+        <div className="grid gap-5 lg:grid-cols-2">
+          <Skeleton className="h-96 rounded-2xl" />
+          <Skeleton className="h-96 rounded-2xl" />
+        </div>
+      </div>
+    );
+  }
 
   if (!isSuperAdmin) {
     return (
-      <div className="flex flex-col items-center gap-3 py-24 text-center">
-        <p className="text-sm font-semibold text-primary">Only super admins can change billing settings.</p>
-        <Link href="/admin/services" className="rounded-full bg-primary px-5 py-2 text-sm font-bold text-white">Back to services</Link>
+      <div className="flex max-w-xl flex-col rounded-2xl bg-white shadow-card">
+        <EmptyState icon={<Lock size={20} />}>Only super admins can change billing settings.</EmptyState>
+        <Link href="/admin/services" className="mb-8 self-center rounded-full bg-primary px-5 py-2 text-sm font-bold text-white transition-all hover:-translate-y-px hover:bg-[#1c4c48]">
+          Back to services
+        </Link>
       </div>
     );
   }
 
   if (loadError) {
     return (
-      <div className="py-24 text-center">
-        <p className="text-sm font-semibold text-primary">Couldn&apos;t load the billing settings</p>
-        <button onClick={() => window.location.reload()} className="mt-3 rounded-full bg-primary px-5 py-2 text-sm font-bold text-white">Retry</button>
+      <div className="flex max-w-xl flex-col rounded-2xl bg-white shadow-card">
+        <EmptyState icon={<SearchX size={20} />}>Couldn&apos;t load the billing settings.</EmptyState>
+        <button onClick={() => window.location.reload()} className="mb-8 self-center rounded-full bg-primary px-5 py-2 text-sm font-bold text-white transition-all hover:-translate-y-px hover:bg-[#1c4c48]">
+          Retry
+        </button>
       </div>
     );
   }
 
-  if (!form) return <div className="flex justify-center py-24 text-muted"><Loader2 className="animate-spin" /></div>;
+  if (!form) {
+    return (
+      <div className="flex max-w-5xl flex-col gap-5">
+        <Skeleton className="h-16 w-72" />
+        <div className="grid gap-5 lg:grid-cols-2">
+          <Skeleton className="h-96 rounded-2xl" />
+          <Skeleton className="h-96 rounded-2xl" />
+        </div>
+      </div>
+    );
+  }
 
   const set = (key: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setForm({ ...form, [key]: e.target.value });
-  const err = (key: string) => errors[key] && <span className="mt-1 block text-[11px] text-red-500">{errors[key]}</span>;
+  const fid = (k: keyof FormState) => `billing-${k}`;
+  const cls = (k: keyof FormState) => inputCls(errors[k]);
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -126,9 +213,10 @@ export default function BillingSettingsPage() {
         defaultQuoteExpiryDays: Number(form.defaultQuoteExpiryDays),
         invoicePrefix: form.invoicePrefix.trim().toUpperCase(),
       };
-      const saved = await api.put<BillingSettings>(`${BASE}/billing-settings`, body);
-      setForm(fromSettings(saved));
-      setConfigured(saved.isConfigured);
+      const result = await api.put<BillingSettings>(`${BASE}/billing-settings`, body);
+      setForm(fromSettings(result));
+      setSaved(fromSettings(result));
+      setConfigured(result.isConfigured);
       toast.success("Billing settings saved");
     } catch (error) {
       if (error instanceof ApiError && error.errors) setErrors(Object.fromEntries(Object.entries(error.errors).map(([k, v]) => [k, v[0] ?? "Invalid"])));
@@ -139,134 +227,146 @@ export default function BillingSettingsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <p className="flex items-center gap-1 text-xs font-semibold text-accent">
-          Dashboard <ChevronRight size={12} />
-          <Link href="/admin/services" className="hover:underline">Services</Link> <ChevronRight size={12} /> Billing settings
+    <form onSubmit={save} className="flex max-w-5xl flex-col gap-6">
+      <div className="animate-enter">
+        <p className="text-xs font-semibold text-accent">
+          Dashboard &rsaquo; <Link href="/admin/services" className="hover:underline">Services</Link> &rsaquo; Billing settings
         </p>
-        <h1 className="mt-1 font-display text-3xl font-bold text-primary">Billing settings</h1>
+        <h1 className="font-display text-2xl font-bold text-primary">Billing settings</h1>
         <p className="mt-1 text-sm text-muted">The business details printed on every GST invoice, and the defaults for new quotes.</p>
       </div>
 
       {configured ? (
-        <div className="flex items-center gap-3 rounded-2xl bg-[#e4f7ea] px-5 py-3 text-sm text-[#166534]">
-          <CheckCircle2 size={18} /> Billing is set up — admins can send quotes and invoices are issued automatically after payment.
+        <div className="animate-fade flex items-center gap-3 rounded-2xl bg-lime/30 px-5 py-3.5 text-sm font-medium text-primary">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-lime text-primary">
+            <CheckCircle2 size={18} />
+          </span>
+          Billing is set up — admins can send quotes, and invoices are issued automatically after payment.
         </div>
       ) : (
-        <div className="flex items-start gap-3 rounded-2xl bg-[#fff6dc] px-5 py-3 text-sm text-[#7a5200]">
-          <Info size={18} className="mt-0.5 shrink-0" /> Admins can&apos;t send quotes until the business details below are saved.
+        <div role="status" className="animate-fade flex items-start gap-3 rounded-2xl bg-amber-50 px-5 py-3.5 text-sm font-medium text-amber-900">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
+            <Info size={18} />
+          </span>
+          <span className="pt-1.5">Admins can&apos;t send quotes until the business details below are saved.</span>
         </div>
       )}
 
-      <form onSubmit={save} className="grid gap-5 lg:grid-cols-2">
-        <section className="flex flex-col gap-4 rounded-3xl bg-white px-7 py-6 shadow-card">
-          <h2 className="font-display text-lg font-bold text-primary">Business details (on the invoice)</h2>
-          <label className="text-xs font-semibold text-muted">
-            Legal name
-            <input value={form.legalName} onChange={set("legalName")} maxLength={200} className={input} />
-            {err("legalName")}
-          </label>
-          <label className="text-xs font-semibold text-muted">
-            Address
-            <input value={form.addressLine} onChange={set("addressLine")} maxLength={300} className={input} />
-            {err("addressLine")}
-          </label>
+      <div className="grid gap-5 lg:grid-cols-2 lg:items-start">
+        <Card icon={<Building2 size={18} />} title="Business details" subtitle="Printed on every invoice" delay={60}>
+          <Field id={fid("legalName")} label="Legal name" error={errors["legalName"]}>
+            <input id={fid("legalName")} value={form.legalName} onChange={set("legalName")} maxLength={200} className={cls("legalName")} />
+          </Field>
+          <Field id={fid("addressLine")} label="Address" error={errors["addressLine"]}>
+            <input id={fid("addressLine")} value={form.addressLine} onChange={set("addressLine")} maxLength={300} className={cls("addressLine")} />
+          </Field>
           <div className="grid grid-cols-2 gap-3">
-            <label className="text-xs font-semibold text-muted">
-              City
-              <input value={form.city} onChange={set("city")} maxLength={100} className={input} />
-              {err("city")}
-            </label>
-            <label className="text-xs font-semibold text-muted">
-              Pincode
-              <input value={form.pincode} onChange={set("pincode")} inputMode="numeric" maxLength={6} className={input} />
-              {err("pincode")}
-            </label>
+            <Field id={fid("city")} label="City" error={errors["city"]}>
+              <input id={fid("city")} value={form.city} onChange={set("city")} maxLength={100} className={cls("city")} />
+            </Field>
+            <Field id={fid("pincode")} label="Pincode" error={errors["pincode"]}>
+              <input id={fid("pincode")} value={form.pincode} onChange={set("pincode")} inputMode="numeric" maxLength={6} className={`${cls("pincode")} tabular-nums`} />
+            </Field>
           </div>
-          <label className="text-xs font-semibold text-muted">
-            State (decides CGST + SGST or IGST)
-            <select value={form.stateCode} onChange={set("stateCode")} className={input}>
-              <option value="">Choose a state…</option>
-              {states.map((s) => (
-                <option key={s.code} value={s.code}>{s.name} ({s.code})</option>
-              ))}
-            </select>
-            {err("stateCode")}
-          </label>
+          <Field id={fid("stateCode")} label="State" hint="decides CGST + SGST or IGST" error={errors["stateCode"]}>
+            <Select
+              value={form.stateCode}
+              onChange={(stateCode) => setForm({ ...form, stateCode })}
+              placeholder="Choose a state…"
+              ariaLabel="State"
+              className="w-full"
+              triggerClassName={`relative flex w-full items-center gap-2 text-left ${cls("stateCode")}`}
+              options={states.map((s) => ({ value: s.code, label: `${s.name} (${s.code})` }))}
+            />
+          </Field>
           <div className="grid grid-cols-2 gap-3">
-            <label className="text-xs font-semibold text-muted">
-              GSTIN
-              <input value={form.gstin} onChange={set("gstin")} maxLength={15} placeholder="27AAAAA0000A1Z5" className={`${input} uppercase`} />
-              {err("gstin")}
-            </label>
-            <label className="text-xs font-semibold text-muted">
-              SAC code
-              <input value={form.sacCode} onChange={set("sacCode")} inputMode="numeric" maxLength={8} placeholder="from your accountant" className={input} />
-              {err("sacCode")}
-            </label>
+            <Field id={fid("gstin")} label="GSTIN" error={errors["gstin"]}>
+              <input id={fid("gstin")} value={form.gstin} onChange={set("gstin")} maxLength={15} placeholder="27AAAAA0000A1Z5" className={`${cls("gstin")} uppercase tabular-nums`} />
+            </Field>
+            <Field id={fid("sacCode")} label="SAC code" error={errors["sacCode"]}>
+              <input id={fid("sacCode")} value={form.sacCode} onChange={set("sacCode")} inputMode="numeric" maxLength={8} placeholder="from your accountant" className={cls("sacCode")} />
+            </Field>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <label className="text-xs font-semibold text-muted">
-              Contact email (optional)
-              <input value={form.contactEmail} onChange={set("contactEmail")} className={input} />
-              {err("contactEmail")}
-            </label>
-            <label className="text-xs font-semibold text-muted">
-              Contact phone (optional)
-              <input value={form.contactPhone} onChange={set("contactPhone")} className={input} />
-              {err("contactPhone")}
-            </label>
+            <Field id={fid("contactEmail")} label="Contact email" hint="optional" error={errors["contactEmail"]}>
+              <input id={fid("contactEmail")} type="email" value={form.contactEmail} onChange={set("contactEmail")} className={cls("contactEmail")} />
+            </Field>
+            <Field id={fid("contactPhone")} label="Contact phone" hint="optional" error={errors["contactPhone"]}>
+              <input id={fid("contactPhone")} value={form.contactPhone} onChange={set("contactPhone")} className={cls("contactPhone")} />
+            </Field>
           </div>
-          <label className="text-xs font-semibold text-muted">
-            Footer note (optional)
-            <textarea value={form.footerNote} onChange={set("footerNote")} maxLength={500} rows={3} className="mt-1.5 w-full resize-none rounded-xl border border-[#dcd9d0] bg-white px-3.5 py-3 text-sm text-primary outline-none transition-colors focus:border-accent" />
-            {err("footerNote")}
-          </label>
-        </section>
+          <Field id={fid("footerNote")} label="Footer note" hint="optional" error={errors["footerNote"]}>
+            <textarea id={fid("footerNote")} value={form.footerNote} onChange={set("footerNote")} maxLength={500} rows={3} className={`${cls("footerNote")} resize-none`} />
+            <span className="mt-1 block text-right text-[11px] tabular-nums text-subtle">{form.footerNote.length}/500</span>
+          </Field>
+        </Card>
 
         <div className="flex flex-col gap-5">
-          <section className="flex flex-col gap-4 rounded-3xl bg-white px-7 py-6 shadow-card">
-            <h2 className="font-display text-lg font-bold text-primary">Quote defaults</h2>
+          <Card icon={<Percent size={18} />} title="Quote defaults" subtitle="Applied to every new quote" delay={120}>
             <div className="grid grid-cols-2 gap-3">
-              <label className="text-xs font-semibold text-muted">
-                GST rate (%)
-                <input value={form.defaultGstRatePercent} onChange={set("defaultGstRatePercent")} inputMode="decimal" className={input} />
-                {err("defaultGstRatePercent")}
-              </label>
-              <label className="text-xs font-semibold text-muted">
-                Quote valid for (days)
-                <input value={form.defaultQuoteExpiryDays} onChange={set("defaultQuoteExpiryDays")} inputMode="numeric" className={input} />
-                {err("defaultQuoteExpiryDays")}
-              </label>
+              <Field id={fid("defaultGstRatePercent")} label="GST rate" error={errors["defaultGstRatePercent"]}>
+                <UnitInput unit="%" id={fid("defaultGstRatePercent")} value={form.defaultGstRatePercent} onChange={set("defaultGstRatePercent")} inputMode="decimal" className={`${cls("defaultGstRatePercent")} tabular-nums`} />
+              </Field>
+              <Field id={fid("defaultQuoteExpiryDays")} label="Quote valid for" error={errors["defaultQuoteExpiryDays"]}>
+                <UnitInput unit="days" id={fid("defaultQuoteExpiryDays")} value={form.defaultQuoteExpiryDays} onChange={set("defaultQuoteExpiryDays")} inputMode="numeric" className={`${cls("defaultQuoteExpiryDays")} tabular-nums`} />
+              </Field>
             </div>
-            <p className="text-[11px] text-muted">Admins can change both for an individual quote when they send it.</p>
-          </section>
+            <p className="rounded-xl bg-background px-3.5 py-2.5 text-xs text-muted">Admins can change both for an individual quote when they send it.</p>
+          </Card>
 
-          <section className="flex flex-col gap-4 rounded-3xl bg-white px-7 py-6 shadow-card">
-            <h2 className="font-display text-lg font-bold text-primary">Invoice numbers</h2>
-            <label className="text-xs font-semibold text-muted">
-              Prefix
-              <input value={form.invoicePrefix} onChange={set("invoicePrefix")} maxLength={10} className={`${input} uppercase`} />
-              {err("invoicePrefix")}
-            </label>
-            <p className="text-[11px] text-muted">
-              Numbers are issued automatically, one after another with no gaps, restarting each financial year (April to March). This
-              year&apos;s first invoice is <strong className="text-primary">{(form.invoicePrefix || "FS").toUpperCase()}/{currentFinancialYear()}/0001</strong>.
-              Changing the prefix does not alter invoices already issued.
+          <Card icon={<Hash size={18} />} title="Invoice numbers" subtitle="Issued automatically, with no gaps" delay={180}>
+            <Field id={fid("invoicePrefix")} label="Prefix" error={errors["invoicePrefix"]}>
+              <input id={fid("invoicePrefix")} value={form.invoicePrefix} onChange={set("invoicePrefix")} maxLength={10} className={`${cls("invoicePrefix")} uppercase`} />
+            </Field>
+            <div className="rounded-xl border border-dashed border-accent/40 bg-accent/5 px-4 py-3">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-muted">Your first invoice this year</p>
+              <p className="mt-1 font-mono text-lg font-bold tracking-wide text-primary">
+                {(form.invoicePrefix || "FS").toUpperCase()}/{currentFinancialYear()}/0001
+              </p>
+            </div>
+            <p className="text-xs text-muted">
+              Numbers restart each financial year (April to March). Changing the prefix does not alter invoices already issued.
             </p>
-          </section>
-
-          <button
-            type="submit"
-            disabled={saving}
-            className="flex h-12 items-center justify-center gap-2 rounded-full bg-linear-to-r from-lime to-accent text-sm font-bold text-primary shadow-glow transition-transform hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
-          >
-            {saving && <Loader2 size={14} className="animate-spin" />}
-            Save billing settings
-          </button>
+          </Card>
         </div>
-      </form>
-    </div>
+      </div>
+
+      {/* Sticky action bar — always in reach at the bottom of the form */}
+      <div className="sticky bottom-0 z-20 -mx-1 bg-background/85 px-1 pb-4 pt-2 backdrop-blur">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white px-4 py-3 shadow-card-hover ring-1 ring-primary/[0.04]">
+          <p className="text-xs font-semibold text-muted" aria-live="polite">
+            {dirty ? (
+              <span className="animate-fade inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-700">
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden /> Unsaved changes
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5">
+                <CheckCircle2 size={14} className="text-emerald-600" /> All changes saved
+              </span>
+            )}
+          </p>
+          <div className="flex items-center gap-2.5">
+            {dirty && (
+              <button
+                type="button"
+                onClick={() => { setForm(saved); setErrors({}); }}
+                disabled={saving}
+                className="animate-fade flex items-center gap-1.5 rounded-full border border-divider bg-white px-4 py-2.5 text-sm font-semibold text-muted transition-colors hover:border-subtle hover:text-primary disabled:opacity-50"
+              >
+                <RotateCcw size={14} /> Discard
+              </button>
+            )}
+            <button
+              type="submit"
+              disabled={saving || !dirty}
+              className="flex items-center gap-2 rounded-full bg-primary px-6 py-2.5 text-sm font-bold text-white shadow-[0_8px_20px_-12px_rgba(21,61,58,0.7)] transition-all hover:-translate-y-px hover:bg-[#1c4c48] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0"
+            >
+              {saving && <Loader2 size={14} className="animate-spin" />}
+              {saving ? "Saving…" : "Save billing settings"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </form>
   );
 }

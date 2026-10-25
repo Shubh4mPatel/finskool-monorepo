@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { AlertTriangle, CheckCircle2, ChevronRight, Download, HandHelping, Loader2, UserRoundCog, XCircle } from "lucide-react";
+import { AlertTriangle, ArrowLeft, CheckCircle2, Download, HandHelping, History, Loader2, Receipt, SearchX, Star as StarIcon, UserRoundCog, XCircle } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { getSession } from "@/lib/session";
 import { formatInr } from "@/lib/services";
@@ -17,6 +17,9 @@ import { Stars } from "@/components/admin/tickets/TicketBadges";
 import { QuoteStatusPill, RequestStatusBadge } from "@/components/admin/services/ServiceBadges";
 import ServiceChat from "@/components/admin/services/ServiceChat";
 import SendQuoteModal from "@/components/admin/services/SendQuoteModal";
+import Select from "@/components/ui/Select";
+import { EmptyState, Skeleton } from "@/components/admin/dashboard/Panel";
+import { DetailRow, MemberBlock, SideCard, outlineBtn, solidBtn } from "@/components/admin/chat/DetailParts";
 
 const BASE = "/api/v1/admin/services";
 
@@ -32,18 +35,6 @@ function mergeMessages(existing: ServiceMessage[], incoming: ServiceMessage[]): 
   for (const m of incoming) byId.set(m.id, m);
   return [...byId.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
 }
-
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex items-baseline justify-between gap-4 text-xs">
-      <dt className="shrink-0 text-muted">{label}</dt>
-      <dd className="text-right font-semibold text-primary">{children}</dd>
-    </div>
-  );
-}
-
-const card = "rounded-3xl bg-white px-6 py-5 shadow-card";
-const cardTitle = "font-display text-lg font-bold text-primary";
 
 export default function AdminServiceRequestPage() {
   const { requestId } = useParams<{ requestId: string }>();
@@ -296,15 +287,32 @@ export default function AdminServiceRequestPage() {
   }
 
   if (loading) {
-    return <div className="flex justify-center py-24 text-muted"><Loader2 className="animate-spin" /></div>;
+    return (
+      <div className="flex flex-col gap-6" aria-label="Loading request">
+        <Skeleton className="h-20 w-96 max-w-full" />
+        <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <Skeleton className="h-[480px] rounded-2xl" />
+          <div className="flex flex-col gap-5">
+            <Skeleton className="h-72 rounded-2xl" />
+            <Skeleton className="h-48 rounded-2xl" />
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (notFound || !request) {
     return (
-      <div className="flex flex-col items-center gap-3 py-24 text-center">
-        <p className="text-sm font-semibold text-primary">Request not found</p>
-        <p className="text-xs text-muted">It may not exist or may have been removed.</p>
-        <Link href="/admin/services" className="rounded-full bg-primary px-5 py-2 text-sm font-bold text-white">Back to services</Link>
+      <div className="flex max-w-xl flex-col rounded-2xl bg-white shadow-card">
+        <EmptyState icon={<SearchX size={20} />}>
+          <span className="flex flex-col gap-1">
+            <strong className="text-primary">Request not found</strong>
+            It may not exist or may have been removed.
+          </span>
+        </EmptyState>
+        <Link href="/admin/services" className="mb-8 self-center rounded-full bg-primary px-5 py-2 text-sm font-bold text-white transition-all hover:-translate-y-px hover:bg-[#1c4c48]">
+          Back to services
+        </Link>
       </div>
     );
   }
@@ -319,21 +327,33 @@ export default function AdminServiceRequestPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="animate-enter flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
-          <p className="flex items-center gap-1 text-xs font-semibold text-accent">
-            Dashboard <ChevronRight size={12} />
-            <Link href="/admin/services" className="hover:underline">Services</Link> <ChevronRight size={12} /> #{request.label}
+          <div className="flex flex-wrap items-center gap-3">
+            <Link
+              href="/admin/services"
+              className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-bold text-primary shadow-card ring-1 ring-primary/[0.04] transition-all hover:-translate-x-0.5 hover:shadow-card-hover"
+            >
+              <ArrowLeft size={14} /> All enquiries
+            </Link>
+            <p className="text-xs font-semibold text-accent">
+              Dashboard &rsaquo; <Link href="/admin/services" className="hover:underline">Services</Link> &rsaquo; <span className="text-primary">#{request.label}</span>
+            </p>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <h1 className="font-display text-2xl font-bold text-primary wrap-break-word">{request.service.title}</h1>
+            <RequestStatusBadge status={request.status} closedReason={request.closedReason} />
+          </div>
+          <p className="mt-1 text-sm text-muted">
+            Requested by <span className="font-semibold text-primary">{request.user.name}</span> on {formatLongTime(request.createdAt)}
           </p>
-          <h1 className="mt-1 font-display text-2xl font-bold text-primary wrap-break-word">{request.service.title}</h1>
-          <p className="mt-1 text-sm text-muted">Requested by {request.user.name} on {formatLongTime(request.createdAt)}</p>
         </div>
         <div className="flex items-center gap-3">
           {canClaim && (
             <button
               onClick={() => runAction("claim", () => api.post(`${BASE}/${requestId}/claim`, {}), "Request assigned to you")}
               disabled={acting !== null}
-              className="flex h-11 items-center gap-2 rounded-full border border-primary px-5 text-sm font-bold text-primary transition-colors hover:bg-primary/5 disabled:opacity-50"
+              className={outlineBtn}
             >
               {acting === "claim" ? <Loader2 size={14} className="animate-spin" /> : <HandHelping size={14} />}
               Take request
@@ -343,11 +363,15 @@ export default function AdminServiceRequestPage() {
             <button
               onClick={handleClose}
               disabled={acting !== null}
-              className={`flex h-11 items-center gap-2 rounded-full px-6 text-sm font-bold transition-transform hover:scale-105 active:scale-95 disabled:opacity-50 disabled:hover:scale-100 ${
-                request.status === "paid" ? "bg-linear-to-r from-lime to-accent text-primary shadow-glow" : "border border-[#dcd9d0] bg-white text-primary hover:border-accent"
-              }`}
+              className={request.status === "paid" ? solidBtn : `${outlineBtn} border-divider text-primary hover:border-accent hover:bg-white`}
             >
-              {acting === "close" && <Loader2 size={14} className="animate-spin" />}
+              {acting === "close" ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : request.status === "paid" ? (
+                <CheckCircle2 size={14} className="text-lime" />
+              ) : (
+                <XCircle size={14} />
+              )}
               {request.status === "paid" ? "Mark delivered & close" : "Decline & close"}
             </button>
           )}
@@ -355,18 +379,23 @@ export default function AdminServiceRequestPage() {
       </div>
 
       {request.requiresReview && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#f3b6c0] bg-[#fff0f2] px-5 py-4 text-sm text-[#9f1239]">
-          <span className="flex items-start gap-3">
-            <AlertTriangle size={18} className="mt-0.5 shrink-0" />
+        <div role="alert" className="animate-fade flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-900">
+          <span className="flex min-w-0 flex-1 items-start gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-100 text-red-600">
+              <AlertTriangle size={18} />
+            </span>
             <span>
-              <strong>A payment needs your review.</strong> Money arrived that could not be applied to this request (for example the quote was replaced, expired or the request was cancelled while the member was paying).
-              Pay it back in the Razorpay dashboard, then mark it resolved.
+              <strong className="block">A payment needs your review.</strong>
+              <span className="text-red-800/80">
+                Money arrived that could not be applied to this request (for example the quote was replaced, expired or the request was cancelled while the member was paying).
+                Pay it back in the Razorpay dashboard, then mark it resolved.
+              </span>
             </span>
           </span>
           <button
             onClick={handleResolveReview}
             disabled={acting !== null}
-            className="flex h-10 items-center gap-2 rounded-full bg-[#e11d48] px-5 text-sm font-bold text-white transition-transform hover:scale-105 active:scale-95 disabled:opacity-50"
+            className="flex h-10 items-center gap-2 rounded-full bg-red-600 px-5 text-sm font-bold text-white transition-all hover:-translate-y-px hover:bg-red-700 disabled:opacity-50 disabled:hover:translate-y-0"
           >
             {acting === "review" && <Loader2 size={14} className="animate-spin" />}
             Mark as resolved
@@ -375,51 +404,51 @@ export default function AdminServiceRequestPage() {
       )}
 
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <ServiceChat
-          request={request}
-          messages={messages}
-          events={visibleEvents}
-          hasOlder={olderCursor !== null}
-          loadingOlder={loadingOlder}
-          onLoadOlder={loadOlder}
-          historyError={historyError}
-          onRetryHistory={() => loadLatest(messages.length === 0)}
-          onSent={(m) => {
-            setMessages((prev) => mergeMessages(prev, [m]));
-            refreshRequest();
-          }}
-          onSendQuote={() => setQuoteOpen(true)}
-          now={now}
-        />
+        <div className="animate-enter min-w-0" style={{ animationDelay: "60ms" }}>
+          <ServiceChat
+            request={request}
+            messages={messages}
+            events={visibleEvents}
+            hasOlder={olderCursor !== null}
+            loadingOlder={loadingOlder}
+            onLoadOlder={loadOlder}
+            historyError={historyError}
+            onRetryHistory={() => loadLatest(messages.length === 0)}
+            onSent={(m) => {
+              setMessages((prev) => mergeMessages(prev, [m]));
+              refreshRequest();
+            }}
+            onSendQuote={() => setQuoteOpen(true)}
+            now={now}
+          />
+        </div>
 
         <aside className="flex flex-col gap-5">
-          <div className={card}>
-            <h2 className={cardTitle}>Request details</h2>
-            <div className="mt-4"><RequestStatusBadge status={request.status} closedReason={request.closedReason} /></div>
-            <dl className="mt-5 flex flex-col gap-2.5 border-t border-divider pt-4">
-              <Row label="Request ID">#{request.label}</Row>
-              <Row label="Service">{request.service.title}</Row>
-              <Row label="Member">{request.user.name}</Row>
-              <Row label="Phone">{request.user.phone}</Row>
-              <Row label="Requested on">{formatLongTime(request.createdAt)}</Row>
-              <Row label="Assigned to">{request.assignedAdmin?.name ?? "Unassigned"}</Row>
-              {request.paidAt && <Row label="Paid on">{formatLongTime(request.paidAt)}</Row>}
-              {request.closedAt && <Row label="Closed on">{formatLongTime(request.closedAt)}</Row>}
-              <Row label="Last update">{timeAgo(request.lastMessageAt, now)}</Row>
+          <SideCard title="Request details" icon={<Receipt size={14} />} delay={100}>
+            <MemberBlock name={request.user.name} phone={request.user.phone} />
+            <dl className="mt-4 flex flex-col gap-2.5 border-t border-divider pt-4">
+              <DetailRow label="Request ID"><span className="tabular-nums">#{request.label}</span></DetailRow>
+              <DetailRow label="Service">{request.service.title}</DetailRow>
+              <DetailRow label="Requested on">{formatLongTime(request.createdAt)}</DetailRow>
+              <DetailRow label="Assigned to">
+                {request.assignedAdmin?.name ?? <span className="text-rose-500">Unassigned</span>}
+              </DetailRow>
+              {request.paidAt && <DetailRow label="Paid on">{formatLongTime(request.paidAt)}</DetailRow>}
+              {request.closedAt && <DetailRow label="Closed on">{formatLongTime(request.closedAt)}</DetailRow>}
+              <DetailRow label="Last update">{timeAgo(request.lastMessageAt, now)}</DetailRow>
             </dl>
-          </div>
+          </SideCard>
 
-          <div className={card}>
-            <h2 className={cardTitle}>Quote &amp; payment</h2>
+          <SideCard title="Quote & payment" icon={<Receipt size={14} />} delay={140}>
             {request.quotes.length === 0 ? (
-              <p className="mt-3 text-xs text-muted">No quote sent yet. Use “Send quote” in the conversation once you have agreed the scope.</p>
+              <p className="text-xs text-muted">No quote sent yet. Use “Send quote” in the conversation once you have agreed the scope.</p>
             ) : (
               <>
-                <ul className="mt-3 flex flex-col">
+                <ul className="-mx-2 flex flex-col">
                   {[...request.quotes].reverse().map((q) => (
-                    <li key={q.id} className="flex items-center justify-between gap-3 border-b border-divider py-2.5 last:border-b-0">
+                    <li key={q.id} className="flex items-center justify-between gap-3 rounded-xl px-2 py-2.5">
                       <span className="min-w-0">
-                        <span className="block text-xs font-bold text-primary">#{q.version} · {formatInr(q.totalAmount)}</span>
+                        <span className="block text-xs font-bold tabular-nums text-primary">#{q.version} · {formatInr(q.totalAmount)}</span>
                         <span className="block truncate text-[11px] text-muted">{formatInr(q.baseAmount)} + {q.gstRatePercent}% GST</span>
                       </span>
                       <QuoteStatusPill status={q.status} />
@@ -427,7 +456,7 @@ export default function AdminServiceRequestPage() {
                   ))}
                 </ul>
                 {request.quote?.status === "active" && (
-                  <p className="mt-3 text-[11px] text-muted">Valid until {formatLongTime(request.quote.expiresAt)}.</p>
+                  <p className="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-[11px] font-medium text-amber-800">Valid until {formatLongTime(request.quote.expiresAt)}.</p>
                 )}
               </>
             )}
@@ -435,19 +464,23 @@ export default function AdminServiceRequestPage() {
             {request.payments.length > 0 && (
               <div className="mt-4 border-t border-divider pt-4">
                 <p className="text-[11px] font-bold uppercase tracking-wider text-muted">Payments</p>
-                <ul className="mt-2 flex flex-col gap-2">
+                <ul className="mt-2 flex flex-col gap-2.5">
                   {request.payments.map((p) => (
                     <li key={p.id} className="text-xs">
                       <span className="flex items-center justify-between gap-2">
-                        <span className="font-bold text-primary">{formatInr(p.amount)}</span>
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${p.status === "captured" ? "bg-[#e4f7ea] text-[#16a34a]" : p.status === "failed" ? "bg-[#fff0f2] text-[#e11d48]" : "bg-[#f1efe6] text-muted"}`}>
+                        <span className="font-bold tabular-nums text-primary">{formatInr(p.amount)}</span>
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                            p.status === "captured" ? "bg-emerald-50 text-emerald-700" : p.status === "failed" ? "bg-red-50 text-red-600" : "bg-divider text-muted"
+                          }`}
+                        >
                           {p.status}
                         </span>
                       </span>
                       <span className="block truncate text-[11px] text-muted">
                         {p.method ?? "—"}{p.settledVia ? ` · confirmed by ${p.settledVia === "verify" ? "the app" : "Razorpay"}` : ""} · {p.razorpayPaymentId}
                       </span>
-                      {p.errorDescription && <span className="block text-[11px] text-[#e11d48]">{p.errorDescription}</span>}
+                      {p.errorDescription && <span className="block text-[11px] text-red-500">{p.errorDescription}</span>}
                     </li>
                   ))}
                 </ul>
@@ -457,73 +490,72 @@ export default function AdminServiceRequestPage() {
             {request.invoice && (
               <div className="mt-4 border-t border-divider pt-4">
                 <p className="text-[11px] font-bold uppercase tracking-wider text-muted">GST invoice</p>
-                <p className="mt-1.5 text-sm font-bold text-primary">{request.invoice.number}</p>
+                <p className="mt-1.5 font-mono text-sm font-bold text-primary">{request.invoice.number}</p>
                 <p className="text-[11px] text-muted">{formatLongTime(request.invoice.issuedAt)} · {formatInr(request.invoice.total)}</p>
-                <button
-                  onClick={downloadInvoice}
-                  disabled={acting !== null}
-                  className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-full border border-primary px-4 text-sm font-bold text-primary transition-colors hover:bg-primary/5 disabled:opacity-40"
-                >
+                <button onClick={downloadInvoice} disabled={acting !== null} className={`${outlineBtn} mt-3 w-full`}>
                   {acting === "invoice" ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
                   Download PDF
                 </button>
               </div>
             )}
-            {captured.length === 0 && request.status === "quote_sent" && <p className="mt-3 text-[11px] text-muted">Waiting for the member to pay.</p>}
-          </div>
+            {captured.length === 0 && request.status === "quote_sent" && (
+              <p className="mt-3 rounded-xl bg-background px-3 py-2 text-[11px] font-medium text-muted">Waiting for the member to pay.</p>
+            )}
+          </SideCard>
 
           {me?.isSuperAdmin && open && (
-            <div className={card}>
-              <h2 className={cardTitle}>Reassign</h2>
-              <select
+            <SideCard title="Reassign" icon={<UserRoundCog size={14} />} delay={180}>
+              <Select
                 value={reassignTo}
-                onChange={(e) => setReassignTo(e.target.value)}
-                className="mt-3 w-full rounded-xl border border-[#dcd9d0] bg-white px-3.5 py-2.5 text-sm text-primary outline-none focus:border-accent"
-              >
-                <option value="">Choose an admin…</option>
-                {eligibleAdmins.map((a) => (
-                  <option key={a.id} value={a.id}>{a.name}</option>
-                ))}
-              </select>
+                onChange={setReassignTo}
+                placeholder="Choose an admin…"
+                ariaLabel="Admin to reassign to"
+                className="w-full"
+                triggerClassName="relative flex w-full items-center gap-2 text-left rounded-xl border border-divider bg-white px-3.5 py-2.5 text-sm text-primary transition-all focus:outline-none focus-visible:border-accent focus-visible:ring-4 focus-visible:ring-accent/10"
+                options={eligibleAdmins.map((a) => ({ value: a.id, label: a.name }))}
+              />
               <button
                 disabled={!reassignTo || acting !== null}
                 onClick={() =>
                   runAction("reassign", () => api.post(`${BASE}/${requestId}/reassign`, { adminId: reassignTo }), "Request reassigned").then(() => setReassignTo(""))
                 }
-                className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-full border border-primary px-4 text-sm font-bold text-primary transition-colors hover:bg-primary/5 disabled:opacity-40"
+                className={`${outlineBtn} mt-3 w-full`}
               >
                 {acting === "reassign" ? <Loader2 size={14} className="animate-spin" /> : <UserRoundCog size={14} />}
                 Reassign
               </button>
-            </div>
+            </SideCard>
           )}
 
           {request.status === "closed" && request.closedReason === "completed" && (
-            <div className={card}>
-              <h2 className={cardTitle}>Member rating</h2>
+            <SideCard title="Member rating" icon={<StarIcon size={14} />} delay={220}>
               {request.rating !== null ? (
                 <>
-                  <div className="mt-3"><Stars value={request.rating} /></div>
-                  {request.ratingComment && <p className="mt-2 text-sm text-primary wrap-break-word">&ldquo;{request.ratingComment}&rdquo;</p>}
-                  {request.ratedAt && <p className="mt-1 text-[11px] text-subtle">{formatLongTime(request.ratedAt)}</p>}
+                  <Stars value={request.rating} />
+                  {request.ratingComment && (
+                    <p className="mt-2 rounded-xl bg-background px-3 py-2 text-sm text-primary wrap-break-word">&ldquo;{request.ratingComment}&rdquo;</p>
+                  )}
+                  {request.ratedAt && <p className="mt-1.5 text-[11px] text-subtle">{formatLongTime(request.ratedAt)}</p>}
                 </>
               ) : (
-                <p className="mt-2 text-xs text-muted">Not rated yet.</p>
+                <p className="text-xs text-muted">Not rated yet.</p>
               )}
-            </div>
+            </SideCard>
           )}
 
-          <div className={card}>
-            <h2 className={cardTitle}>Other requests</h2>
+          <SideCard title="Other requests" icon={<History size={14} />} delay={260}>
             {previous.length === 0 ? (
-              <p className="mt-3 text-xs text-muted">No other requests from this member.</p>
+              <p className="text-xs text-muted">No other requests from this member.</p>
             ) : (
-              <ul className="mt-3 flex flex-col">
+              <ul className="-mx-2 flex flex-col">
                 {previous.map((r) => (
-                  <li key={r.id} className="border-b border-divider last:border-b-0">
-                    <Link href={`/admin/services/${r.id}`} className="flex items-center justify-between gap-3 py-3 hover:opacity-80">
+                  <li key={r.id}>
+                    <Link
+                      href={`/admin/services/${r.id}`}
+                      className="flex items-center justify-between gap-3 rounded-xl px-2 py-2.5 transition-colors hover:bg-background"
+                    >
                       <span className="min-w-0">
-                        <span className="block text-xs font-bold text-primary">#{r.label}</span>
+                        <span className="block text-xs font-bold tabular-nums text-primary">#{r.label}</span>
                         <span className="block truncate text-[11px] text-muted">{r.service.title}</span>
                       </span>
                       <RequestStatusBadge status={r.status} closedReason={r.closedReason} />
@@ -532,7 +564,7 @@ export default function AdminServiceRequestPage() {
                 ))}
               </ul>
             )}
-          </div>
+          </SideCard>
         </aside>
       </div>
 
