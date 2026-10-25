@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { Area, AreaChart, CartesianGrid, ReferenceDot, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { CalendarDays, ChartLine, ChevronDown, Table2, TrendingDown, TrendingUp } from "lucide-react";
+import { CalendarDays, ChartLine, Table2, TrendingDown, TrendingUp } from "lucide-react";
+import Select from "@/components/ui/Select";
 import { compactRupees, dashboardApi, longMonth, rupees, shortMonth, type DashboardRevenue } from "@/lib/dashboard";
 import { CountUp, useReducedMotion } from "./CountUp";
 import { Card, PanelError, Pill, SectionHeader, Skeleton } from "./Panel";
@@ -72,22 +73,16 @@ export function RevenueChart({ className = "", delay = 0 }: { className?: string
 
   const controls = (
     <div className="flex items-center gap-2">
-      <label className="relative inline-flex items-center gap-2 rounded-xl border border-divider bg-white py-1.5 pl-3 pr-8 text-xs font-semibold text-primary transition-colors hover:border-subtle focus-within:border-accent">
-        <CalendarDays size={14} className="text-muted" aria-hidden />
-        <span className="sr-only">Month</span>
-        <select
-          value={month}
-          onChange={e => setMonth(e.target.value)}
-          className="cursor-pointer appearance-none bg-transparent outline-none"
-        >
-          {options.map(o => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-        <ChevronDown size={14} className="pointer-events-none absolute right-2.5 text-muted" aria-hidden />
-      </label>
+      <Select
+        value={month}
+        onChange={setMonth}
+        options={options}
+        ariaLabel="Month"
+        align="right"
+        searchable={false}
+        leading={<CalendarDays size={14} className="text-muted" aria-hidden />}
+        triggerClassName="relative flex items-center gap-2 rounded-xl border border-divider bg-white py-1.5 pl-3 text-xs font-semibold text-primary transition-colors hover:border-subtle focus:outline-none focus-visible:border-accent focus-visible:ring-4 focus-visible:ring-accent/15"
+      />
       <div role="group" aria-label="Show revenue as" className="flex rounded-xl bg-background p-0.5">
         {(
           [

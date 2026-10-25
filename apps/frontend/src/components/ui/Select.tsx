@@ -20,7 +20,7 @@ export interface SelectOption {
   hint?: string;
 }
 
-/** Above this many options the list gets a search box. */
+/** Above this many options the list gets a search box (unless `searchable` says otherwise). */
 const SEARCH_THRESHOLD = 8;
 
 /**
@@ -38,6 +38,7 @@ export default function Select({
   className = "shrink-0",
   align = "left",
   placeholder,
+  searchable: searchableProp,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -52,6 +53,8 @@ export default function Select({
   /** Shown (muted) while `value` matches no option, e.g. "Select community". */
   placeholder?: string;
   align?: "left" | "right";
+  /** Force the search box on or off. Default: on once the list is long. */
+  searchable?: boolean;
 }) {
   const id = useId();
   const listId = `${id}-list`;
@@ -65,7 +68,7 @@ export default function Select({
 
   const match = options.find(o => o.value === value);
   const selected = match ?? (placeholder ? undefined : options[0]);
-  const searchable = options.length > SEARCH_THRESHOLD;
+  const searchable = searchableProp ?? options.length > SEARCH_THRESHOLD;
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return q ? options.filter(o => o.label.toLowerCase().includes(q)) : options;
