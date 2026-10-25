@@ -10,11 +10,12 @@ import { ArrowRight, Bold, Check, ChevronLeft, Code, Italic, LayoutGrid, Link, L
 
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
-import { getSession } from "@/lib/session";
+import { useSession } from "@/lib/session";
 import PostMediaPicker from "@/components/admin/PostMediaPicker";
 import { toVideoInput, type PostVideo } from "@/lib/post-videos";
 import FeedPostCard from "@/components/feed/FeedPostCard";
 import CommunityBadgeIcon from "@/components/CommunityBadgeIcon";
+import { Skeleton, stagger } from "@/components/admin/dashboard/Panel";
 
 type Step = 1 | 2 | 3;
 
@@ -58,30 +59,44 @@ const defaultTags: string[] = [];
 
 function StepIndicator({ current }: { current: Step }) {
   return (
-    <div className="flex items-center justify-center gap-0">
-      {steps.map((s, i) => (
-        <div key={s.n} className="flex items-center">
-          <div className="flex flex-col items-center">
-            <div
-              className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold transition-colors duration-300 ${
-                current > s.n
-                  ? "bg-primary text-white"
-                  : current === s.n
-                  ? "bg-primary text-white ring-4 ring-primary/20"
-                  : "bg-divider text-subtle"
-              }`}
-            >
-              {current > s.n ? <Check size={14} /> : s.n}
+    <div className="flex items-start justify-center">
+      {steps.map((s, i) => {
+        const done = current > s.n;
+        const active = current === s.n;
+        return (
+          <div key={s.n} className="flex items-start">
+            <div className="flex w-24 flex-col items-center text-center sm:w-32">
+              <div
+                className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold transition-all duration-300 ${
+                  done
+                    ? "bg-primary text-white"
+                    : active
+                    ? "bg-primary text-white ring-4 ring-primary/15 shadow-glow"
+                    : "bg-divider text-subtle"
+                }`}
+              >
+                {done ? <Check size={15} className="animate-fade" /> : s.n}
+              </div>
+              <span
+                className={`mt-2 hidden text-xs font-semibold transition-colors duration-300 sm:block ${
+                  active || done ? "text-primary" : "text-subtle"
+                }`}
+              >
+                {s.label}
+              </span>
             </div>
-            <span className={`mt-1.5 hidden text-xs font-semibold sm:block ${current === s.n ? "text-primary" : "text-subtle"}`}>
-              {s.label}
-            </span>
+            {i < steps.length - 1 && (
+              <div className="mt-4 h-1 w-10 overflow-hidden rounded-full bg-divider sm:w-16">
+                <div
+                  className={`h-full rounded-full bg-gradient-to-r from-lime to-accent transition-all duration-500 ease-out ${
+                    done ? "w-full" : "w-0"
+                  }`}
+                />
+              </div>
+            )}
           </div>
-          {i < steps.length - 1 && (
-            <div className={`mx-3 h-px w-16 sm:w-24 transition-colors duration-300 ${current > s.n ? "bg-primary" : "bg-divider"}`} />
-          )}
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -122,6 +137,7 @@ function TipTapToolbar({ editor }: { editor: ReturnType<typeof useEditor> }) {
 
 export default function CreatePostPage() {
   const toast = useToast();
+  const session = useSession();
   const [step, setStep] = useState<Step>(1);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [headline, setHeadline] = useState("");
@@ -241,18 +257,19 @@ export default function CreatePostPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
+      <div className="animate-enter">
         <p className="text-xs font-semibold text-accent">Dashboard &rsaquo; Create Post</p>
         <h1 className="font-display text-2xl font-bold text-primary">Create New Post</h1>
         <p className="mt-1 text-sm text-muted">Follow the steps to publish a post to your community.</p>
       </div>
 
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
-      <div className="rounded-2xl bg-white p-6 shadow-card">
+      <div className="animate-enter rounded-2xl bg-white p-6 shadow-card" style={{ animationDelay: "60ms" }}>
         <StepIndicator current={step} />
       </div>
 
-      <div className="rounded-2xl bg-white p-6 shadow-card">
+      <div className="animate-enter rounded-2xl bg-white p-6 shadow-card" style={{ animationDelay: "120ms" }}>
+        <div key={step} className="animate-enter">
         {step === 1 && (
           <div className="flex flex-col gap-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -265,6 +282,12 @@ export default function CreatePostPage() {
                   You can publish to the open Feed, to specific communities, or to both at the same time.
                 </p>
               </div>
+              <div className="flex items-center gap-2.5">
+              {selectedIds.length > 0 && (
+                <span className="animate-fade rounded-full bg-lime px-3 py-1 text-[11px] font-bold text-primary">
+                  {selectedIds.length} selected
+                </span>
+              )}
               <button
                 type="button"
                 onClick={toggleAll}
@@ -274,16 +297,25 @@ export default function CreatePostPage() {
                 <span className={`h-2.5 w-2.5 rounded-[3px] ${allSelected ? "bg-lime" : "bg-white"}`} />
                 {allSelected ? "Deselect All" : "Select All"}
               </button>
+              </div>
             </div>
 
-            {communities.length === 0 && <p className="text-sm text-muted">Loading communities…</p>}
+            {communities.length === 0 && (
+              <div className="flex flex-col gap-4" aria-label="Loading communities">
+                <Skeleton className="h-16 w-full rounded-xl" />
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <Skeleton className="h-[117px] rounded-xl" />
+                  <Skeleton className="h-[117px] rounded-xl" />
+                </div>
+              </div>
+            )}
 
             {feed && (
               <button
                 type="button"
                 onClick={() => toggleTarget(feed.id)}
                 aria-pressed={selectedIds.includes(feed.id)}
-                className={`flex items-center gap-4 rounded-xl border px-4 py-3 text-left transition-colors ${
+                className={`flex items-center gap-4 rounded-xl border px-4 py-3 text-left transition-all duration-200 hover:-translate-y-px ${
                   selectedIds.includes(feed.id) ? "border-lime bg-lime/25" : "border-divider bg-lime/10 hover:border-lime"
                 }`}
               >
@@ -316,7 +348,7 @@ export default function CreatePostPage() {
                   Communities
                 </h3>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  {paidCommunities.map((c) => {
+                  {paidCommunities.map((c, i) => {
                     const selected = selectedIds.includes(c.id);
                     return (
                       <button
@@ -324,14 +356,14 @@ export default function CreatePostPage() {
                         type="button"
                         onClick={() => toggleTarget(c.id)}
                         aria-pressed={selected}
-                        className={`group relative flex h-[117px] items-end overflow-hidden rounded-xl text-left text-white transition-all duration-300 hover:shadow-card-hover ${
+                        className={`animate-enter group relative flex h-[117px] items-end overflow-hidden rounded-xl text-left text-white transition-all duration-300 hover:-translate-y-0.5 hover:shadow-card-hover ${
                           selected ? "ring-2 ring-accent ring-offset-2" : ""
                         }`}
-                        style={{ background: "linear-gradient(120deg, #0a5f57, #108b8b)" }}
+                        style={{ background: "linear-gradient(120deg, #0a5f57, #108b8b)", ...stagger(i) }}
                       >
                         {c.coverImageUrl && (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img src={c.coverImageUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
+                          <img src={c.coverImageUrl} alt="" className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
                         )}
                         <span className="absolute inset-0 bg-gradient-to-r from-[#0a5f57]/95 via-[#0a5f57]/70 to-transparent" />
                         <CheckBox checked={selected} className="absolute right-3 top-3 z-10" />
@@ -377,10 +409,7 @@ export default function CreatePostPage() {
         {step === 2 && (
           <div className="flex flex-col gap-4">
             {/* Admin profile row */}
-            {(() => {
-              const session = getSession();
-              return (
-                <div className="flex items-start gap-3">
+                            <div className="flex items-start gap-3">
                   <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary text-sm font-bold text-white">
                     {session?.avatarUrl
                       ? // eslint-disable-next-line @next/next/no-img-element
@@ -391,7 +420,9 @@ export default function CreatePostPage() {
                   <div className="flex flex-col gap-1.5">
                     <div className="flex items-center gap-2">
                       <p className="font-display text-sm font-bold leading-tight text-primary">{session?.userName ?? "Admin"}</p>
-                      <span className="rounded-full bg-accent px-2.5 py-0.5 text-[10px] font-bold text-white">Super Admin</span>
+                      <span className="rounded-full bg-accent px-2.5 py-0.5 text-[10px] font-bold text-white">
+                        {session?.isSuperAdmin ? "Super Admin" : "Admin"}
+                      </span>
                     </div>
                     <div className="flex flex-wrap items-center gap-1.5">
                       <span className="text-[11px] text-muted">Posting to :</span>
@@ -404,8 +435,6 @@ export default function CreatePostPage() {
                     </div>
                   </div>
                 </div>
-              );
-            })()}
 
             {/* Headline */}
             <div className="flex flex-col gap-1.5">
@@ -416,14 +445,14 @@ export default function CreatePostPage() {
                 placeholder="Add a headline e.g. TATASTEEL breakout confirmed, target ₹175"
                 value={headline}
                 onChange={(e) => setHeadline(e.target.value)}
-                className="w-full rounded-xl border border-divider bg-background px-4 py-3 text-sm text-primary placeholder:text-subtle focus:border-accent focus:outline-none transition-colors"
+                className="w-full rounded-xl border border-divider bg-background px-4 py-3 text-sm text-primary placeholder:text-subtle transition-all focus:border-accent focus:bg-white focus:outline-none focus:ring-4 focus:ring-accent/10"
               />
             </div>
 
             {/* Editor */}
             <div className="flex flex-col gap-1.5">
               <p className="text-sm font-bold text-primary">Post Body</p>
-              <div className="rounded-xl border border-divider bg-white px-3 pt-3 pb-2">
+              <div className="rounded-xl border border-divider bg-white px-3 pt-3 pb-2 transition-all focus-within:border-accent focus-within:ring-4 focus-within:ring-accent/10">
                 <TipTapToolbar editor={editor} />
                 <EditorContent
                   editor={editor}
@@ -438,9 +467,9 @@ export default function CreatePostPage() {
             {/* Tags */}
             <div>
               <p className="mb-1.5 text-sm font-bold text-primary">Add tags</p>
-              <div className="flex flex-wrap items-center gap-2 rounded-xl border border-divider bg-background px-3 py-2.5 focus-within:border-accent transition-colors">
+              <div className="flex flex-wrap items-center gap-2 rounded-xl border border-divider bg-background px-3 py-2.5 transition-all focus-within:border-accent focus-within:bg-white focus-within:ring-4 focus-within:ring-accent/10">
                 {tags.map((tag) => (
-                  <span key={tag} className="flex items-center gap-1 rounded-full bg-divider/60 px-2.5 py-0.5 text-xs font-semibold text-primary">
+                  <span key={tag} className="animate-fade flex items-center gap-1 rounded-full bg-divider/60 px-2.5 py-0.5 text-xs font-semibold text-primary">
                     {tag}
                     <button type="button" onClick={() => setTags((t) => t.filter((x) => x !== tag))} className="text-subtle hover:text-primary">
                       <X size={9} />
@@ -458,22 +487,19 @@ export default function CreatePostPage() {
               </div>
             </div>
 
-            {/* Footer */}
-            <div className="mt-2 flex items-center justify-center gap-3 border-t border-divider pt-5">
-              <button onClick={() => setStep(1)}
-                className="w-36 rounded-full border border-divider px-6 py-2.5 text-sm font-semibold text-muted transition-colors hover:border-subtle hover:text-primary">
-                Cancel
+            {/* Footer — same shape as step 3: back on the left, next on the right. */}
+            <div className="mt-2 flex flex-col gap-3 border-t border-divider pt-5 sm:flex-row sm:items-center sm:justify-between">
+              <button onClick={() => setStep(1)} className="flex items-center gap-1.5 text-sm font-semibold text-muted transition-colors hover:text-primary">
+                <ChevronLeft size={15} />
+                Back to Step 1
               </button>
               <button onClick={handleContinueToReview}
                 className="flex items-center justify-center gap-2 rounded-full px-6 py-2.5 text-sm font-bold text-white shadow-glow transition-transform hover:scale-105 active:scale-95"
                 style={{ background: "linear-gradient(to right, #c1f26e, #108b8b)" }}>
-                Continue to review →
+                Continue to review
+                <ArrowRight size={15} />
               </button>
             </div>
-
-            <button onClick={() => setStep(1)} className="flex items-center gap-1 self-start text-xs font-semibold text-muted transition-colors hover:text-primary">
-              <ChevronLeft size={13} /> Back to Step 1
-            </button>
           </div>
         )}
 
@@ -485,10 +511,7 @@ export default function CreatePostPage() {
                 Will be published to: <span className="font-semibold text-primary">{targets.map(targetName).join(", ")}</span>
               </p>
               <div className="mt-4">
-                {(() => {
-                  const session = getSession();
-                  return (
-                    <FeedPostCard
+                                    <FeedPostCard
                       communityName={targets[0] ? targetName(targets[0]) : undefined}
                       communityBadgeUrl={targets[0]?.badgeUrl}
                       authorName={session?.userName ?? "Admin"}
@@ -501,8 +524,6 @@ export default function CreatePostPage() {
                       videos={videos}
                       tags={tags}
                     />
-                  );
-                })()}
               </div>
             </div>
 
@@ -528,6 +549,7 @@ export default function CreatePostPage() {
             </div>
           </div>
         )}
+        </div>
       </div>
       </div>
     </div>
