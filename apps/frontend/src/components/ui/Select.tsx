@@ -27,6 +27,7 @@ export default function Select({
   ariaLabel,
   leading,
   triggerClassName = "",
+  className = "shrink-0",
   align = "left",
 }: {
   value: string;
@@ -37,6 +38,8 @@ export default function Select({
   leading?: ReactNode;
   /** Visual style of the trigger button (pill, border, colours). */
   triggerClassName?: string;
+  /** Classes for the wrapper — e.g. "w-full" to fill a form field. */
+  className?: string;
   align?: "left" | "right";
 }) {
   const id = useId();
@@ -138,7 +141,7 @@ export default function Select({
   const activeId = open && visible[highlight] ? `${id}-opt-${visible[highlight]!.value || "_"}` : undefined;
 
   return (
-    <div ref={rootRef} className="relative shrink-0">
+    <div ref={rootRef} className={`relative ${className}`}>
       <button
         ref={triggerRef}
         type="button"
