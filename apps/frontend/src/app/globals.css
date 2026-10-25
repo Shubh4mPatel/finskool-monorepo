@@ -24,6 +24,11 @@
   --animate-rise: rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
   --animate-draw: draw 1.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
   --animate-float: float 7s ease-in-out infinite;
+  /* Entrance animations release their end state (fill-mode `backwards`, not `both`), so a card that
+     has finished rising can still lift on hover — `rise` above holds its final transform forever. */
+  --animate-enter: enter 0.65s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  --animate-fade: fade 0.5s ease-out backwards;
+  --animate-shimmer: shimmer 1.8s linear infinite;
 }
 
 @keyframes rise {
@@ -43,6 +48,49 @@
   }
   to {
     stroke-dashoffset: 0;
+  }
+}
+
+@keyframes enter {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes wave {
+  0%,
+  60%,
+  100% {
+    transform: rotate(0deg);
+  }
+  10%,
+  30% {
+    transform: rotate(14deg);
+  }
+  20% {
+    transform: rotate(-8deg);
+  }
+  40% {
+    transform: rotate(-4deg);
+  }
+  50% {
+    transform: rotate(10deg);
+  }
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
   }
 }
 
@@ -146,6 +194,25 @@ body {
     animation: var(--animate-float);
   }
 
+  .animate-enter {
+    animation: var(--animate-enter);
+  }
+
+  .animate-fade {
+    animation: var(--animate-fade);
+  }
+
+  .animate-shimmer {
+    animation: var(--animate-shimmer);
+  }
+
+  /* Two waves shortly after the greeting appears, then still. */
+  .animate-wave {
+    display: inline-block;
+    transform-origin: 70% 70%;
+    animation: wave 1.8s ease-in-out 0.6s 2;
+  }
+
   .animate-toast-progress {
     animation: toast-progress var(--toast-duration, 4000ms) linear forwards;
   }
@@ -196,4 +263,17 @@ body {
 
 .phone-input-theme .PhoneInputInput::placeholder {
   color: #b0aba1;
+}
+
+/* Motion is decoration: honour the OS "reduce motion" setting by showing everything in its final state. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-rise,
+  .animate-enter,
+  .animate-fade,
+  .animate-shimmer,
+  .animate-wave,
+  .animate-draw,
+  .animate-float {
+    animation: none !important;
+  }
 }
