@@ -96,6 +96,13 @@ const markAllRepliedSchema = z.object({
   communityId: z.string().uuid().optional(),
 })
 
+// GET /admin/admins — the Roles & Admins tabs, search and community filter.
+const listAdminsQuerySchema = z.object({
+  role: z.enum(['all', 'super', 'scoped']).default('all'),
+  search: z.string().trim().max(100).optional(),
+  communityId: z.string().uuid().optional(),
+})
+
 const createAdminSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
   email: z.string().email('Invalid email address').toLowerCase(),
@@ -404,7 +411,9 @@ export class AdminController {
 
   listAdmins = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const result = await this.service.listAdmins(req.user!.id)
+      const parsed = listAdminsQuerySchema.safeParse(req.query)
+      if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Invalid query')
+      const result = await this.service.listAdmins(req.user!.id, parsed.data)
       res.json({ success: true, data: result })
     } catch (err) {
       next(err)

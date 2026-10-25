@@ -46,15 +46,15 @@ export interface TestAdmin {
 }
 
 export async function createAdmin(
-  opts: { isSuperAdmin?: boolean; communityIds?: string[] } = {},
+  opts: { isSuperAdmin?: boolean; communityIds?: string[]; name?: string; email?: string } = {},
 ): Promise<TestAdmin> {
   const n = next()
   const isSuperAdmin = opts.isSuperAdmin ?? true
   const admin = await prisma.user.create({
     data: {
-      name: `Admin ${n}`,
+      name: opts.name ?? `Admin ${n}`,
       phone: nextMobile(),
-      email: `admin${n}@finskool.test`,
+      email: opts.email ?? `admin${n}@finskool.test`,
       role: 'admin',
       isSuperAdmin,
     },

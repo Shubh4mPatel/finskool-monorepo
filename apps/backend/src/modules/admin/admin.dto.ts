@@ -138,6 +138,27 @@ export interface AdminUserDTO {
   communityAccess: { id: string; name: string; slug: string }[]
 }
 
+/** Which admins to list: every admin, only super admins, or only community-scoped admins. */
+export type AdminRoleFilter = 'all' | 'super' | 'scoped'
+
+export interface AdminListFilters {
+  role: AdminRoleFilter
+  /** Matches name or email, case-insensitively. */
+  search?: string | undefined
+  /** Admins who can manage this community — which includes every super admin. */
+  communityId?: string | undefined
+}
+
+export interface AdminListDTO {
+  /** The admins matching every filter, alphabetical. */
+  items: AdminUserDTO[]
+  /**
+   * Admins per role among those matching `search` and `communityId` (but ignoring `role`), so the
+   * tabs' numbers always agree with what each tab would list.
+   */
+  counts: { all: number; super: number; scoped: number }
+}
+
 export interface CreateAdminDTO {
   name: string
   email: string

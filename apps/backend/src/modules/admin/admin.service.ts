@@ -51,6 +51,8 @@ import type {
   CreateCommunityDTO,
   UpdateCommunityDTO,
   AdminUserDTO,
+  AdminListDTO,
+  AdminListFilters,
   CreateAdminDTO,
   UpdateAdminAccessDTO,
   MemberListFilters,
@@ -73,6 +75,9 @@ const XLSX = _require('xlsx') as {
   read(data: Buffer, opts: object): { SheetNames: string[]; Sheets: Record<string, unknown> }
   utils: { sheet_to_json<T>(ws: unknown, opts?: object): T[] }
 }
+
+// Prisma's `contains` passes % and _ straight into LIKE, so a search for "100%" would match everything.
+const escapeLike = (s: string): string => s.replace(/[\\%_]/g, '\\$&')
 
 function slugify(raw: string): string {
   return raw
@@ -1022,28 +1027,56 @@ export class AdminService {
     }
   }
 
-  async listAdmins(requestingAdminId: string): Promise<AdminUserDTO[]> {
+  async listAdmins(requestingAdminId: string, filters: AdminListFilters): Promise<AdminListDTO> {
     await assertSuperAdmin(this.db, requestingAdminId)
-    const admins = await this.db.user.findMany({
-      where: { role: 'admin', deletedAt: null },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        avatarUrl: true,
-        isSuperAdmin: true,
-        communityAccess: { select: { community: { select: { id: true, name: true, slug: true } } } },
-      },
-      orderBy: { name: 'asc' },
-    })
-    return admins.map(a => ({
-      id: a.id,
-      name: a.name,
-      email: a.email!, // admin accounts always have email — createAdmin requires it
-      avatarUrl: a.avatarUrl,
-      isSuperAdmin: a.isSuperAdmin,
-      communityAccess: a.communityAccess.map(ca => ca.community),
-    }))
+
+    // Everything except `role`: the tab counts are taken over this set, so each tab's number is
+    // exactly what clicking it would list.
+    const base: Prisma.UserWhereInput = {
+      role: 'admin',
+      deletedAt: null,
+      ...(filters.search
+        ? {
+            OR: [
+              { name: { contains: escapeLike(filters.search), mode: 'insensitive' } },
+              { email: { contains: escapeLike(filters.search), mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+      // A super admin can manage every community, so a community filter keeps them in.
+      ...(filters.communityId
+        ? { AND: [{ OR: [{ isSuperAdmin: true }, { communityAccess: { some: { communityId: filters.communityId } } }] }] }
+        : {}),
+    }
+
+    const [admins, superCount, scopedCount] = await Promise.all([
+      this.db.user.findMany({
+        where: { ...base, ...(filters.role === 'super' ? { isSuperAdmin: true } : filters.role === 'scoped' ? { isSuperAdmin: false } : {}) },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          avatarUrl: true,
+          isSuperAdmin: true,
+          communityAccess: { select: { community: { select: { id: true, name: true, slug: true } } } },
+        },
+        orderBy: { name: 'asc' },
+      }),
+      this.db.user.count({ where: { ...base, isSuperAdmin: true } }),
+      this.db.user.count({ where: { ...base, isSuperAdmin: false } }),
+    ])
+
+    return {
+      items: admins.map(a => ({
+        id: a.id,
+        name: a.name,
+        email: a.email!, // admin accounts always have email — createAdmin requires it
+        avatarUrl: a.avatarUrl,
+        isSuperAdmin: a.isSuperAdmin,
+        communityAccess: a.communityAccess.map(ca => ca.community),
+      })),
+      counts: { all: superCount + scopedCount, super: superCount, scoped: scopedCount },
+    }
   }
 
   async grantCommunityAccess(requestingAdminId: string, targetAdminId: string, communityId: string): Promise<void> {

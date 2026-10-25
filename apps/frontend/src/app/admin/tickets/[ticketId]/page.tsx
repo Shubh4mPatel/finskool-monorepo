@@ -151,8 +151,8 @@ export default function AdminTicketDetailPage() {
   useEffect(() => {
     if (!me?.isSuperAdmin) return;
     api
-      .get<AdminOption[]>("/api/v1/admin/admins")
-      .then(setAdmins)
+      .get<{ items: AdminOption[] }>("/api/v1/admin/admins")
+      .then((res) => setAdmins(res.items))
       .catch(() => {});
   }, [me?.isSuperAdmin]);
 
