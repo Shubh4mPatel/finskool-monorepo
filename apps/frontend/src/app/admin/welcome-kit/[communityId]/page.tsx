@@ -44,6 +44,7 @@ import {
   validateForm,
   type KitForm,
   type KitListItem,
+  type KitListResponse,
   type KitVideo,
   type NoticeRow,
   type PointerRow,
@@ -294,12 +295,12 @@ export default function WelcomeKitEditorPage() {
   useEffect(() => {
     let alive = true;
     Promise.all([
-      api.get<KitListItem[]>("/api/v1/admin/welcome-kits"),
+      api.get<KitListResponse>("/api/v1/admin/welcome-kits"),
       api.get<ServerKit | null>(`/api/v1/admin/communities/${communityId}/welcome-kit`),
     ])
       .then(([list, kit]) => {
         if (!alive) return;
-        setCommunity(list.find((c) => c.communityId === communityId) ?? null);
+        setCommunity(list.items.find((c) => c.communityId === communityId) ?? null);
         const loaded = formFromKit(kit);
         setForm(loaded);
         setSavedSnapshot(JSON.stringify(kitPayload(loaded)));

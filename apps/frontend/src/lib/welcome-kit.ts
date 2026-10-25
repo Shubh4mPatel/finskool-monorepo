@@ -53,6 +53,15 @@ export interface KitListItem {
   updatedAt: string | null;
 }
 
+/** `?status=` on GET /api/v1/admin/welcome-kits — filtered on the server. */
+export type KitListStatus = "all" | "ready" | "pending";
+
+export interface KitListResponse {
+  items: KitListItem[];
+  /** Totals across every community the admin can manage, whatever `status` was requested. */
+  counts: { all: number; ready: number; pending: number };
+}
+
 export const newId = (): string => crypto.randomUUID();
 
 export const emptyForm = (): KitForm => ({

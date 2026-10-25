@@ -20,11 +20,18 @@ const router = Router()
  *     tags: [Welcome Kit]
  *     summary: Paid communities the admin can manage a welcome kit for
  *     description: >
- *       Every live, paid (non-free) community the admin has access to, with whether it already has a kit.
+ *       Every live, paid (non-free) community the admin has access to, with whether it already has a kit,
+ *       optionally filtered by `status`. `counts` always covers all of them, whatever the filter.
  *       Super admins see all; other admins only their granted communities.
+ *     parameters:
+ *       - name: status
+ *         in: query
+ *         required: false
+ *         description: "`ready` = has a kit with content, `pending` = doesn't yet, `all` (default) = both."
+ *         schema: { type: string, enum: [all, ready, pending], default: all }
  *     responses:
  *       200:
- *         description: List of communities.
+ *         description: Communities matching the filter, plus totals per status.
  *         content:
  *           application/json:
  *             schema:
@@ -32,18 +39,29 @@ const router = Router()
  *               properties:
  *                 success: { type: boolean, example: true }
  *                 data:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       communityId: { type: string, format: uuid }
- *                       name: { type: string }
- *                       slug: { type: string }
- *                       type: { type: string, nullable: true, example: "Short Term Investment" }
- *                       coverImageUrl: { type: string, nullable: true }
- *                       badgeUrl: { type: string, nullable: true }
- *                       hasKit: { type: boolean }
- *                       updatedAt: { type: string, format: date-time, nullable: true }
+ *                   type: object
+ *                   properties:
+ *                     items:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           communityId: { type: string, format: uuid }
+ *                           name: { type: string }
+ *                           slug: { type: string }
+ *                           type: { type: string, nullable: true, example: "Short Term Investment" }
+ *                           coverImageUrl: { type: string, nullable: true }
+ *                           badgeUrl: { type: string, nullable: true }
+ *                           hasKit: { type: boolean }
+ *                           updatedAt: { type: string, format: date-time, nullable: true }
+ *                     counts:
+ *                       type: object
+ *                       properties:
+ *                         all: { type: integer, example: 5 }
+ *                         ready: { type: integer, example: 3 }
+ *                         pending: { type: integer, example: 2 }
+ *       422:
+ *         description: Unknown `status` value.
  */
 router.get('/welcome-kits', authenticate, admin, controller.list)
 

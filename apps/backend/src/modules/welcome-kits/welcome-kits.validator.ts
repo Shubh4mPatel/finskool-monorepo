@@ -43,3 +43,10 @@ export const upsertWelcomeKitSchema = z.object({
     .max(MAX_WHAT_YOU_GET)
     .default([]),
 })
+
+// GET /admin/welcome-kits?status= — "ready" = has a kit with content, "pending" = doesn't yet.
+export const KIT_LIST_STATUSES = ['all', 'ready', 'pending'] as const
+export const listWelcomeKitsQuerySchema = z.object({
+  status: z.enum(KIT_LIST_STATUSES).default('all'),
+})
+export type KitListStatus = (typeof KIT_LIST_STATUSES)[number]

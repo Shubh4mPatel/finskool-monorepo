@@ -8,29 +8,37 @@ import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import CommunityBadgeIcon from "@/components/CommunityBadgeIcon";
 import { EmptyState, Skeleton, stagger } from "@/components/admin/dashboard/Panel";
-import type { KitListItem } from "@/lib/welcome-kit";
+import type { KitListItem, KitListResponse, KitListStatus } from "@/lib/welcome-kit";
 import { timeAgo } from "@/lib/tickets";
 
-type Filter = "all" | "ready" | "missing";
 
 export default function WelcomeKitListPage() {
   const toast = useToast();
   const confirm = useConfirm();
-  const [items, setItems] = useState<KitListItem[] | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [filter, setFilter] = useState<Filter>("all");
+  const [filter, setFilter] = useState<KitListStatus>("all");
   // Captured once so render stays pure; "Updated 2 days ago" doesn't need to tick.
   const [now] = useState(() => Date.now());
 
+  // The server filters by tab and returns totals for every tab. The last response remembers which
+  // tab it answered, so switching tabs keeps the current cards up (dimmed) until the new ones land.
+  const [result, setResult] = useState<(KitListResponse & { status: KitListStatus }) | null>(null);
+  const [reloadTick, setReloadTick] = useState(0);
+
   useEffect(() => {
+    let cancelled = false;
     api
-      .get<KitListItem[]>("/api/v1/admin/welcome-kits")
-      .then(setItems)
+      .get<KitListResponse>(`/api/v1/admin/welcome-kits?status=${filter}`)
+      .then((data) => !cancelled && setResult({ ...data, status: filter }))
       .catch((err) => {
+        if (cancelled) return;
         toast.error(err instanceof ApiError ? err.message : "Failed to load communities");
-        setItems([]);
+        setResult({ items: [], counts: { all: 0, ready: 0, pending: 0 }, status: filter });
       });
-  }, [toast]);
+    return () => {
+      cancelled = true;
+    };
+  }, [filter, reloadTick, toast]);
 
   async function handleDelete(c: KitListItem) {
     const ok = await confirm({
@@ -49,7 +57,8 @@ export default function WelcomeKitListPage() {
     try {
       await api.delete(`/api/v1/admin/communities/${c.communityId}/welcome-kit`);
       toast.success(`Welcome kit for ${c.name} deleted.`);
-      setItems((prev) => prev?.map((x) => (x.communityId === c.communityId ? { ...x, hasKit: false, updatedAt: null } : x)) ?? prev);
+      // The community moves between tabs and every count changes — ask the server again.
+      setReloadTick((t) => t + 1);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Failed to delete the welcome kit");
     } finally {
@@ -57,17 +66,17 @@ export default function WelcomeKitListPage() {
     }
   }
 
-  const readyCount = items?.filter((c) => c.hasKit).length ?? 0;
-  const total = items?.length ?? 0;
-  const missingCount = total - readyCount;
+  const loading = result === null;
+  const refreshing = result !== null && result.status !== filter;
+  const items: KitListItem[] = result?.items ?? [];
+  const readyCount = result?.counts.ready ?? 0;
+  const total = result?.counts.all ?? 0;
   const percent = total > 0 ? Math.round((readyCount / total) * 100) : 0;
 
-  const visible = (items ?? []).filter((c) => (filter === "ready" ? c.hasKit : filter === "missing" ? !c.hasKit : true));
-
-  const tabs: { key: Filter; label: string; count: number }[] = [
+  const tabs: { key: KitListStatus; label: string; count: number }[] = [
     { key: "all", label: "All", count: total },
     { key: "ready", label: "Kit ready", count: readyCount },
-    { key: "missing", label: "Not set up", count: missingCount },
+    { key: "pending", label: "Not set up", count: result?.counts.pending ?? 0 },
   ];
 
   return (
@@ -80,7 +89,7 @@ export default function WelcomeKitListPage() {
         </div>
 
         {/* At-a-glance coverage across communities */}
-        {items !== null && total > 0 && (
+        {!loading && total > 0 && (
           <div className="animate-fade flex min-w-[240px] items-center gap-4 rounded-2xl bg-white px-4 py-3 shadow-card ring-1 ring-primary/[0.04]">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-lime to-[#a6dc4c] text-primary">
               <Gift size={18} />
@@ -110,7 +119,7 @@ export default function WelcomeKitListPage() {
             <p className="mt-0.5 text-xs text-muted">Open a community to create or edit its kit.</p>
           </div>
 
-          {items !== null && total > 0 && (
+          {!loading && total > 0 && (
             <div role="group" aria-label="Filter communities" className="flex rounded-full bg-background p-1">
               {tabs.map((t) => (
                 <button
@@ -137,19 +146,24 @@ export default function WelcomeKitListPage() {
         </div>
 
         <div className="p-6">
-          {items === null ? (
+          {loading ? (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {[0, 1, 2, 3, 4, 5].map((i) => <Skeleton key={i} className="h-44 rounded-2xl" />)}
             </div>
-          ) : items.length === 0 ? (
+          ) : total === 0 ? (
             <EmptyState icon={<Gift size={20} />}>There are no paid communities you can add a welcome kit to.</EmptyState>
-          ) : visible.length === 0 ? (
+          ) : items.length === 0 && !refreshing ? (
             <EmptyState icon={filter === "ready" ? <Gift size={20} /> : <CheckCircle2 size={20} />}>
               {filter === "ready" ? "No community has a welcome kit yet." : "Every community has a welcome kit. Nice work!"}
             </EmptyState>
           ) : (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              {visible.map((c, i) => {
+            <div
+              aria-busy={refreshing}
+              className={`grid grid-cols-1 gap-4 transition-opacity duration-300 sm:grid-cols-2 xl:grid-cols-3 ${
+                refreshing ? "pointer-events-none opacity-50" : ""
+              }`}
+            >
+              {items.map((c, i) => {
                 const deleting = deletingId === c.communityId;
                 const editHref = `/admin/welcome-kit/${c.communityId}`;
                 return (

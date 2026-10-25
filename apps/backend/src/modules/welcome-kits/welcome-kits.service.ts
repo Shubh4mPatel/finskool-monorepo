@@ -4,6 +4,7 @@ import { assertCommunityAccessFromToken } from '../../lib/community-access.js'
 import { parseVideoLink } from '../../lib/video-links.js'
 import { BadRequestError, ForbiddenError, NotFoundError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
+import type { KitListStatus } from './welcome-kits.validator.js'
 import type {
   CapitalAllocation,
   MobileWelcomeKitDTO,
@@ -11,6 +12,7 @@ import type {
   UpsertWelcomeKitDTO,
   WatchBeforeYouStart,
   WelcomeKitDTO,
+  WelcomeKitListDTO,
   WelcomeKitListItemDTO,
   WhatYouGetItem,
 } from './welcome-kits.dto.js'
@@ -55,7 +57,13 @@ export class WelcomeKitsService {
     return { id: community.id, name: community.name }
   }
 
-  async listForAdmin(accessibleCommunityIds: string[] | null): Promise<WelcomeKitListItemDTO[]> {
+  /**
+   * Paid communities the admin can manage a kit for, filtered by `status`. "Ready" uses the same
+   * hasContent() rule as everywhere else in this module — a kit row whose sections are all empty
+   * still counts as pending — so the filter runs here over the (small) per-admin community list
+   * rather than as a database condition that could drift from that rule.
+   */
+  async listForAdmin(accessibleCommunityIds: string[] | null, status: KitListStatus = 'all'): Promise<WelcomeKitListDTO> {
     const communities = await this.db.community.findMany({
       where: {
         deletedAt: null,
@@ -75,7 +83,7 @@ export class WelcomeKitsService {
       },
       orderBy: { name: 'asc' },
     })
-    return communities.map(c => {
+    const all: WelcomeKitListItemDTO[] = communities.map(c => {
       const kit = hasContent(c.kit) ? c.kit : null
       return {
         communityId: c.id,
@@ -88,6 +96,12 @@ export class WelcomeKitsService {
         updatedAt: kit?.updatedAt ?? null,
       }
     })
+    const ready = all.filter(c => c.hasKit)
+    const pending = all.filter(c => !c.hasKit)
+    return {
+      items: status === 'ready' ? ready : status === 'pending' ? pending : all,
+      counts: { all: all.length, ready: ready.length, pending: pending.length },
+    }
   }
 
   async getForAdmin(accessibleCommunityIds: string[] | null, communityId: string): Promise<WelcomeKitDTO | null> {

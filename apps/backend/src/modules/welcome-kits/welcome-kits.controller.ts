@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express'
 import type { WelcomeKitsService } from './welcome-kits.service.js'
-import { upsertWelcomeKitSchema } from './welcome-kits.validator.js'
+import { listWelcomeKitsQuerySchema, upsertWelcomeKitSchema } from './welcome-kits.validator.js'
 
 // Express 5 types params as string | string[] — route params are always strings
 function getParam(req: Request, name: string): string {
@@ -13,7 +13,8 @@ export class WelcomeKitsController {
 
   list = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const data = await this.service.listForAdmin(req.user!.accessibleCommunityIds)
+      const { status } = listWelcomeKitsQuerySchema.parse(req.query)
+      const data = await this.service.listForAdmin(req.user!.accessibleCommunityIds, status)
       res.json({ success: true, data })
     } catch (err) {
       next(err)

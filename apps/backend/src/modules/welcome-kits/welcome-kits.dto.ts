@@ -65,6 +65,13 @@ export interface WelcomeKitListItemDTO {
   updatedAt: Date | null
 }
 
+export interface WelcomeKitListDTO {
+  /** The communities matching the requested `status`, alphabetical. */
+  items: WelcomeKitListItemDTO[]
+  /** Totals across every community the admin can manage, whatever `status` was requested. */
+  counts: { all: number; ready: number; pending: number }
+}
+
 export interface MobileWelcomeKitVideoDTO {
   url: string
   videoId: string
