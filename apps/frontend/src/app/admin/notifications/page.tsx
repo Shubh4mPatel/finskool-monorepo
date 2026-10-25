@@ -20,6 +20,7 @@ const ROUTE_BY_TYPE: Record<string, string> = {
   "new-member-registered": "/admin/members",
   "import-complete": "/admin/import-csv",
   "new-member-reply": "/admin/feed",
+  reaction: "/admin/feed", // fallback when the post is gone
 };
 
 const LIST_URL = "/api/v1/notifications?page=1&pageSize=20";
@@ -96,7 +97,9 @@ export default function AdminNotificationsPage() {
         // best-effort optimistic update
       }
     }
-    const link = ROUTE_BY_TYPE[notification.type];
+    // Reactions and replies name their post: open the feed on just that post.
+    const postId = notification.data?.type === "post" ? notification.data.id : null;
+    const link = postId ? `/admin/feed?post=${postId}` : ROUTE_BY_TYPE[notification.type];
     if (link) {
       router.push(link);
     }

@@ -111,6 +111,7 @@ export class PostsService {
     userId: string
     page: number
     pageSize: number
+    postId?: string
     communityId?: string
     communityIds?: string[]
     date?: string
@@ -119,7 +120,7 @@ export class PostsService {
     // `accessibleCommunityIds` is the admin's grant (null = every community).
     groupReactions?: { accessibleCommunityIds: string[] | null }
   }): Promise<ListPostsResponseDTO> {
-    const { userId, page, pageSize, communityId, communityIds, date, order = 'desc', groupReactions } = params
+    const { userId, page, pageSize, postId, communityId, communityIds, date, order = 'desc', groupReactions } = params
     // Anchored to IST (+05:30), not UTC — the frontend displays/labels dates in
     // en-IN local time, so a "day" here must match what the user sees on a post
     // card, not the UTC calendar day the timestamp happens to fall on.
@@ -129,6 +130,8 @@ export class PostsService {
     const where = {
       status: 'published' as const,
       deletedAt: null,
+      // Combined with the community scoping below, so a scoped admin can't fetch a post outside their grant.
+      ...(postId !== undefined ? { id: postId } : {}),
       ...(communityId !== undefined
         ? { communityId }
         : communityIds !== undefined

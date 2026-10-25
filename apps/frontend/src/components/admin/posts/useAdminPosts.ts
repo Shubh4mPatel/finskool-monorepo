@@ -23,7 +23,8 @@ interface PostsResult {
  * list blanking to a skeleton on every filter change. Filters reset to page 1 in the same update,
  * so a change fetches once — not the old page and then page 1.
  */
-export function useAdminPosts() {
+/** `postId` narrows the list to that one post (the feed opened from a notification). */
+export function useAdminPosts(postId?: string) {
   const toast = useToast();
   const confirm = useConfirm();
 
@@ -40,8 +41,9 @@ export function useAdminPosts() {
     const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE), order: sortDesc ? "desc" : "asc" });
     if (communityId) params.set("communityId", communityId);
     if (date) params.set("date", toDateParam(date));
+    if (postId) params.set("postId", postId);
     return params.toString();
-  }, [page, communityId, date, sortDesc]);
+  }, [page, communityId, date, sortDesc, postId]);
 
   const [result, setResult] = useState<PostsResult | null>(null);
   const [reloadTick, setReloadTick] = useState(0);

@@ -17,6 +17,8 @@ const listQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(50).default(20),
   communityId: z.string().uuid().optional(),
+  // Just this one post — the admin feed's "view post" link from a notification.
+  postId: z.string().uuid().optional(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be YYYY-MM-DD').optional(),
   order: z.enum(['asc', 'desc']).default('desc'),
 })
@@ -32,13 +34,14 @@ export class PostsController {
 
   list = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const { page, pageSize, communityId, date, order } = listQuerySchema.parse(req.query)
+      const { page, pageSize, communityId, postId, date, order } = listQuerySchema.parse(req.query)
       const user = req.user!
 
       let listParams: {
         userId: string
         page: number
         pageSize: number
+        postId?: string
         communityId?: string
         communityIds?: string[]
         date?: string
@@ -79,6 +82,7 @@ export class PostsController {
         listParams = { userId: user.id, page, pageSize, communityIds: user.communityIds, order, ...dateParam }
       }
 
+      if (postId !== undefined) listParams.postId = postId
       if (user.role === 'admin') listParams.groupReactions = { accessibleCommunityIds: user.accessibleCommunityIds }
 
       const result = await this.service.listPosts(listParams)

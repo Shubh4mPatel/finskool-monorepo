@@ -16,6 +16,8 @@ export interface Notification {
   type: string;
   title: string;
   message: string;
+  // Routing info, e.g. { type: "post", id } — set for reaction and reply notifications.
+  data: Record<string, string> | null;
   isRead: boolean;
   createdAt: string;
   updatedAt: string;

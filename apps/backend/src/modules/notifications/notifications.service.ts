@@ -100,13 +100,47 @@ export class NotificationsService {
       this.db.notification.count({ where }),
     ])
 
+    const postIds = await this.postIdsFor(notifications)
+
     return {
-      notifications: notifications.map(toNotificationItem),
+      notifications: notifications.map(n => {
+        const postId = postIds.get(n.id)
+        return toNotificationItem(postId ? { ...n, data: { type: 'post', id: postId } } : n)
+      }),
       total,
       page,
       pageSize,
       totalPages: Math.max(1, Math.ceil(total / pageSize)),
     }
+  }
+
+  /**
+   * Reaction and reply notifications only store the reaction's / comment's id (their `sourceId`), so the
+   * post they are about is looked up here — which also covers rows from before this was done. Only rows
+   * with no routing `data` of their own are touched. A reaction or comment whose post was deleted drops out.
+   */
+  private async postIdsFor(rows: { id: string; type: string; sourceId: string; data: unknown }[]): Promise<Map<string, string>> {
+    const open = rows.filter(r => r.data === null)
+    const sourceIdsOf = (...types: string[]) => open.filter(r => types.includes(r.type)).map(r => r.sourceId)
+    const reactionIds = sourceIdsOf(NotificationType.Reaction)
+    const commentIds = sourceIdsOf(NotificationType.Thread, NotificationType.NewMemberReply)
+
+    const [reactions, comments] = await Promise.all([
+      reactionIds.length
+        ? this.db.reaction.findMany({ where: { id: { in: reactionIds } }, select: { id: true, postId: true } })
+        : [],
+      commentIds.length
+        ? this.db.comment.findMany({ where: { id: { in: commentIds } }, select: { id: true, postId: true } })
+        : [],
+    ])
+    const postOfSource = new Map([...reactions, ...comments].map(x => [x.id, x.postId]))
+
+    const byNotification = new Map<string, string>()
+    for (const r of open) {
+      const postId = postOfSource.get(r.sourceId)
+      if (postId) byNotification.set(r.id, postId)
+    }
+    return byNotification
   }
 
   async unreadCount(userId: string): Promise<number> {
