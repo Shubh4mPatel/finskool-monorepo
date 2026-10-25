@@ -118,21 +118,6 @@ function useCollapsed(): boolean {
 
 const badgeText = (n: number) => (n > 99 ? "99+" : String(n));
 
-function Brand({ collapsed }: { collapsed: boolean }) {
-  return (
-    <Link href="/admin/dashboard" className="flex min-w-0 items-center gap-3" aria-label="Finskool admin home">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src="/logo.svg" alt="" className="h-10 w-10 shrink-0" />
-      {!collapsed && (
-        <span className="min-w-0">
-          <span className="block font-display text-base font-bold leading-tight tracking-tight text-primary">Finskool</span>
-          <span className="block text-[11px] font-semibold text-muted">Admin console</span>
-        </span>
-      )}
-    </Link>
-  );
-}
-
 interface SidebarData {
   session: SessionInfo | null;
   badges: Record<BadgeKey, number | undefined>;
@@ -251,22 +236,40 @@ function SidebarContent({ data, onNav, collapsed = false, onToggleCollapsed }: {
   return (
     <div className="relative flex h-full flex-col overflow-hidden bg-white text-primary">
 
-      {/* Brand + collapse */}
-      <div className={`relative flex items-center gap-2 px-4 pb-4 pt-5 ${collapsed ? "flex-col" : "justify-between"}`}>
-        <Brand collapsed={collapsed} />
-        {onToggleCollapsed && (
-          <button
-            type="button"
-            onClick={onToggleCollapsed}
-            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-subtle transition-colors hover:bg-divider hover:text-primary ${
-              collapsed ? "mt-3" : ""
-            }`}
+      {/* Profile + collapse */}
+      <div className="relative px-3 pb-3 pt-4">
+        <div className={`flex items-center gap-2 rounded-2xl bg-background p-2.5 ${collapsed ? "flex-col" : ""}`}>
+          <Link
+            href="/admin/profile"
+            onClick={onNav}
+            title={collapsed ? `${displayName} · ${roleLabel}` : undefined}
+            className="flex min-w-0 flex-1 items-center gap-3 rounded-xl transition-opacity hover:opacity-90"
           >
-            {collapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
-          </button>
-        )}
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary text-sm font-bold text-white ring-2 ring-white">
+              {avatarUrl
+                // eslint-disable-next-line @next/next/no-img-element
+                ? <img src={avatarUrl} alt={displayName} className="h-full w-full object-cover" />
+                : displayInitials}
+            </span>
+            {!collapsed && (
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-bold text-primary">{displayName}</span>
+                <span className="mt-0.5 inline-block rounded-full bg-lime px-2 py-px text-[10px] font-bold text-primary">{roleLabel}</span>
+              </span>
+            )}
+          </Link>
+          {onToggleCollapsed && (
+            <button
+              type="button"
+              onClick={onToggleCollapsed}
+              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-subtle transition-colors hover:bg-white hover:text-primary"
+            >
+              {collapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="relative mx-4 h-px bg-divider" aria-hidden />
@@ -344,28 +347,9 @@ function SidebarContent({ data, onNav, collapsed = false, onToggleCollapsed }: {
         ))}
       </nav>
 
-      {/* Profile */}
-      <div className="relative border-t border-divider p-3">
-        <div className={`flex items-center gap-3 rounded-2xl bg-background p-2.5 ${collapsed ? "flex-col" : ""}`}>
-          <Link
-            href="/admin/profile"
-            onClick={onNav}
-            title={collapsed ? `${displayName} · ${roleLabel}` : undefined}
-            className="flex min-w-0 flex-1 items-center gap-3 rounded-xl transition-opacity hover:opacity-90"
-          >
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary text-sm font-bold text-white ring-2 ring-white">
-              {avatarUrl
-                // eslint-disable-next-line @next/next/no-img-element
-                ? <img src={avatarUrl} alt={displayName} className="h-full w-full object-cover" />
-                : displayInitials}
-            </span>
-            {!collapsed && (
-              <span className="min-w-0">
-                <span className="block truncate text-sm font-bold text-primary">{displayName}</span>
-                <span className="mt-0.5 inline-block rounded-full bg-lime px-2 py-px text-[10px] font-bold text-primary">{roleLabel}</span>
-              </span>
-            )}
-          </Link>
+      {/* Logout */}
+      <div className={`relative flex border-t border-divider p-3 ${collapsed ? "justify-center" : "justify-end"}`}>
+        <div className="flex w-fit items-center rounded-2xl bg-background p-2.5">
           <button
             type="button"
             onClick={() => { onNav?.(); handleLogout(); }}
