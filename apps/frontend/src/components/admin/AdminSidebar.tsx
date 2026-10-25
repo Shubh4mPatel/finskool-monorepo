@@ -348,18 +348,21 @@ function SidebarContent({ data, onNav, collapsed = false, onToggleCollapsed }: {
       </nav>
 
       {/* Logout */}
-      <div className={`relative flex border-t border-divider p-3 ${collapsed ? "justify-center" : "justify-start"}`}>
-        <div className="flex w-fit items-center rounded-2xl bg-background p-2.5">
-          <button
-            type="button"
-            onClick={() => { onNav?.(); handleLogout(); }}
-            aria-label="Log out"
-            title="Log out"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-subtle transition-colors hover:bg-white hover:text-primary"
-          >
+      <div className="relative border-t border-divider p-3">
+        <button
+          type="button"
+          onClick={() => { onNav?.(); handleLogout(); }}
+          aria-label="Log out"
+          title="Log out"
+          className={`group flex w-full items-center rounded-2xl bg-background p-2.5 text-subtle transition-colors hover:text-primary ${
+            collapsed ? "justify-center" : "gap-3"
+          }`}
+        >
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors group-hover:bg-white">
             <LogOut size={16} />
-          </button>
-        </div>
+          </span>
+          {!collapsed && <span className="text-sm font-semibold text-muted transition-colors group-hover:text-primary">Log out</span>}
+        </button>
       </div>
     </div>
   );
