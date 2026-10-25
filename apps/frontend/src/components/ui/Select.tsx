@@ -3,6 +3,14 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { Check, ChevronDown, Search } from "lucide-react";
 
+/** Trigger/button style for toolbar filters: a white pill, tinted teal while it is filtering the list. */
+export const pillClass = (active: boolean): string =>
+  `flex shrink-0 items-center gap-2 rounded-full border px-4 py-2.5 text-sm font-semibold transition-all ${
+    active
+      ? "border-accent/40 bg-accent/10 text-primary"
+      : "border-divider bg-white text-muted hover:border-subtle hover:text-primary"
+  }`;
+
 export interface SelectOption {
   value: string;
   label: string;
@@ -29,6 +37,7 @@ export default function Select({
   triggerClassName = "",
   className = "shrink-0",
   align = "left",
+  placeholder,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -40,6 +49,8 @@ export default function Select({
   triggerClassName?: string;
   /** Classes for the wrapper — e.g. "w-full" to fill a form field. */
   className?: string;
+  /** Shown (muted) while `value` matches no option, e.g. "Select community". */
+  placeholder?: string;
   align?: "left" | "right";
 }) {
   const id = useId();
@@ -52,7 +63,8 @@ export default function Select({
   const listRef = useRef<HTMLUListElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  const selected = options.find(o => o.value === value) ?? options[0];
+  const match = options.find(o => o.value === value);
+  const selected = match ?? (placeholder ? undefined : options[0]);
   const searchable = options.length > SEARCH_THRESHOLD;
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -155,7 +167,7 @@ export default function Select({
       >
         {leading}
         {selected?.icon && <span className="flex h-4 w-4 shrink-0 items-center justify-center">{selected.icon}</span>}
-        <span className="max-w-[12rem] truncate">{selected?.label}</span>
+        <span className={`max-w-[12rem] truncate ${selected ? "" : "font-normal text-subtle"}`}>{selected?.label ?? placeholder}</span>
         <ChevronDown
           size={14}
           aria-hidden

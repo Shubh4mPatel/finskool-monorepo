@@ -5,17 +5,9 @@ import { ArrowDownUp, Calendar, LayoutGrid, Search, X } from "lucide-react";
 import { DayPicker } from "react-day-picker";
 import "react-day-picker/style.css";
 import CommunityBadgeIcon from "@/components/CommunityBadgeIcon";
-import Select, { type SelectOption } from "@/components/ui/Select";
+import Select, { pillClass as controlClass, type SelectOption } from "@/components/ui/Select";
 import type { CommunityOption } from "./types";
 import { useEscape } from "./useEscape";
-
-// Secondary toolbar control: white pill; `active` tints it when it is filtering the list.
-const controlClass = (active: boolean) =>
-  `flex shrink-0 items-center gap-2 rounded-full border px-4 py-2.5 text-sm font-semibold transition-all ${
-    active
-      ? "border-accent/40 bg-accent/10 text-primary"
-      : "border-divider bg-white text-muted hover:border-subtle hover:text-primary"
-  }`;
 
 /** Search, community, date and sort for an admin post list — sticks to the top while scrolling. */
 export default function PostsToolbar({
