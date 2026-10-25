@@ -12,7 +12,6 @@ import {
   Pencil,
   LayoutGrid,
   List,
-  MessagesSquare,
   Users,
   Upload,
   TrendingUp,
@@ -34,7 +33,6 @@ const navItems = [
   { href: "/admin/welcome-kit", label: "Welcome Kit", icon: Gift },
   { href: "/admin/feed", label: "Feed", icon: LayoutGrid },
   { href: "/admin/all-posts", label: "All Posts", icon: List },
-  { href: "/admin/unresolved-threads", label: "Unreplied Threads", icon: MessagesSquare, badge: undefined as number | undefined },
   { href: "/admin/members", label: "Members", icon: Users },
   { href: "/admin/tickets", label: "Support Tickets", icon: LifeBuoy, badge: undefined as number | undefined },
   { href: "/admin/import-csv", label: "Import CSV", icon: Upload },
@@ -45,7 +43,6 @@ const navItems = [
 function SidebarContent({ onNav }: { onNav?: () => void }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [unresolvedThreads, setUnresolvedThreads] = useState<number | undefined>(undefined);
   const [unreadNotifications, setUnreadNotifications] = useState<number | undefined>(undefined);
   const [ticketsNeedingAttention, setTicketsNeedingAttention] = useState<number | undefined>(undefined);
   const [session, setSession] = useState<SessionInfo | null>(null);
@@ -55,21 +52,6 @@ function SidebarContent({ onNav }: { onNav?: () => void }) {
     const onUpdate = () => setSession(getSession());
     window.addEventListener("profile:updated", onUpdate);
     return () => window.removeEventListener("profile:updated", onUpdate);
-  }, []);
-
-  useEffect(() => {
-    const load = () =>
-      api
-        .get<{ stats: { unresolvedThreads: number } }>("/api/v1/admin/dashboard")
-        .then((data) => setUnresolvedThreads(data.stats.unresolvedThreads))
-        .catch(() => {});
-    load();
-    const interval = setInterval(load, 45_000);
-    window.addEventListener("admin-threads:updated", load);
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener("admin-threads:updated", load);
-    };
   }, []);
 
   useEffect(() => {
@@ -146,8 +128,7 @@ function SidebarContent({ onNav }: { onNav?: () => void }) {
         {navItems.filter((item) => !item.superAdminOnly || session?.isSuperAdmin).map((item) => {
           const isActive = pathname?.startsWith(item.href);
           const Icon = item.icon;
-          const badge = item.href === "/admin/unresolved-threads" ? unresolvedThreads
-            : item.href === "/admin/notifications" ? unreadNotifications
+          const badge = item.href === "/admin/notifications" ? unreadNotifications
             : item.href === "/admin/tickets" ? ticketsNeedingAttention
             : item.badge;
           return (

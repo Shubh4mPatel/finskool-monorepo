@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowRight, CheckCircle, Clock, MessagesSquare, Users } from "lucide-react";
+import { ArrowRight, CheckCircle, Clock, Users } from "lucide-react";
 // import { Plus } from "lucide-react"; // only used by the commented-out Recent Posts panel below
 import Link from "next/link";
 import { api } from "@/lib/api";
@@ -53,7 +53,6 @@ interface DashboardStats {
   activeSubscriptions: number;
   pendingRegistration: number;
   expiringThisWeek: number;
-  unresolvedThreads: number;
 }
 
 interface CommunityBreakdownItem {
@@ -150,14 +149,6 @@ export default function AdminDashboardPage() {
       iconBg: "bg-amber-100 text-amber-500",
       link: "/admin/members",
     },
-    {
-      value: data?.stats.unresolvedThreads ?? "—",
-      label: "Unresolved Threads",
-      sub: null,
-      icon: MessagesSquare,
-      iconBg: "bg-red-100 text-red-500",
-      link: "/admin/unresolved-threads",
-    },
   ];
 
   const barColors = ["bg-primary", "bg-accent", "bg-lime-500", "bg-amber-400"];
@@ -171,7 +162,7 @@ export default function AdminDashboardPage() {
       </div>
 
       {/* Stat cards */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
         {statCards.map((stat) => {
           const Icon = stat.icon;
           return (

@@ -23,7 +23,11 @@
     "docker:down": "docker-compose -f docker-compose.dev.yml down",
     "docker:logs": "docker-compose -f docker-compose.dev.yml logs -f",
     "docker:clean": "docker-compose -f docker-compose.dev.yml down -v",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:typecheck": "tsc -p tests/tsconfig.json",
+    "test:db:up": "docker compose -f docker-compose.test.yml up -d --wait",
+    "test:db:down": "docker compose -f docker-compose.test.yml down"
   },
   "keywords": [],
   "author": "",
@@ -65,11 +69,14 @@
     "@types/multer": "^2.1.0",
     "@types/node": "^25.5.2",
     "@types/nodemailer": "^8.0.1",
+    "@types/supertest": "^6.0.3",
     "@types/swagger-jsdoc": "^6.0.4",
     "@types/swagger-ui-express": "^4.1.8",
     "dotenv": "^17.4.2",
     "nodemon": "^3.1.14",
+    "supertest": "^7.3.1",
     "tsx": "^4.22.1",
-    "typescript": "^6.0.2"
+    "typescript": "^6.0.2",
+    "vitest": "^3.2.7"
   }
 }

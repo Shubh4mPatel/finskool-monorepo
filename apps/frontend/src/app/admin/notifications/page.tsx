@@ -18,7 +18,7 @@ const ROUTE_BY_TYPE: Record<string, string> = {
   thread: "/admin/feed",
   "new-member-registered": "/admin/members",
   "import-complete": "/admin/import-csv",
-  "new-member-reply": "/admin/unresolved-threads",
+  "new-member-reply": "/admin/feed",
 };
 
 export default function AdminNotificationsPage() {

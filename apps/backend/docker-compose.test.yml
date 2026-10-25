@@ -1,0 +1,24 @@
+# Throwaway Postgres for the integration test suite (npm test). Data lives on
+# tmpfs, so every `down`/`up` starts from an empty database; the suite applies
+# migrations itself (tests/setup/global-setup.ts) and TRUNCATEs between tests.
+#
+#   npm run test:db:up && npm test
+services:
+  postgres-test:
+    image: postgres:16-alpine
+    container_name: finskool-test-postgres
+    ports:
+      - "55433:5432"
+    environment:
+      POSTGRES_DB: finskool_test
+      POSTGRES_USER: finskool
+      POSTGRES_PASSWORD: finskool
+      # Match the dev/prod database's collation (docker-compose.dev.yml).
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U finskool -d finskool_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
