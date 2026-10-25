@@ -1,7 +1,7 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'
 
 // 401s on these endpoints mean bad credentials, not an expired session — never worth a refresh retry
-const NO_REFRESH_RETRY = ['/api/v1/auth/login', '/api/v1/auth/register', '/api/v1/auth/refresh']
+const NO_REFRESH_RETRY = ['/api/v1/auth/login', '/api/v1/auth/refresh']
 
 export class ApiError extends Error {
   constructor(

@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'
 
+// This site is the admin console; members use the mobile app.
 // Routes that require authentication
-const PROTECTED = ['/feed', '/announcements', '/profile', '/recommendations', '/replies', '/stock-tracker', '/admin']
+const PROTECTED = ['/admin']
 // Routes only for unauthenticated users (redirect away if already logged in)
-const AUTH_ONLY = ['/login', '/signup']
+const AUTH_ONLY = ['/login']
 
 function decodeJwtPayload(
   token: string,
@@ -78,23 +79,28 @@ export async function middleware(request: NextRequest) {
     return response
   }
 
-  // --- Auth-only routes: only unauthenticated users may see /login and /signup ---
+  // A member's session (from before the site went admin-only) is dropped, not refreshed: clear the
+  // cookies and show them the login page's "use the mobile app" notice. Staying on /login rather than
+  // redirecting there again is what keeps this from looping.
+  if (tokenValid && activePayload?.role !== 'admin') {
+    const response = isAuthOnly
+      ? NextResponse.next()
+      : NextResponse.redirect(new URL('/login?error=admin-only', request.url))
+    response.cookies.delete('access_token')
+    response.cookies.delete('refresh_token')
+    return response
+  }
+
+  // --- Auth-only routes: only unauthenticated users may see /login ---
   if (isAuthOnly) {
     if (tokenValid) {
-      const role = activePayload?.role
-      return withRefreshedCookies(
-        NextResponse.redirect(new URL(role === 'admin' ? '/admin/dashboard' : '/feed', request.url)),
-      )
+      return withRefreshedCookies(NextResponse.redirect(new URL('/admin/dashboard', request.url)))
     }
     return NextResponse.next()
   }
 
   // --- Protected route ---
   if (tokenValid) {
-    const role = activePayload?.role
-    if (pathname.startsWith('/admin') && role !== 'admin') {  // admin-only check
-      return NextResponse.redirect(new URL('/', request.url))
-    }
     // Roles & Admins management is super-admin only — accessibleCommunityIds is
     // null exclusively for super admins (scoped admins get an explicit array).
     if (pathname.startsWith('/admin/roles-admins') && activePayload?.accessibleCommunityIds !== null) {
@@ -110,15 +116,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: [
-    '/feed/:path*',
-    '/announcements/:path*',
-    '/profile/:path*',
-    '/recommendations/:path*',
-    '/replies/:path*',
-    '/stock-tracker/:path*',
-    '/admin/:path*',
-    '/login',
-    '/signup',
-  ],
+  matcher: ['/admin/:path*', '/login'],
 }

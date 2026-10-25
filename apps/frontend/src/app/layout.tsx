@@ -19,7 +19,7 @@ const poppins = Poppins({
 
 export const metadata: Metadata = {
   title: "Finskool CRM",
-  description: "Finskool member dashboard",
+  description: "Finskool admin console",
   icons: { icon: "/logo.svg", apple: "/logo.svg" },
 };
 

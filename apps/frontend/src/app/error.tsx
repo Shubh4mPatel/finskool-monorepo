@@ -36,7 +36,7 @@ export default function GlobalError({
             Try Again
           </button>
           <Link
-            href="/feed"
+            href="/admin/dashboard"
             className="rounded-full bg-gradient-to-r from-lime to-accent px-6 py-2.5 text-sm font-bold text-white shadow-glow transition-transform duration-300 hover:scale-105 active:scale-95"
           >
             Go to Home

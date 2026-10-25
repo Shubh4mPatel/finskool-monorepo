@@ -46,7 +46,7 @@ export interface TestAdmin {
 }
 
 export async function createAdmin(
-  opts: { isSuperAdmin?: boolean; communityIds?: string[]; name?: string; email?: string } = {},
+  opts: { isSuperAdmin?: boolean; communityIds?: string[]; name?: string; email?: string; password?: string } = {},
 ): Promise<TestAdmin> {
   const n = next()
   const isSuperAdmin = opts.isSuperAdmin ?? true
@@ -55,6 +55,7 @@ export async function createAdmin(
       name: opts.name ?? `Admin ${n}`,
       phone: nextMobile(),
       email: opts.email ?? `admin${n}@finskool.test`,
+      passwordHash: opts.password ? await bcrypt.hash(opts.password, TEST_BCRYPT_ROUNDS) : null,
       role: 'admin',
       isSuperAdmin,
     },

@@ -1,9 +1,9 @@
 import type { Request, Response, NextFunction, CookieOptions } from 'express'
 import { z } from 'zod'
 import type { AuthService } from './auth.service.js'
-import { registerSchema, loginSchema, updateEmailSchema, updateNameSchema, changePasswordSchema, updateNotificationsSchema, updateAvatarSchema } from './auth.validator.js'
+import { loginSchema, updateEmailSchema, updateNameSchema, changePasswordSchema, updateNotificationsSchema, updateAvatarSchema } from './auth.validator.js'
 import { env } from '../../config/env.js'
-import { UnauthorizedError } from '../../shared/errors/index.js'
+import { ForbiddenError, UnauthorizedError } from '../../shared/errors/index.js'
 
 const selectCommunitySchema = z.object({
   communityId: z.string().uuid('Invalid community ID'),
@@ -38,15 +38,11 @@ function clearAuthCookies(res: Response): void {
 export class AuthController {
   constructor(private readonly service: AuthService) {}
 
-  register = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-    try {
-      const data = registerSchema.parse(req.body)
-      const { accessToken, refreshToken, user, communities } = await this.service.register(data)
-      setAuthCookies(res, accessToken, refreshToken)
-      res.status(201).json({ success: true, data: { user, communities } })
-    } catch (err) {
-      next(err)
-    }
+  // Closed: the website is admin-only, and members register in the mobile app, where a WhatsApp OTP proves
+  // the phone is theirs. This web path never asked for one, so anyone who knew a pending member's number
+  // could have set a password on their account.
+  register = async (_req: Request, _res: Response, next: NextFunction): Promise<void> => {
+    next(new ForbiddenError('Sign-up is only available in the Finskool mobile app.', 'MOBILE_ONLY'))
   }
 
   login = async (req: Request, res: Response, next: NextFunction): Promise<void> => {

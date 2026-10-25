@@ -58,6 +58,10 @@ type DbUser = {
   postNotificationsEnabled: boolean;
 };
 
+// The website is the admin console. Members use the Finskool mobile app (its own login, with its own
+// session), so a member signing in here is told where to go rather than being let in.
+export const ADMIN_ONLY_MESSAGE = "This website is for admins only. Please log in from the Finskool mobile app.";
+
 export class AuthService {
   constructor(
     private readonly db: PrismaClient,
@@ -203,7 +207,7 @@ export class AuthService {
     }
     if (!user.passwordHash) {
       throw new UnauthorizedError(
-        "You have not registered yet. Please sign up first to set your password.",
+        "You have not registered yet. Please register in the Finskool mobile app.",
         "NOT_REGISTERED",
       );
     }
@@ -214,12 +218,8 @@ export class AuthService {
       throw new UnauthorizedError("Invalid email or password");
     }
 
-    if (user.role !== "admin" && !(await this.hasActiveSubscription(user.id))) {
-      throw new UnauthorizedError(
-        "Your subscription has expired. Please contact your admin to renew.",
-        "SUBSCRIPTION_EXPIRED",
-      );
-    }
+    // Checked after the password so a wrong password never reveals that an email belongs to a member.
+    if (user.role !== "admin") throw new ForbiddenError(ADMIN_ONLY_MESSAGE, "ADMIN_ONLY");
 
     logger.info({ userId: user.id }, "auth.login: success");
     return this.issueTokens(user);
@@ -252,12 +252,8 @@ export class AuthService {
       );
     }
 
-    if (user.role !== "admin" && !(await this.hasActiveSubscription(user.id))) {
-      throw new UnauthorizedError(
-        "Your subscription has expired. Please contact your admin to renew.",
-        "SUBSCRIPTION_EXPIRED",
-      );
-    }
+    // Web sessions issued to members before the site became admin-only stop here.
+    if (user.role !== "admin") throw new UnauthorizedError(ADMIN_ONLY_MESSAGE, "ADMIN_ONLY");
 
     const communities = await this.fetchUserCommunities(user.id);
     const communityIds = communities.map((c) => c.id);
@@ -377,13 +373,6 @@ export class AuthService {
       const { _count, ...community } = s.community;
       return { ...community, memberCount: _count.subscriptions };
     });
-  }
-
-  private async hasActiveSubscription(userId: string): Promise<boolean> {
-    const count = await this.db.subscription.count({
-      where: { userId, isActive: true, validUntil: { gte: startOfToday() } },
-    });
-    return count > 0;
   }
 
   private signToken(payload: JwtPayload, expiresIn: string): string {
