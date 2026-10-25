@@ -1,7 +1,5 @@
 "use client";
 
-import Link from "next/link";
-import { CalendarDays, Plus, Upload } from "lucide-react";
 import { ExpiringSoon } from "@/components/admin/dashboard/ExpiringSoon";
 import { KpiCards } from "@/components/admin/dashboard/KpiCards";
 import { NewRegistrations } from "@/components/admin/dashboard/NewRegistrations";
@@ -15,12 +13,6 @@ import { useSession } from "@/lib/session";
 
 function greetingFor(hour: number): string {
   return hour < 12 ? "Good Morning" : hour < 17 ? "Good Afternoon" : "Good Evening";
-}
-
-function formatToday(d: Date): string {
-  const weekday = d.toLocaleDateString("en-US", { weekday: "long" });
-  const date = d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-  return `${weekday}, ${date}`;
 }
 
 export default function AdminDashboardPage() {
@@ -37,29 +29,6 @@ export default function AdminDashboardPage() {
             {greetingFor(today.getHours())}, {adminName} <span className="animate-wave">👋</span>
           </h1>
           <p className="mt-1 text-sm text-muted">Here is what is happening across communities, services and tickets.</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2.5">
-          <span
-            className="hidden items-center gap-2 rounded-xl bg-white px-3.5 py-2 text-xs font-semibold text-primary shadow-card ring-1 ring-primary/[0.04] sm:inline-flex"
-            suppressHydrationWarning
-          >
-            <CalendarDays size={14} className="text-accent" aria-hidden />
-            {formatToday(today)}
-          </span>
-          <Link
-            href="/admin/import-csv"
-            className="inline-flex items-center gap-2 rounded-xl bg-white px-3.5 py-2 text-xs font-bold text-primary shadow-card ring-1 ring-primary/[0.06] transition-all hover:-translate-y-px hover:shadow-card-hover"
-          >
-            <Upload size={14} aria-hidden />
-            Import members
-          </Link>
-          <Link
-            href="/admin/create-post"
-            className="inline-flex items-center gap-2 rounded-xl bg-primary px-3.5 py-2 text-xs font-bold text-white shadow-[0_8px_20px_-10px_rgba(21,61,58,0.7)] transition-all hover:-translate-y-px hover:bg-[#1c4c48]"
-          >
-            <Plus size={14} className="text-lime" aria-hidden />
-            Create post
-          </Link>
         </div>
       </header>
 
