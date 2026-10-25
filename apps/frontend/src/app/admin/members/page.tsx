@@ -26,6 +26,7 @@ import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import Select, { pillClass } from "@/components/ui/Select";
+import DatePicker from "@/components/ui/DatePicker";
 import { CountUp } from "@/components/admin/dashboard/CountUp";
 import { EmptyState, Skeleton, stagger, TH } from "@/components/admin/dashboard/Panel";
 import { TintAvatar } from "@/components/admin/dashboard/TintAvatar";
@@ -35,6 +36,7 @@ import ExtendModal from "@/components/admin/members/ExtendModal";
 import SuspendModal from "@/components/admin/members/SuspendModal";
 import { communityOptions, type MemberCommunity } from "@/components/admin/members/communities";
 import { StatusPill } from "@/components/admin/members/memberUi";
+import { paidOnPresets, validTillFilterPresets } from "@/components/admin/members/datePresets";
 import {
   type MemberSubscription,
   type MemberItem,
@@ -152,31 +154,6 @@ function StatTile({
         <span className="mt-1.5 block text-sm font-medium text-muted">{label}</span>
       </span>
     </button>
-  );
-}
-
-function DatePill({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
-  return (
-    <div className={pillClass(!!value)}>
-      <span className="text-xs font-bold">{label}</span>
-      <input
-        type="date"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        aria-label={label}
-        className="bg-transparent text-sm font-semibold text-primary focus:outline-none"
-      />
-      {value && (
-        <button
-          type="button"
-          onClick={() => onChange("")}
-          aria-label={`Clear ${label}`}
-          className="flex h-5 w-5 items-center justify-center rounded-full text-muted transition-colors hover:bg-white hover:text-primary"
-        >
-          <X size={12} />
-        </button>
-      )}
-    </div>
   );
 }
 
@@ -487,15 +464,25 @@ export default function MembersPage() {
     ...communityOptions(communities),
   ];
 
-  /** The Extend / Edit / Suspend / Remove buttons for one row, shared by the table and the mobile cards. */
-  const rowActions = (m: MemberItem, sub: MemberSubscription | null) => (
+  /**
+   * The Extend / Edit / Suspend / Remove buttons for one row, shared by the table and the mobile cards.
+   * In the table every button is a bare icon to save width; the cards have room, so Extend gets its label.
+   */
+  const rowActions = (m: MemberItem, sub: MemberSubscription | null, labelled = false) => (
     <div className="flex items-center gap-1">
       <button
         onClick={() => sub && setModal({ type: "extend", member: { ...m, subscription: sub }, subscription: sub })}
         disabled={!sub}
-        className="flex items-center gap-1 rounded-full border border-accent/60 px-3 py-1.5 text-xs font-bold text-accent transition-colors hover:bg-accent/5 disabled:cursor-not-allowed disabled:opacity-40"
+        title={sub ? `Extend ${sub.communityName} subscription` : "No subscription to extend"}
+        aria-label={sub ? `Extend ${m.name}'s ${sub.communityName} subscription` : `${m.name} has no subscription to extend`}
+        className={
+          labelled
+            ? "flex items-center gap-1.5 rounded-full border border-accent/60 px-3 py-1.5 text-xs font-bold text-accent transition-colors hover:bg-accent/5 disabled:cursor-not-allowed disabled:opacity-40"
+            : `${iconBtn} text-accent hover:bg-accent/10`
+        }
       >
-        <CalendarClock size={12} /> Extend
+        <CalendarClock size={labelled ? 12 : 15} />
+        {labelled && "Extend"}
       </button>
       <button onClick={() => setModal({ type: "edit", member: m })} title="Edit member" aria-label={`Edit ${m.name}`} className={`${iconBtn} hover:bg-divider/60 hover:text-accent`}>
         <Pencil size={14} />
@@ -697,8 +684,8 @@ export default function MembersPage() {
               options={[allOption("All sources"), { value: "admin", label: SOURCE_LABELS.admin }, { value: "self", label: SOURCE_LABELS.self }]}
               triggerClassName={`relative ${pillClass(!!filterSource)} focus:outline-none focus-visible:ring-4 focus-visible:ring-accent/15`}
             />
-            <DatePill label="Valid till" value={validDate} onChange={setFilter(setValidDate)} />
-            <DatePill label="Paid on" value={paidDate} onChange={setFilter(setPaidDate)} />
+            <DatePicker variant="pill" label="Valid till" value={validDate} onChange={setFilter(setValidDate)} presets={validTillFilterPresets()} />
+            <DatePicker variant="pill" label="Paid on" value={paidDate} onChange={setFilter(setPaidDate)} presets={paidOnPresets()} />
             <button
               type="button"
               aria-pressed={expiringSoon}
@@ -752,7 +739,7 @@ export default function MembersPage() {
                     <div><p className="text-xs text-subtle">Community</p>{communityCell(sub)}</div>
                     <div><p className="text-xs text-subtle">Added</p><p className="text-primary">{formatDate(m.createdAt)}</p></div>
                   </div>
-                  <div className="mt-3 border-t border-divider pt-3">{rowActions(m, sub)}</div>
+                  <div className="mt-3 border-t border-divider pt-3">{rowActions(m, sub, true)}</div>
                 </div>
               ))}
             </div>

@@ -49,11 +49,4 @@ export function formatTimestamp(iso: string | null): string {
   );
 }
 
-// Formats using the date's own calendar fields (not toISOString, which shifts
-// to UTC and can land on the wrong day depending on the browser's timezone).
-export function toDateParam(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
+export { toDateParam } from "@/lib/dates";

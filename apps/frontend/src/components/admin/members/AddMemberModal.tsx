@@ -9,7 +9,9 @@ import { useConfirm } from "@/components/ui/ConfirmDialog";
 import PhoneInput from "@/components/ui/PhoneInput";
 import Modal from "@/components/ui/Modal";
 import Select from "@/components/ui/Select";
+import DatePicker from "@/components/ui/DatePicker";
 import { communityOptions, type MemberCommunity } from "./communities";
+import { durationPresets } from "./datePresets";
 import { FormField, inputCls, primaryBtn, secondaryBtn } from "./memberUi";
 
 const EMPTY_MEMBER = { name: "", phone: "", email: "", communityId: "", payment: "", validUntil: "" };
@@ -165,9 +167,17 @@ export default function AddMemberModal({
             className={inputCls(errors.payment)} />
         </FormField>
         <FormField label="Valid Till" error={errors.validUntil}>
-          <input type="date" value={member.validUntil}
-            onChange={(e) => changeField("validUntil", e.target.value)} onBlur={() => blurField("validUntil")}
-            className={inputCls(errors.validUntil)} />
+          <DatePicker
+            value={member.validUntil}
+            ariaLabel="Valid till"
+            presets={durationPresets()}
+            triggerClassName={inputCls(errors.validUntil)}
+            onChange={(v) => {
+              setMember((m) => ({ ...m, validUntil: v }));
+              setTouched((t) => ({ ...t, validUntil: true }));
+              setErrors((e) => ({ ...e, validUntil: v ? undefined : "Valid till date is required" }));
+            }}
+          />
         </FormField>
       </div>
       <p className="rounded-xl bg-background px-3.5 py-2.5 text-xs text-muted">

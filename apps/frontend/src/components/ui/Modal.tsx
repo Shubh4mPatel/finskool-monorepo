@@ -25,7 +25,7 @@ export default function Modal({
   iconClass?: string;
   onClose: () => void;
   busy?: boolean;
-  size?: "sm" | "md";
+  size?: "sm" | "md" | "lg";
   children: ReactNode;
   footer: ReactNode;
 }) {
@@ -40,7 +40,7 @@ export default function Modal({
         aria-modal="true"
         aria-labelledby={titleId}
         className={`animate-enter relative z-10 flex max-h-[92vh] w-full flex-col overflow-hidden rounded-2xl bg-white shadow-card-hover ${
-          size === "sm" ? "max-w-sm" : "max-w-md"
+          size === "sm" ? "max-w-sm" : size === "lg" ? "max-w-2xl" : "max-w-md"
         }`}
       >
         <div className="flex items-start gap-3 border-b border-divider px-6 py-4">

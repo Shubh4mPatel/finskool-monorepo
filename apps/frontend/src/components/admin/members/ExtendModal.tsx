@@ -5,7 +5,10 @@ import { CalendarClock } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 import Modal from "@/components/ui/Modal";
+import DatePicker from "@/components/ui/DatePicker";
+import { addDays, parseDateParam, startOfToday } from "@/lib/dates";
 import { formatDate, type MemberItem, type MemberSubscription } from "@/lib/memberFormat";
+import { durationPresets } from "./datePresets";
 import { FormField, inputCls, primaryBtn, secondaryBtn } from "./memberUi";
 
 type Errors = { payment?: string; extendDate?: string };
@@ -35,6 +38,10 @@ export default function ExtendModal({
   const [payment, setPayment] = useState(String(subscription.payment));
   const [errors, setErrors] = useState<Errors>({});
   const [extending, setExtending] = useState(false);
+  // Shortcuts count from whichever is later — an already-lapsed subscription restarts from today.
+  const currentEnd = parseDateParam(subscription.validUntil);
+  const today = startOfToday();
+  const extendFrom = currentEnd && currentEnd > today ? currentEnd : today;
 
   async function handleExtend() {
     const errs = validate(payment, date);
@@ -87,7 +94,15 @@ export default function ExtendModal({
         <input type="number" placeholder="4000" value={payment} onChange={(e) => setPayment(e.target.value)} className={inputCls(errors.payment)} />
       </FormField>
       <FormField label="Extend Date" error={errors.extendDate}>
-        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inputCls(errors.extendDate)} autoFocus />
+        <DatePicker
+          value={date}
+          onChange={setDate}
+          ariaLabel="Extend date"
+          minDate={addDays(startOfToday(), 1)}
+          presets={durationPresets(extendFrom)}
+          triggerClassName={inputCls(errors.extendDate)}
+          autoFocus
+        />
       </FormField>
     </Modal>
   );

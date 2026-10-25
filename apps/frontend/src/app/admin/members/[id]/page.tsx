@@ -9,6 +9,9 @@ import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import PhoneInput from "@/components/ui/PhoneInput";
 import PasswordInput from "@/components/auth/PasswordInput";
+import DatePicker from "@/components/ui/DatePicker";
+import { durationPresets } from "@/components/admin/members/datePresets";
+import { addDays, parseDateParam, startOfToday } from "@/lib/dates";
 import { type MemberItem, getInitials, formatDate, SOURCE_LABELS } from "@/lib/memberFormat";
 
 type FormErrors = Partial<Record<"name" | "phone" | "email", string>>;
@@ -16,6 +19,13 @@ type FormErrors = Partial<Record<"name" | "phone" | "email", string>>;
 function daysRemaining(validUntil: string): number {
   const ms = new Date(validUntil).getTime() - new Date().setHours(0, 0, 0, 0);
   return Math.max(0, Math.ceil(ms / (1000 * 60 * 60 * 24)));
+}
+
+/** Where "+1 month" etc. count from: the later of today and the current expiry. */
+function extendFrom(validUntil: string): Date {
+  const end = parseDateParam(validUntil);
+  const today = startOfToday();
+  return end && end > today ? end : today;
 }
 
 export default function MemberDetailPage() {
@@ -491,12 +501,17 @@ export default function MemberDetailPage() {
               </div>
               <div>
                 <label className="text-sm font-semibold text-primary">Extend Date</label>
-                <input
-                  type="date"
-                  value={extendDate}
-                  onChange={(e) => setExtendDate(e.target.value)}
-                  className="mt-2 w-full rounded-xl border border-divider bg-white px-4 py-3 text-sm text-primary transition-colors focus:outline-none focus:ring-2 focus:ring-accent/40"
-                />
+                <div className="mt-2">
+                  <DatePicker
+                    value={extendDate}
+                    onChange={setExtendDate}
+                    ariaLabel="Extend date"
+                    minDate={addDays(startOfToday(), 1)}
+                    presets={durationPresets(extendFrom(member.subscription.validUntil))}
+                    triggerClassName="w-full rounded-xl border border-divider bg-white px-4 py-3 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-accent/40"
+                    autoFocus
+                  />
+                </div>
                 {extendErrors.extendDate && <p className="mt-1 text-xs text-red-500">{extendErrors.extendDate}</p>}
               </div>
             </div>

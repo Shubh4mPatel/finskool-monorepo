@@ -16,6 +16,7 @@ import { toVideoInput, type PostVideo } from "@/lib/post-videos";
 import FeedPostCard from "@/components/feed/FeedPostCard";
 import CommunityBadgeIcon from "@/components/CommunityBadgeIcon";
 import { Skeleton, stagger } from "@/components/admin/dashboard/Panel";
+import Stepper from "@/components/admin/Stepper";
 
 type Step = 1 | 2 | 3;
 
@@ -56,50 +57,6 @@ const steps = [
 ];
 
 const defaultTags: string[] = [];
-
-function StepIndicator({ current }: { current: Step }) {
-  return (
-    <div className="flex items-start justify-center">
-      {steps.map((s, i) => {
-        const done = current > s.n;
-        const active = current === s.n;
-        return (
-          <div key={s.n} className="flex items-start">
-            <div className="flex w-24 flex-col items-center text-center sm:w-32">
-              <div
-                className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold transition-all duration-300 ${
-                  done
-                    ? "bg-primary text-white"
-                    : active
-                    ? "bg-primary text-white ring-4 ring-primary/15 shadow-glow"
-                    : "bg-divider text-subtle"
-                }`}
-              >
-                {done ? <Check size={15} className="animate-fade" /> : s.n}
-              </div>
-              <span
-                className={`mt-2 hidden text-xs font-semibold transition-colors duration-300 sm:block ${
-                  active || done ? "text-primary" : "text-subtle"
-                }`}
-              >
-                {s.label}
-              </span>
-            </div>
-            {i < steps.length - 1 && (
-              <div className="mt-4 h-1 w-10 overflow-hidden rounded-full bg-divider sm:w-16">
-                <div
-                  className={`h-full rounded-full bg-gradient-to-r from-lime to-accent transition-all duration-500 ease-out ${
-                    done ? "w-full" : "w-0"
-                  }`}
-                />
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
 
 function TipTapToolbar({ editor }: { editor: ReturnType<typeof useEditor> }) {
   if (!editor) return null;
@@ -265,7 +222,7 @@ export default function CreatePostPage() {
 
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
       <div className="animate-enter rounded-2xl bg-white p-6 shadow-card" style={{ animationDelay: "60ms" }}>
-        <StepIndicator current={step} />
+        <Stepper steps={steps.map((s) => s.label)} current={step} />
       </div>
 
       <div className="animate-enter rounded-2xl bg-white p-6 shadow-card" style={{ animationDelay: "120ms" }}>

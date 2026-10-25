@@ -8,8 +8,10 @@ import { useToast } from "@/components/ui/Toast";
 import PhoneInput from "@/components/ui/PhoneInput";
 import Modal from "@/components/ui/Modal";
 import Select from "@/components/ui/Select";
+import DatePicker from "@/components/ui/DatePicker";
 import { communityBadge, type MemberItem } from "@/lib/memberFormat";
 import { communityOptions, type MemberCommunity } from "./communities";
+import { durationPresets, paidOnPresets } from "./datePresets";
 import { FormField, inputCls, primaryBtn, secondaryBtn } from "./memberUi";
 
 const EMPTY_NEW_COM = { communityId: "", payment: "", paidOn: "", validUntil: "" };
@@ -155,13 +157,25 @@ export default function EditMemberModal({
                     onChange={(e) => setNewCom((c) => ({ ...c, payment: e.target.value }))} className={inputCls(errors.newPayment)} />
                 </FormField>
                 <FormField small label="Valid Till" error={errors.newValidUntil}>
-                  <input type="date" value={newCom.validUntil}
-                    onChange={(e) => setNewCom((c) => ({ ...c, validUntil: e.target.value }))} className={inputCls(errors.newValidUntil)} />
+                  <DatePicker
+                    value={newCom.validUntil}
+                    ariaLabel="Valid till"
+                    presets={durationPresets()}
+                    triggerClassName={inputCls(errors.newValidUntil)}
+                    onChange={(v) => setNewCom((c) => ({ ...c, validUntil: v }))}
+                  />
                 </FormField>
               </div>
               <FormField small label="Paid On (optional)">
-                <input type="date" value={newCom.paidOn}
-                  onChange={(e) => setNewCom((c) => ({ ...c, paidOn: e.target.value }))} className={inputCls()} />
+                <DatePicker
+                  value={newCom.paidOn}
+                  ariaLabel="Paid on"
+                  placeholder="Today, if left empty"
+                  clearable
+                  presets={paidOnPresets()}
+                  triggerClassName={inputCls()}
+                  onChange={(v) => setNewCom((c) => ({ ...c, paidOn: v }))}
+                />
               </FormField>
             </div>
           </div>
