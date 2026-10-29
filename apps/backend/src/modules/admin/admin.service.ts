@@ -29,6 +29,7 @@ import { normalizePhone } from '../../lib/phone.js'
 import { toVideoDTO } from '../posts/posts.service.js'
 import { ensureFreeSubscription } from '../../lib/free-community.js'
 import { formatEmailDate } from '../../lib/email-templates.js'
+import { routingData, RoutingModule, subscriptionRouting } from '../../lib/notification-routing.js'
 import { NotificationType } from '../notifications/notifications.dto.js'
 import redis from '../../lib/redis.js'
 import type {
@@ -483,6 +484,7 @@ export class AdminService {
           sourceId,
           title: `Import complete — ${summary.created} members added`,
           message,
+          data: routingData({ module: RoutingModule.Members, id: communityId, communityId }),
         },
       })
       await redis.publish(
@@ -1396,6 +1398,7 @@ export class AdminService {
           sourceId: sub.id,
           title: 'Access extended',
           message: `You're active until ${formatEmailDate(sub.validUntil)}.`,
+          data: subscriptionRouting(current.communityId, 'extended'),
         },
       })
       // No ApprovedPhone write needed anymore: "expired" was never really a fact
@@ -1449,7 +1452,7 @@ export class AdminService {
       userIds: [current.userId],
       title: 'Access extended',
       body: `You're active until ${formatEmailDate(created.validUntil)}.`,
-      data: { type: 'subscription', id: current.communityId, event: 'extended', communityId: current.communityId },
+      data: subscriptionRouting(current.communityId, 'extended'),
     })
 
     return {
@@ -2061,6 +2064,7 @@ export class AdminService {
             sourceId: sub.id,
             title: `You've been added to ${addedCommunityName}`,
             message: `Active until ${formatEmailDate(validUntil)}.`,
+            data: subscriptionRouting(data.newCommunity.communityId, 'community-added'),
           },
         })
         return sub.id
@@ -2105,7 +2109,7 @@ export class AdminService {
           userIds: [user.id],
           title: `You've been added to ${addedCommunityName}`,
           body: `Active until ${formatEmailDate(new Date(data.newCommunity.validUntil))}.`,
-          data: { type: 'subscription', id: data.newCommunity.communityId, event: 'community-added', communityId: data.newCommunity.communityId },
+          data: subscriptionRouting(data.newCommunity.communityId, 'community-added'),
         })
       }
     }

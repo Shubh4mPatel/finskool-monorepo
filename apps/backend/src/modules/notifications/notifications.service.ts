@@ -32,6 +32,8 @@ import { FCM_BATCH_SIZE, isPushConfigured, sendPushBatch } from '../../lib/fcm.j
 import { enqueuePush } from '../../lib/push.js'
 import { renderInvoicePdf } from '../services/services.invoice.js'
 import { requestLabel } from '../services/services.shared.js'
+import { routingData, RoutingModule } from '../../lib/notification-routing.js'
+import type { RoutingData } from '../../lib/notification-routing.js'
 import { NotificationType, toNotificationItem } from './notifications.dto.js'
 import type { ListNotificationsResponseDTO } from './notifications.dto.js'
 
@@ -96,6 +98,7 @@ export class NotificationsService {
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
+        include: { community: { select: { isFree: true } } },
       }),
       this.db.notification.count({ where }),
     ])
@@ -105,7 +108,10 @@ export class NotificationsService {
     return {
       notifications: notifications.map(n => {
         const postId = postIds.get(n.id)
-        return toNotificationItem(postId ? { ...n, data: { type: 'post', id: postId } } : n)
+        const data = postId
+          ? routingData({ module: RoutingModule.Post, id: postId, communityId: n.communityId, free: n.community?.isFree })
+          : n.data
+        return toNotificationItem({ ...n, data })
       }),
       total,
       page,
@@ -164,7 +170,7 @@ export class NotificationsService {
   }
 
   async fanOutCommunityPost(payload: CommunityPostNotificationJobPayload): Promise<{ created: number }> {
-    const community = await this.db.community.findUnique({ where: { id: payload.communityId }, select: { name: true } })
+    const community = await this.db.community.findUnique({ where: { id: payload.communityId }, select: { name: true, isFree: true } })
     const { subject, html } = renderEmail('new-announcement', {
       community_name: community?.name ?? '',
       post_title: payload.postTitle,
@@ -178,6 +184,7 @@ export class NotificationsService {
       message: payload.message,
       triggeredByUserId: payload.triggeredByUserId,
       type: NotificationType.Post,
+      data: routingData({ module: RoutingModule.Post, id: payload.postId, communityId: payload.communityId, free: community?.isFree }),
       email: { subject, html },
       push: true,
     })
@@ -185,6 +192,7 @@ export class NotificationsService {
 
   async fanOutCommunityRecommendation(payload: CommunityRecommendationNotificationJobPayload): Promise<{ created: number }> {
     const html = notificationEmailHtml(payload.message, `${env.frontendUrl}/recommendations`, 'View Recommendation')
+    const community = await this.db.community.findUnique({ where: { id: payload.communityId }, select: { isFree: true } })
     return this.fanOutCommunity({
       communityId: payload.communityId,
       sourceId: payload.recommendationId,
@@ -192,6 +200,7 @@ export class NotificationsService {
       message: payload.message,
       triggeredByUserId: payload.triggeredByUserId,
       type: NotificationType.Recommendation,
+      data: routingData({ module: RoutingModule.Recommendation, id: payload.recommendationId, communityId: payload.communityId, free: community?.isFree }),
       email: { subject: payload.message, html },
       // Recommendations stay in-app and email only; no mobile push.
       push: false,
@@ -205,10 +214,11 @@ export class NotificationsService {
     message: string
     triggeredByUserId: string
     type: string
+    data: RoutingData
     email: { subject: string; html: string }
     push: boolean
   }): Promise<{ created: number }> {
-    const { communityId, sourceId, title, message, triggeredByUserId, type, email, push } = params
+    const { communityId, sourceId, title, message, triggeredByUserId, type, data, email, push } = params
 
     const subs = await this.db.subscription.findMany({
       where: { communityId, isActive: true, validUntil: { gte: startOfToday() } },
@@ -232,6 +242,7 @@ export class NotificationsService {
           sourceId,
           title,
           message,
+          data,
         })),
         skipDuplicates: true,
       })
@@ -245,7 +256,7 @@ export class NotificationsService {
         this.publishLiveBatch(chunk.map(r => r.userId), { type, communityId, message, sourceId }),
         // Only when this chunk really created rows: a retried fan-out job finds them all existing and stays quiet.
         push && result.count > 0
-          ? enqueuePush({ userIds: chunk.map(r => r.userId), title, body: message, data: { type, id: sourceId, communityId } })
+          ? enqueuePush({ userIds: chunk.map(r => r.userId), title, body: message, data })
           : Promise.resolve(),
       ])
     }

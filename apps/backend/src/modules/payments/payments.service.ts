@@ -15,6 +15,7 @@ import type { LiveNotificationEvent } from '../../lib/queue.js'
 import redis from '../../lib/redis.js'
 import { BadRequestError, NotFoundError, ConflictError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
+import { subscriptionRouting } from '../../lib/notification-routing.js'
 import { NotificationType } from '../notifications/notifications.dto.js'
 import type {
   PlanListItemDTO,
@@ -197,6 +198,7 @@ export class PaymentsService {
           sourceId: subscription.id,
           title: isNewGrant ? `You've been added to ${community.name}` : 'Access extended',
           message: `You're active until ${formatEmailDate(validUntil)}.`,
+          data: subscriptionRouting(order.communityId, isNewGrant ? 'community-added' : 'extended'),
         },
       })
 
@@ -254,7 +256,7 @@ export class PaymentsService {
       userIds: [userId],
       title: isNewGrant ? `You've been added to ${community.name}` : 'Access extended',
       body: `You're active until ${formatEmailDate(subscription.validUntil)}.`,
-      data: { type: 'subscription', id: order.communityId, event: isNewGrant ? 'community-added' : 'extended', communityId: order.communityId },
+      data: subscriptionRouting(order.communityId, isNewGrant ? 'community-added' : 'extended'),
     })
 
     logger.info(

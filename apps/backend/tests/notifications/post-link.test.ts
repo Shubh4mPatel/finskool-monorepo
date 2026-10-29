@@ -4,8 +4,9 @@ import { createApp } from '../../src/app.js'
 import { prisma, resetDb, createAdmin, createCommunity, createMobileMember, type TestAdmin } from '../helpers/fixtures.js'
 
 // GET /api/v1/notifications — a reaction or reply notification only stores the reaction's / comment's id,
-// so the list works out which post it is about and returns it as routing `data`: { type: 'post', id }.
-// That is what the admin "View" button follows to the post.
+// so the list works out which post it is about and returns it as routing `data`: { type: 'post', id, communityId }.
+// That is what the admin "View" button follows to the post. In the free community the module is `feed`
+// and no communityId is sent.
 
 const app = createApp()
 
@@ -55,7 +56,7 @@ describe('GET /notifications — which post a notification is about', () => {
     const res = await list()
 
     expect(res.status).toBe(200)
-    expect(itemFor(res, n.id).data).toEqual({ type: 'post', id: post.id })
+    expect(itemFor(res, n.id).data).toEqual({ type: 'post', id: post.id, communityId: community.id })
   })
 
   it.each(['thread', 'new-member-reply'])('points a %s notification at the post the comment is on', async type => {
@@ -65,7 +66,21 @@ describe('GET /notifications — which post a notification is about', () => {
     const n = await notify(type, comment.id)
 
     const res = await list()
-    expect(itemFor(res, n.id).data).toEqual({ type: 'post', id: post.id })
+    expect(itemFor(res, n.id).data).toEqual({ type: 'post', id: post.id, communityId: community.id })
+  })
+
+  it('sends the module as feed, with no communityId, for a post in the free community', async () => {
+    const free = await createCommunity(admin.id, { isFree: true })
+    const freePost = await prisma.post.create({
+      data: { communityId: free.id, authorId: admin.id, title: 'Free', contentMd: 'b', status: 'published', publishedAt: new Date() },
+    })
+    const reaction = await prisma.reaction.create({ data: { postId: freePost.id, userId: member.id, reactionTypeId: 1 } })
+    const n = await prisma.notification.create({
+      data: { userId: admin.id, communityId: free.id, type: 'reaction', sourceId: reaction.id, title: 't', message: 'm' },
+    })
+
+    const res = await list()
+    expect(itemFor(res, n.id).data).toEqual({ type: 'feed', id: freePost.id })
   })
 
   it('works out several at once, each to its own post', async () => {

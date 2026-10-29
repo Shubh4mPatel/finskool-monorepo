@@ -5,6 +5,7 @@ import type { LiveNotificationEvent } from '../../lib/queue.js'
 import redis from '../../lib/redis.js'
 import { NotFoundError, ForbiddenError, BadRequestError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
+import { routingData, RoutingModule } from '../../lib/notification-routing.js'
 import { NotificationType } from '../notifications/notifications.dto.js'
 import type {
   ReactionTypeDTO,
@@ -42,7 +43,7 @@ export class ReactionsService {
   ): Promise<ReactionResultDTO> {
     const post = await this.db.post.findUnique({
       where: { id: postId, deletedAt: null, status: 'published' },
-      select: { id: true, communityId: true, authorId: true, title: true },
+      select: { id: true, communityId: true, authorId: true, title: true, community: { select: { isFree: true } } },
     })
     if (!post) throw new NotFoundError('Post not found or not published')
 
@@ -91,6 +92,7 @@ export class ReactionsService {
             sourceId: reaction.id,
             title: 'New reaction on your post',
             message,
+            data: routingData({ module: RoutingModule.Post, id: post.id, communityId: post.communityId, free: post.community.isFree }),
           },
         })
       }

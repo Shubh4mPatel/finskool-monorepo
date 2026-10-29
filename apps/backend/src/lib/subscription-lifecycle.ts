@@ -2,6 +2,7 @@ import type { PrismaClient } from '../generated/prisma/client.js'
 import { formatEmailDate } from './email-templates.js'
 import { notifyOnce } from './notify-once.js'
 import { logger } from '../shared/logger.js'
+import { subscriptionRouting } from './notification-routing.js'
 import { NotificationType } from '../modules/notifications/notifications.dto.js'
 import type { NotificationsService } from '../modules/notifications/notifications.service.js'
 
@@ -72,7 +73,8 @@ export async function runSubscriptionLifecycleSweep(
     const createdId = await notifyOnce({
       db, communityId: sub.communityId, userId: sub.user.id,
       type, sourceId: sub.id, title, message,
-      push: { data: { type: 'subscription', id: sub.communityId, event: bucket, communityId: sub.communityId } },
+      data: subscriptionRouting(sub.communityId, bucket),
+      push: { data: subscriptionRouting(sub.communityId, bucket) },
     })
     if (createdId === null) continue // already notified for this subscription+type — skip the email too
 
@@ -149,7 +151,8 @@ export async function expireLapsedSubscriptions(
       type: NotificationType.SubscriptionExpired, sourceId: sub.id,
       title: 'Access paused',
       message: `Email support@finskool21.com to restore your ${sub.community.name} access.`,
-      push: { data: { type: 'subscription', id: sub.communityId, event: 'expired', communityId: sub.communityId } },
+      data: subscriptionRouting(sub.communityId, 'expired'),
+      push: { data: subscriptionRouting(sub.communityId, 'expired') },
     })
     if (createdId === null) continue // reminder sweep already notified for this subscription
 

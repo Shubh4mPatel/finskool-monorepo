@@ -6,6 +6,7 @@ import redis from '../../lib/redis.js'
 import { truncateText } from '../../lib/email-templates.js'
 import { NotFoundError, ForbiddenError, BadRequestError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
+import { routingData, RoutingModule } from '../../lib/notification-routing.js'
 import { NotificationType } from '../notifications/notifications.dto.js'
 import type { CreateCommentDTO, CommentTreeDTO, CommentListDTO } from './comments.dto.js'
 
@@ -21,7 +22,7 @@ export class CommentsService {
   ): Promise<CommentTreeDTO> {
     const post = await this.db.post.findUnique({
       where: { id: postId, deletedAt: null, status: 'published' },
-      select: { id: true, communityId: true, title: true, community: { select: { name: true } } },
+      select: { id: true, communityId: true, title: true, community: { select: { name: true, isFree: true } } },
     })
     if (!post) throw new NotFoundError('Post not found or not published')
 
@@ -97,6 +98,8 @@ export class CommentsService {
     // used after the transaction to broadcast a 'thread-resolved' live event.
     let autoResolvedCount = 0
 
+    const postRouting = routingData({ module: RoutingModule.Post, id: post.id, communityId: post.communityId, free: post.community.isFree })
+
     // create with temp path, then update with real path (needs the new id)
     const comment = await this.db.$transaction(async tx => {
       const created = await tx.comment.create({
@@ -117,6 +120,7 @@ export class CommentsService {
               sourceId: created.id,
               title: `New thread on ${post.title}`,
               message: `${commenterName} asked a question in ${post.community.name}.`,
+              data: postRouting,
             })),
             skipDuplicates: true,
           })
@@ -143,6 +147,7 @@ export class CommentsService {
             sourceId: created.id,
             title: `${replyNotifyTarget!.name} replied to you`,
             message: replyMessage,
+            data: postRouting,
           },
         })
       }

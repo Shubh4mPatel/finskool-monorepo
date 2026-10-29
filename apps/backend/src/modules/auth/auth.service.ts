@@ -11,6 +11,7 @@ import { getAccessibleCommunityIds } from "../../lib/community-access.js";
 import { notificationsQueue, NEW_MEMBER_REGISTERED_EMAIL_JOB, NOTIFICATIONS_PUBSUB_CHANNEL } from "../../lib/queue.js";
 import type { LiveNotificationEvent } from "../../lib/queue.js";
 import { formatEmailDate } from "../../lib/email-templates.js";
+import { routingData, RoutingModule } from "../../lib/notification-routing.js";
 import { NotificationType } from "../notifications/notifications.dto.js";
 import {
   ConflictError,
@@ -168,6 +169,7 @@ export class AuthService {
                 sourceId: subscriptionId,
                 title: `${updated.name} has registered`,
                 message,
+                data: routingData({ module: RoutingModule.Member, id: updated.id, communityId: community.id }),
               },
             });
             await this.redis.publish(

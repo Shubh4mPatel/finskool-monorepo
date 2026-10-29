@@ -4,6 +4,7 @@ import { formatEmailDate } from './email-templates.js'
 import { getAccessibleCommunityIds } from './community-access.js'
 import { createAndPublishNotification } from './notify-once.js'
 import { logger } from '../shared/logger.js'
+import { routingData, RoutingModule } from './notification-routing.js'
 import { NotificationType } from '../modules/notifications/notifications.dto.js'
 import type { NotificationsService } from '../modules/notifications/notifications.service.js'
 
@@ -71,6 +72,7 @@ export async function runAdminUnrepliedDigest(
       sourceId: randomUUID(),
       title: `${scoped.length} threads waiting for a reply`,
       message: `Oldest is ${daysOld} days old in ${oldestCommunityName}.`,
+      data: routingData({ module: RoutingModule.Threads, id: oldestCommunityId, communityId: oldestCommunityId }),
     })
 
     try {
@@ -145,6 +147,7 @@ export async function runAdminExpiryDigest(
       sourceId: randomUUID(),
       title: `${scoped.length} subscriptions expiring this week`,
       message: `Review and extend before ${formatEmailDate(earliestDate!)}`,
+      data: routingData({ module: RoutingModule.Subscriptions, id: earliestCommunityId, communityId: earliestCommunityId }),
     })
 
     try {
