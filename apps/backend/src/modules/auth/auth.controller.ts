@@ -10,7 +10,9 @@ const selectCommunitySchema = z.object({
 })
 
 const avatarUploadUrlQuerySchema = z.object({
-  filename: z.string().min(1),
+  filename: z.string().min(1).max(255),
+  // Optional: the file's size in bytes, so an oversize picture is refused before it is uploaded.
+  sizeBytes: z.coerce.number().int().min(1).optional(),
 })
 
 const COOKIE_BASE: CookieOptions = {
@@ -147,8 +149,8 @@ export class AuthController {
 
   getAvatarUploadUrl = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const { filename } = avatarUploadUrlQuerySchema.parse(req.query)
-      const urls = await this.service.getAvatarUploadUrl(filename)
+      const { filename, sizeBytes } = avatarUploadUrlQuerySchema.parse(req.query)
+      const urls = await this.service.getAvatarUploadUrl(filename, sizeBytes)
       res.json({ success: true, data: urls })
     } catch (err) {
       next(err)

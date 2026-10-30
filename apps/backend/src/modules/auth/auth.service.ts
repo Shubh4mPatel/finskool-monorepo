@@ -6,7 +6,7 @@ import type { Redis } from "ioredis";
 import { refreshTokenKey, selectedCommunityKey } from "../../lib/redis.js";
 import { env } from "../../config/env.js";
 import { logger } from "../../shared/logger.js";
-import { generateUploadUrl, deleteFile } from "../../lib/minio.js";
+import { generateUploadUrl, avatarExtension, inspectUploadedAvatar, deleteUploadedAvatar, AVATAR_FOLDER, AVATAR_MAX_BYTES } from "../../lib/minio.js";
 import { getAccessibleCommunityIds } from "../../lib/community-access.js";
 import { notificationsQueue, NEW_MEMBER_REGISTERED_EMAIL_JOB, NOTIFICATIONS_PUBSUB_CHANNEL } from "../../lib/queue.js";
 import type { LiveNotificationEvent } from "../../lib/queue.js";
@@ -487,16 +487,42 @@ export class AuthService {
     return this.toPublicUser(updated);
   }
 
-  async getAvatarUploadUrl(filename: string): Promise<{ uploadUrl: string; publicUrl: string }> {
-    return generateUploadUrl(filename, 'avatars');
+  /**
+   * Link for uploading a profile picture. The file name's extension decides the stored name, so it must be a
+   * supported type; the optional size lets the app be told "too big" before it uploads anything. The upload
+   * itself can't be limited by the link, so the type and size are enforced again when the picture is saved.
+   */
+  async getAvatarUploadUrl(filename: string, sizeBytes?: number): Promise<{ uploadUrl: string; publicUrl: string }> {
+    if (!avatarExtension(filename)) {
+      throw new BadRequestError("Only JPG, PNG and WebP images are allowed", "AVATAR_TYPE_INVALID");
+    }
+    if (sizeBytes !== undefined && sizeBytes > AVATAR_MAX_BYTES) {
+      throw new BadRequestError("The picture must be 5 MB or smaller", "AVATAR_TOO_LARGE");
+    }
+    return generateUploadUrl(filename, AVATAR_FOLDER);
   }
 
   async updateAvatar(userId: string, avatarUrl: string): Promise<PublicUserDTO> {
     const user = await this.db.user.findUnique({ where: { id: userId } });
     if (!user || user.deletedAt) throw new UnauthorizedError('User not found');
 
-    if (user.avatarUrl) {
-      await deleteFile(user.avatarUrl).catch(() => {});
+    const check = await inspectUploadedAvatar(avatarUrl);
+    if (!check.ok) {
+      switch (check.reason) {
+        case "foreign_url":
+          throw new BadRequestError("Use the publicUrl returned when you asked for the upload link", "AVATAR_URL_INVALID");
+        case "not_uploaded":
+          throw new BadRequestError("The picture was not uploaded. Upload it first, then save it", "AVATAR_NOT_UPLOADED");
+        case "too_large":
+          throw new BadRequestError("The picture must be 5 MB or smaller", "AVATAR_TOO_LARGE");
+        default:
+          throw new BadRequestError("Only JPG, PNG and WebP images are allowed", "AVATAR_TYPE_INVALID");
+      }
+    }
+
+    // Replace the old picture (never the one just saved, and only our own avatar files).
+    if (user.avatarUrl && user.avatarUrl !== avatarUrl) {
+      await deleteUploadedAvatar(user.avatarUrl);
     }
 
     const updated = await this.db.user.update({

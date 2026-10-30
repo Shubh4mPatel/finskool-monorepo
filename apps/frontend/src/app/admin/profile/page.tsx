@@ -3,7 +3,8 @@
 import { Camera, Lock, Pencil } from "lucide-react";
 import ChangePasswordModal from "@/components/profile/ChangePasswordModal";
 import { useEffect, useRef, useState } from "react";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
+import { useToast } from "@/components/ui/Toast";
 import { initials, updateSessionAvatar, updateSessionName } from "@/lib/session";
 
 interface AdminProfile {
@@ -23,6 +24,7 @@ interface Community {
 }
 
 export default function AdminProfilePage() {
+  const toast = useToast();
   const [user, setUser] = useState<AdminProfile | null>(null);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -79,16 +81,22 @@ export default function AdminProfilePage() {
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    // Same limits the server enforces: JPG, PNG or WebP, 5 MB at most.
+    if (!/^image\/(jpeg|png|webp)$/.test(file.type) || file.size > 5 * 1024 * 1024) {
+      toast.error("Choose a JPG, PNG or WebP picture of 5 MB or less.");
+      e.target.value = "";
+      return;
+    }
     try {
       const { uploadUrl, publicUrl } = await api.get<{ uploadUrl: string; publicUrl: string }>(
-        `/api/v1/auth/me/avatar/upload-url?filename=${encodeURIComponent(file.name)}`
+        `/api/v1/auth/me/avatar/upload-url?filename=${encodeURIComponent(file.name)}&sizeBytes=${file.size}`
       );
       await fetch(uploadUrl, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
       const data = await api.patch<{ user: AdminProfile }>("/api/v1/auth/me/avatar", { avatarUrl: publicUrl });
       setUser(data.user);
       updateSessionAvatar(data.user.avatarUrl ?? null);
-    } catch {
-      // no-op
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Couldn't update the picture. Please try again.");
     } finally {
       e.target.value = "";
     }
@@ -129,7 +137,7 @@ export default function AdminProfilePage() {
               <input
                 ref={avatarInputRef}
                 type="file"
-                accept="image/jpeg,image/png,image/webp,image/gif"
+                accept="image/jpeg,image/png,image/webp"
                 className="hidden"
                 onChange={handleAvatarChange}
               />

@@ -79,6 +79,77 @@ export async function deleteFile(url: string): Promise<void> {
   await client.removeObject(env.minio.bucket, objectName)
 }
 
+// ─── Profile pictures ───────────────────────────────────────────────────────
+// Uploaded straight to the public bucket via a presigned PUT, which can't constrain size or type,
+// so the limits are enforced when the picture is saved (inspectUploadedAvatar) and a rejected
+// upload is deleted.
+export const AVATAR_FOLDER = 'avatars'
+export const AVATAR_MAX_BYTES = 5 * 1024 * 1024
+export const AVATAR_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp'] as const
+const AVATAR_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp']
+
+export function avatarExtension(fileName: string): string | null {
+  const ext = fileName.includes('.') ? (fileName.split('.').pop()?.toLowerCase() ?? '') : ''
+  return (AVATAR_EXTENSIONS as readonly string[]).includes(ext) ? ext : null
+}
+
+/** The object key if `url` is one of our own avatar uploads (right host, bucket and folder), else null. */
+export function avatarObjectName(url: string): string | null {
+  const base = toPublicUrl(`${AVATAR_FOLDER}/`)
+  if (!url.startsWith(base)) return null
+  const name = url.slice(base.length)
+  if (!name || name.includes('/') || name.includes('..') || name.includes('?') || name.includes('#')) return null
+  return `${AVATAR_FOLDER}/${name}`
+}
+
+export type AvatarCheck =
+  | { ok: true; size: number; mimeType: string }
+  | { ok: false; reason: 'foreign_url' | 'not_uploaded' | 'too_large' | 'bad_type' }
+
+/**
+ * Checks an uploaded profile picture before it is saved on an account: it must be one of our own
+ * avatar objects, exist, be at most AVATAR_MAX_BYTES, really be a JPG/PNG/WebP (by its first bytes,
+ * not the name or the declared type), and not be stored with a type that a browser would run as a page
+ * (e.g. text/html or image/svg+xml). A file that fails is deleted.
+ */
+export async function inspectUploadedAvatar(url: string): Promise<AvatarCheck> {
+  const objectName = avatarObjectName(url)
+  if (!objectName) return { ok: false, reason: 'foreign_url' }
+  const reject = async (reason: 'not_uploaded' | 'too_large' | 'bad_type'): Promise<AvatarCheck> => {
+    if (reason !== 'not_uploaded') await client.removeObject(env.minio.bucket, objectName).catch(() => {})
+    return { ok: false, reason }
+  }
+  let stat: Awaited<ReturnType<typeof client.statObject>>
+  try {
+    stat = await client.statObject(env.minio.bucket, objectName)
+  } catch {
+    return { ok: false, reason: 'not_uploaded' }
+  }
+  if (stat.size <= 0) return reject('bad_type')
+  if (stat.size > AVATAR_MAX_BYTES) return reject('too_large')
+  let head: Buffer
+  try {
+    const stream = await client.getPartialObject(env.minio.bucket, objectName, 0, 12)
+    const chunks: Buffer[] = []
+    for await (const chunk of stream) chunks.push(chunk as Buffer)
+    head = Buffer.concat(chunks)
+  } catch {
+    return { ok: false, reason: 'not_uploaded' }
+  }
+  const mimeType = sniffTicketMime(head)
+  if (!mimeType || !AVATAR_MIME_TYPES.includes(mimeType)) return reject('bad_type')
+  const declared = String(stat.metaData?.['content-type'] ?? '').split(';')[0]?.trim().toLowerCase() ?? ''
+  if (declared && declared !== 'application/octet-stream' && declared !== mimeType) return reject('bad_type')
+  return { ok: true, size: stat.size, mimeType }
+}
+
+/** Removes a previous profile picture. Only ever touches our own avatar objects. */
+export async function deleteUploadedAvatar(url: string): Promise<void> {
+  const objectName = avatarObjectName(url)
+  if (!objectName) return
+  await client.removeObject(env.minio.bucket, objectName).catch(() => {})
+}
+
 // Post videos are uploaded straight from the browser via a presigned PUT, which can't
 // constrain size or type — so these limits are enforced after the fact, when the post
 // is saved (see statUploadedVideo).

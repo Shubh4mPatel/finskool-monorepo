@@ -10,19 +10,21 @@ Changing the picture takes three calls. The photo itself goes straight to storag
 
 Calls 1 and 3 are authenticated like every other mobile call: send the `mobile_session_id` cookie from login. Call 2 is **not** authenticated (the link is already signed); do not send the cookie to it.
 
-## Before you start (the app must do this)
+## Rules (the server enforces them)
 
-The server does not check the file yet, so the app has to:
+- **JPG, PNG or WebP only.** Judged by the file's real content, not just its name. GIF, SVG, PDF and anything else is refused.
+- **5 MB at most.**
+- The file name must end in `.jpg`, `.jpeg`, `.png` or `.webp`.
 
-- Use **JPG, PNG or WebP** only.
-- Keep it under **5 MB**. Resize to about 512 x 512 px first; it uploads faster and loads faster everywhere.
-- Name the file with its real extension (`me.jpg`). The extension becomes part of the stored file name.
+A refused picture is deleted from storage, so nothing is left behind. The app should still check the same things before it uploads, to give the member a quick message, and should **resize to about 512 x 512 px** first: it uploads faster and loads faster everywhere. (Size in pixels is not checked by the server.)
 
 ## Step 1: ask for an upload link
 
 ```
-GET /api/v1/auth/me/avatar/upload-url?filename=me.jpg
+GET /api/v1/auth/me/avatar/upload-url?filename=me.jpg&sizeBytes=183204
 ```
+
+`filename` is required. `sizeBytes` (the file's size in bytes) is optional but recommended: if it is over 5 MB the server refuses right away, before anything is uploaded.
 
 Response `200`:
 
@@ -38,7 +40,11 @@ Response `200`:
 
 - `uploadUrl` is where you send the image. It is valid for **5 minutes**.
 - `publicUrl` is the address the picture will have afterwards. Keep it for step 3.
-- Errors: `401` not logged in, `422` missing `filename`.
+- Errors:
+  - `401` not logged in.
+  - `422` missing `filename`.
+  - `400` with `code: "AVATAR_TYPE_INVALID"`: the file name is not a `.jpg`, `.jpeg`, `.png` or `.webp`.
+  - `400` with `code: "AVATAR_TOO_LARGE"`: `sizeBytes` is over 5 MB.
 
 ## Step 2: upload the image
 
@@ -51,6 +57,7 @@ Content-Type: image/jpeg
 - Send the **raw bytes** as the body (not multipart, not base64).
 - Set `Content-Type` to match the file: `image/jpeg`, `image/png` or `image/webp`.
 - Use the `uploadUrl` exactly as it came back, with all its query parameters. Do not add the cookie or an `Authorization` header.
+- The `Content-Type` must be the real type of the image. A picture uploaded with a different type (for example `text/html`) is refused in step 3.
 - Success is `200` with an empty body.
 - If it fails with `403` or `400` after a while, the link expired: go back to step 1 for a new one.
 
@@ -81,10 +88,19 @@ Response `200`:
 
 - Use `user.avatarUrl` to show the new picture.
 - The previous picture is deleted from storage automatically.
-- Errors: `401` not logged in, `422` `avatarUrl` is not a valid URL.
-- Only do step 3 after step 2 succeeded. If you save a URL for a file that never uploaded, the profile shows a broken image.
+- The server checks the stored file now (type, size, that it really is the file you uploaded). Errors, all `400` with a `code`:
 
-The picture also appears in `GET /api/v1/auth/mobile/me` (`avatarUrl`), and next to the member's name in posts and comments.
+  | `code` | Meaning | What the app does |
+  |---|---|---|
+  | `AVATAR_NOT_UPLOADED` | Nothing was uploaded at that address (step 2 failed or the link expired) | Start again from step 1 |
+  | `AVATAR_TOO_LARGE` | The file is over 5 MB | Ask for a smaller picture |
+  | `AVATAR_TYPE_INVALID` | Not a real JPG, PNG or WebP | Ask for a different picture |
+  | `AVATAR_URL_INVALID` | `avatarUrl` is not the `publicUrl` from step 1 | Use the `publicUrl` exactly as returned |
+
+  Other errors: `401` not logged in, `422` `avatarUrl` is not a valid URL.
+- Only do step 3 after step 2 succeeded.
+
+The picture also appears in `GET /api/v1/auth/mobile/me` (`data.user.avatarUrl`), and next to the member's name in posts and comments.
 
 ## Example (Dart with Dio)
 
@@ -114,7 +130,7 @@ Future<String> updateProfilePicture(Dio api, File image) async {
 
 ## Checklist
 
-1. Pick a photo, resize it, and check it is JPG, PNG or WebP and under 5 MB.
+1. Pick a photo, resize it, and check it is JPG, PNG or WebP and under 5 MB. Also try a GIF, a file renamed to `.jpg` that is not an image, and a picture over 5 MB: each should be refused with the codes above.
 2. Do the three calls in order. Show a progress indicator during step 2.
 3. After step 3, update the picture everywhere in the app (profile and comments).
 4. Try it with a bad network: if step 2 fails, do not call step 3; offer a retry from step 1.
