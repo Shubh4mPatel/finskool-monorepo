@@ -1,6 +1,6 @@
 "use client";
 
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { CheckCircle2, Loader2, Lock, MessagesSquare } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
@@ -11,8 +11,6 @@ import {
   MAX_ATTACHMENTS,
   MAX_ATTACHMENT_BYTES,
   TYPE_LABEL,
-  fileExtension,
-  formatBytes,
   formatChatTime,
   formatTicketTime,
   randomId,
@@ -25,6 +23,7 @@ import {
 import { Avatar, StatusBadge } from "@/components/admin/tickets/TicketBadges";
 import { TintAvatar } from "@/components/admin/dashboard/TintAvatar";
 import { ChatComposer, ChatLockedBar, ChatNotice, DayDivider, JumpToLatest, dayKey, dayLabel } from "@/components/admin/chat/ChatParts";
+import { AttachmentCard, AttachmentViewerProvider } from "@/components/admin/attachments/AttachmentViewer";
 
 const BASE = "/api/v1/admin/tickets";
 
@@ -43,54 +42,7 @@ function eventText(e: AdminTicketEvent): string {
   }
 }
 
-function AttachmentCard({ ticketId, attachment }: { ticketId: string; attachment: TicketAttachment }) {
-  const [url, setUrl] = useState(attachment.url);
-  const [retried, setRetried] = useState(false);
-  const isImage = attachment.mimeType.startsWith("image/");
-
-  async function fresh(): Promise<string | null> {
-    try {
-      return (await api.get<{ url: string }>(`${BASE}/${ticketId}/attachments/${attachment.id}/url`)).url;
-    } catch {
-      return null;
-    }
-  }
-
-  // Signed links last ~5 min; ask for a fresh one right before opening.
-  async function view() {
-    window.open((await fresh()) ?? url, "_blank", "noopener,noreferrer");
-  }
-
-  async function refreshThumbnailOnce() {
-    if (retried) return;
-    setRetried(true);
-    const next = await fresh();
-    if (next) setUrl(next);
-  }
-
-  return (
-    <div className="flex w-fit min-w-60 max-w-full items-center gap-3 rounded-xl bg-white px-3 py-2.5 text-primary shadow-sm ring-1 ring-divider">
-      {isImage ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={url} alt={attachment.fileName} onError={refreshThumbnailOnce} className="h-9 w-9 shrink-0 rounded-md bg-background object-cover" />
-      ) : (
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-[#dff1ee] text-[10px] font-bold text-accent">
-          {fileExtension(attachment.fileName)}
-        </span>
-      )}
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-xs font-bold">{attachment.fileName}</span>
-        <span className="block text-[11px] text-muted">{formatBytes(attachment.sizeBytes)}</span>
-      </span>
-      <button onClick={view} className="shrink-0 rounded-full px-2 py-1 text-xs font-bold text-accent transition-colors hover:bg-accent/10">
-        View
-      </button>
-    </div>
-  );
-}
-
 function MessageRow({
-  ticketId,
   role,
   name,
   at,
@@ -98,7 +50,6 @@ function MessageRow({
   attachments,
   isNew,
 }: {
-  ticketId: string;
   role: "user" | "admin";
   name: string;
   at: string;
@@ -111,7 +62,7 @@ function MessageRow({
     <>
       {body && <p className="whitespace-pre-wrap wrap-break-word">{body}</p>}
       {attachments.map((a) => (
-        <AttachmentCard key={a.id} ticketId={ticketId} attachment={a} />
+        <AttachmentCard key={a.id} attachment={a} />
       ))}
     </>
   );
@@ -203,6 +154,14 @@ export default function TicketChat({ ticket, messages, events, hasOlder, loading
     ];
     return items.sort((a, b) => a.at.localeCompare(b.at) || (a.kind === b.kind ? 0 : a.kind === "event" ? -1 : 1));
   }, [messages, events]);
+
+  // Every attachment in the conversation, in display order, so the viewer can step through them.
+  const allAttachments = useMemo(() => [...ticket.attachments, ...messages.flatMap((m) => m.attachments)], [ticket.attachments, messages]);
+  const ticketId = ticket.id;
+  const getFreshUrl = useCallback(
+    async (a: TicketAttachment) => (await api.get<{ url: string }>(`${BASE}/${ticketId}/attachments/${a.id}/url`)).url,
+    [ticketId],
+  );
 
   const resolved = ticket.status === "resolved";
   // "New" = member messages nobody on the support side has answered yet.
@@ -329,7 +288,6 @@ export default function TicketChat({ ticket, messages, events, hasOlder, loading
   rows.push(
     <MessageRow
       key="original"
-      ticketId={ticket.id}
       role="user"
       name={ticket.user.name}
       at={ticket.createdAt}
@@ -348,7 +306,6 @@ export default function TicketChat({ ticket, messages, events, hasOlder, loading
       ) : (
         <MessageRow
           key={item.message.id}
-          ticketId={ticket.id}
           role={item.message.senderRole}
           name={item.message.senderName}
           at={item.message.createdAt}
@@ -361,6 +318,7 @@ export default function TicketChat({ ticket, messages, events, hasOlder, loading
   }
 
   return (
+    <AttachmentViewerProvider attachments={allAttachments} getFreshUrl={getFreshUrl}>
     <section className="flex min-w-0 flex-col overflow-hidden rounded-2xl bg-white shadow-card ring-1 ring-primary/[0.04]">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-divider px-6 py-4">
         <div className="flex items-center gap-3">
@@ -431,5 +389,6 @@ export default function TicketChat({ ticket, messages, events, hasOlder, loading
         />
       )}
     </section>
+    </AttachmentViewerProvider>
   );
 }
