@@ -3,3 +3,4 @@ node_modules/
 .agents/
 apps/backend/src/generated/
 .code-review-graph/
+apps/backend/docs/
