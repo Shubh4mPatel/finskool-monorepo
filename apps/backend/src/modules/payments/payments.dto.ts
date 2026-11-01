@@ -28,3 +28,25 @@ export interface VerifyPlanPaymentResultDTO {
   validUntil: string   // ISO date string YYYY-MM-DD
   isActive: boolean
 }
+
+export interface CheckoutSessionResultDTO {
+  checkoutUrl: string // the webview opens this; the one-time token is in its fragment
+  expiresInSeconds: number
+}
+
+export interface CheckoutExchangeResultDTO {
+  sessionToken: string // sent as a Bearer token on verify and status; reaches this one order only
+  status: string // created | paid | failed
+  orderId: string // Razorpay order id
+  amount: number // paise
+  currency: string
+  keyId: string
+  planName: string
+  durationMonths: number
+  communityName: string
+}
+
+export interface CheckoutStatusDTO {
+  status: string
+  validUntil?: string
+}

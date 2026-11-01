@@ -1,11 +1,13 @@
 import { Router } from 'express'
 import { PaymentsService } from './payments.service.js'
 import { PaymentsController } from './payments.controller.js'
-import { authenticate } from '../../middlewares/auth.middleware.js'
+import { PaymentsCheckoutService } from './payments.checkout.js'
+import { authenticate, requireMobileAuth } from '../../middlewares/auth.middleware.js'
 import prisma from '../../lib/prisma.js'
 
 const service = new PaymentsService(prisma)
-const controller = new PaymentsController(service)
+const checkout = new PaymentsCheckoutService(prisma, service)
+const controller = new PaymentsController(service, checkout)
 
 const router = Router()
 
@@ -159,5 +161,94 @@ router.post('/communities/:communityId/plans/:planId/orders', authenticate, cont
  *           application/json: { schema: { $ref: '#/components/schemas/ValidationErrorResponse' } }
  */
 router.post('/payments/verify', authenticate, controller.verifyPayment)
+
+/**
+ * @openapi
+ * /payments/checkout-sessions:
+ *   post:
+ *     tags: [Payments]
+ *     summary: Start a webview checkout (mobile app)
+ *     description: >
+ *       Mobile only. Creates (or reuses a recent unpaid) order for the plan and returns the URL the app opens in a
+ *       webview. The URL carries a one-time token in its fragment (valid ~2 minutes); the app's own session id is
+ *       never sent to the page. At most 10 per hour per member.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [communityId, planId]
+ *             properties:
+ *               communityId: { type: string, format: uuid }
+ *               planId: { type: string, format: uuid }
+ *     responses:
+ *       201: { description: "{ checkoutUrl, expiresInSeconds }" }
+ *       429: { description: Too many checkout attempts. }
+ */
+router.post('/payments/checkout-sessions', authenticate, requireMobileAuth, controller.createCheckoutSession)
+
+/**
+ * @openapi
+ * /payments/checkout/exchange:
+ *   post:
+ *     tags: [Payments]
+ *     summary: Trade the one-time token for a checkout session (webview page)
+ *     description: >
+ *       No login — the token is the credential. It works once; a second call gets 401. Returns the order to pay
+ *       and a `sessionToken` for verify and status (send as `Authorization: Bearer`).
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [token]
+ *             properties:
+ *               token: { type: string }
+ *     responses:
+ *       200: { description: Order details and sessionToken. }
+ *       401: { description: Token expired or already used. }
+ */
+router.post('/payments/checkout/exchange', controller.exchangeCheckoutToken)
+
+/**
+ * @openapi
+ * /payments/checkout/verify:
+ *   post:
+ *     tags: [Payments]
+ *     summary: Confirm the payment from the webview page
+ *     description: >
+ *       Authorised by the checkout `sessionToken` (Bearer), which only reaches its own order. Safe to repeat: if
+ *       the webhook already granted the plan, the same result is returned.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [razorpayPaymentId, razorpaySignature]
+ *             properties:
+ *               razorpayPaymentId: { type: string }
+ *               razorpaySignature: { type: string }
+ *     responses:
+ *       200: { description: Plan granted. }
+ *       400: { description: Signature invalid (the order is left untouched). }
+ *       401: { description: Session expired. }
+ */
+router.post('/payments/checkout/verify', controller.verifyCheckout)
+
+/**
+ * @openapi
+ * /payments/checkout/status:
+ *   get:
+ *     tags: [Payments]
+ *     summary: Whether the checkout's order has been paid
+ *     description: Bearer `sessionToken`. Used after the Razorpay popup closes, in case the webhook granted the plan first.
+ *     responses:
+ *       200: { description: "{ status: created | paid | failed, validUntil? }" }
+ *       401: { description: Session expired. }
+ */
+router.get('/payments/checkout/status', controller.checkoutStatus)
 
 export default router

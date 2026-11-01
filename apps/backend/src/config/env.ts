@@ -4,6 +4,12 @@ function parseOrigin(raw: string): string | string[] {
   return parts.length === 1 ? (parts[0] as string) : parts
 }
 
+// A positive whole number of seconds from the environment; anything else (unset, 0, text) uses the default.
+function parseSeconds(raw: string | undefined, fallback: number): number {
+  const n = Number(raw)
+  return Number.isInteger(n) && n > 0 ? n : fallback
+}
+
 export const env = {
   nodeEnv: (process.env['NODE_ENV'] ?? 'development') as 'development' | 'production' | 'test',
   port: Number(process.env['PORT'] ?? 3000),
@@ -16,6 +22,12 @@ export const env = {
   // Used to build absolute links back to the app (e.g. the CTA button in
   // notification emails) — not the same as CORS_ORIGIN, which can be a list.
   frontendUrl: process.env['FRONTEND_URL'] ?? 'http://localhost:3000',
+  // The page the mobile app opens in a webview to pay; the one-time token is appended as #t=<token>.
+  paymentCheckoutUrl: process.env['PAYMENT_CHECKOUT_URL'] ?? `${process.env['FRONTEND_URL'] ?? 'http://localhost:3000'}/pay/checkout`,
+  // How long the one-time token in the checkout URL can be used to open the page, and how long the session
+  // that page gets lasts. Both in seconds.
+  paymentCheckoutTokenTtlSeconds: parseSeconds(process.env['PAYMENT_CHECKOUT_TOKEN_TTL_SECONDS'], 120),
+  paymentSessionTtlSeconds: parseSeconds(process.env['PAYMENT_SESSION_TTL_SECONDS'], 900),
 
   database: {
     url: process.env['DATABASE_URL'] ?? '',
@@ -136,6 +148,9 @@ export const env = {
   port: number
   cors: { origin: string | string[]; credentials: boolean }
   frontendUrl: string
+  paymentCheckoutUrl: string
+  paymentCheckoutTokenTtlSeconds: number
+  paymentSessionTtlSeconds: number
   database: { url: string }
   redis: { host: string; port: number; password: string; db: number }
   jwt: { secret: string; accessExpiresIn: string }

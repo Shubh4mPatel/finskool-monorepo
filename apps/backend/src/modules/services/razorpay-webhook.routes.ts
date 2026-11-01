@@ -30,8 +30,9 @@ const router = Router()
  *     description: >
  *       Configure in the Razorpay dashboard with the secret in RAZORPAY_WEBHOOK_SECRET and events
  *       `order.paid`, `payment.captured`, `payment.failed`. Confirms service payments independently of
- *       the app's verify call. Events for orders that are not service quotes (e.g. plan purchases) are
- *       acknowledged and ignored.
+ *       the app's verify call, and grants a community plan when a member paid but never reached the plan
+ *       verify call (a payment for less than the order's price is logged and not granted). Events for orders that
+ *       are neither are acknowledged and ignored.
  *     responses:
  *       200: { description: Accepted (also for duplicates and ignored events). }
  *       400: { description: Bad signature or body. }

@@ -1,13 +1,27 @@
 import type { Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
 import type { PaymentsService } from './payments.service.js'
-import { BadRequestError } from '../../shared/errors/index.js'
+import type { PaymentsCheckoutService } from './payments.checkout.js'
+import { BadRequestError, UnauthorizedError } from '../../shared/errors/index.js'
 
 const verifyPaymentSchema = z.object({
   razorpayOrderId: z.string().min(1, 'razorpayOrderId is required'),
   razorpayPaymentId: z.string().min(1, 'razorpayPaymentId is required'),
   razorpaySignature: z.string().min(1, 'razorpaySignature is required'),
 })
+
+const createCheckoutSchema = z.object({ communityId: z.string().uuid(), planId: z.string().uuid() })
+const exchangeSchema = z.object({ token: z.string().min(20).max(100) })
+const checkoutVerifySchema = z.object({
+  razorpayPaymentId: z.string().min(1, 'razorpayPaymentId is required').max(64),
+  razorpaySignature: z.string().min(1, 'razorpaySignature is required').max(256),
+})
+
+function bearerToken(req: Request): string {
+  const header = req.headers.authorization
+  if (!header?.startsWith('Bearer ')) throw new UnauthorizedError('Missing checkout session')
+  return header.slice(7)
+}
 
 const uuidParamSchema = z.string().uuid()
 
@@ -27,7 +41,10 @@ function getUuidParam(req: Request, name: string): string {
 }
 
 export class PaymentsController {
-  constructor(private readonly service: PaymentsService) {}
+  constructor(
+    private readonly service: PaymentsService,
+    private readonly checkout: PaymentsCheckoutService,
+  ) {}
 
   listPlans = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
@@ -54,6 +71,53 @@ export class PaymentsController {
       const parsed = verifyPaymentSchema.safeParse(req.body)
       if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
       const result = await this.service.verifyPayment(req.user!.id, parsed.data)
+      res.json({ success: true, data: result })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  // ─── Mobile webview checkout ─────────────────────────────────────────────
+
+  createCheckoutSession = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const parsed = createCheckoutSchema.safeParse(req.body)
+      if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
+      const result = await this.checkout.createSession(req.user!.id, parsed.data.communityId, parsed.data.planId)
+      res.status(201).json({ success: true, data: result })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  exchangeCheckoutToken = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const parsed = exchangeSchema.safeParse(req.body)
+      if (!parsed.success) throw new BadRequestError('Invalid checkout token')
+      const result = await this.checkout.exchange(parsed.data.token)
+      res.set('Cache-Control', 'no-store')
+      res.json({ success: true, data: result })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  verifyCheckout = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const parsed = checkoutVerifySchema.safeParse(req.body)
+      if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
+      const result = await this.checkout.verify(bearerToken(req), parsed.data.razorpayPaymentId, parsed.data.razorpaySignature)
+      res.set('Cache-Control', 'no-store')
+      res.json({ success: true, data: result })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  checkoutStatus = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const result = await this.checkout.status(bearerToken(req))
+      res.set('Cache-Control', 'no-store')
       res.json({ success: true, data: result })
     } catch (err) {
       next(err)

@@ -8,6 +8,7 @@ import { notificationsQueue, SERVICE_INVOICE_EMAIL_JOB } from '../../lib/queue.j
 import { getRazorpayClient, verifyPaymentSignature, verifyWebhookSignature } from '../../lib/razorpay.js'
 import { AppError, BadRequestError, ConflictError, NotFoundError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
+import { PaymentsService } from '../payments/payments.service.js'
 import { isBillingConfigured, loadBillingSettings } from './billing-settings.js'
 import type { MemberServiceRequestDTO, PayOrderDTO } from './services.dto.js'
 import { financialYearOf, rupeesToPaise } from './services.billing.js'
@@ -218,6 +219,7 @@ export class ServicePaymentsService {
     const paymentId = payment?.['id'] as string | undefined
 
     if ((eventType === 'order.paid' || eventType === 'payment.captured') && orderId && paymentId) {
+      if (await this.settlePlanPurchase(orderId, paymentId, payment)) return
       await this.settle({
         razorpayOrderId: orderId,
         razorpayPaymentId: paymentId,
@@ -231,6 +233,32 @@ export class ServicePaymentsService {
       await this.recordFailedAttempt(orderId, paymentId, payment!)
     }
     // Every other event (authorized, refund.*, plan purchases, …) is stored for the record only.
+  }
+
+  /**
+   * A paid plan purchase (a member buying a community) is granted here too, so a member who paid but never got
+   * to the verify call — app killed, network lost — still gets access. Returns whether the order was a plan order.
+   * A payment that is not for the order's full price is left alone and logged, not granted.
+   */
+  private async settlePlanPurchase(razorpayOrderId: string, razorpayPaymentId: string, payment: Record<string, any> | undefined): Promise<boolean> {
+    const planOrder = await this.db.planOrder.findUnique({ where: { razorpayOrderId } })
+    if (!planOrder) return false
+    const paidPaise = typeof payment?.['amount'] === 'number' ? (payment['amount'] as number) : null
+    if (paidPaise !== null && paidPaise !== Math.round(Number(planOrder.amount) * 100)) {
+      logger.error({ razorpayOrderId, razorpayPaymentId, paidPaise }, 'services.payments.webhook: plan payment amount does not match the order')
+      return true
+    }
+    try {
+      await new PaymentsService(this.db).settlePlanOrder(planOrder.id, razorpayPaymentId)
+    } catch (err) {
+      // A second, different payment on an order that is already paid: not retryable, and it needs a refund.
+      if (err instanceof ConflictError) {
+        logger.error({ razorpayOrderId, razorpayPaymentId }, 'services.payments.webhook: extra payment on an already paid plan order — refund needed')
+        return true
+      }
+      throw err
+    }
+    return true
   }
 
   private async recordFailedAttempt(razorpayOrderId: string, razorpayPaymentId: string, payment: Record<string, any>): Promise<void> {

@@ -106,20 +106,33 @@ export class PaymentsService {
     }
   }
 
+  /**
+   * The client's "I paid" call. The signature proves Razorpay really captured this payment for this order; a
+   * bad one is rejected and leaves the order untouched — marking it failed would turn away the member's later,
+   * valid call (only Razorpay's own payment.failed event says a payment failed).
+   */
   async verifyPayment(userId: string, data: VerifyPlanPaymentDTO): Promise<VerifyPlanPaymentResultDTO> {
     const order = await this.db.planOrder.findUnique({ where: { razorpayOrderId: data.razorpayOrderId } })
     if (!order || order.userId !== userId) throw new NotFoundError('Order not found')
-    if (order.status === 'paid') throw new ConflictError('This order has already been processed', 'ORDER_ALREADY_PAID')
 
-    const signatureValid = verifyPaymentSignature(data.razorpayOrderId, data.razorpayPaymentId, data.razorpaySignature)
-    if (!signatureValid) {
-      await this.db.planOrder.update({
-        where: { id: order.id },
-        data: { status: 'failed', razorpayPaymentId: data.razorpayPaymentId },
-      })
+    if (!verifyPaymentSignature(data.razorpayOrderId, data.razorpayPaymentId, data.razorpaySignature)) {
       logger.error({ userId, orderId: order.id }, 'payments.verifyPayment: signature mismatch')
       throw new BadRequestError('Payment verification failed', 'PAYMENT_SIGNATURE_INVALID')
     }
+
+    return this.settlePlanOrder(order.id, data.razorpayPaymentId)
+  }
+
+  /**
+   * Grants the plan for a paid order. Shared by the client's verify call and Razorpay's webhook, which can
+   * arrive in either order or both: the first one grants, the other finds the order paid with the same payment
+   * and just returns the same result.
+   */
+  async settlePlanOrder(planOrderId: string, razorpayPaymentId: string): Promise<VerifyPlanPaymentResultDTO> {
+    const order = await this.db.planOrder.findUnique({ where: { id: planOrderId } })
+    if (!order) throw new NotFoundError('Order not found')
+    if (order.status === 'paid') return this.resultOfPaidOrder(order, razorpayPaymentId)
+    const userId = order.userId
 
     const [plan, community, user] = await Promise.all([
       this.db.plan.findUnique({ where: { id: order.planId } }),
@@ -131,7 +144,7 @@ export class PaymentsService {
     const now = new Date()
     const today = startOfToday()
 
-    const { subscription, isNewGrant } = await this.db.$transaction(async tx => {
+    const granted = await this.db.$transaction(async tx => {
       // Atomic claim: the `status: 'created'` guard makes this a compare-and-
       // swap on the row. Two concurrent verify calls for the same order (a
       // client retry racing itself, say) both pass the pre-transaction checks
@@ -140,11 +153,13 @@ export class PaymentsService {
       // its UPDATE runs) so it affects 0 rows and we bail instead of granting
       // a second subscription for the same payment.
       const claimed = await tx.planOrder.updateMany({
-        where: { id: order.id, status: 'created' },
-        data: { status: 'paid', razorpayPaymentId: data.razorpayPaymentId },
+        // 'failed' too: orders marked failed by an earlier version on a bad signature are still payable.
+        where: { id: order.id, status: { in: ['created', 'failed'] } },
+        data: { status: 'paid', razorpayPaymentId },
       })
       if (claimed.count === 0) {
-        throw new ConflictError('This order has already been processed', 'ORDER_ALREADY_PAID')
+        // Lost the race to the other path (verify vs webhook) — fall through to its result below.
+        return null
       }
 
       // Same distinction extendSubscription/updateMember's newCommunity branch draw:
@@ -204,6 +219,11 @@ export class PaymentsService {
 
       return { subscription, isNewGrant }
     })
+    if (!granted) {
+      const fresh = await this.db.planOrder.findUniqueOrThrow({ where: { id: order.id } })
+      return this.resultOfPaidOrder(fresh, razorpayPaymentId)
+    }
+    const { subscription, isNewGrant } = granted
 
     if (user.email) {
       try {
@@ -233,7 +253,7 @@ export class PaymentsService {
           )
         }
       } catch (err) {
-        logger.error({ err, subscriptionId: subscription.id }, 'payments.verifyPayment: failed to enqueue email job')
+        logger.error({ err, subscriptionId: subscription.id }, 'payments.settlePlanOrder: failed to enqueue email job')
       }
     }
 
@@ -249,7 +269,7 @@ export class PaymentsService {
         } satisfies LiveNotificationEvent),
       )
     } catch (err) {
-      logger.error({ err, subscriptionId: subscription.id }, 'payments.verifyPayment: failed to publish live notification')
+      logger.error({ err, subscriptionId: subscription.id }, 'payments.settlePlanOrder: failed to publish live notification')
     }
 
     await enqueuePush({
@@ -261,13 +281,36 @@ export class PaymentsService {
 
     logger.info(
       { userId, subscriptionId: subscription.id, communityId: order.communityId, isNewGrant },
-      'payments.verifyPayment: success',
+      'payments.settlePlanOrder: success',
     )
 
     return {
       subscriptionId: subscription.id,
       communityId: order.communityId,
       planId: plan.id,
+      payment: Number(subscription.payment),
+      validUntil: subscription.validUntil.toISOString().split('T')[0]!,
+      isActive: subscription.isActive,
+    }
+  }
+
+  /**
+   * An order that is already paid answers the same call again with the same result — but only for the payment
+   * that paid it. This is what lets the client's verify and the webhook race without either seeing an error.
+   */
+  private async resultOfPaidOrder(
+    order: { id: string; communityId: string; planId: string; razorpayPaymentId: string | null; subscriptionId: string | null },
+    razorpayPaymentId: string,
+  ): Promise<VerifyPlanPaymentResultDTO> {
+    if (order.razorpayPaymentId !== razorpayPaymentId || !order.subscriptionId) {
+      throw new ConflictError('This order has already been processed', 'ORDER_ALREADY_PAID')
+    }
+    const subscription = await this.db.subscription.findUnique({ where: { id: order.subscriptionId } })
+    if (!subscription) throw new NotFoundError('Subscription no longer exists')
+    return {
+      subscriptionId: subscription.id,
+      communityId: order.communityId,
+      planId: order.planId,
       payment: Number(subscription.payment),
       validUntil: subscription.validUntil.toISOString().split('T')[0]!,
       isActive: subscription.isActive,
