@@ -252,7 +252,8 @@
       "Bash(grep -vE \"^ \\\\* *$\")",
       "Read(//usr/lib/postgresql/**)",
       "Bash(systemctl is-active *)",
-      "Read(//var/run/**)"
+      "Read(//var/run/**)",
+      "Bash(grep -v \"^\\\\s*$\")"
     ],
     "additionalDirectories": [
       "/tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/8750fbd9-1edb-4d3f-b623-da0dec31a255/scratchpad/node_modules",
