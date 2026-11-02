@@ -1,5 +1,5 @@
 import type { PrismaClient } from '../../generated/prisma/client.js'
-import { enqueuePush } from '../../lib/push.js'
+import { queuePushFor } from '../../lib/push.js'
 import { env } from '../../config/env.js'
 import { getRazorpayClient, verifyPaymentSignature } from '../../lib/razorpay.js'
 import { recomputeActiveSubCount } from '../../lib/community-stats.js'
@@ -230,6 +230,7 @@ export class PaymentsService {
           userId,
           type: isNewGrant ? NotificationType.CommunityAdded : NotificationType.SubscriptionExtended,
           sourceId: subscription.id,
+          pushPending: true,
           title: isNewGrant ? `You've been added to ${community.name}` : 'Access extended',
           message: `You're active until ${formatEmailDate(validUntil)}.`,
           data: subscriptionRouting(order.communityId, isNewGrant ? 'community-added' : 'extended'),
@@ -291,7 +292,7 @@ export class PaymentsService {
       logger.error({ err, subscriptionId: subscription.id }, 'payments.settlePlanOrder: failed to publish live notification')
     }
 
-    await enqueuePush({
+    await queuePushFor(this.db, { userId, type: isNewGrant ? NotificationType.CommunityAdded : NotificationType.SubscriptionExtended, sourceId: subscription.id }, {
       userIds: [userId],
       title: isNewGrant ? `You've been added to ${community.name}` : 'Access extended',
       body: `You're active until ${formatEmailDate(subscription.validUntil)}.`,

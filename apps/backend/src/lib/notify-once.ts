@@ -3,7 +3,7 @@ import { Prisma } from '../generated/prisma/client.js'
 import redis from './redis.js'
 import { NOTIFICATIONS_PUBSUB_CHANNEL } from './queue.js'
 import type { LiveNotificationEvent } from './queue.js'
-import { enqueuePush } from './push.js'
+import { queuePushFor } from './push.js'
 import { logger } from '../shared/logger.js'
 
 export interface NotificationRowParams {
@@ -28,7 +28,8 @@ export interface NotificationRowParams {
 export async function createAndPublishNotification(params: NotificationRowParams): Promise<string> {
   const { db, communityId, userId, type, sourceId, title, message, data, push } = params
   const row = await db.notification.create({
-    data: { communityId, userId, type, sourceId, title, message, ...(data ? { data } : {}) },
+    // pushPending: true until the push job is queued (see queuePushFor), so a push that fails to queue is retried.
+    data: { communityId, userId, type, sourceId, title, message, ...(data ? { data } : {}), ...(push ? { pushPending: true } : {}) },
     select: { id: true },
   })
   try {
@@ -40,7 +41,7 @@ export async function createAndPublishNotification(params: NotificationRowParams
     logger.error({ err, userId, type, sourceId }, 'createAndPublishNotification: live publish failed')
   }
   if (push) {
-    await enqueuePush({ userIds: [userId], title, body: message, data: push.data, ...(push.threadId ? { threadId: push.threadId } : {}) })
+    await queuePushFor(db, { id: row.id }, { userIds: [userId], title, body: message, data: push.data, ...(push.threadId ? { threadId: push.threadId } : {}) })
   }
   return row.id
 }

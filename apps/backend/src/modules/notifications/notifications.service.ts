@@ -28,7 +28,7 @@ import type {
   PushNotificationJobPayload,
 } from '../../lib/queue.js'
 import { FCM_BATCH_SIZE, isPushConfigured, sendPushBatch } from '../../lib/fcm.js'
-import { enqueuePush } from '../../lib/push.js'
+import { queuePushFor } from '../../lib/push.js'
 import { renderInvoicePdf } from '../services/services.invoice.js'
 import { requestLabel } from '../services/services.shared.js'
 import { routingData, RoutingModule } from '../../lib/notification-routing.js'
@@ -222,7 +222,7 @@ export class NotificationsService {
       // is being retried after a crash, or the post was announced before) is skipped by everything below, so
       // nobody gets the same email, live event or push twice.
       const createdRows = await this.db.notification.createManyAndReturn({
-        select: { userId: true },
+        select: { id: true, userId: true },
         data: chunk.map(r => ({
           communityId,
           userId: r.userId,
@@ -231,6 +231,8 @@ export class NotificationsService {
           title,
           message,
           data,
+          // Until the push job is queued (see queuePushFor), so a push that fails to queue is retried.
+          pushPending: push,
         })),
         skipDuplicates: true,
       })
@@ -245,7 +247,9 @@ export class NotificationsService {
       await Promise.all([
         this.sendEmailBatch(emails, email.subject, email.html),
         this.publishLiveBatch(fresh.map(r => r.userId), { type, communityId, message, sourceId }),
-        push ? enqueuePush({ userIds: fresh.map(r => r.userId), title, body: message, data }) : Promise.resolve(),
+        push
+          ? queuePushFor(this.db, { id: { in: createdRows.map(r => r.id) } }, { userIds: fresh.map(r => r.userId), title, body: message, data })
+          : Promise.resolve(),
       ])
     }
 

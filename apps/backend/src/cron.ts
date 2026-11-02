@@ -14,6 +14,7 @@ import {
   SERVICE_QUOTE_EXPIRY_JOB,
   PUSH_TOKEN_CLEANUP_JOB,
   NOTIFICATION_CLEANUP_JOB,
+  PUSH_RETRY_JOB,
   digestQueue,
 } from './lib/queue.js'
 import prisma from './lib/prisma.js'
@@ -23,6 +24,7 @@ import { refreshAllStockClosePrices } from './lib/stock-quote-api.js'
 import { runSubscriptionLifecycleSweep, expireLapsedSubscriptions } from './lib/subscription-lifecycle.js'
 import { runAdminUnrepliedDigest, runAdminExpiryDigest } from './lib/admin-digests.js'
 import { sweepOrphanTicketUploads } from './lib/ticket-upload-cleanup.js'
+import { retryPendingPushes } from './lib/push.js'
 import { cleanupOldNotifications } from './lib/notification-cleanup.js'
 import { cleanupStalePushTokens } from './modules/push/push.service.js'
 import { expireServiceQuotes } from './lib/service-quote-expiry.js'
@@ -54,6 +56,7 @@ const digestWorker = new Worker(
     if (job.name === SERVICE_QUOTE_EXPIRY_JOB) return expireServiceQuotes(prisma)
     if (job.name === PUSH_TOKEN_CLEANUP_JOB) return cleanupStalePushTokens(prisma)
     if (job.name === NOTIFICATION_CLEANUP_JOB) return cleanupOldNotifications(prisma)
+    if (job.name === PUSH_RETRY_JOB) return retryPendingPushes(prisma)
   },
   { connection, concurrency: 1 },
 )
@@ -121,6 +124,11 @@ async function registerSchedulers() {
     'daily-notification-cleanup',
     { pattern: '45 3 * * *', tz: 'Asia/Kolkata' }, // every day, 3:45 AM IST
     { name: NOTIFICATION_CLEANUP_JOB },
+  )
+  await digestQueue.upsertJobScheduler(
+    'push-retry',
+    { pattern: '*/2 * * * *', tz: 'Asia/Kolkata' }, // every 2 minutes: queues pushes that failed to queue the first time
+    { name: PUSH_RETRY_JOB },
   )
 }
 

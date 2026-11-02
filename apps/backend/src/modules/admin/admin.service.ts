@@ -1,5 +1,5 @@
 import { createRequire } from 'module'
-import { enqueuePush } from '../../lib/push.js'
+import { queuePushFor } from '../../lib/push.js'
 import { randomUUID } from 'crypto'
 import bcrypt from 'bcryptjs'
 import type { PrismaClient, Prisma } from '../../generated/prisma/client.js'
@@ -1396,6 +1396,7 @@ export class AdminService {
           userId: current.userId,
           type: NotificationType.SubscriptionExtended,
           sourceId: sub.id,
+          pushPending: true,
           title: 'Access extended',
           message: `You're active until ${formatEmailDate(sub.validUntil)}.`,
           data: subscriptionRouting(current.communityId, 'extended'),
@@ -1448,7 +1449,7 @@ export class AdminService {
       logger.error({ err, subscriptionId: created.id }, 'admin.extendSubscription: failed to publish live notification')
     }
 
-    await enqueuePush({
+    await queuePushFor(this.db, { userId: current.userId, type: NotificationType.SubscriptionExtended, sourceId: created.id }, {
       userIds: [current.userId],
       title: 'Access extended',
       body: `You're active until ${formatEmailDate(created.validUntil)}.`,
@@ -2062,6 +2063,7 @@ export class AdminService {
             userId: user.id,
             type: NotificationType.CommunityAdded,
             sourceId: sub.id,
+            pushPending: true,
             title: `You've been added to ${addedCommunityName}`,
             message: `Active until ${formatEmailDate(validUntil)}.`,
             data: subscriptionRouting(data.newCommunity.communityId, 'community-added'),
@@ -2105,7 +2107,7 @@ export class AdminService {
         } catch (err) {
           logger.error({ err, userId }, 'admin.updateMember: failed to publish live notification')
         }
-        await enqueuePush({
+        await queuePushFor(this.db, { userId: user.id, type: NotificationType.CommunityAdded, sourceId: newSubscriptionId }, {
           userIds: [user.id],
           title: `You've been added to ${addedCommunityName}`,
           body: `Active until ${formatEmailDate(new Date(data.newCommunity.validUntil))}.`,

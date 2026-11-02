@@ -3,7 +3,7 @@ import { Prisma } from '../generated/prisma/client.js'
 import redis from './redis.js'
 import { NOTIFICATIONS_PUBSUB_CHANNEL } from './queue.js'
 import type { LiveNotificationEvent } from './queue.js'
-import { enqueuePush } from './push.js'
+import { queuePushFor } from './push.js'
 import { NotificationType } from '../modules/notifications/notifications.dto.js'
 import { logger } from '../shared/logger.js'
 
@@ -38,10 +38,14 @@ export interface ThreadNotification {
 export async function notifyMemberThread(n: ThreadNotification): Promise<void> {
   const type = n.kind === 'ticket' ? NotificationType.TicketUpdate : NotificationType.ServiceUpdate
   const data = { type: n.kind, id: n.threadId, event: n.event, ...(n.communityId ? { communityId: n.communityId } : {}) }
+  let rowId: string
   try {
-    await n.db.notification.create({
-      data: { userId: n.userId, communityId: n.communityId, type, sourceId: n.eventId, title: n.title, message: n.message, data },
+    // pushPending: true until the push job is queued (see queuePushFor), so a push that fails to queue is retried.
+    const row = await n.db.notification.create({
+      data: { userId: n.userId, communityId: n.communityId, type, sourceId: n.eventId, title: n.title, message: n.message, data, pushPending: true },
+      select: { id: true },
     })
+    rowId = row.id
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') return
     logger.error({ err, userId: n.userId, kind: n.kind, threadId: n.threadId }, 'notifyMemberThread: inbox row failed')
@@ -55,7 +59,7 @@ export async function notifyMemberThread(n: ThreadNotification): Promise<void> {
   } catch (err) {
     logger.error({ err, userId: n.userId }, 'notifyMemberThread: live publish failed')
   }
-  await enqueuePush({ userIds: [n.userId], title: n.title, body: n.message, data, threadId: `${n.kind}:${n.threadId}` })
+  await queuePushFor(n.db, { id: rowId }, { userIds: [n.userId], title: n.title, body: n.message, data, threadId: `${n.kind}:${n.threadId}` })
 }
 
 /** Short lock-screen text for a chat message: the start of its text, or a placeholder for attachment-only messages. */

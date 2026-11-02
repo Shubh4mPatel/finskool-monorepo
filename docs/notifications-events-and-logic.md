@@ -270,7 +270,7 @@ A push is skipped for a recipient when any of these is true: `pushEnabled = fals
 
 ## 8. Push pipeline
 
-1. A producer calls `enqueuePush({ userIds, title, body, data, threadId? })` (`lib/push.ts`). It adds a `push-notification` job to the `notifications` queue: **5 attempts, exponential backoff from 5 s**, `removeOnFail` keeps the last 500. It never throws: a Redis problem is logged and the triggering request still succeeds.
+1. A producer calls `enqueuePush({ userIds, title, body, data, threadId? })` (`lib/push.ts`). It adds a `push-notification` job to the `notifications` queue: **5 attempts, exponential backoff from 5 s**, `removeOnFail` keeps the last 500. It never throws: a Redis problem is logged and the triggering request still succeeds. **A push is never lost to a queue failure:** a notification row that wants a push is saved with `push_pending = true`, and `queuePushFor` clears the flag once the job is queued. If queueing fails (or the process dies in between), the row stays pending and the **`push-retry` job (every 2 minutes, cron)** queues it. It waits 60 seconds before touching a row, groups the rows of one announcement into jobs of up to 500 members, and gives up after 24 hours (a push that late is useless). Backed by the partial index `idx_notifications_push_pending`. If the job is queued but clearing the flag fails, the retry may queue it a second time (a duplicate push is preferred to a lost one).
 2. The worker runs `NotificationsService.sendPush`:
    - Looks up `MobileSession` rows for the user ids with a token, for users that are `pushEnabled`, `active` and not deleted. Everyone else counts as `skipped`.
    - If FCM credentials are not configured, it logs a warning and sends nothing.
@@ -290,8 +290,8 @@ A push is skipped for a recipient when any of these is true: `pushEnabled = fals
 
 | Producer | Pushes through |
 |---|---|
-| Post fan-out | `enqueuePush` per 500-recipient chunk |
-| Payment settlement, admin extend, admin adds community | `enqueuePush` directly after the row is written |
+| Post fan-out | `queuePushFor` per 500-recipient chunk |
+| Payment settlement, admin extend, admin adds community | `queuePushFor` after the row is written |
 | Reminder sweep and expiry job | `notifyOnce({ push })` |
 | Ticket and service activity | `notifyMemberThread` |
 
@@ -313,6 +313,7 @@ A push is skipped for a recipient when any of these is true: `pushEnabled = fals
 | 03:00 daily | `ticket-upload-cleanup` | Orphan ticket uploads. Not a notification. |
 | 03:30 daily | `push-token-cleanup` | Clears device tokens older than 90 days. |
 | 03:45 daily | `notification-cleanup` | Deletes notifications that are **read** and older than **90 days** (`createdAt`), in slices of 5,000 (at most 200 slices a run; the rest waits for the next day). Unread notifications are never deleted. Backed by the partial index `idx_notifications_read_created`. Safe for the send-once rules, which key on events that are long over by then. |
+| every 2 min | `push-retry` | Queues pushes whose first attempt failed to queue (rows still `push_pending`). See section 8. |
 | 09:00 daily | `subscription-lifecycle-sweep` | Reminders (below). |
 | 09:30 daily | `admin-unreplied-digest` | One digest per admin. |
 | 10:00 Mondays | `admin-expiry-report` | One digest per admin. |
