@@ -264,6 +264,8 @@ Defined in `lib/live-notifications-feed.ts`, attached to the HTTP server in `ind
 
 Described in 4.3 and in the "Email" column above. Always from a worker job, except the reminder/expiry emails, which cron sends inline. A failed email never rolls back the inbox row.
 
+**Logo.** The Finskool logo (`email-template/logo.png`) is attached inside every email as an inline image (`cid:finskool-logo`, added in `lib/mailer.ts`), so it shows without depending on the website or `EMAIL_LOGO_URL`. Set `EMAIL_LOGO_INLINE=false` to link to `EMAIL_LOGO_URL` instead. Push banners use the app icon; Android also gets the `ic_notification` icon name and brand colour from the server (the drawable lives in the app).
+
 ### 6.4 Push (FCM)
 
 See section 8 for the full pipeline and `docs/mobile-push-notifications-integration.md` for what the mobile app must do.

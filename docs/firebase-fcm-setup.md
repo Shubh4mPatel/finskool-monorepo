@@ -87,7 +87,7 @@ If neither variable is set, the app still works: pushes are skipped and logged, 
    <meta-data android:name="com.google.firebase.messaging.default_notification_icon" android:resource="@drawable/ic_notification"/>
    <meta-data android:name="com.google.firebase.messaging.default_notification_color" android:resource="@color/finskool_brand"/>
    ```
-   Without this Android shows the plain launcher icon or a grey square. iOS shows the app icon automatically.
+   Name the drawable exactly `ic_notification`: the server also sends that name (and the brand colour `#1D9E75`) with every push, so it is used even when the manifest default is missing. Without it Android shows the plain launcher icon or a grey square. iOS shows the app icon automatically.
 8. Android needs no extra server setup beyond section 2.
 
 ## 5. iOS

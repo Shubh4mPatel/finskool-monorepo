@@ -87,6 +87,9 @@ function toFirebaseMessage(m: PushMessage): Message {
     data: m.data,
     android: {
       priority: 'high',
+      // Small status-bar icon and accent colour. The icon name is a drawable inside the app (ic_notification, see
+      // docs/firebase-fcm-setup.md); an app without it falls back to its manifest default.
+      notification: { icon: 'ic_notification', color: '#1D9E75' },
     },
     apns: {
       headers: { 'apns-priority': '10' },
