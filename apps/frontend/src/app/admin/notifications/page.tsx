@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { BellOff, CheckCheck, Inbox, RefreshCw } from "lucide-react";
 import { api } from "@/lib/api";
+import { notificationRoute } from "@/lib/notificationRoute";
 import { notificationSocketStore } from "@/store/notifications/notificationSocketStore";
 import {
   NotificationCard,
@@ -11,17 +12,6 @@ import {
   type ListNotificationsResponse,
 } from "@/components/NotificationCard";
 import { EmptyState, Skeleton, stagger } from "@/components/admin/dashboard/Panel";
-
-// type -> route mapping for the admin side. "thread" lands here (not on the
-// member map) because an admin can be the direct target of a reply too, when
-// a member replies to the admin's own comment.
-const ROUTE_BY_TYPE: Record<string, string> = {
-  thread: "/admin/feed",
-  "new-member-registered": "/admin/members",
-  "import-complete": "/admin/import-csv",
-  "new-member-reply": "/admin/feed",
-  reaction: "/admin/feed", // fallback when the post is gone
-};
 
 const LIST_URL = "/api/v1/notifications?page=1&pageSize=20";
 
@@ -97,9 +87,8 @@ export default function AdminNotificationsPage() {
         // best-effort optimistic update
       }
     }
-    // Reactions and replies name their post: open the feed on just that post.
-    const postId = notification.data?.type === "post" ? notification.data.id : null;
-    const link = postId ? `/admin/feed?post=${postId}` : ROUTE_BY_TYPE[notification.type];
+    // The routing data the server sends decides the page (the old per-type map is only a fallback).
+    const link = notificationRoute(notification);
     if (link) {
       router.push(link);
     }

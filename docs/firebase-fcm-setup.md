@@ -82,7 +82,13 @@ If neither variable is set, the app still works: pushes are skipped and logged, 
    Future<void> _bg(RemoteMessage m) async { await Firebase.initializeApp(); }
    FirebaseMessaging.onBackgroundMessage(_bg);
    ```
-7. Android needs no extra server setup beyond section 2.
+7. **Notification icon and colour (logo in the banner).** The server cannot change the small icon on Android; the app decides. Add a white-on-transparent PNG as `android/app/src/main/res/drawable/ic_notification.png` and in `AndroidManifest.xml`, inside `<application>`:
+   ```xml
+   <meta-data android:name="com.google.firebase.messaging.default_notification_icon" android:resource="@drawable/ic_notification"/>
+   <meta-data android:name="com.google.firebase.messaging.default_notification_color" android:resource="@color/finskool_brand"/>
+   ```
+   Without this Android shows the plain launcher icon or a grey square. iOS shows the app icon automatically.
+8. Android needs no extra server setup beyond section 2.
 
 ## 5. iOS
 

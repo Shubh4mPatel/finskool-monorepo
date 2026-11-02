@@ -85,7 +85,10 @@ export const env = {
     // Every template's header/footer <img> references {logo_url}, injected
     // automatically by renderEmail — change this one var to swap the logo
     // everywhere without touching template files or send-email call sites.
-    logoUrl: process.env['EMAIL_LOGO_URL'] ?? 'https://community.finskool21.in/logo.svg',
+    // Email apps (Gmail, Outlook, Yahoo...) do not show SVG images, so a logo.svg address is swapped for the
+    // logo.png that sits next to it (apps/frontend/public). This also fixes servers whose .env was copied from the
+    // old .env.example, which pointed at logo.svg.
+    logoUrl: (process.env['EMAIL_LOGO_URL'] ?? 'https://community.finskool21.in/logo.png').replace(/\/logo\.svg(\?.*)?$/, '/logo.png$1'),
   },
 
   angelone: {
