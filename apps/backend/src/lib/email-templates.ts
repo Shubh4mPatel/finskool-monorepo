@@ -11,7 +11,6 @@ export type EmailTemplateId =
   | 'service-invoice'
   | 'community-added'
   | 'community-access-removed'
-  | 'thread-reply'
   | 'new-announcement'
   | 'admin-unreplied-digest'
   | 'admin-expiry-report'
@@ -37,7 +36,6 @@ const TEMPLATE_REGISTRY: Record<EmailTemplateId, TemplateDef> = {
   'service-invoice': { file: 'service-invoice.html', subject: 'Payment received - invoice {invoice_number}' },
   'community-added': { file: 'community-added.html', subject: "You've been added to {community_name}" },
   'community-access-removed': { file: 'community-access-removed.html', subject: 'Your {community_name} access has been removed' },
-  'thread-reply': { file: 'thread-reply.html', subject: '{admin_name} replied to your thread' },
   'new-announcement': { file: 'new-announcement.html', subject: 'New announcement in {community_name}' },
   'admin-unreplied-digest': { file: 'admin-unreplied-digest.html', subject: '{count} member questions are waiting for a reply' },
   'admin-expiry-report': { file: 'admin-expiry-report.html', subject: '{count} subscriptions expiring this week' },

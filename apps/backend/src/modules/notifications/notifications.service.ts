@@ -11,8 +11,6 @@ import {
 } from '../../lib/queue.js'
 import type {
   CommunityPostNotificationJobPayload,
-  CommunityRecommendationNotificationJobPayload,
-  ThreadReplyEmailJobPayload,
   WelcomeEmailJobPayload,
   SubscriptionExtendedEmailJobPayload,
   ServiceInvoiceEmailJobPayload,
@@ -43,20 +41,6 @@ function startOfToday(): Date {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   return today
-}
-
-function notificationEmailHtml(message: string, ctaUrl: string, ctaLabel: string): string {
-  return `
-    <div style="font-family: -apple-system, Helvetica, Arial, sans-serif; max-width: 480px; margin: 0 auto;">
-      <p style="font-size: 15px; color: #153d3a; line-height: 1.5;">${message}</p>
-      <a href="${ctaUrl}"
-         style="display: inline-block; margin-top: 12px; padding: 10px 24px; border-radius: 999px;
-                background: linear-gradient(to right, #c1f26e, #108b8b); color: #153d3a;
-                font-weight: 700; font-size: 14px; text-decoration: none;">
-        ${ctaLabel}
-      </a>
-    </div>
-  `
 }
 
 export interface SubscriptionExpiringEmailPayload {
@@ -190,23 +174,6 @@ export class NotificationsService {
     })
   }
 
-  async fanOutCommunityRecommendation(payload: CommunityRecommendationNotificationJobPayload): Promise<{ created: number }> {
-    const html = notificationEmailHtml(payload.message, `${env.frontendUrl}/recommendations`, 'View Recommendation')
-    const community = await this.db.community.findUnique({ where: { id: payload.communityId }, select: { isFree: true } })
-    return this.fanOutCommunity({
-      communityId: payload.communityId,
-      sourceId: payload.recommendationId,
-      title: `New recommendation — ${payload.stockSymbol}`,
-      message: payload.message,
-      triggeredByUserId: payload.triggeredByUserId,
-      type: NotificationType.Recommendation,
-      data: routingData({ module: RoutingModule.Recommendation, id: payload.recommendationId, communityId: payload.communityId, free: community?.isFree }),
-      email: { subject: payload.message, html },
-      // Recommendations stay in-app and email only; no mobile push.
-      push: false,
-    })
-  }
-
   private async fanOutCommunity(params: {
     communityId: string
     sourceId: string
@@ -266,17 +233,6 @@ export class NotificationsService {
       'notifications.fanOutCommunity: done',
     )
     return { created }
-  }
-
-  async sendThreadReplyEmail(payload: ThreadReplyEmailJobPayload): Promise<void> {
-    const { subject, html } = renderEmail('thread-reply', {
-      first_name: firstNameOf(payload.recipientName),
-      admin_name: payload.adminName,
-      post_title: payload.postTitle,
-      reply_excerpt: payload.replyExcerpt,
-      frontend_url: env.frontendUrl,
-    })
-    await sendMail({ to: payload.toEmail, subject, html })
   }
 
   async sendWelcomeEmail(payload: WelcomeEmailJobPayload): Promise<void> {

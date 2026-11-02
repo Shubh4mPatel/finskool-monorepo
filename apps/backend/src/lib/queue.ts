@@ -4,8 +4,6 @@ import { env } from '../config/env.js'
 
 export const NOTIFICATIONS_QUEUE_NAME = 'notifications'
 export const COMMUNITY_POST_JOB = 'community-post'
-export const COMMUNITY_RECOMMENDATION_JOB = 'community-recommendation'
-export const THREAD_REPLY_EMAIL_JOB = 'thread-reply-email'
 
 // Separate from the notifications queue: this is a ~20-minute sweep over every
 // active stock (rate-limited to Finedge's 300 req/min), so it shouldn't
@@ -35,22 +33,6 @@ export interface CommunityPostNotificationJobPayload {
   triggeredByUserId: string
   postTitle: string
   postExcerpt: string
-}
-
-export interface CommunityRecommendationNotificationJobPayload {
-  communityId: string
-  recommendationId: string
-  message: string
-  triggeredByUserId: string
-  stockSymbol: string
-}
-
-export interface ThreadReplyEmailJobPayload {
-  toEmail: string
-  recipientName: string
-  adminName: string
-  postTitle: string
-  replyExcerpt: string
 }
 
 export const WELCOME_EMAIL_JOB = 'welcome-email'
@@ -176,8 +158,6 @@ export interface MobileNewLoginEmailJobPayload {
 
 export type NotificationJobPayload =
   | CommunityPostNotificationJobPayload
-  | CommunityRecommendationNotificationJobPayload
-  | ThreadReplyEmailJobPayload
   | WelcomeEmailJobPayload
   | SubscriptionExtendedEmailJobPayload
   | ServiceInvoiceEmailJobPayload

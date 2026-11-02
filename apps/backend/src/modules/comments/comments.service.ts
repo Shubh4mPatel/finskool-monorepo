@@ -1,9 +1,8 @@
 import type { PrismaClient, UserRole } from '../../generated/prisma/client.js'
 import { assertCommunityAccessFromToken, getCommunityAdminIds } from '../../lib/community-access.js'
-import { notificationsQueue, THREAD_REPLY_EMAIL_JOB, NOTIFICATIONS_PUBSUB_CHANNEL } from '../../lib/queue.js'
+import { NOTIFICATIONS_PUBSUB_CHANNEL } from '../../lib/queue.js'
 import type { LiveNotificationEvent } from '../../lib/queue.js'
 import redis from '../../lib/redis.js'
-import { truncateText } from '../../lib/email-templates.js'
 import { NotFoundError, ForbiddenError, BadRequestError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
 import { routingData, RoutingModule } from '../../lib/notification-routing.js'
@@ -43,9 +42,7 @@ export class CommentsService {
     let parentPath: string | null = null
     let parentId: string | null = null
     let parentAuthorId: string | null = null
-    let parentAuthorEmail: string | null = null
     let parentAuthorRole: string | null = null
-    let parentAuthorName: string | null = null
 
     if (data.parentCommentId) {
       const parent = await this.db.comment.findUnique({
@@ -56,7 +53,7 @@ export class CommentsService {
           authorId: true,
           depth: true,
           path: true,
-          author: { select: { role: true, email: true, name: true } },
+          author: { select: { role: true } },
         },
       })
       if (!parent) throw new NotFoundError('Parent comment not found')
@@ -67,29 +64,15 @@ export class CommentsService {
       parentPath = parent.path
       parentId = parent.id
       parentAuthorId = parent.authorId
-      parentAuthorEmail = parent.author.email
       parentAuthorRole = parent.author.role
-      parentAuthorName = parent.author.name
     }
 
     // Notify admin when: commenter is not admin AND (top-level comment OR reply to admin's comment)
     const shouldNotify = userRole !== 'admin' && (depth === 0 || parentAuthorRole === 'admin')
 
-    // Fetched once, ahead of the transaction, so it's available both for the
-    // in-app notification message and the post-transaction email job below.
-    const replyNotifyTarget = parentId && parentAuthorId && parentAuthorId !== userId
-      ? await this.db.user.findUnique({ where: { id: userId }, select: { name: true } })
-      : null
-    const replyMessage = replyNotifyTarget
-      ? `${replyNotifyTarget.name} replied to your comment on "${post.title}"`
-      : null
-
-    // Commenter's own name, needed for the admin fan-out notification below.
-    // replyNotifyTarget already looked this same user up in the reply-to-admin
-    // case, so only re-query for the top-level-comment case (replyNotifyTarget
-    // is always null there since there's no parentId).
+    // Commenter's own name, for the admin "new question" notification below.
     const commenterName = shouldNotify
-      ? (replyNotifyTarget?.name ?? (await this.db.user.findUnique({ where: { id: userId }, select: { name: true } }))?.name ?? null)
+      ? ((await this.db.user.findUnique({ where: { id: userId }, select: { name: true } }))?.name ?? null)
       : null
 
     const communityAdminIds = shouldNotify ? await getCommunityAdminIds(this.db, post.communityId) : []
@@ -136,22 +119,6 @@ export class CommentsService {
         autoResolvedCount = result.count
       }
 
-      // Notify the parent comment's author on reply — synchronous (single row),
-      // same transaction as the comment write. Skip self-replies.
-      if (replyMessage && parentAuthorId) {
-        await tx.notification.create({
-          data: {
-            communityId: post.communityId,
-            userId: parentAuthorId,
-            type: NotificationType.Thread,
-            sourceId: created.id,
-            title: `${replyNotifyTarget!.name} replied to you`,
-            message: replyMessage,
-            data: postRouting,
-          },
-        })
-      }
-
       return tx.comment.update({
         where: { id: created.id },
         data: { path },
@@ -164,48 +131,6 @@ export class CommentsService {
         },
       })
     })
-
-    // Enqueued after the transaction commits (not inside it) — email delivery
-    // is a side effect that shouldn't be tied to the DB transaction, and the
-    // API response shouldn't wait on an SMTP round-trip for a reply notification.
-    if (replyMessage && parentAuthorEmail && parentAuthorName && replyNotifyTarget) {
-      try {
-        await notificationsQueue.add(
-          THREAD_REPLY_EMAIL_JOB,
-          {
-            toEmail: parentAuthorEmail,
-            recipientName: parentAuthorName,
-            adminName: replyNotifyTarget.name,
-            postTitle: post.title,
-            replyExcerpt: truncateText(data.content),
-          },
-          { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
-        )
-      } catch (err) {
-        logger.error({ err, commentId: comment.id }, 'comments.create: failed to enqueue reply email job')
-      }
-    }
-
-    // Live push over WebSocket — same mechanism fan-out post/recommendation
-    // notifications use (see live-notifications-feed.ts), so the parent
-    // author's bell updates instantly instead of waiting on the next poll.
-    if (replyMessage && parentAuthorId) {
-      try {
-        await redis.publish(
-          NOTIFICATIONS_PUBSUB_CHANNEL,
-          JSON.stringify({
-            userId: parentAuthorId,
-            type: 'thread',
-            communityId: post.communityId,
-            message: replyMessage,
-            sourceId: comment.id,
-            postId,
-          } satisfies LiveNotificationEvent),
-        )
-      } catch (err) {
-        logger.error({ err, commentId: comment.id }, 'comments.create: failed to publish live reply notification')
-      }
-    }
 
     if (shouldNotify && communityAdminIds.length > 0 && commenterName) {
       try {

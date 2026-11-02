@@ -4,8 +4,6 @@ import {
   createBullConnection,
   NOTIFICATIONS_QUEUE_NAME,
   COMMUNITY_POST_JOB,
-  COMMUNITY_RECOMMENDATION_JOB,
-  THREAD_REPLY_EMAIL_JOB,
   WELCOME_EMAIL_JOB,
   SUBSCRIPTION_EXTENDED_EMAIL_JOB,
   SERVICE_INVOICE_EMAIL_JOB,
@@ -31,8 +29,6 @@ const worker = new Worker(
   NOTIFICATIONS_QUEUE_NAME,
   async job => {
     if (job.name === COMMUNITY_POST_JOB) return service.fanOutCommunityPost(job.data)
-    if (job.name === COMMUNITY_RECOMMENDATION_JOB) return service.fanOutCommunityRecommendation(job.data)
-    if (job.name === THREAD_REPLY_EMAIL_JOB) return service.sendThreadReplyEmail(job.data)
     if (job.name === WELCOME_EMAIL_JOB) return service.sendWelcomeEmail(job.data)
     if (job.name === SUBSCRIPTION_EXTENDED_EMAIL_JOB) return service.sendSubscriptionExtendedEmail(job.data)
     if (job.name === SERVICE_INVOICE_EMAIL_JOB) return service.sendServiceInvoiceEmail(job.data)
@@ -50,9 +46,8 @@ const worker = new Worker(
   { connection, concurrency: 5 },
 )
 
-// `toEmail` only exists on the single-recipient email job payloads (OTP, welcome,
-// thread-reply, etc.) — the two fan-out jobs (COMMUNITY_POST_JOB/COMMUNITY_RECOMMENDATION_JOB)
-// address many recipients internally and have no one `toEmail` to report here.
+// `toEmail` only exists on the single-recipient email job payloads (OTP, welcome, etc.) — the
+// fan-out job (COMMUNITY_POST_JOB) addresses many recipients internally and has no one `toEmail` to report here.
 worker.on('completed', job =>
   logger.info(
     { jobId: job.id, jobName: job.name, toEmail: job.data?.toEmail },
