@@ -90,6 +90,7 @@ export interface CreateCommunityDTO {
   description?: string | undefined
   tags: string[]
   type?: string | undefined
+  whatsIncluded?: string[] | undefined
   coverImageUrl?: string | undefined
   badgeUrl?: string | undefined
   paymentLink?: string | undefined
@@ -100,6 +101,7 @@ export interface UpdateCommunityDTO {
   description?: string | undefined
   tags: string[]
   type?: string | undefined
+  whatsIncluded?: string[] | undefined
   coverImageUrl?: string | undefined
   badgeUrl?: string | undefined
   paymentLink?: string | undefined

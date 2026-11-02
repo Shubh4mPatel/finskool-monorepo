@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Building2, Pencil, Plus, Search, SearchX, Trash2, Users, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
@@ -26,7 +27,6 @@ export default function CommunitiesPage() {
   const [communities, setCommunities] = useState<Community[]>([]);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [reloadTick, setReloadTick] = useState(0);
-  const [showCreate, setShowCreate] = useState(false);
   const [editingCommunity, setEditingCommunity] = useState<Community | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -120,13 +120,13 @@ export default function CommunitiesPage() {
             </div>
           )}
           {isSuperAdmin && (
-            <button
-              onClick={() => setShowCreate(true)}
+            <Link
+              href="/admin/communities/new"
               className="flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-bold text-white shadow-[0_8px_20px_-10px_rgba(21,61,58,0.7)] transition-all hover:-translate-y-px hover:bg-[#1c4c48]"
             >
               <Plus size={15} className="text-lime" />
               Create Community
-            </button>
+            </Link>
           )}
         </div>
       </div>
@@ -164,12 +164,12 @@ export default function CommunitiesPage() {
             <span className="flex flex-col items-center gap-3">
               No communities yet.
               {isSuperAdmin && (
-                <button
-                  onClick={() => setShowCreate(true)}
+                <Link
+                  href="/admin/communities/new"
                   className="inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2 text-sm font-bold text-white transition-all hover:-translate-y-px hover:bg-[#1c4c48]"
                 >
                   <Plus size={14} className="text-lime" /> Create the first one
-                </button>
+                </Link>
               )}
             </span>
           </EmptyState>
@@ -275,13 +275,6 @@ export default function CommunitiesPage() {
             );
           })}
         </div>
-      )}
-
-      {showCreate && (
-        <CommunityFormModal
-          onClose={() => setShowCreate(false)}
-          onSaved={(created) => setCommunities((prev) => [created, ...prev])}
-        />
       )}
 
       {editingCommunity && (

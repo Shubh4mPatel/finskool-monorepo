@@ -855,6 +855,7 @@ export class AdminService {
         description: data.description ?? null,
         tags: data.tags,
         type: data.type ?? null,
+        whatsIncluded: data.whatsIncluded ?? [],
         coverImageUrl: data.coverImageUrl ?? null,
         badgeUrl: data.badgeUrl ?? null,
         paymentLink: data.paymentLink ?? null,
@@ -893,7 +894,9 @@ export class AdminService {
         name: data.name,
         description: data.description ?? null,
         tags: data.tags,
-        type: data.type ?? null,
+        // type and whatsIncluded are only changed when sent, so a form that does not edit them (the modal) keeps them.
+        ...(data.type !== undefined && { type: data.type }),
+        ...(data.whatsIncluded !== undefined && { whatsIncluded: data.whatsIncluded }),
         coverImageUrl: data.coverImageUrl ?? null,
         badgeUrl: data.badgeUrl ?? null,
         paymentLink: data.paymentLink ?? null,

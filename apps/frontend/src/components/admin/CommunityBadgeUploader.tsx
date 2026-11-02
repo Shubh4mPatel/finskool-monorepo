@@ -1,16 +1,22 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Image, X } from "lucide-react";
+import { CirclePlus, Image, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 
 export default function CommunityBadgeUploader({
   badgeUrl,
   onChange,
+  noun = "Badge",
+  large = false,
 }: {
   badgeUrl: string | null;
   onChange: (url: string | null) => void;
+  /** What the picture is called on screen: "Badge" (the default) or "Icon". */
+  noun?: string;
+  /** A full-width dashed bar with a circled plus, used on the create page. */
+  large?: boolean;
 }) {
   const toast = useToast();
   const [uploading, setUploading] = useState(false);
@@ -33,7 +39,7 @@ export default function CommunityBadgeUploader({
       });
       onChange(publicUrl);
     } catch {
-      toast.error("Failed to upload badge. Please try again.");
+      toast.error(`Failed to upload ${noun.toLowerCase()}. Please try again.`);
     } finally {
       setUploading(false);
     }
@@ -52,15 +58,26 @@ export default function CommunityBadgeUploader({
       {badgeUrl ? (
         <div className="flex items-center gap-3 rounded-xl border border-divider px-3 py-2">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={badgeUrl} alt="Community badge" className="h-6 w-6" />
+          <img src={badgeUrl} alt={`Community ${noun.toLowerCase()}`} className="h-6 w-6" />
           <button
             type="button"
+            aria-label={`Remove ${noun.toLowerCase()}`}
             onClick={() => onChange(null)}
             className="flex h-6 w-6 items-center justify-center rounded-full text-muted transition-colors hover:bg-divider/60 hover:text-primary"
           >
             <X size={13} />
           </button>
         </div>
+      ) : large ? (
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          disabled={uploading}
+          className="flex w-full items-center justify-center gap-2.5 rounded-xl border-2 border-dashed border-[#d6d9cc] bg-background px-4 py-5 text-base text-primary/70 transition-colors hover:border-accent hover:text-primary disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <CirclePlus size={18} strokeWidth={1.5} aria-hidden />
+          {uploading ? "Uploading…" : `Add ${noun}`}
+        </button>
       ) : (
         <button
           type="button"
@@ -69,7 +86,7 @@ export default function CommunityBadgeUploader({
           className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-divider bg-background px-4 py-3 text-sm font-semibold text-muted transition-colors hover:border-accent hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Image size={16} />
-          {uploading ? "Uploading…" : "Add Badge (SVG)"}
+          {uploading ? "Uploading…" : `Add ${noun} (SVG)`}
         </button>
       )}
     </div>
