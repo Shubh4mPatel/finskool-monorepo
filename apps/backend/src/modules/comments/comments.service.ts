@@ -70,18 +70,9 @@ export class CommentsService {
     // Notify admin when: commenter is not admin AND (top-level comment OR reply to admin's comment)
     const shouldNotify = userRole !== 'admin' && (depth === 0 || parentAuthorRole === 'admin')
 
-    // Commenter's own name, for the admin "new question" notification below.
-    const commenterName = shouldNotify
-      ? ((await this.db.user.findUnique({ where: { id: userId }, select: { name: true } }))?.name ?? null)
-      : null
-
-    const communityAdminIds = shouldNotify ? await getCommunityAdminIds(this.db, post.communityId) : []
-
     // Set when an admin's reply auto-resolves the parent's pending notification —
     // used after the transaction to broadcast a 'thread-resolved' live event.
     let autoResolvedCount = 0
-
-    const postRouting = routingData({ module: RoutingModule.Post, id: post.id, communityId: post.communityId, free: post.community.isFree })
 
     // create with temp path, then update with real path (needs the new id)
     const comment = await this.db.$transaction(async tx => {
@@ -93,21 +84,6 @@ export class CommentsService {
 
       if (shouldNotify) {
         await tx.commentNotification.create({ data: { commentId: created.id, postId } })
-
-        if (communityAdminIds.length > 0 && commenterName) {
-          await tx.notification.createMany({
-            data: communityAdminIds.map(adminId => ({
-              communityId: post.communityId,
-              userId: adminId,
-              type: NotificationType.NewMemberReply,
-              sourceId: created.id,
-              title: `New thread on ${post.title}`,
-              message: `${commenterName} asked a question in ${post.community.name}.`,
-              data: postRouting,
-            })),
-            skipDuplicates: true,
-          })
-        }
       }
 
       // When admin replies to a notified comment, auto-mark that notification as replied
@@ -131,29 +107,6 @@ export class CommentsService {
         },
       })
     })
-
-    if (shouldNotify && communityAdminIds.length > 0 && commenterName) {
-      try {
-        const message = `${commenterName} asked a question in ${post.community.name}.`
-        await Promise.all(
-          communityAdminIds.map(adminId =>
-            redis.publish(
-              NOTIFICATIONS_PUBSUB_CHANNEL,
-              JSON.stringify({
-                userId: adminId,
-                type: NotificationType.NewMemberReply,
-                communityId: post.communityId,
-                message,
-                sourceId: comment.id,
-                postId,
-              } satisfies LiveNotificationEvent),
-            ),
-          ),
-        )
-      } catch (err) {
-        logger.error({ err, commentId: comment.id }, 'comments.create: failed to publish live new-member-reply notifications')
-      }
-    }
 
     // When an admin's reply auto-resolved the parent's pending notification,
     // let other admins with this thread open know it's no longer pending —

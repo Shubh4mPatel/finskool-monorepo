@@ -16,6 +16,7 @@ import redis from '../../lib/redis.js'
 import { AppError, BadRequestError, NotFoundError, ConflictError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
 import { subscriptionRouting } from '../../lib/notification-routing.js'
+import { issuePlanReceipt, renderReceiptInBackground } from '../../lib/plan-receipt.js'
 import { NotificationType } from '../notifications/notifications.dto.js'
 import type {
   PlanListItemDTO,
@@ -245,6 +246,16 @@ export class PaymentsService {
     }
     const { subscription, isNewGrant } = granted
 
+    // The receipt (PDF in the invoices bucket, attached to the email below). A failure here must not undo the
+    // payment or lose the email, which just goes without the attachment.
+    let receiptId: string | undefined
+    try {
+      receiptId = (await issuePlanReceipt(this.db, order.id)).id
+      renderReceiptInBackground(this.db, receiptId)
+    } catch (err) {
+      logger.error({ err, planOrderId: order.id }, 'payments.settlePlanOrder: failed to issue receipt')
+    }
+
     if (user.email) {
       try {
         if (isNewGrant) {
@@ -255,6 +266,7 @@ export class PaymentsService {
               name: user.name,
               communityName: community.name,
               validTill: subscription.validUntil.toISOString(),
+              ...(receiptId ? { receiptId } : {}),
             },
             { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
           )
@@ -268,6 +280,7 @@ export class PaymentsService {
               validTill: subscription.validUntil.toISOString(),
               amount: Number(subscription.payment),
               paidOn: (subscription.paidOn ?? now).toISOString(),
+              ...(receiptId ? { receiptId } : {}),
             },
             { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
           )

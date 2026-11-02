@@ -164,6 +164,36 @@ router.post('/payments/verify', authenticate, controller.verifyPayment)
 
 /**
  * @openapi
+ * /payments/receipts:
+ *   get:
+ *     tags: [Payments]
+ *     summary: The caller's payment receipts for plan purchases, newest first
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: "{ success, data: [{ id, number, issuedAt, description, amount, currency }] }"
+ */
+router.get('/payments/receipts', authenticate, controller.listReceipts)
+
+/**
+ * @openapi
+ * /payments/receipts/{receiptId}/download:
+ *   get:
+ *     tags: [Payments]
+ *     summary: Short-lived link to download a receipt PDF
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { in: path, name: receiptId, required: true, schema: { type: string, format: uuid } }
+ *     responses:
+ *       200:
+ *         description: "{ success, data: { url, fileName } }. Open the url within a few minutes."
+ *       404:
+ *         description: Not found, or not the caller's receipt.
+ */
+router.get('/payments/receipts/:receiptId/download', authenticate, controller.downloadReceipt)
+
+/**
+ * @openapi
  * /payments/checkout-sessions:
  *   post:
  *     tags: [Payments]

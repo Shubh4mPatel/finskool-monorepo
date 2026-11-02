@@ -2,8 +2,10 @@ import type { Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
 import type { PaymentsService } from './payments.service.js'
 import type { PaymentsCheckoutService } from './payments.checkout.js'
-import { BadRequestError, UnauthorizedError } from '../../shared/errors/index.js'
+import { BadRequestError, NotFoundError, UnauthorizedError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
+import prisma from '../../lib/prisma.js'
+import { getReceiptDownloadUrl, listReceipts } from '../../lib/plan-receipt.js'
 
 const verifyPaymentSchema = z.object({
   razorpayOrderId: z.string().min(1, 'razorpayOrderId is required'),
@@ -50,6 +52,24 @@ export class PaymentsController {
   listPlans = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const result = await this.service.listPlans(getUuidParam(req, 'communityId'))
+      res.json({ success: true, data: result })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  listReceipts = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      res.json({ success: true, data: await listReceipts(prisma, req.user!.id) })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  downloadReceipt = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const result = await getReceiptDownloadUrl(prisma, req.user!.id, getUuidParam(req, 'receiptId'))
+      if (!result) throw new NotFoundError('Receipt not found')
       res.json({ success: true, data: result })
     } catch (err) {
       next(err)

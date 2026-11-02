@@ -16,6 +16,13 @@ export const NotificationType = {
   // One inbox row per ticket / service request, refreshed on every admin action.
   TicketUpdate: 'ticket-update',
   ServiceUpdate: 'service-update',
+  // Admin-facing: a member did something on a ticket / service request / payment.
+  AdminNewTicket: 'admin-new-ticket',
+  AdminTicketReply: 'admin-ticket-reply',
+  AdminNewServiceRequest: 'admin-new-service-request',
+  AdminServiceMessage: 'admin-service-message',
+  AdminServicePaid: 'admin-service-paid',
+  AdminPaymentFlagged: 'admin-payment-flagged',
 } as const
 
 export interface NotificationItemDTO {

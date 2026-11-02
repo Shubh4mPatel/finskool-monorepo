@@ -30,6 +30,7 @@ import type {
 import { FCM_BATCH_SIZE, isPushConfigured, sendPushBatch } from '../../lib/fcm.js'
 import { queuePushFor } from '../../lib/push.js'
 import { renderInvoicePdf } from '../services/services.invoice.js'
+import { renderReceiptPdf } from '../../lib/plan-receipt.js'
 import { requestLabel } from '../services/services.shared.js'
 import { routingData, RoutingModule } from '../../lib/notification-routing.js'
 import type { RoutingData } from '../../lib/notification-routing.js'
@@ -51,24 +52,6 @@ export interface SubscriptionExpiringEmailPayload {
   communityName: string
   validTill: string
   paymentLink: string | null
-}
-
-export interface AdminUnrepliedDigestEmailPayload {
-  toEmail: string
-  adminName: string
-  count: number
-  days: number
-  communityName: string
-  rows: { label: string; value: string }[]
-}
-
-export interface AdminExpiryDigestEmailPayload {
-  toEmail: string
-  adminName: string
-  count: number
-  dateFrom: string
-  dateTo: string
-  rows: { label: string; value: string }[]
 }
 
 export class NotificationsService {
@@ -280,7 +263,16 @@ export class NotificationsService {
       paid_on: formatEmailDate(payload.paidOn),
       frontend_url: env.frontendUrl,
     })
-    await sendMail({ to: payload.toEmail, subject, html })
+    await sendMail({ to: payload.toEmail, subject, html, ...(await this.receiptAttachments(payload.receiptId)) })
+  }
+
+  /** The payment receipt as an email attachment; nothing when there is none (an admin grant) or it can no longer be found. */
+  private async receiptAttachments(receiptId: string | undefined) {
+    if (!receiptId) return {}
+    const receipt = await this.db.planReceipt.findUnique({ where: { id: receiptId } })
+    if (!receipt) return {}
+    const content = await renderReceiptPdf(receipt)
+    return { attachments: [{ filename: `${receipt.number.replace(/\//g, '-')}.pdf`, content, contentType: 'application/pdf' }] }
   }
 
   /** "Payment received" with the GST invoice attached. The PDF is rendered here, so it needs no stored file. */
@@ -315,7 +307,7 @@ export class NotificationsService {
       valid_till: formatEmailDate(payload.validTill),
       frontend_url: env.frontendUrl,
     })
-    await sendMail({ to: payload.toEmail, subject, html })
+    await sendMail({ to: payload.toEmail, subject, html, ...(await this.receiptAttachments(payload.receiptId)) })
   }
 
   async sendCommunityAccessRemovedEmail(payload: CommunityAccessRemovedEmailJobPayload): Promise<void> {
@@ -495,33 +487,6 @@ export class NotificationsService {
       community_name: payload.communityName,
       valid_till: formatEmailDate(payload.validTill),
       phone: payload.phone,
-    })
-    await sendMail({ to: payload.toEmail, subject, html })
-  }
-
-  async sendAdminUnrepliedDigestEmail(payload: AdminUnrepliedDigestEmailPayload): Promise<void> {
-    const { subject, html } = renderEmail('admin-unreplied-digest', {
-      admin_name: firstNameOf(payload.adminName),
-      count: String(payload.count),
-      days: String(payload.days),
-      community_name: payload.communityName,
-      rows_html: buildEmailRows(payload.rows),
-      frontend_url: env.frontendUrl,
-    })
-    await sendMail({ to: payload.toEmail, subject, html })
-  }
-
-  async sendAdminExpiryDigestEmail(payload: AdminExpiryDigestEmailPayload): Promise<void> {
-    const dateFrom = formatEmailDate(payload.dateFrom)
-    const dateTo = formatEmailDate(payload.dateTo)
-    const { subject, html } = renderEmail('admin-expiry-report', {
-      admin_name: firstNameOf(payload.adminName),
-      count: String(payload.count),
-      date_from: dateFrom,
-      date_to: dateTo,
-      date_range: `${dateFrom} – ${dateTo}`,
-      rows_html: buildEmailRows(payload.rows),
-      frontend_url: env.frontendUrl,
     })
     await sendMail({ to: payload.toEmail, subject, html })
   }

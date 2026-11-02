@@ -11,12 +11,15 @@ interface RoutableNotification {
 // Old rows (no routing data) and types whose page does not depend on an id.
 const ROUTE_BY_TYPE: Record<string, string> = {
   thread: "/admin/feed",
-  "new-member-reply": "/admin/feed",
   reaction: "/admin/feed", // the post is gone
   "new-member-registered": "/admin/members",
   "import-complete": "/admin/import-csv",
-  "admin-unreplied-digest": "/admin/feed",
-  "admin-expiry-report": "/admin/members",
+  "admin-payment-flagged": "/admin/payment-flags",
+  "admin-new-ticket": "/admin/tickets",
+  "admin-ticket-reply": "/admin/tickets",
+  "admin-new-service-request": "/admin/services",
+  "admin-service-message": "/admin/services",
+  "admin-service-paid": "/admin/services",
 };
 
 export function notificationRoute(n: RoutableNotification): string | null {
@@ -39,6 +42,8 @@ export function notificationRoute(n: RoutableNotification): string | null {
         return `/admin/tickets/${encodeURIComponent(d.id)}`;
       case "service":
         return `/admin/services/${encodeURIComponent(d.id)}`;
+      case "payment-flags": // a payment that could not be applied: the review list, with this request marked
+        return `/admin/payment-flags?request=${encodeURIComponent(d.id)}`;
       case "recommendation":
         return "/admin/stock-recommendations";
     }

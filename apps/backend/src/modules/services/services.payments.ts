@@ -3,6 +3,9 @@ import { notifyMemberThread, messagePreview } from '../../lib/member-notify.js'
 import type { Prisma, PrismaClient } from '../../generated/prisma/client.js'
 import { env } from '../../config/env.js'
 import { getAllAdminIds } from '../../lib/community-access.js'
+import { notifyAdmins } from '../../lib/admin-notify.js'
+import { routingData, RoutingModule } from '../../lib/notification-routing.js'
+import { NotificationType } from '../notifications/notifications.dto.js'
 import { publishServiceEvent } from '../../lib/live-tickets-feed.js'
 import { notificationsQueue, SERVICE_INVOICE_EMAIL_JOB } from '../../lib/queue.js'
 import { getRazorpayClient, verifyPaymentSignature, verifyWebhookSignature } from '../../lib/razorpay.js'
@@ -416,7 +419,48 @@ export class ServicePaymentsService {
 
     logger.info({ requestId, outcome: result.outcome, source: input.source, razorpayPaymentId: input.razorpayPaymentId }, 'services.payments.settle: done')
     await this.afterSettle(requestId, result.messageId, result.outcome === 'settled' ? result.invoiceId : null, order.userId)
+    await this.tellAdmins(requestId, result.messageId, result.outcome === 'settled' && result.invoiceId !== null, amountPaise)
     return { outcome: result.outcome, requestId }
+  }
+
+  /** Tells every admin about the payment: a normal one, or one that needs a manual look (the payment-flags page). */
+  private async tellAdmins(requestId: string, eventId: string, ok: boolean, amountPaise: number): Promise<void> {
+    try {
+      const [request, adminIds] = await Promise.all([
+        this.db.serviceRequest.findUniqueOrThrow({
+          where: { id: requestId },
+          select: { number: true, user: { select: { name: true } }, service: { select: { title: true } } },
+        }),
+        getAllAdminIds(this.db),
+      ])
+      const amount = `₹${(amountPaise / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
+      const ref = `SR-${request.number}`
+      await notifyAdmins(
+        ok
+          ? {
+              db: this.db,
+              adminIds,
+              type: NotificationType.AdminServicePaid,
+              sourceId: eventId,
+              communityId: null,
+              title: 'Quote paid',
+              message: `${request.user.name} paid ${amount} for ${request.service.title} (${ref}).`,
+              data: routingData({ module: RoutingModule.Service, id: requestId, communityId: null, event: 'paid' }),
+            }
+          : {
+              db: this.db,
+              adminIds,
+              type: NotificationType.AdminPaymentFlagged,
+              sourceId: eventId,
+              communityId: null,
+              title: 'Payment needs review',
+              message: `${request.user.name}'s ${amount} payment for ${ref} could not be applied. Refund it or resolve it.`,
+              data: routingData({ module: RoutingModule.PaymentFlags, id: requestId, communityId: null, event: 'flagged' }),
+            },
+      )
+    } catch (err) {
+      logger.error({ err, requestId }, 'services.payments: failed to notify admins')
+    }
   }
 
   /** After the commit: live events, the invoice PDF and the invoice email. None of it can fail the payment. */

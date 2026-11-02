@@ -32,7 +32,7 @@ Three separate processes take part:
   ├─ write Notification row         "notifications" queue          the "digest" queue
   ├─ redis.publish (live)           (concurrency 5)                 ├─ subscription reminders
   └─ queue.add(email / push /       ├─ fan-out jobs (post,          ├─ expiry sweep
-       fan-out job)                 │   post)                       ├─ admin digests
+       fan-out job)                 │   post)                       ├─ (no admin digests)
                                     ├─ email jobs                   ├─ service-quote expiry
  LiveNotificationsFeed              └─ push job → FCM               └─ stale push-token + old-inbox cleanup
   subscribes to Redis
@@ -84,7 +84,7 @@ Three separate processes take part:
 - subscription events use the subscription id,
 - post uses the post id,
 - ticket/service updates use the message id / quote id / invoice id (or the ticket / request id for terminal events),
-- digests and import-complete use a fresh `randomUUID()` so they never collide.
+- import-complete uses a fresh `randomUUID()` so it never collides.
 
 ### Other fields that affect delivery
 
@@ -108,8 +108,8 @@ Legend: ✅ sent, ➖ not sent.
 |---|---|---|---|---|---|---|
 | `post` | Admin publishes a post (`PostsService.publishPost`) | Community fan-out (section 4.4) | ✅ | ✅ | ✅ | ✅ |
 | `reaction` | Someone reacts to a post | The post's author (not if self-reaction) | ✅ | ✅ | ➖ | ➖ |
-| `community-added` | First paid access to a community (payment, or admin adds the community to a member) | The member | ✅ | ✅ | ✅ | ✅ |
-| `subscription-extended` | Renewal (member payment, or admin extends) | The member | ✅ | ✅ | ✅ | ✅ |
+| `community-added` | First paid access to a community (payment, or admin adds the community to a member) | The member | ✅ | ✅ | ✅ (receipt PDF attached when paid online) | ✅ |
+| `subscription-extended` | Renewal (member payment, or admin extends) | The member | ✅ | ✅ | ✅ (receipt PDF attached when paid online) | ✅ |
 | `subscription-expiring-7-days` | Daily reminder sweep | The member | ✅ | ✅ | ✅ | ✅ |
 | `subscription-expiring-1-day` | Daily reminder sweep | The member | ✅ | ✅ | ✅ | ✅ |
 | `subscription-expired` | Expiry job or reminder sweep | The member | ✅ | ✅ | ✅ | ✅ |
@@ -118,15 +118,22 @@ Legend: ✅ sent, ➖ not sent.
 
 ### 4.2 Admin-facing events
 
-None of these send a push.
+None of these send a push; admins get the inbox row and the live event (the web bell). Tapping one opens the page in the last column.
 
-| `type` | Trigger | Recipient | Inbox | Live | Email |
-|---|---|---|---|---|---|
-| `new-member-reply` | A non-admin starts a thread, or replies to an admin's comment | Every admin of that community (super admins plus admins granted that community) | ✅ | ✅ | ➖ |
-| `new-member-registered` | A member who was added by an admin completes web registration | The admin who added them (`ApprovedPhone.addedBy`), once per community where the member has an active subscription | ✅ | ✅ | ✅ (`admin-new-member`) |
-| `import-complete` | Bulk member import finished | The admin who ran the import | ✅ | ✅ | ➖ |
-| `admin-unreplied-digest` | Daily 09:30 IST | Each admin who has unreplied member threads in communities they can access | ✅ | ✅ | ✅ |
-| `admin-expiry-report` | Mondays 10:00 IST | Each admin with subscriptions expiring in the next 7 days in their communities | ✅ | ✅ | ✅ |
+| `type` | Trigger | Recipients | Email | Opens |
+|---|---|---|---|---|
+| `admin-new-ticket` | A member opens a ticket | Super admins + admins of the ticket's community (only they can open it) | ➖ | `/admin/tickets/<id>` |
+| `admin-ticket-reply` | A member sends a message on a ticket **nobody has claimed yet** | Same as above | ➖ | `/admin/tickets/<id>` |
+| `admin-new-service-request` | A member requests a service | **Every admin** (services are global) | ➖ | `/admin/services/<id>` |
+| `admin-service-message` | A member sends a message on a request **nobody has claimed yet** | Every admin | ➖ | `/admin/services/<id>` |
+| `admin-service-paid` | A member pays a quote (verify or webhook) | Every admin | ➖ | `/admin/services/<id>` |
+| `admin-payment-flagged` | A payment could not be applied (amount mismatch, quote replaced, no invoice) | Every admin | ➖ | `/admin/payment-flags?request=<id>` |
+| `new-member-registered` | A member finishes mobile registration (a member added by an admin who registers on the web still notifies the admin who added them) | Super admins + admins of a community the member is in (the free community for new sign-ups), because only they can open the profile | ✅ (web path only: `admin-new-member`) | `/admin/members/<id>` |
+| `import-complete` | Bulk member import finished | The admin who ran the import | ➖ | `/admin/import-csv` |
+
+"Claimed" means the ticket / request has an assigned admin. That admin is already in the chat and sees the live message there, so a claimed chat does not notify anyone again.
+
+Removed (decided 2026-11-03): `new-member-reply` (a member starts a thread or replies to an admin's comment), `admin-unreplied-digest` (daily 09:30) and `admin-expiry-report` (Mondays 10:00). Their producers, cron schedulers and email templates are gone; `cron.ts` removes the two old schedulers from Redis on start. Old rows of these types can still exist in inboxes.
 
 ### 4.3 Email-only events (no inbox row, no push)
 
@@ -143,6 +150,8 @@ Sent through `notificationsQueue` email jobs. Subject lines come from `lib/email
 | `otp-email` | Your Finskool21 verification code is {code} | Fallback for the above |
 | `password-reset-otp-email` | Your Finskool21 password reset code is {code} | Mobile forgot-password |
 | `mobile-new-login-email` | New login to your Finskool21 account | Every mobile login |
+
+**Plan purchase receipts.** When a member pays for a plan, `settlePlanOrder` issues one `plan_receipts` row (number `RCPT/2026-27/0001`, its own counter), renders the PDF into the invoices bucket in the background, and attaches the same PDF to the "added" / "extended" email above. The member lists and downloads receipts in the app: `GET /api/v1/payments/receipts` and `GET /api/v1/payments/receipts/{id}/download` (see `docs/mobile-payment-receipts.md`). It is a payment receipt, not a GST tax invoice: plan prices carry no tax split.
 
 ### 4.4 How community fan-out works (`post`)
 
@@ -175,7 +184,6 @@ Sent through `notificationsQueue` email jobs. Subject lines come from `lib/email
 |---|---|---|---|
 | `post` | `New announcement in {community}` | `New post: "{title}"` | `{type:'post', id:postId, communityId}` (free community: `{type:'feed', id:postId}`) |
 | `reaction` | `New reaction on your post` | `{reactor} reacted to your post "{post title}"` | post routing |
-| `new-member-reply` | `New thread on {post title}` | `{member} asked a question in {community}.` | post routing |
 | `community-added` (payment) | `You've been added to {community}` | `You're active until {date}.` | `{type:'subscription', id:communityId, communityId, event:'community-added'}` |
 | `community-added` (admin) | `You've been added to {community}` | `Active until {date}.` | same |
 | `subscription-extended` | `Access extended` | `You're active until {date}.` | `{... event:'extended'}` |
@@ -189,10 +197,15 @@ Sent through `notificationsQueue` email jobs. Subject lines come from `lib/email
 | `service-update` / paid | `Payment received` | `Thank you. Your GST invoice is ready in your service request.` | `{... event:'paid'}` |
 | `service-update` / closed | `Your service is complete` (closed as completed) or `Your service request was closed` | `Tap to see the details and rate it.` or `Tap to see why.` | `{... event:'closed'}` |
 | `service-update` / quote-expired | `Your quote expired` | `Ask for a new quote in your service request chat.` | `{... event:'quote-expired'}` |
-| `new-member-registered` | `{member} has registered` | `Joined {community} on {date}.` | `{type:'member', id:userId, communityId}` |
+| `new-member-registered` (mobile) | `{member} has registered` | `New member joined with {phone}.` | `{type:'member', id:userId}` |
+| `new-member-registered` (web, added by an admin) | `{member} has registered` | `Joined {community} on {date}.` | `{type:'member', id:userId, communityId}` |
+| `admin-new-ticket` | `New support ticket` | `{member} opened "{subject}" in {community}.` | `{type:'ticket', id:ticketId, communityId, event:'new'}` |
+| `admin-ticket-reply` | `New message on {subject}` | `{member}: {preview}` | `{... event:'reply'}` |
+| `admin-new-service-request` | `New service request` | `{member} requested {service title}.` | `{type:'service', id:requestId, event:'new'}` |
+| `admin-service-message` | `New message on {service title}` | `{member}: {preview}` | `{... event:'message'}` |
+| `admin-service-paid` | `Quote paid` | `{member} paid {amount} for {service} (SR-n).` | `{... event:'paid'}` |
+| `admin-payment-flagged` | `Payment needs review` | `{member}'s {amount} payment for SR-n could not be applied. Refund it or resolve it.` | `{type:'payment-flags', id:requestId, event:'flagged'}` |
 | `import-complete` | `Import complete — {n} members added` | `{n} rows skipped. Review the error list.` | `{type:'members', id:communityId, communityId}` |
-| `admin-unreplied-digest` | `{n} threads waiting for a reply` | `Oldest is {d} days old in {community}.` | `{type:'threads', id:communityId, communityId}` |
-| `admin-expiry-report` | `{n} subscriptions expiring this week` | `Review and extend before {date}` | `{type:'subscriptions', id:communityId, communityId}` |
 
 ---
 
@@ -207,15 +220,15 @@ Sent through `notificationsQueue` email jobs. Subject lines come from `lib/email
 | `type` | `id` is | Used by |
 |---|---|---|
 | `feed` | post id | Anything belonging to the **free community**. The free community's content is the general feed, which is not scoped to a community, so `type` becomes `feed` and `communityId` is omitted. |
-| `post` | post id | post, reaction, new-member-reply (and older `thread` rows) |
+| `post` | post id | post, reaction (and older `thread` / `new-member-reply` rows) |
 | `recommendation` | recommendation id | older rows only (no longer sent) |
 | `subscription` | community id | membership events; `event` is `community-added`, `extended`, `expiring-7`, `expiring-1`, `expired` |
-| `ticket` | ticket id | ticket-update; `event` is `reply`, `resolved` |
+| `ticket` | ticket id | ticket-update (`event` is `reply`, `resolved`); admin-new-ticket / admin-ticket-reply (`new`, `reply`) |
 | `service` | request id | service-update; `event` is `reply`, `quote`, `paid`, `closed`, `quote-expired` |
-| `member` | user id | new-member-registered |
+| `member` | user id | new-member-registered (admin member profile) |
 | `members` | community id | import-complete |
-| `threads` | community id | admin-unreplied-digest |
-| `subscriptions` | community id | admin-expiry-report |
+| `payment-flags` | service request id | admin-payment-flagged: the admin page listing flagged payments (`/admin/payment-flags`) |
+| `threads`, `subscriptions` | community id | older digest rows only (no longer sent) |
 
 Reaction and reply rows written before `data` existed have `data = null`. `GET /notifications` fills the gap on read: it looks up the reaction's / comment's post and builds post routing (a reaction or comment whose post was deleted keeps `data: null`).
 
@@ -249,7 +262,7 @@ Defined in `lib/live-notifications-feed.ts`, attached to the HTTP server in `ind
 
 ### 6.3 Email
 
-Described in 4.3 and in the "Email" column above. Always from a worker job, except the two admin digests and the reminder/expiry emails, which cron sends inline. A failed email never rolls back the inbox row.
+Described in 4.3 and in the "Email" column above. Always from a worker job, except the reminder/expiry emails, which cron sends inline. A failed email never rolls back the inbox row.
 
 ### 6.4 Push (FCM)
 
@@ -315,9 +328,7 @@ A push is skipped for a recipient when any of these is true: `pushEnabled = fals
 | 03:45 daily | `notification-cleanup` | Deletes notifications that are **read** and older than **90 days** (`createdAt`), in slices of 5,000 (at most 200 slices a run; the rest waits for the next day). Unread notifications are never deleted. Backed by the partial index `idx_notifications_read_created`. Safe for the send-once rules, which key on events that are long over by then. |
 | every 2 min | `push-retry` | Queues pushes whose first attempt failed to queue (rows still `push_pending`). See section 8. |
 | 09:00 daily | `subscription-lifecycle-sweep` | Reminders (below). |
-| 09:30 daily | `admin-unreplied-digest` | One digest per admin. |
-| 10:00 Mondays | `admin-expiry-report` | One digest per admin. |
-| every 15 min | `service-quote-expiry` | Expires lapsed service quotes and sends `service-update` / `quote-expired`. |
+| 09:30 daily | 10:00 Mondays | every 15 min | `service-quote-expiry` | Expires lapsed service quotes and sends `service-update` / `quote-expired`. |
 | 15:30 Mon-Fri | `refresh-close-prices` | Stock prices. Not a notification. |
 
 **Reminder sweep** (09:00): takes active subscriptions of active users with `validUntil` within ±7 days, and computes `days = ceil((validUntil - today) / 1 day)`:
@@ -336,9 +347,10 @@ The windows (not exact days) mean a missed run is caught the next day. `notifyOn
 
 | Helper | Behaviour |
 |---|---|
-| `createAndPublishNotification` | Creates the row, publishes the live event, optionally enqueues a push. Throws if the row can't be written. Used by the digests (fresh `sourceId`). |
+| `createAndPublishNotification` | Creates the row, publishes the live event, optionally enqueues a push. Throws if the row can't be written. Used by import-complete (fresh `sourceId`). |
 | `notifyOnce` | Same, but swallows the unique-key violation (Prisma `P2002`) and returns `null` if the row already existed. Callers send the paired email only when the result is non-null. Used by the subscription lifecycle. |
 | `notifyMemberThread` | For ticket / service activity. Creates a row per event (`sourceId = eventId`), publishes live, enqueues a push with `threadId`. Never throws: it must not fail the admin action that caused it. |
+| `notifyAdmins` | For member activity the admins should see (`lib/admin-notify.ts`). One row per admin per event (`sourceId = eventId`, repeat of the same event adds nothing) plus a live event. No push (admins use the web). Never throws. |
 | `enqueuePush` | Push only. Never throws. |
 
 ---

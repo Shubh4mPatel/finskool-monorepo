@@ -17,6 +17,8 @@ export const RoutingModule = {
   Members: 'members',
   Threads: 'threads',
   Subscriptions: 'subscriptions',
+  /** Admin page listing service payments that need a manual refund / review. `id` is the service request. */
+  PaymentFlags: 'payment-flags',
 } as const
 
 interface RoutingParams {

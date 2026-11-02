@@ -109,6 +109,7 @@ model User {
   stockRecommendations StockRecommendation[]
   mobileSession      MobileSession?
   planOrders         PlanOrder[]
+  planReceipts       PlanReceipt[]
   tickets            Ticket[]        @relation("TicketOwner")
   assignedTickets    Ticket[]        @relation("TicketAssignee")
   ticketMessages     TicketMessage[]
@@ -222,6 +223,7 @@ model PlanOrder {
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
   plan      Plan      @relation(fields: [planId], references: [id], onDelete: Cascade)
+  receipt   PlanReceipt?
 
   @@index([userId], name: "idx_plan_orders_user")
   @@index([communityId], name: "idx_plan_orders_community")
@@ -1152,4 +1154,33 @@ model ServiceInvoice {
 
   @@unique([financialYear, sequence], name: "uq_service_invoices_fy_sequence")
   @@map("service_invoices")
+}
+
+// A payment receipt for a plan purchase, issued when the order is paid. The PDF is stored in the invoices bucket
+// and emailed; the member downloads it from the app. Seller and buyer are snapshots, so later edits to billing
+// settings or the member's profile never change an issued receipt.
+model PlanReceipt {
+  id            String   @id @default(uuid()) @db.Uuid
+  planOrderId   String   @unique @map("plan_order_id") @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  // RCPT/2026-27/0001
+  number        String   @unique @db.VarChar(40)
+  financialYear String   @map("financial_year") @db.VarChar(9)
+  sequence      Int
+  issuedAt      DateTime @default(now()) @map("issued_at") @db.Timestamptz
+  seller        Json
+  buyer         Json
+  description   String   @db.VarChar(500)
+  amount        Decimal  @db.Decimal(10, 2)
+  currency      String   @default("INR") @db.VarChar(10)
+  razorpayPaymentId String? @map("razorpay_payment_id") @db.VarChar(64)
+  pdfObjectKey  String?  @map("pdf_object_key") @db.VarChar(300)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  planOrder PlanOrder @relation(fields: [planOrderId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([financialYear, sequence], name: "uq_plan_receipts_fy_sequence")
+  @@index([userId, issuedAt(sort: Desc)], name: "idx_plan_receipts_user")
+  @@map("plan_receipts")
 }

@@ -7,8 +7,6 @@ import {
   stockClosePriceQueue,
   DIGEST_QUEUE_NAME,
   SUBSCRIPTION_LIFECYCLE_SWEEP_JOB,
-  ADMIN_UNREPLIED_DIGEST_JOB,
-  ADMIN_EXPIRY_DIGEST_JOB,
   EXPIRE_SUBSCRIPTIONS_JOB,
   TICKET_UPLOAD_CLEANUP_JOB,
   SERVICE_QUOTE_EXPIRY_JOB,
@@ -22,7 +20,6 @@ import { logger } from './shared/logger.js'
 import { NotificationsService } from './modules/notifications/notifications.service.js'
 import { refreshAllStockClosePrices } from './lib/stock-quote-api.js'
 import { runSubscriptionLifecycleSweep, expireLapsedSubscriptions } from './lib/subscription-lifecycle.js'
-import { runAdminUnrepliedDigest, runAdminExpiryDigest } from './lib/admin-digests.js'
 import { sweepOrphanTicketUploads } from './lib/ticket-upload-cleanup.js'
 import { retryPendingPushes } from './lib/push.js'
 import { cleanupOldNotifications } from './lib/notification-cleanup.js'
@@ -49,8 +46,6 @@ const digestWorker = new Worker(
   DIGEST_QUEUE_NAME,
   async job => {
     if (job.name === SUBSCRIPTION_LIFECYCLE_SWEEP_JOB) return runSubscriptionLifecycleSweep(prisma, notificationsService)
-    if (job.name === ADMIN_UNREPLIED_DIGEST_JOB) return runAdminUnrepliedDigest(prisma, notificationsService)
-    if (job.name === ADMIN_EXPIRY_DIGEST_JOB) return runAdminExpiryDigest(prisma, notificationsService)
     if (job.name === EXPIRE_SUBSCRIPTIONS_JOB) return expireLapsedSubscriptions(prisma, notificationsService)
     if (job.name === TICKET_UPLOAD_CLEANUP_JOB) return sweepOrphanTicketUploads(prisma)
     if (job.name === SERVICE_QUOTE_EXPIRY_JOB) return expireServiceQuotes(prisma)
@@ -80,6 +75,9 @@ logger.info('digest worker started')
 // place rather than creating duplicates. Moved here from index.ts's
 // bootstrap() so scheduled work no longer depends on the API process.
 async function registerSchedulers() {
+  // The admin digests were removed; drop their schedulers so an existing Redis stops firing them.
+  await digestQueue.removeJobScheduler('daily-admin-unreplied-digest')
+  await digestQueue.removeJobScheduler('weekly-admin-expiry-digest')
   await stockClosePriceQueue.upsertJobScheduler(
     'daily-close-price',
     { pattern: '30 15 * * 1-5', tz: 'Asia/Kolkata' }, // Mon-Fri, 3:30 PM IST
@@ -89,16 +87,6 @@ async function registerSchedulers() {
     'daily-subscription-lifecycle-sweep',
     { pattern: '0 9 * * *', tz: 'Asia/Kolkata' }, // every day, 9:00 AM IST
     { name: SUBSCRIPTION_LIFECYCLE_SWEEP_JOB },
-  )
-  await digestQueue.upsertJobScheduler(
-    'daily-admin-unreplied-digest',
-    { pattern: '30 9 * * *', tz: 'Asia/Kolkata' }, // every day, 9:30 AM IST
-    { name: ADMIN_UNREPLIED_DIGEST_JOB },
-  )
-  await digestQueue.upsertJobScheduler(
-    'weekly-admin-expiry-digest',
-    { pattern: '0 10 * * 1', tz: 'Asia/Kolkata' }, // Mondays, 10:00 AM IST
-    { name: ADMIN_EXPIRY_DIGEST_JOB },
   )
   await digestQueue.upsertJobScheduler(
     'daily-expire-subscriptions',

@@ -21,6 +21,7 @@ import {
   Gift,
   Bell,
   LifeBuoy,
+  AlertTriangle,
   Briefcase,
   LogOut,
   Menu,
@@ -70,6 +71,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
     items: [
       { href: "/admin/tickets", label: "Support Tickets", icon: LifeBuoy, badge: "tickets" },
       { href: "/admin/services", label: "Services", icon: Briefcase, badge: "services" },
+      { href: "/admin/payment-flags", label: "Payment flags", icon: AlertTriangle },
     ],
   },
   {

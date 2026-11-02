@@ -38,6 +38,25 @@ export async function getAllAdminIds(db: PrismaClient): Promise<string[]> {
   return admins.map(a => a.id)
 }
 
+/**
+ * Admins who can open a member's profile: super admins, plus admins who manage a community the member
+ * subscribes to (the same rule as hasMemberAccess). Use it to tell admins about a member, so nobody is sent
+ * a notification for a page they would be refused.
+ */
+export async function getAdminIdsWithMemberAccess(db: PrismaClient, userId: string): Promise<string[]> {
+  const subs = await db.subscription.findMany({ where: { userId }, select: { communityId: true } })
+  const communityIds = [...new Set(subs.map(s => s.communityId))]
+  const admins = await db.user.findMany({
+    where: {
+      role: 'admin',
+      deletedAt: null,
+      OR: [{ isSuperAdmin: true }, ...(communityIds.length ? [{ communityAccess: { some: { communityId: { in: communityIds } } } }] : [])],
+    },
+    select: { id: true },
+  })
+  return admins.map(a => a.id)
+}
+
 export async function assertCommunityAccess(db: PrismaClient, adminId: string, communityId: string): Promise<void> {
   if (await isSuperAdmin(db, adminId)) return
   const access = await db.communityAdmin.findUnique({

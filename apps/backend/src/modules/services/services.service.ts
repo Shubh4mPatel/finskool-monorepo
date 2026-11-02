@@ -1,5 +1,9 @@
 import type { PrismaClient } from '../../generated/prisma/client.js'
 import { getAllAdminIds } from '../../lib/community-access.js'
+import { notifyAdmins } from '../../lib/admin-notify.js'
+import { messagePreview } from '../../lib/member-notify.js'
+import { routingData, RoutingModule } from '../../lib/notification-routing.js'
+import { NotificationType } from '../notifications/notifications.dto.js'
 import { publishServiceEvent } from '../../lib/live-tickets-feed.js'
 import { ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors/index.js'
 import { createUploadUrl } from '../tickets/tickets.shared.js'
@@ -118,6 +122,16 @@ export class ServicesService {
         data: { request: requestSummary(request, 'member') },
       }),
     ])
+    await notifyAdmins({
+      db: this.db,
+      adminIds,
+      type: NotificationType.AdminNewServiceRequest,
+      sourceId: requestId,
+      communityId: null,
+      title: 'New service request',
+      message: `${request.user.name} requested ${request.service.title}.`,
+      data: routingData({ module: RoutingModule.Service, id: requestId, communityId: null, event: 'new' }),
+    })
     return mapMemberRequest(request)
   }
 
@@ -241,6 +255,19 @@ export class ServicesService {
         data: { message: dtoMessage, request: requestSummary(fresh, 'member') },
       }),
     ])
+    // Once an admin has taken the request they are in the chat already, so only an unclaimed one pings the admins.
+    if (!fresh.assignedAdminId) {
+      await notifyAdmins({
+        db: this.db,
+        adminIds,
+        type: NotificationType.AdminServiceMessage,
+        sourceId: messageId,
+        communityId: null,
+        title: `New message on ${fresh.service.title}`,
+        message: `${fresh.user.name}: ${messagePreview(dto.body, dto.attachments?.length ?? 0).replace(/^Sent you/, 'Sent')}`,
+        data: routingData({ module: RoutingModule.Service, id: requestId, communityId: null, event: 'message' }),
+      })
+    }
     return dtoMessage
   }
 

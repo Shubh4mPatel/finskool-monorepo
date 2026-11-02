@@ -12,8 +12,6 @@ export type EmailTemplateId =
   | 'community-added'
   | 'community-access-removed'
   | 'new-announcement'
-  | 'admin-unreplied-digest'
-  | 'admin-expiry-report'
   | 'admin-new-member'
   | 'member-suspended'
   | 'member-reinstated'
@@ -37,8 +35,6 @@ const TEMPLATE_REGISTRY: Record<EmailTemplateId, TemplateDef> = {
   'community-added': { file: 'community-added.html', subject: "You've been added to {community_name}" },
   'community-access-removed': { file: 'community-access-removed.html', subject: 'Your {community_name} access has been removed' },
   'new-announcement': { file: 'new-announcement.html', subject: 'New announcement in {community_name}' },
-  'admin-unreplied-digest': { file: 'admin-unreplied-digest.html', subject: '{count} member questions are waiting for a reply' },
-  'admin-expiry-report': { file: 'admin-expiry-report.html', subject: '{count} subscriptions expiring this week' },
   'admin-new-member': { file: 'admin-new-member.html', subject: '{member_name} has registered' },
   'member-suspended': { file: 'member-suspended.html', subject: 'Your Finskool21 access has been suspended' },
   'member-reinstated': { file: 'member-reinstated.html', subject: 'Your Finskool21 access has been restored' },
@@ -185,8 +181,7 @@ export function buildRenewalCta(paymentLink: string | null | undefined, mailtoHr
     </tr>`
 }
 
-// Row-template convention for the `{rows_html}` slot in the (currently unwired)
-// admin-unreplied-digest / admin-expiry-report templates.
+// Row-template convention for the `{rows_html}` slot in email templates that list label/value rows.
 export function buildEmailRows(rows: { label: string; value: string }[]): string {
   return rows
     .map(

@@ -19,8 +19,6 @@ export const REFRESH_CLOSE_PRICES_JOB = 'refresh-close-prices'
 // which the API process produces and worker.ts consumes.
 export const DIGEST_QUEUE_NAME = 'digest'
 export const SUBSCRIPTION_LIFECYCLE_SWEEP_JOB = 'subscription-lifecycle-sweep'
-export const ADMIN_UNREPLIED_DIGEST_JOB = 'admin-unreplied-digest'
-export const ADMIN_EXPIRY_DIGEST_JOB = 'admin-expiry-report'
 export const EXPIRE_SUBSCRIPTIONS_JOB = 'expire-subscriptions'
 export const TICKET_UPLOAD_CLEANUP_JOB = 'ticket-upload-cleanup'
 export const SERVICE_QUOTE_EXPIRY_JOB = 'service-quote-expiry'
@@ -56,6 +54,8 @@ export interface SubscriptionExtendedEmailJobPayload {
   validTill: string
   amount: number
   paidOn: string
+  /** The payment receipt to attach as a PDF (set when the member paid online). */
+  receiptId?: string
 }
 
 export const SERVICE_INVOICE_EMAIL_JOB = 'service-invoice-email'
@@ -73,6 +73,8 @@ export interface CommunityAddedEmailJobPayload {
   name: string
   communityName: string
   validTill: string
+  /** The payment receipt to attach as a PDF (set when the member paid online). */
+  receiptId?: string
 }
 
 export const COMMUNITY_ACCESS_REMOVED_EMAIL_JOB = 'community-access-removed-email'

@@ -8,6 +8,9 @@ import {
   Users,
   UserPlus,
   Upload,
+  LifeBuoy,
+  Briefcase,
+  AlertTriangle,
 } from "lucide-react";
 
 export interface Notification {
@@ -43,12 +46,17 @@ export function formatRelativeTime(isoStr: string): string {
 
 const ICONS: Record<string, typeof Megaphone> = {
   thread: MessagesSquare,
-  "new-member-reply": MessagesSquare,
   recommendation: TrendingUp,
   "subscription-extended": RefreshCw,
   "community-added": Users,
   "new-member-registered": UserPlus,
   "import-complete": Upload,
+  "admin-new-ticket": LifeBuoy,
+  "admin-ticket-reply": LifeBuoy,
+  "admin-new-service-request": Briefcase,
+  "admin-service-message": Briefcase,
+  "admin-service-paid": Briefcase,
+  "admin-payment-flagged": AlertTriangle,
 };
 
 export function NotificationCard({

@@ -1,5 +1,9 @@
 import type { PrismaClient } from '../../generated/prisma/client.js'
 import { getCommunityAdminIds } from '../../lib/community-access.js'
+import { notifyAdmins } from '../../lib/admin-notify.js'
+import { messagePreview } from '../../lib/member-notify.js'
+import { routingData, RoutingModule } from '../../lib/notification-routing.js'
+import { NotificationType } from '../notifications/notifications.dto.js'
 import { publishTicketEvent } from '../../lib/live-tickets-feed.js'
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors/index.js'
 import type {
@@ -113,6 +117,16 @@ export class TicketsService {
         data: { ticket: ticketSummary(ticket, 'user') },
       }),
     ])
+    await notifyAdmins({
+      db: this.db,
+      adminIds,
+      type: NotificationType.AdminNewTicket,
+      sourceId: ticketId,
+      communityId: ticket.communityId,
+      title: 'New support ticket',
+      message: `${ticket.user.name} opened "${ticket.subject}" in ${ticket.community.name}.`,
+      data: routingData({ module: RoutingModule.Ticket, id: ticketId, communityId: ticket.communityId, event: 'new' }),
+    })
     return mapUserTicket(ticket)
   }
 
@@ -238,6 +252,20 @@ export class TicketsService {
         data: { message: dtoMessage, ticket: ticketSummary(fresh, 'user') },
       }),
     ])
+    // Once an admin has taken the ticket they are in the chat already (the live ticket event reaches them),
+    // so only an unclaimed ticket pings the admins.
+    if (!fresh.assignedAdminId) {
+      await notifyAdmins({
+        db: this.db,
+        adminIds,
+        type: NotificationType.AdminTicketReply,
+        sourceId: messageId,
+        communityId: fresh.communityId,
+        title: `New message on ${fresh.subject}`,
+        message: `${fresh.user.name}: ${messagePreview(dto.body, attachments.length).replace(/^Sent you/, 'Sent')}`,
+        data: routingData({ module: RoutingModule.Ticket, id: ticketId, communityId: fresh.communityId, event: 'reply' }),
+      })
+    }
     return dtoMessage
   }
 

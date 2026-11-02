@@ -20,7 +20,10 @@ import {
   MOBILE_NEW_LOGIN_EMAIL_JOB,
 } from '../../lib/queue.js'
 import { logger } from '../../shared/logger.js'
-import { getAccessibleCommunityIds } from '../../lib/community-access.js'
+import { getAccessibleCommunityIds, getAdminIdsWithMemberAccess } from '../../lib/community-access.js'
+import { notifyAdmins } from '../../lib/admin-notify.js'
+import { routingData, RoutingModule } from '../../lib/notification-routing.js'
+import { NotificationType } from '../notifications/notifications.dto.js'
 import { ensureFreeSubscription } from '../../lib/free-community.js'
 import { encryptPan } from '../../lib/pan-crypto.js'
 import {
@@ -362,6 +365,19 @@ export class MobileAuthService {
 
     const userId = await this.finalizeRegistration(pending)
     logger.info({ userId, phone: pending.phone }, 'mobileAuth.verifyOtp: success, account created')
+
+    // Admins who can open the member's profile (super admins, and admins of a community the member is in)
+    // see the new member in their inbox; tapping it opens that profile.
+    await notifyAdmins({
+      db: this.db,
+      adminIds: await getAdminIdsWithMemberAccess(this.db, userId),
+      type: NotificationType.NewMemberRegistered,
+      sourceId: userId,
+      communityId: null,
+      title: `${pending.fullName} has registered`,
+      message: `New member joined with ${pending.phone}.`,
+      data: routingData({ module: RoutingModule.Member, id: userId, communityId: null }),
+    })
   }
 
   /**
