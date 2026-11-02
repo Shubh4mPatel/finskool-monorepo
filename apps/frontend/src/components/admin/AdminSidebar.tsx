@@ -23,6 +23,7 @@ import {
   LifeBuoy,
   AlertTriangle,
   Briefcase,
+  MessageSquareText,
   LogOut,
   Menu,
   X,
@@ -38,6 +39,8 @@ interface NavItem {
   icon: LucideIcon;
   badge?: BadgeKey;
   superAdminOnly?: boolean;
+  /** Paths under `href` that belong to another item, so this one is not highlighted for them. */
+  excludes?: string[];
 }
 
 // Grouped the way admins think about the work, rather than one long flat list.
@@ -70,7 +73,8 @@ const navGroups: { label: string; items: NavItem[] }[] = [
     label: "Support",
     items: [
       { href: "/admin/tickets", label: "Support Tickets", icon: LifeBuoy, badge: "tickets" },
-      { href: "/admin/services", label: "Services", icon: Briefcase, badge: "services" },
+      { href: "/admin/services", label: "Enquiries", icon: MessageSquareText, badge: "services", excludes: ["/admin/services/catalog"] },
+      { href: "/admin/services/catalog", label: "Services", icon: Briefcase, superAdminOnly: true },
       { href: "/admin/payment-flags", label: "Payment flags", icon: AlertTriangle },
     ],
   },
@@ -288,7 +292,7 @@ function SidebarContent({ data, onNav, collapsed = false, onToggleCollapsed }: {
             {collapsed && gi === 0 && <div className="h-4" aria-hidden />}
 
             {group.items.map(item => {
-              const isActive = !!pathname?.startsWith(item.href);
+              const isActive = !!pathname?.startsWith(item.href) && !item.excludes?.some(x => pathname.startsWith(x));
               const Icon = item.icon;
               const badge = item.badge ? badges[item.badge] : undefined;
               const hasBadge = badge != null && badge > 0;

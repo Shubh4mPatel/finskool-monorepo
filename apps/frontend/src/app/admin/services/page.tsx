@@ -30,7 +30,6 @@ import { pillClass } from "@/components/ui/Select";
 import { EmptyState, Skeleton, stagger, TH } from "@/components/admin/dashboard/Panel";
 import { TintAvatar } from "@/components/admin/dashboard/TintAvatar";
 import { StatTile, TabButton, focusRing } from "@/components/admin/inbox/InboxParts";
-import ServicesTabs from "@/components/admin/services/ServicesTabs";
 import { RequestStatusBadge } from "@/components/admin/services/ServiceBadges";
 
 type Tab = "all" | "unassigned" | "mine" | "requested" | "quote_sent" | "paid" | "closed" | "review";
@@ -247,8 +246,6 @@ function AdminServicesInbox() {
           </Link>
         )}
       </div>
-
-      <ServicesTabs active="enquiries" />
 
       {serviceId && (
         <div className="animate-fade flex flex-wrap items-center gap-3 rounded-2xl bg-accent/10 px-5 py-3 text-sm text-primary">

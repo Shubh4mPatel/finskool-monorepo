@@ -8,7 +8,6 @@ import { useIsSuperAdmin } from "@/lib/session";
 import type { CatalogService } from "@/lib/services";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/Toast";
-import ServicesTabs from "@/components/admin/services/ServicesTabs";
 import ServiceCardBody from "@/components/admin/services/ServiceCard";
 
 const BASE = "/api/v1/admin/services/catalog";
@@ -88,8 +87,6 @@ function ServiceCatalogManager() {
           <Plus size={15} /> Add service
         </Link>
       </div>
-
-      <ServicesTabs active="catalog" />
 
       {services === null && !error ? (
         <div className="flex justify-center py-24 text-muted"><Loader2 className="animate-spin" /></div>
