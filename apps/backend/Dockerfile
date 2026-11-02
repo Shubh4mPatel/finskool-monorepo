@@ -19,6 +19,9 @@ RUN npm ci --workspace=apps/backend --include-workspace-root
 FROM deps AS dev
 WORKDIR /app
 ENV NODE_ENV=development
+# Post media: ffprobe reads the size of uploaded videos and ffmpeg grabs their poster frame.
+RUN apk add --no-cache ffmpeg
+ENV FFPROBE_PATH=/usr/bin/ffprobe
 COPY apps/backend/tsconfig.json apps/backend/prisma.config.ts ./apps/backend/
 COPY apps/backend/prisma ./apps/backend/prisma
 COPY apps/backend/email-template ./apps/backend/email-template
@@ -41,6 +44,9 @@ RUN npm run build --workspace=apps/backend
 FROM node:24-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
+# Post media: ffprobe reads the size of uploaded videos and ffmpeg grabs their poster frame.
+RUN apk add --no-cache ffmpeg
+ENV FFPROBE_PATH=/usr/bin/ffprobe
 # Reuse deps' node_modules (includes the `prisma` CLI + dotenv that
 # `prisma migrate deploy` needs at startup).
 COPY package.json package-lock.json ./

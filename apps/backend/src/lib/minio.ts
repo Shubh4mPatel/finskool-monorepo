@@ -172,6 +172,79 @@ export async function statUploadedVideo(url: string): Promise<{ size: number; co
   }
 }
 
+/** Folder (in the public bucket) of post images. */
+export const POST_IMAGE_FOLDER = 'posts'
+export const MAX_POST_IMAGE_BYTES = 10 * 1024 * 1024
+
+/** The object key if `url` is one of our own uploads under `folder` (right host, bucket and folder), else null. */
+function ownObjectName(url: string, folder: string): string | null {
+  const base = toPublicUrl(`${folder}/`)
+  if (!url.startsWith(base)) return null
+  const name = url.slice(base.length)
+  if (!name || name.includes('/') || name.includes('..') || name.includes('?') || name.includes('#')) return null
+  return `${folder}/${name}`
+}
+
+/** The whole object as a buffer, or null if it is not one of ours, is missing, or is bigger than `maxBytes`. */
+export async function readOwnObject(url: string, folder: string, maxBytes: number): Promise<Buffer | null> {
+  const objectName = ownObjectName(url, folder)
+  if (!objectName) return null
+  try {
+    const stat = await client.statObject(env.minio.bucket, objectName)
+    if (stat.size <= 0 || stat.size > maxBytes) return null
+    const chunks: Buffer[] = []
+    for await (const chunk of await client.getObject(env.minio.bucket, objectName)) chunks.push(chunk as Buffer)
+    return Buffer.concat(chunks)
+  } catch {
+    return null
+  }
+}
+
+/** A short-lived link the backend itself (ffprobe) can read one of our objects from; never sent to a browser. */
+export async function internalReadUrl(url: string, folder: string): Promise<string | null> {
+  const objectName = ownObjectName(url, folder)
+  return objectName ? client.presignedGetObject(env.minio.bucket, objectName, 120) : null
+}
+
+/** The poster stored next to an uploaded video: same name, .jpg. */
+export function videoPosterUrl(videoUrl: string): string {
+  return videoUrl.replace(/\.[^./]+$/, '.jpg')
+}
+
+/** Poster URL if the video has one stored beside it, else null. */
+export async function existingVideoPosterUrl(videoUrl: string): Promise<string | null> {
+  const posterUrl = videoPosterUrl(videoUrl)
+  const objectName = ownObjectName(posterUrl, VIDEO_FOLDER)
+  if (!objectName) return null
+  try {
+    await client.statObject(env.minio.bucket, objectName)
+    return posterUrl
+  } catch {
+    return null
+  }
+}
+
+/** Stores a video from a local file, and its poster (if one was made) under the same name. */
+export async function uploadVideoFile(
+  filePath: string,
+  ext: string,
+  mimetype: string,
+  posterPath: string | null,
+): Promise<{ url: string; thumbnailUrl: string | null }> {
+  const base = `${VIDEO_FOLDER}/${randomUUID()}`
+  await client.fPutObject(env.minio.bucket, `${base}.${ext}`, filePath, { 'Content-Type': mimetype })
+  let thumbnailUrl: string | null = null
+  if (posterPath) {
+    try {
+      await client.fPutObject(env.minio.bucket, `${base}.jpg`, posterPath, { 'Content-Type': 'image/jpeg' })
+      thumbnailUrl = toPublicUrl(`${base}.jpg`)
+    } catch {
+      // No poster is better than a failed upload.
+    }
+  }
+  return { url: toPublicUrl(`${base}.${ext}`), thumbnailUrl }
+}
+
 // ─── Support-ticket attachments ─────────────────────────────────────────────
 // Private bucket, presigned PUT in / presigned GET out. Like post videos, the PUT
 // can't constrain size or type, so every key is inspected (size + magic bytes)

@@ -1,4 +1,4 @@
-import type { PostVideoDTO } from '../posts/posts.dto.js'
+import type { PostMediaShapeDTO, PostVideoDTO } from '../posts/posts.dto.js'
 export type DuplicateStrategy = 'skip' | 'overwrite'
 
 export interface AddMemberDTO {
@@ -330,7 +330,7 @@ export interface MarkAllRepliedDTO {
   count: number
 }
 
-export interface PostThreadSummaryDTO {
+export interface PostThreadSummaryDTO extends PostMediaShapeDTO {
   id: string
   title: string
   contentMd: string

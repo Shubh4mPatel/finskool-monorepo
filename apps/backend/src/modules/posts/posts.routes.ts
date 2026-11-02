@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { PostsService } from './posts.service.js'
 import { PostsController } from './posts.controller.js'
 import { mobileFeedCommunity } from './posts.middleware.js'
+import { receiveMediaFiles } from './posts.upload.js'
 import { authenticate, requireRole, requireMobileAuth } from '../../middlewares/auth.middleware.js'
 import prisma from '../../lib/prisma.js'
 
@@ -21,6 +22,23 @@ router.get('/my-comments', controller.listCommented)
 // Admin-only — requireRole applied inline so it doesn't bleed into comment routes
 // that share the /api/v1/posts prefix (e.g. POST /api/v1/posts/:id/comments)
 router.get('/upload-url', admin, controller.getUploadUrl)
+/**
+ * @openapi
+ * /posts/media:
+ *   post:
+ *     tags: [Posts]
+ *     summary: Upload post images and videos (admin)
+ *     description: >
+ *       multipart/form-data, field `files` (up to 10 per request). Images (JPG, PNG, WebP, GIF, up to 10 MB) and
+ *       videos (MP4, MOV, up to 50 MB) are checked by content, stored as uploaded, and measured: the response gives each
+ *       file's real displayed width/height, ratio (width / height) and orientation (`portrait` when taller than wide,
+ *       otherwise `landscape`). A video also gets a poster frame (`thumbnailUrl`). Put the returned `url`s in
+ *       `imageUrls` / `videos` when creating or updating a post; sizes are read again from the stored files on save.
+ *     responses:
+ *       201: { description: One entry per file, in the order sent. }
+ *       400: { description: A file is too big, not a supported type, or cannot be decoded. }
+ */
+router.post('/media', admin, receiveMediaFiles, controller.uploadMedia)
 router.post('/video-preview', admin, controller.videoPreview)
 router.post('/', admin, controller.create)
 router.patch('/:id', admin, controller.update)
@@ -110,6 +128,21 @@ mobilePostsRouter.use(authenticate, requireMobileAuth)
  *                           title: { type: string }
  *                           content: { type: string, description: "Markdown source." }
  *                           imageUrls: { type: array, items: { type: string } }
+ *                           images:
+ *                             type: array
+ *                             description: Every image with its real size, in display order. width/height/ratio/orientation are null only for an image of an old post that has not been re-saved yet.
+ *                             items:
+ *                               type: object
+ *                               properties:
+ *                                 url: { type: string }
+ *                                 width: { type: integer, nullable: true }
+ *                                 height: { type: integer, nullable: true }
+ *                                 ratio: { type: number, nullable: true, description: "width / height, e.g. 1.7778 (16:9) or 0.8 (4:5)." }
+ *                                 orientation: { type: string, nullable: true, enum: [portrait, landscape] }
+ *                           ratio: { type: number, nullable: true, description: "The post's media ratio (width / height), from its first image, else its first uploaded video. Null when the post has no sized media (none, only YouTube/Instagram links, or an old post). Files are stored as uploaded, never cropped: lay them out with this." }
+ *                           orientation: { type: string, nullable: true, enum: [portrait, landscape], description: "portrait when taller than wide; a square is landscape. Null with ratio." }
+ *                           mediaWidth: { type: integer, nullable: true }
+ *                           mediaHeight: { type: integer, nullable: true }
  *                           tags: { type: array, items: { type: string } }
  *                           pinOrder: { type: integer, nullable: true, minimum: 1, maximum: 3 }
  *                           publishedAt: { type: string, format: date-time, nullable: true }

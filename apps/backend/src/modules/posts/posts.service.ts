@@ -1,5 +1,19 @@
 import type { PrismaClient, Prisma } from '../../generated/prisma/client.js'
-import { uploadFile, deleteFile, statUploadedVideo, MAX_VIDEO_BYTES, VIDEO_TYPES_BY_EXT } from '../../lib/minio.js'
+import {
+  uploadFile,
+  deleteFile,
+  statUploadedVideo,
+  readOwnObject,
+  internalReadUrl,
+  existingVideoPosterUrl,
+  videoPosterUrl,
+  MAX_VIDEO_BYTES,
+  VIDEO_TYPES_BY_EXT,
+  VIDEO_FOLDER,
+  POST_IMAGE_FOLDER,
+  MAX_POST_IMAGE_BYTES,
+} from '../../lib/minio.js'
+import { inspectImage, inspectVideo, orientationOf, ratioOf } from '../../lib/media-info.js'
 import { parseVideoLink, fetchYoutubeTitle } from '../../lib/video-links.js'
 import { notificationsQueue, COMMUNITY_POST_JOB } from '../../lib/queue.js'
 import { assertCommunityAccessFromToken } from '../../lib/community-access.js'
@@ -15,9 +29,15 @@ import type {
   CommentedPostItemDTO,
   PostVideoDTO,
   PostVideoInput,
+  PostImageDTO,
+  PostMediaShapeDTO,
 } from './posts.dto.js'
 
-const VIDEO_INCLUDE = { videos: { orderBy: { position: 'asc' as const } } }
+// Everything a post response needs about its media.
+const VIDEO_INCLUDE = {
+  videos: { orderBy: { position: 'asc' as const } },
+  images: { orderBy: { position: 'asc' as const } },
+}
 
 type VideoRow = {
   id: string
@@ -26,6 +46,51 @@ type VideoRow = {
   externalId: string | null
   title: string | null
   thumbnailUrl: string | null
+  width?: number | null
+  height?: number | null
+  durationSec?: number | null
+}
+
+type ImageRow = { url: string; width: number; height: number }
+
+interface MediaShapeRow {
+  imageUrls: string[]
+  images?: ImageRow[]
+  videos: VideoRow[]
+  mediaWidth: number | null
+  mediaHeight: number | null
+  mediaRatio: number | null
+  mediaOrientation: 'portrait' | 'landscape' | null
+}
+
+const sizeFields = (w: number | null | undefined, h: number | null | undefined) =>
+  w && h ? { width: w, height: h, ratio: ratioOf({ width: w, height: h }) } : { width: null, height: null, ratio: null }
+
+/** images / ratio / orientation for a response. Images of a post not re-saved since sizes were stored come back with null sizes. */
+export function toMediaShape(post: MediaShapeRow): PostMediaShapeDTO {
+  const bySize = new Map((post.images ?? []).map(i => [i.url, i]))
+  const images: PostImageDTO[] = post.imageUrls.map(url => {
+    const row = bySize.get(url)
+    const size = row ? { width: row.width, height: row.height } : null
+    return { url, ...sizeFields(size?.width, size?.height), orientation: size ? orientationOf(size) : null }
+  })
+  return {
+    images,
+    mediaWidth: post.mediaWidth,
+    mediaHeight: post.mediaHeight,
+    ratio: post.mediaRatio,
+    orientation: post.mediaOrientation,
+  }
+}
+
+/** The post's shape, from its first sized media: images first, then uploaded videos. Links have no size. */
+function leadShape(images: ImageRow[], videos: Array<{ width: number | null; height: number | null }>) {
+  const lead = images[0] ?? videos.find(v => v.width && v.height)
+  if (!lead || !lead.width || !lead.height) {
+    return { mediaWidth: null, mediaHeight: null, mediaRatio: null, mediaOrientation: null }
+  }
+  const size = { width: lead.width, height: lead.height }
+  return { mediaWidth: size.width, mediaHeight: size.height, mediaRatio: ratioOf(size), mediaOrientation: orientationOf(size) }
 }
 
 export function toVideoDTO(v: VideoRow): PostVideoDTO {
@@ -36,7 +101,17 @@ export function toVideoDTO(v: VideoRow): PostVideoDTO {
       : v.kind === 'instagram'
         ? `${v.url.replace(/\/$/, '')}/embed`
         : null
-  return { id: v.id, kind: v.kind, url: v.url, embedUrl, externalId: v.externalId, title: v.title, thumbnailUrl: v.thumbnailUrl }
+  return {
+    id: v.id,
+    kind: v.kind,
+    url: v.url,
+    embedUrl,
+    externalId: v.externalId,
+    title: v.title,
+    thumbnailUrl: v.thumbnailUrl,
+    ...sizeFields(v.width, v.height),
+    durationSec: v.durationSec ?? null,
+  }
 }
 
 export class PostsService {
@@ -175,6 +250,7 @@ export class PostsService {
           content: p.contentMd,
           imageUrls: p.imageUrls,
           videos: p.videos.map(toVideoDTO),
+          ...toMediaShape(p),
           tags: p.tags,
           pinOrder: p.pinOrder,
           publishedAt: p.publishedAt,
@@ -261,6 +337,7 @@ export class PostsService {
         content: p.contentMd,
         imageUrls: p.imageUrls,
         videos: p.videos.map(toVideoDTO),
+        ...toMediaShape(p),
         tags: p.tags,
         pinOrder: p.pinOrder,
         publishedAt: p.publishedAt,
@@ -284,7 +361,8 @@ export class PostsService {
     if (!community) throw new NotFoundError('Community not found')
     assertCommunityAccessFromToken(accessibleCommunityIds, data.communityId)
 
-    const videos = await this.resolveVideos(data.videos)
+    const images = await this.resolveImages(data.imageUrls, [], new Set())
+    const videos = await this.resolveVideos(data.videos, [])
 
     const post = await this.db.post.create({
       data: {
@@ -294,7 +372,9 @@ export class PostsService {
         contentMd: data.content,
         imageUrls: data.imageUrls,
         tags: data.tags,
+        images: { create: images.map((i, position) => ({ ...i, position })) },
         videos: { create: videos.map((v, position) => ({ ...v, position })) },
+        ...leadShape(images, videos),
         publishGroupId: data.groupId ?? null,
       },
       include: VIDEO_INCLUDE,
@@ -310,17 +390,19 @@ export class PostsService {
     accessibleCommunityIds: string[] | null,
     data: UpdatePostDTO,
   ): Promise<PostResponseDTO> {
-    const post = await this.db.post.findUnique({ where: { id: postId, deletedAt: null } })
+    const post = await this.db.post.findUnique({ where: { id: postId, deletedAt: null }, include: VIDEO_INCLUDE })
     if (!post) throw new NotFoundError('Post not found')
     assertCommunityAccessFromToken(accessibleCommunityIds, post.communityId)
 
     const imageUrls = data.imageUrls ?? post.imageUrls
-    const videos = data.videos !== undefined ? await this.resolveVideos(data.videos) : undefined
+    // Sizes are re-read from storage for anything not measured yet, so saving an old post fills them in. An old
+    // image whose file can no longer be read stays on the post, just without a size.
+    const images = await this.resolveImages(imageUrls, post.images, new Set(post.imageUrls))
+    const videoInputs: PostVideoInput[] =
+      data.videos ?? post.videos.map(v => ({ kind: v.kind, url: v.url, ...(v.title ? { title: v.title } : {}) }))
+    const videos = await this.resolveVideos(videoInputs, post.videos)
 
-    const previousVideoFiles =
-      videos !== undefined
-        ? (await this.db.postVideo.findMany({ where: { postId, kind: 'file' }, select: { url: true } })).map(v => v.url)
-        : []
+    const previousVideoFiles = post.videos.filter(v => v.kind === 'file').map(v => v.url)
 
     const updated = await this.db.post.update({
       where: { id: postId },
@@ -329,9 +411,9 @@ export class PostsService {
         ...(data.content !== undefined && { contentMd: data.content }),
         ...(data.tags !== undefined && { tags: data.tags }),
         imageUrls,
-        ...(videos !== undefined && {
-          videos: { deleteMany: {}, create: videos.map((v, position) => ({ ...v, position })) },
-        }),
+        images: { deleteMany: {}, create: images.map((i, position) => ({ ...i, position })) },
+        videos: { deleteMany: {}, create: videos.map((v, position) => ({ ...v, position })) },
+        ...leadShape(images, videos),
       },
       include: VIDEO_INCLUDE,
     })
@@ -341,7 +423,7 @@ export class PostsService {
     // pointing at the same uploaded file).
     const removed = [
       ...post.imageUrls.filter(url => !imageUrls.includes(url)),
-      ...previousVideoFiles.filter(url => !(videos ?? []).some(v => v.url === url)),
+      ...previousVideoFiles.filter(url => !videos.some(v => v.url === url)),
     ]
     await Promise.all(removed.map(url => this.deleteFileIfUnreferenced(url)))
 
@@ -361,7 +443,10 @@ export class PostsService {
    * thumbnails are re-derived here (the client only ever supplies a URL and an optional
    * display title), uploaded files are verified in MinIO, and duplicates are rejected.
    */
-  private async resolveVideos(inputs: PostVideoInput[]) {
+  private async resolveVideos(
+    inputs: PostVideoInput[],
+    existing: Array<{ url: string; width: number | null; height: number | null; durationSec: number | null; thumbnailUrl: string | null }>,
+  ) {
     const seen = new Set<string>()
     const rows: Array<{
       kind: 'file' | 'youtube' | 'instagram'
@@ -369,6 +454,9 @@ export class PostsService {
       externalId: string | null
       title: string | null
       thumbnailUrl: string | null
+      width: number | null
+      height: number | null
+      durationSec: number | null
     }> = []
 
     for (const input of inputs) {
@@ -383,7 +471,20 @@ export class PostsService {
         if (!Object.values(VIDEO_TYPES_BY_EXT).includes(stat.contentType)) {
           throw new BadRequestError('Only MP4 and MOV videos can be uploaded')
         }
-        row = { kind: 'file', url: input.url, externalId: null, title: input.title ?? null, thumbnailUrl: null }
+        // Size, length and poster are read from the stored file, never taken from the client. A file already
+        // measured on this post is not read again.
+        const known = existing.find(e => e.url === input.url && e.width && e.height)
+        const probed = known ? null : await this.probeVideoFile(input.url)
+        row = {
+          kind: 'file',
+          url: input.url,
+          externalId: null,
+          title: input.title ?? null,
+          thumbnailUrl: known ? known.thumbnailUrl : await existingVideoPosterUrl(input.url),
+          width: known?.width ?? probed?.width ?? null,
+          height: known?.height ?? probed?.height ?? null,
+          durationSec: known?.durationSec ?? probed?.durationSec ?? null,
+        }
       } else {
         const parsed = parseVideoLink(input.url)
         if (!parsed || parsed.kind !== input.kind) {
@@ -392,7 +493,17 @@ export class PostsService {
           )
         }
         const title = input.title ?? (parsed.kind === 'youtube' ? await fetchYoutubeTitle(parsed.canonicalUrl) : null)
-        row = { kind: parsed.kind, url: parsed.canonicalUrl, externalId: parsed.externalId, title, thumbnailUrl: parsed.thumbnailUrl }
+        // A link's size is not known; it is stored as pasted (canonicalised) and the app picks its own layout.
+        row = {
+          kind: parsed.kind,
+          url: parsed.canonicalUrl,
+          externalId: parsed.externalId,
+          title,
+          thumbnailUrl: parsed.thumbnailUrl,
+          width: null,
+          height: null,
+          durationSec: null,
+        }
       }
 
       const key = `${row.kind}:${row.externalId ?? row.url}`
@@ -403,13 +514,53 @@ export class PostsService {
     return rows
   }
 
+  /**
+   * The real (EXIF-corrected) size of each image, read from the stored file. Images already measured on this post
+   * are reused. A new image must be one of our own uploads that really decodes as JPG/PNG/WebP/GIF; an image the
+   * post already had (`legacy`) whose file can no longer be read is kept without a size rather than blocking the edit.
+   */
+  private async resolveImages(urls: string[], existing: ImageRow[], legacy: Set<string>): Promise<ImageRow[]> {
+    const rows: ImageRow[] = []
+    for (const url of urls) {
+      const known = existing.find(e => e.url === url)
+      if (known) {
+        rows.push({ url, width: known.width, height: known.height })
+        continue
+      }
+      const buffer = await readOwnObject(url, POST_IMAGE_FOLDER, MAX_POST_IMAGE_BYTES)
+      const info = buffer ? await inspectImage(buffer) : null
+      if (info) {
+        rows.push({ url, width: info.width, height: info.height })
+      } else if (legacy.has(url)) {
+        logger.warn({ url }, 'posts: could not read the size of an existing image')
+      } else {
+        throw new BadRequestError('An image was not found or is not a valid JPG, PNG, WebP or GIF — please upload it again')
+      }
+    }
+    return rows
+  }
+
+  /** Size and length of an uploaded video, read by ffprobe from storage; null if it cannot be read. */
+  private async probeVideoFile(url: string) {
+    const readUrl = await internalReadUrl(url, VIDEO_FOLDER)
+    if (!readUrl) return null
+    const info = await inspectVideo(readUrl)
+    if (!info) logger.warn({ url }, 'posts: could not read the size of an uploaded video')
+    return info
+  }
+
   private async deleteFileIfUnreferenced(url: string): Promise<void> {
     try {
-      const [images, videos] = await Promise.all([
+      const [images, postImages, videos] = await Promise.all([
         this.db.post.count({ where: { imageUrls: { has: url } } }),
+        this.db.postImage.count({ where: { url } }),
         this.db.postVideo.count({ where: { url } }),
       ])
-      if (images + videos === 0) await deleteFile(url)
+      if (images + postImages + videos === 0) {
+        await deleteFile(url)
+        // An uploaded video's poster sits beside it, named the same with .jpg.
+        if (url.includes(`/${VIDEO_FOLDER}/`) && !url.endsWith('.jpg')) await deleteFile(videoPosterUrl(url))
+      }
     } catch (err) {
       // The post is already saved; a leftover file is harmless, a failed request is not.
       logger.warn({ err, url }, 'posts: failed to delete unreferenced file')
@@ -563,7 +714,12 @@ export class PostsService {
     title: string
     contentMd: string
     imageUrls: string[]
+    images?: ImageRow[]
     videos: VideoRow[]
+    mediaWidth: number | null
+    mediaHeight: number | null
+    mediaRatio: number | null
+    mediaOrientation: 'portrait' | 'landscape' | null
     tags: string[]
     status: string
     pinOrder: number | null
@@ -579,6 +735,7 @@ export class PostsService {
       content: post.contentMd,
       imageUrls: post.imageUrls,
       videos: post.videos.map(toVideoDTO),
+      ...toMediaShape(post),
       tags: post.tags,
       status: post.status,
       pinOrder: post.pinOrder,

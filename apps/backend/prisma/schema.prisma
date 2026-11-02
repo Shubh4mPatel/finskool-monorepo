@@ -47,6 +47,13 @@ enum VideoKind {
   instagram
 }
 
+// Shape of a post's media, taken from its first image/video that has a known size.
+// A square counts as landscape.
+enum MediaOrientation {
+  portrait
+  landscape
+}
+
 enum PostStatus {
   draft
   published
@@ -363,6 +370,12 @@ model Post {
   // Posts created by one publish to several communities/Feed are independent copies; this
   // shared id lets the admin side show their reactions together. Null for a single-target post.
   publishGroupId String? @map("publish_group_id") @db.Uuid
+  // Size of the post's lead media (images first, then uploaded videos; links have no size), read
+  // from the stored files when the post is saved. Null for a post with no sized media.
+  mediaWidth       Int?              @map("media_width")
+  mediaHeight      Int?              @map("media_height")
+  mediaRatio       Float?            @map("media_ratio") // width / height
+  mediaOrientation MediaOrientation? @map("media_orientation")
 
   community             Community             @relation(fields: [communityId], references: [id], onDelete: Cascade)
   author                User                  @relation("PostAuthor", fields: [authorId], references: [id])
@@ -372,6 +385,7 @@ model Post {
   reactions             Reaction[]
   commentNotifications  CommentNotification[]
   videos                PostVideo[]
+  images                PostImage[]
 
   // (communityId, pinOrder) uniqueness among non-deleted posts is enforced by a
   // partial unique index created directly in migration SQL (Prisma's schema DSL
@@ -395,6 +409,10 @@ model PostVideo {
   externalId   String?   @map("external_id") @db.VarChar(64)
   title        String?   @db.VarChar(300)
   thumbnailUrl String?   @map("thumbnail_url") @db.VarChar(1000)
+  // Read from the stored file; null for YouTube/Instagram links, whose size is not known.
+  width        Int?
+  height       Int?
+  durationSec  Int?      @map("duration_sec")
   position     Int       @db.SmallInt
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
@@ -402,6 +420,23 @@ model PostVideo {
 
   @@index([postId, position], name: "idx_post_videos_post")
   @@map("post_videos")
+}
+
+// An image of a post with its real (EXIF-corrected) size. Post.imageUrls is still written alongside
+// these rows because older clients read it.
+model PostImage {
+  id        String   @id @default(uuid()) @db.Uuid
+  postId    String   @map("post_id") @db.Uuid
+  url       String   @db.VarChar(1000)
+  width     Int
+  height    Int
+  position  Int      @db.SmallInt
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId, position], name: "idx_post_images_post")
+  @@map("post_images")
 }
 
 model Stock {

@@ -13,6 +13,10 @@ export interface AdminPost {
   title: string;
   content: string;
   imageUrls: string[];
+  // Each image with its real size; ratio/orientation are the post's, from its first sized image or uploaded video.
+  images?: { url: string; width: number | null; height: number | null; ratio: number | null; orientation: "portrait" | "landscape" | null }[];
+  ratio?: number | null;
+  orientation?: "portrait" | "landscape" | null;
   videos?: PostVideo[];
   reactionCounts?: Record<string, number>;
   groupReactionCounts?: Record<string, number>;

@@ -26,7 +26,7 @@ import type { LiveNotificationEvent } from '../../lib/queue.js'
 import { BadRequestError, ConflictError, NotFoundError, ForbiddenError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
 import { normalizePhone } from '../../lib/phone.js'
-import { toVideoDTO } from '../posts/posts.service.js'
+import { toVideoDTO, toMediaShape } from '../posts/posts.service.js'
 import { ensureFreeSubscription } from '../../lib/free-community.js'
 import { formatEmailDate } from '../../lib/email-templates.js'
 import { routingData, RoutingModule, subscriptionRouting } from '../../lib/notification-routing.js'
@@ -683,7 +683,15 @@ export class AdminService {
         title: true,
         contentMd: true,
         imageUrls: true,
-        videos: { orderBy: { position: 'asc' }, select: { id: true, kind: true, url: true, externalId: true, title: true, thumbnailUrl: true } },
+        videos: {
+          orderBy: { position: 'asc' },
+          select: { id: true, kind: true, url: true, externalId: true, title: true, thumbnailUrl: true, width: true, height: true, durationSec: true },
+        },
+        images: { orderBy: { position: 'asc' }, select: { url: true, width: true, height: true } },
+        mediaWidth: true,
+        mediaHeight: true,
+        mediaRatio: true,
+        mediaOrientation: true,
         tags: true,
         publishedAt: true,
         createdAt: true,
@@ -699,6 +707,7 @@ export class AdminService {
       contentMd: p.contentMd,
       imageUrls: p.imageUrls,
       videos: p.videos.map(toVideoDTO),
+      ...toMediaShape(p),
       tags: p.tags,
       publishedAt: p.publishedAt,
       createdAt: p.createdAt,

@@ -18,6 +18,36 @@ export interface PostVideoDTO {
   externalId: string | null
   title: string | null
   thumbnailUrl: string | null
+  /** Size of an uploaded file, read from the file itself. Null for YouTube/Instagram links (size unknown) and for files saved before sizes were stored. */
+  width: number | null
+  height: number | null
+  /** width / height, e.g. 1.7778 for 16:9, 0.5625 for 9:16. */
+  ratio: number | null
+  durationSec: number | null
+}
+
+export type MediaOrientation = 'portrait' | 'landscape'
+
+export interface PostImageDTO {
+  url: string
+  /** Null only for images of posts saved before sizes were stored and not yet re-saved. */
+  width: number | null
+  height: number | null
+  ratio: number | null
+  orientation: MediaOrientation | null
+}
+
+/**
+ * The shape of a post's media for the app to lay it out. Taken from the first sized item (images first, then
+ * uploaded videos); null when the post has no sized media (no media, only YouTube/Instagram links, or an old post).
+ * The files themselves are stored as uploaded, never cropped.
+ */
+export interface PostMediaShapeDTO {
+  images: PostImageDTO[]
+  mediaWidth: number | null
+  mediaHeight: number | null
+  ratio: number | null
+  orientation: MediaOrientation | null
 }
 
 export interface CreatePostDTO {
@@ -39,7 +69,7 @@ export interface UpdatePostDTO {
   videos?: PostVideoInput[] | undefined
 }
 
-export interface PostResponseDTO {
+export interface PostResponseDTO extends PostMediaShapeDTO {
   id: string
   communityId: string
   authorId: string
@@ -55,7 +85,7 @@ export interface PostResponseDTO {
   updatedAt: Date
 }
 
-export interface PostFeedItemDTO {
+export interface PostFeedItemDTO extends PostMediaShapeDTO {
   id: string
   communityId: string
   communityName: string
@@ -88,7 +118,7 @@ export interface ListPostsResponseDTO {
   totalPages: number
 }
 
-export interface CommentedPostItemDTO {
+export interface CommentedPostItemDTO extends PostMediaShapeDTO {
   id: string
   communityId: string
   communityName: string

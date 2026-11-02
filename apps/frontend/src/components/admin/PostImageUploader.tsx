@@ -1,8 +1,9 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Plus, X } from "lucide-react";
-import { api } from "@/lib/api";
+import { Info, Plus, X } from "lucide-react";
+import { ApiError } from "@/lib/api";
+import { uploadPostMedia, type UploadedMedia } from "@/lib/post-media";
 import { useToast } from "@/components/ui/Toast";
 import { MAX_POST_VIDEOS, MAX_VIDEO_MB } from "@/lib/post-videos";
 
@@ -16,9 +17,12 @@ export default function PostImageUploader({
   onChange,
   onVideoFile,
   videoUploadPct = null,
+  onMeasured,
 }: {
   imageUrls: string[];
   onChange: (urls: string[]) => void;
+  // Gets the size the server read from each image it just stored.
+  onMeasured?: (items: UploadedMedia[]) => void;
   // When given, the picker also accepts videos and hands each one to this callback
   // (which uploads it and adds it to the post's video list) instead of treating it as an image.
   onVideoFile?: (file: File) => Promise<void>;
@@ -47,22 +51,11 @@ export default function PostImageUploader({
 
     setUploading(true);
     try {
-      const uploaded = await Promise.all(
-        toUpload.map(async (file) => {
-          const { uploadUrl, publicUrl } = await api.get<{ uploadUrl: string; publicUrl: string }>(
-            `/api/v1/posts/upload-url?filename=${encodeURIComponent(file.name)}`
-          );
-          await fetch(uploadUrl, {
-            method: "PUT",
-            body: file,
-            headers: { "Content-Type": file.type },
-          });
-          return publicUrl;
-        })
-      );
-      onChange([...imageUrls, ...uploaded]);
-    } catch {
-      toast.error("Failed to upload one or more images. Please try again.");
+      const uploaded = await uploadPostMedia(toUpload);
+      onMeasured?.(uploaded);
+      onChange([...imageUrls, ...uploaded.map((m) => m.url)]);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to upload one or more images. Please try again.");
     } finally {
       setUploading(false);
     }
@@ -115,6 +108,14 @@ export default function PostImageUploader({
 
       <p className="text-xs text-subtle">
         Add up to {MAX_IMAGES} images{onVideoFile ? ` and ${MAX_POST_VIDEOS} videos (MP4 or MOV, max ${MAX_VIDEO_MB} MB each)` : ""}.
+      </p>
+      <p className="flex items-start gap-1.5 rounded-lg bg-accent/5 px-3 py-2 text-xs text-muted">
+        <Info size={13} className="mt-px shrink-0 text-accent" aria-hidden />
+        <span>
+          <strong className="font-semibold text-primary">Note on ratio:</strong> the first image or video decides whether the post is
+          portrait or landscape. Files are shown as uploaded and are never cropped, so use the same ratio for all of them
+          (for example 4:5 portrait or 16:9 landscape). YouTube and Instagram links have no ratio of their own.
+        </span>
       </p>
     </div>
   );

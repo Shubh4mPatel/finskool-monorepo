@@ -4,6 +4,7 @@ import type { PostsService } from './posts.service.js'
 import { createPostSchema, updatePostSchema, videoPreviewSchema } from './posts.validator.js'
 import { generateUploadUrl, VIDEO_FOLDER, VIDEO_TYPES_BY_EXT, MAX_VIDEO_BYTES } from '../../lib/minio.js'
 import { BadRequestError, ForbiddenError } from '../../shared/errors/index.js'
+import { processUploadedMedia } from './posts.upload.js'
 
 const uploadUrlQuerySchema = z.object({
   filename: z.string().min(1, 'filename is required'),
@@ -139,6 +140,15 @@ export class PostsController {
       }
       const urls = await generateUploadUrl(filename, kind === 'video' ? VIDEO_FOLDER : 'posts')
       res.json({ success: true, data: urls })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  uploadMedia = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const files = (req.files ?? []) as Express.Multer.File[]
+      res.status(201).json({ success: true, data: await processUploadedMedia(files) })
     } catch (err) {
       next(err)
     }

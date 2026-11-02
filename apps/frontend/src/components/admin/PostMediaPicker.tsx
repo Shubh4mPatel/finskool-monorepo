@@ -5,6 +5,7 @@ import { Image as ImageIcon, Play, Plus, UploadCloud, Video, X } from "lucide-re
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 import PostImageUploader from "@/components/admin/PostImageUploader";
+import { describeShape, uploadPostMedia, type MediaShape, type UploadedMedia } from "@/lib/post-media";
 import {
   MAX_POST_VIDEOS,
   MAX_VIDEO_MB,
@@ -64,19 +65,6 @@ function hostOf(url: string): string {
   }
 }
 
-// XHR rather than fetch so the upload can report progress — videos are big.
-function putWithProgress(url: string, file: File, contentType: string, onProgress: (pct: number) => void): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("PUT", url);
-    xhr.setRequestHeader("Content-Type", contentType);
-    xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(Math.round((e.loaded / e.total) * 100));
-    xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`Upload failed (${xhr.status})`)));
-    xhr.onerror = () => reject(new Error("Upload failed"));
-    xhr.send(file);
-  });
-}
-
 function VideoThumb({ video }: { video: PostVideo }) {
   return (
     <div className="relative h-[54px] w-[84px] shrink-0 overflow-hidden rounded-lg bg-primary/90">
@@ -99,8 +87,8 @@ function VideoThumb({ video }: { video: PostVideo }) {
   );
 }
 
-/** Uploads one MP4/MOV straight to storage and appends it to `videos`. Shared by both tabs. */
-function useVideoFileUpload(videos: PostVideo[], onChange: (v: PostVideo[]) => void) {
+/** Uploads one MP4/MOV through the server (which reads its size and makes a poster) and appends it to `videos`. Shared by both tabs. */
+function useVideoFileUpload(videos: PostVideo[], onChange: (v: PostVideo[]) => void, onMeasured: (items: UploadedMedia[]) => void) {
   const toast = useToast();
   const [pct, setPct] = useState<number | null>(null);
   // Several files can be picked at once and uploaded one after another — each must append
@@ -124,11 +112,13 @@ function useVideoFileUpload(videos: PostVideo[], onChange: (v: PostVideo[]) => v
 
     setPct(0);
     try {
-      const { uploadUrl, publicUrl } = await api.get<{ uploadUrl: string; publicUrl: string }>(
-        `/api/v1/posts/upload-url?kind=video&size=${file.size}&filename=${encodeURIComponent(file.name)}`,
-      );
-      await putWithProgress(uploadUrl, file, contentType, setPct);
-      onChange([...latest.current, { kind: "file", url: publicUrl, embedUrl: null, title: file.name, thumbnailUrl: null }]);
+      const [item] = await uploadPostMedia([file], setPct);
+      if (!item) throw new Error("Upload failed");
+      onMeasured([item]);
+      onChange([
+        ...latest.current,
+        { kind: "file", url: item.url, embedUrl: null, title: file.name, thumbnailUrl: item.thumbnailUrl, width: item.width, height: item.height, ratio: item.ratio },
+      ]);
     } catch (err) {
       toast.error(
         err instanceof ApiError
@@ -308,7 +298,16 @@ export default function PostMediaPicker({
   onVideosChange: (videos: PostVideo[]) => void;
 }) {
   const [tab, setTab] = useState<Tab>("media");
-  const { upload: uploadVideo, pct: uploadPct } = useVideoFileUpload(videos, onVideosChange);
+  // What the server read from each file uploaded in this session, to show how the post will be laid out.
+  const [shapes, setShapes] = useState<Record<string, MediaShape>>({});
+  const remember = (items: UploadedMedia[]) =>
+    setShapes((prev) => ({ ...prev, ...Object.fromEntries(items.map((m) => [m.url, { width: m.width, height: m.height, ratio: m.ratio, orientation: m.orientation }])) }));
+  const { upload: uploadVideo, pct: uploadPct } = useVideoFileUpload(videos, onVideosChange, remember);
+  // The post's shape comes from its first sized media: images first, then uploaded videos (links have no size).
+  const leadVideo = videos.find((v) => v.kind === "file" && v.width && v.height);
+  const lead: MediaShape | null =
+    shapes[imageUrls[0] ?? ""] ??
+    (leadVideo ? shapes[leadVideo.url] ?? { width: leadVideo.width!, height: leadVideo.height!, ratio: leadVideo.ratio ?? leadVideo.width! / leadVideo.height!, orientation: leadVideo.height! > leadVideo.width! ? "portrait" : "landscape" } : null);
   const uploadedFiles = videos.filter((v) => v.kind === "file");
   const tabs: { id: Tab; label: string; icon: typeof Video; count: number }[] = [
     { id: "media", label: "Media", icon: ImageIcon, count: imageUrls.length },
@@ -335,6 +334,11 @@ export default function PostMediaPicker({
           </button>
         ))}
       </div>
+      {lead && (
+        <p className="text-xs text-muted">
+          Post layout: <span className="font-semibold text-primary">{describeShape(lead)}</span>, taken from the first image or video.
+        </p>
+      )}
       {/* Both stay mounted so a half-finished upload/link isn't lost when switching tabs. */}
       <div hidden={tab !== "media"}>
         <PostImageUploader
@@ -342,6 +346,7 @@ export default function PostMediaPicker({
           onChange={onImageUrlsChange}
           onVideoFile={uploadVideo}
           videoUploadPct={uploadPct}
+          onMeasured={remember}
         />
         {uploadedFiles.length > 0 && (
           <div className="mt-3 flex flex-col gap-2">

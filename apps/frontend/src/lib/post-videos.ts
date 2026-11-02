@@ -10,6 +10,10 @@ export interface PostVideo {
   externalId?: string | null;
   title: string | null;
   thumbnailUrl: string | null;
+  // Read from the stored file by the server; absent/null for links and for videos saved before sizes were stored.
+  width?: number | null;
+  height?: number | null;
+  ratio?: number | null;
 }
 
 export const MAX_POST_VIDEOS = 3;
