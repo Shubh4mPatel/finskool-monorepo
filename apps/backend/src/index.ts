@@ -1,3 +1,4 @@
+import { describeRazorpayConfig } from './lib/razorpay.js'
 import 'dotenv/config'
 import http from 'node:http'
 import { createApp } from './app.js'
@@ -26,6 +27,7 @@ async function bootstrap() {
 
   server.listen(env.port, () => {
     logger.info(`finskool-backend running on port ${env.port} [${env.nodeEnv}]`)
+    logger.info({ ...describeRazorpayConfig(), checkoutUrl: env.paymentCheckoutUrl }, 'payments: Razorpay configuration')
   })
 
   // Fire-and-forget: only does work (fetch + bulk insert) the first time the

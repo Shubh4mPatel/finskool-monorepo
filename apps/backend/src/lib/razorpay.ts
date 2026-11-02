@@ -56,3 +56,23 @@ export function verifyPaymentSignature(orderId: string, paymentId: string, signa
   if (expectedBuf.length !== givenBuf.length) return false
   return timingSafeEqual(expectedBuf, givenBuf)
 }
+
+/**
+ * One line at startup saying whether Razorpay is set up, without printing any secret: which mode the key is
+ * for (test or live), whether each value is present, and whether a value looks like it picked up quotes or
+ * spaces (Docker keeps them literally when .env is read, which makes Razorpay answer "Authentication failed").
+ */
+export function describeRazorpayConfig(): Record<string, unknown> {
+  const id = env.razorpay.keyId
+  const secret = env.razorpay.keySecret
+  const hook = env.razorpay.webhookSecret
+  const dirty = (v: string) => v !== v.trim() || /^["']|["']$/.test(v)
+  return {
+    keyId: id ? `${id.slice(0, 9)}…(${id.length} chars)` : 'MISSING',
+    mode: id.startsWith('rzp_live_') ? 'live' : id.startsWith('rzp_test_') ? 'test' : id ? 'unrecognised key prefix' : 'none',
+    keySecret: secret ? `set (${secret.length} chars)` : 'MISSING',
+    webhookSecret: hook ? `set (${hook.length} chars)` : 'MISSING (webhooks will be rejected)',
+    looksQuotedOrPadded: [id, secret, hook].some(v => v && dirty(v)),
+    apiBaseUrlOverride: Boolean(env.razorpay.apiBaseUrl),
+  }
+}

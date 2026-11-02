@@ -80,6 +80,8 @@ export class PaymentsService {
       throw new AppError(503, 'Payments are not available right now', 'PAYMENTS_NOT_CONFIGURED')
     }
 
+    const keyMode = env.razorpay.keyId.startsWith('rzp_live_') ? 'live' : env.razorpay.keyId.startsWith('rzp_test_') ? 'test' : 'unrecognised'
+    logger.info({ userId, communityId, planId, amountPaise, keyMode }, 'payments.createOrder: asking Razorpay for an order')
     let order: { id: string }
     try {
       order = await getRazorpayClient().orders.create({
@@ -93,7 +95,7 @@ export class PaymentsService {
       // Error, so without this a rejected key, a network problem or a bad amount all surface as a bare 500.
       const e = err as { statusCode?: number; error?: { code?: string; description?: string; reason?: string }; message?: string }
       logger.error(
-        { userId, communityId, planId, statusCode: e.statusCode, razorpayCode: e.error?.code, description: e.error?.description ?? e.message },
+        { userId, communityId, planId, amountPaise, keyMode, statusCode: e.statusCode, razorpayCode: e.error?.code, reason: e.error?.reason, description: e.error?.description ?? e.message },
         'payments.createOrder: Razorpay could not create the order',
       )
       throw new AppError(502, 'Could not start the payment. Please try again.', 'PAYMENT_GATEWAY_ERROR')

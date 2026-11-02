@@ -3,6 +3,7 @@ import { z } from 'zod'
 import type { PaymentsService } from './payments.service.js'
 import type { PaymentsCheckoutService } from './payments.checkout.js'
 import { BadRequestError, UnauthorizedError } from '../../shared/errors/index.js'
+import { logger } from '../../shared/logger.js'
 
 const verifyPaymentSchema = z.object({
   razorpayOrderId: z.string().min(1, 'razorpayOrderId is required'),
@@ -82,7 +83,10 @@ export class PaymentsController {
   createCheckoutSession = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const parsed = createCheckoutSchema.safeParse(req.body)
-      if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
+      if (!parsed.success) {
+        logger.warn({ userId: req.user?.id, issues: parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`) }, 'checkout.createSession: invalid request body')
+        throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
+      }
       const result = await this.checkout.createSession(req.user!.id, parsed.data.communityId, parsed.data.planId)
       res.status(201).json({ success: true, data: result })
     } catch (err) {

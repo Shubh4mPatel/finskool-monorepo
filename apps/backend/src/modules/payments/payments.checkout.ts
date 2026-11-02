@@ -3,6 +3,7 @@ import type { PrismaClient } from '../../generated/prisma/client.js'
 import redis from '../../lib/redis.js'
 import { env } from '../../config/env.js'
 import { BadRequestError, TooManyRequestsError, UnauthorizedError } from '../../shared/errors/index.js'
+import { logger } from '../../shared/logger.js'
 import type { PaymentsService } from './payments.service.js'
 import type {
   CheckoutExchangeResultDTO,
@@ -43,7 +44,11 @@ export class PaymentsCheckoutService {
   async createSession(userId: string, communityId: string, planId: string): Promise<CheckoutSessionResultDTO> {
     const count = await redis.incr(rateKey(userId))
     if (count === 1) await redis.expire(rateKey(userId), 3600)
-    if (count > MAX_CHECKOUTS_PER_HOUR) throw new TooManyRequestsError('Too many checkout attempts — try again later')
+    logger.info({ userId, communityId, planId, attemptThisHour: count }, 'checkout.createSession: requested')
+    if (count > MAX_CHECKOUTS_PER_HOUR) {
+      logger.warn({ userId, attemptThisHour: count }, 'checkout.createSession: rate limit hit')
+      throw new TooManyRequestsError('Too many checkout attempts — try again later')
+    }
 
     const open = await this.db.planOrder.findFirst({
       where: { userId, communityId, planId, status: 'created', createdAt: { gte: new Date(Date.now() - REUSE_ORDER_WITHIN_MS) } },
@@ -51,15 +56,18 @@ export class PaymentsCheckoutService {
       select: { id: true },
     })
     let planOrderId = open?.id
+    if (planOrderId) logger.info({ userId, planOrderId }, 'checkout.createSession: reusing a recent unpaid order')
     if (!planOrderId) {
       const created = await this.payments.createOrder(userId, communityId, planId)
       const row = await this.db.planOrder.findUniqueOrThrow({ where: { razorpayOrderId: created.orderId }, select: { id: true } })
       planOrderId = row.id
+      logger.info({ userId, planOrderId, razorpayOrderId: created.orderId }, 'checkout.createSession: new order created')
     }
 
     const token = newToken()
     await redis.set(handoffKey(hashOf(token)), JSON.stringify({ planOrderId } satisfies HandoffPayload), 'EX', env.paymentCheckoutTokenTtlSeconds)
 
+    logger.info({ userId, planOrderId, ttlSeconds: env.paymentCheckoutTokenTtlSeconds }, 'checkout.createSession: handoff link issued')
     // In the fragment, so it is never sent to a server or in a Referer header.
     return { checkoutUrl: `${env.paymentCheckoutUrl}#t=${token}`, expiresInSeconds: env.paymentCheckoutTokenTtlSeconds }
   }
@@ -67,14 +75,21 @@ export class PaymentsCheckoutService {
   /** Burns the handoff token (GETDEL: a second use finds nothing) and opens a session for that one order. */
   async exchange(handoffToken: string): Promise<CheckoutExchangeResultDTO> {
     const raw = await redis.getdel(handoffKey(hashOf(handoffToken)))
-    if (!raw) throw new UnauthorizedError('This checkout link has expired — go back to the app and try again')
+    if (!raw) {
+      logger.warn('checkout.exchange: link is unknown, already used or expired')
+      throw new UnauthorizedError('This checkout link has expired — go back to the app and try again')
+    }
     const { planOrderId } = JSON.parse(raw) as HandoffPayload
 
     const order = await this.db.planOrder.findUnique({
       where: { id: planOrderId },
       include: { plan: { select: { name: true, durationMonths: true } }, community: { select: { name: true } } },
     })
-    if (!order) throw new UnauthorizedError('This checkout link is no longer valid')
+    if (!order) {
+      logger.error({ planOrderId }, 'checkout.exchange: the order behind this link no longer exists')
+      throw new UnauthorizedError('This checkout link is no longer valid')
+    }
+    logger.info({ planOrderId, userId: order.userId, orderStatus: order.status }, 'checkout.exchange: session opened')
 
     const sessionToken = newToken()
     await redis.set(sessionKey(hashOf(sessionToken)), planOrderId, 'EX', env.paymentSessionTtlSeconds)
@@ -95,7 +110,10 @@ export class PaymentsCheckoutService {
   async verify(sessionToken: string, razorpayPaymentId: string, razorpaySignature: string): Promise<VerifyPlanPaymentResultDTO> {
     // The order comes from the session, never from the request, so a session can only ever settle its own order.
     const order = await this.orderOfSession(sessionToken)
-    return this.payments.verifyPayment(order.userId, { razorpayOrderId: order.razorpayOrderId, razorpayPaymentId, razorpaySignature })
+    logger.info({ userId: order.userId, planOrderId: order.id, razorpayOrderId: order.razorpayOrderId, razorpayPaymentId }, 'checkout.verify: confirming payment')
+    const result = await this.payments.verifyPayment(order.userId, { razorpayOrderId: order.razorpayOrderId, razorpayPaymentId, razorpaySignature })
+    logger.info({ userId: order.userId, planOrderId: order.id }, 'checkout.verify: payment confirmed')
+    return result
   }
 
   /** Lets the page (or the app, once the webview closes) see whether the plan was granted, e.g. by the webhook. */
@@ -108,9 +126,15 @@ export class PaymentsCheckoutService {
 
   private async orderOfSession(sessionToken: string) {
     const planOrderId = await redis.get(sessionKey(hashOf(sessionToken)))
-    if (!planOrderId) throw new UnauthorizedError('This checkout session has expired')
+    if (!planOrderId) {
+      logger.warn('checkout.session: token is unknown or expired')
+      throw new UnauthorizedError('This checkout session has expired')
+    }
     const order = await this.db.planOrder.findUnique({ where: { id: planOrderId } })
-    if (!order) throw new BadRequestError('Order not found')
+    if (!order) {
+      logger.error({ planOrderId }, 'checkout.session: the order of this session no longer exists')
+      throw new BadRequestError('Order not found')
+    }
     return order
   }
 }
