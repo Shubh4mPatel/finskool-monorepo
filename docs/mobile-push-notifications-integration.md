@@ -239,7 +239,7 @@ GET /api/v1/notifications?page=1&pageSize=20&communityId=<uuid>
 
 ### Mark read
 
-- `PATCH /api/v1/notifications/{id}/read` returns `{ "success": true, "message": "Notification marked as read" }`. `404` if it is not the caller's.
+- `PATCH /api/v1/notifications/{id}/read` returns `{ "success": true, "message": "Notification marked as read" }`. `404` if it is not the caller's, `422` (`errors.id`) if the id is not a valid UUID.
 - `PATCH /api/v1/notifications/mark-all-read` returns `{ "success": true, "data": { "count": 12 } }`.
 
 ### `type` values the member can receive

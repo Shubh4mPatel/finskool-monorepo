@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express'
 import type { NotificationsService } from './notifications.service.js'
-import { listNotificationsSchema } from './notifications.validator.js'
+import { listNotificationsSchema, notificationIdParamSchema } from './notifications.validator.js'
 
 // Express 5 types params as string | string[] — route params are always strings
 function getParam(req: Request, name: string): string {
@@ -32,7 +32,8 @@ export class NotificationsController {
 
   markRead = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      await this.service.markRead(req.user!.id, getParam(req, 'id'))
+      const { id } = notificationIdParamSchema.parse({ id: getParam(req, 'id') })
+      await this.service.markRead(req.user!.id, id)
       res.json({ success: true, message: 'Notification marked as read' })
     } catch (err) {
       next(err)

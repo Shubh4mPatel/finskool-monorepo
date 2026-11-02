@@ -231,7 +231,7 @@ Mounted at `/api/v1/notifications`. Uses `authenticate`, so it accepts both the 
 |---|---|
 | `GET /` | Query `page` (default 1), `pageSize` (default 20, max 50), `communityId` (optional UUID). Newest first by `createdAt`. Response `{ success, data: { notifications, total, page, pageSize, totalPages } }`. |
 | `GET /unread-count` | `{ success, data: { count } }`. Counts all of the user's unread rows, regardless of community. |
-| `PATCH /:id/read` | Marks one read. 404 `Notification not found` if it is not the caller's. |
+| `PATCH /:id/read` | Marks one read. 404 `Notification not found` if it is not the caller's; 422 `Validation failed` (`errors.id`) if the id is not a UUID. |
 | `PATCH /mark-all-read` | Marks all read. `{ success, data: { count } }`. |
 
 Item shape: `id, communityId, type, title, message, data, isRead, createdAt, updatedAt`.
