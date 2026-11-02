@@ -14,6 +14,7 @@ const ROUTE_BY_TYPE: Record<string, string> = {
   reaction: "/admin/feed", // the post is gone
   "new-member-registered": "/admin/members",
   "import-complete": "/admin/import-csv",
+  "admin-expiry-report": "/admin/members?expiring=1",
   "admin-payment-flagged": "/admin/payment-flags",
   "admin-new-ticket": "/admin/tickets",
   "admin-ticket-reply": "/admin/tickets",
@@ -34,8 +35,9 @@ export function notificationRoute(n: RoutableNotification): string | null {
       case "member":
         return `/admin/members/${encodeURIComponent(d.id)}`;
       case "members": // an import finished: the community's members
-      case "subscriptions": // access ending soon: the members list shows who
         return "/admin/members";
+      case "subscriptions": // access ending soon (older digest rows): the members expiring within 7 days
+        return `/admin/members?expiring=1${d.communityId ? `&community=${encodeURIComponent(d.communityId)}` : ""}`;
       case "threads": // unanswered member questions
         return "/admin/feed";
       case "ticket":

@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Ban,
   CalendarClock,
@@ -160,8 +160,10 @@ function StatTile({
 const iconBtn =
   "flex h-8 w-8 items-center justify-center rounded-full text-muted transition-colors disabled:cursor-not-allowed disabled:opacity-40";
 
-export default function MembersPage() {
+function MembersContent() {
   const router = useRouter();
+  // A notification can open this page already filtered: ?expiring=1&community=<id>.
+  const params = useSearchParams();
   const toast = useToast();
   const confirm = useConfirm();
   const tableRef = useRef<HTMLDivElement>(null);
@@ -186,14 +188,14 @@ export default function MembersPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [filterCommunity, setFilterCommunity] = useState("");
+  const [filterCommunity, setFilterCommunity] = useState(() => params.get("community") ?? "");
   const [filterAccountStatus, setFilterAccountStatus] = useState("");
   const [filterRegistrationStatus, setFilterRegistrationStatus] = useState("");
   const [filterHasActiveSubscription, setFilterHasActiveSubscription] = useState("");
   const [filterSource, setFilterSource] = useState("");
   const [validDate, setValidDate] = useState("");
   const [paidDate, setPaidDate] = useState("");
-  const [expiringSoon, setExpiringSoon] = useState(false);
+  const [expiringSoon, setExpiringSoon] = useState(() => params.get("expiring") === "1");
 
   useEffect(() => {
     api.get<MemberCommunity[]>("/api/v1/admin/communities")
@@ -860,5 +862,13 @@ export default function MembersPage() {
       )}
       {modal?.type === "suspend" && <SuspendModal member={modal.member} onClose={() => setModal(null)} onDone={refresh} />}
     </div>
+  );
+}
+
+export default function MembersPage() {
+  return (
+    <Suspense fallback={null}>
+      <MembersContent />
+    </Suspense>
   );
 }
