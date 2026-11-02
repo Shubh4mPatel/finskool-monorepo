@@ -202,7 +202,11 @@ export class NotificationsService {
     let created = 0
     for (let i = 0; i < recipients.length; i += FAN_OUT_CHUNK_SIZE) {
       const chunk = recipients.slice(i, i + FAN_OUT_CHUNK_SIZE)
-      const result = await this.db.notification.createMany({
+      // The database tells us which rows it really created. A member who already has this notification (the job
+      // is being retried after a crash, or the post was announced before) is skipped by everything below, so
+      // nobody gets the same email, live event or push twice.
+      const createdRows = await this.db.notification.createManyAndReturn({
+        select: { userId: true },
         data: chunk.map(r => ({
           communityId,
           userId: r.userId,
@@ -214,18 +218,18 @@ export class NotificationsService {
         })),
         skipDuplicates: true,
       })
-      created += result.count
+      created += createdRows.length
+      if (createdRows.length === 0) continue
+      const newUserIds = new Set(createdRows.map(r => r.userId))
+      const fresh = chunk.filter(r => newUserIds.has(r.userId))
 
-      // In-app notification rows above go to everyone in the chunk regardless of email —
+      // In-app notification rows above go to everyone new in the chunk regardless of email —
       // only the email send itself needs to skip members with no address on file.
-      const emails = chunk.map(r => r.email).filter((e): e is string => e !== null)
+      const emails = fresh.map(r => r.email).filter((e): e is string => e !== null)
       await Promise.all([
         this.sendEmailBatch(emails, email.subject, email.html),
-        this.publishLiveBatch(chunk.map(r => r.userId), { type, communityId, message, sourceId }),
-        // Only when this chunk really created rows: a retried fan-out job finds them all existing and stays quiet.
-        push && result.count > 0
-          ? enqueuePush({ userIds: chunk.map(r => r.userId), title, body: message, data })
-          : Promise.resolve(),
+        this.publishLiveBatch(fresh.map(r => r.userId), { type, communityId, message, sourceId }),
+        push ? enqueuePush({ userIds: fresh.map(r => r.userId), title, body: message, data }) : Promise.resolve(),
       ])
     }
 

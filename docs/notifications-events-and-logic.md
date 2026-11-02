@@ -152,8 +152,8 @@ Sent through `notificationsQueue` email jobs. Subject lines come from `lib/email
 
 1. **Recipients**: subscriptions in the community with `isActive = true` and `validUntil >= start of today` **and an account that is `active` and not deleted**, de-duplicated per user, then filtered to drop the user who triggered it and anyone with `postNotificationsEnabled = false`. Suspended and deleted members get nothing.
 2. Recipients are processed in **chunks of 500**. For each chunk:
-   - `notification.createMany(..., skipDuplicates: true)` writes the rows.
-   - In parallel: send emails (skipping members with no email), publish a live event per user, and, if `push` is on **and** the chunk really created at least one row, enqueue one push job for the chunk.
+   - `notification.createManyAndReturn(..., skipDuplicates: true)` writes the rows and returns exactly which ones it created.
+   - Only for those members, in parallel: send emails (skipping members with no email), publish a live event per user, and, if `push` is on, enqueue one push job. A member who already has this notification (a retried job, or the same post announced before) gets nothing again.
 3. Email failures are logged and swallowed (`Promise.allSettled`) so an SMTP problem never fails the job.
 
 **Triggering and retries**
@@ -359,7 +359,7 @@ Observed in the code; some may be intentional, none are fixed by this document.
 
 1. ~~No push for `thread`, `reaction`, `recommendation`.~~ Resolved: recommendations and comment replies no longer notify at all; `reaction` is admin-only and has no push.
 2. **Members' own ticket and service messages don't create inbox rows for admins.** Admins see them through the `/ws/tickets` live events only. Only admin actions notify the member.
-3. **Retried fan-out resends emails and live events.** `sendEmailBatch` and the live publish run for every chunk even when `createMany` created nothing (a retried job). Only the push is guarded by `result.count > 0`. A retry after a partial failure can therefore email the same people again.
+3. ~~Retried fan-out resends emails and live events.~~ Fixed: emails, live events and pushes go only to members whose row was really created in this run. Tested on a 1,101-member community: a full retry sends nothing, and a retry after 600 members were left undone sends to exactly those 600. Trade-off: if the worker dies in the short window after the rows are saved and before the emails go out, that group is not emailed on the retry (the inbox row is there). Before the fix that same crash gave duplicates instead.
 4. **Push data has no notification id.** The push `data` is the routing object only, so an app cannot match a tapped push to an inbox row, or to a socket event, by id.
 5. **Reaction rows update in place.** Changing your reaction type updates the existing row's `message`, sets `isRead = false` and bumps `updatedAt`, but the list is ordered by `createdAt`, so it does not jump to the top. Removing a reaction does not delete the row.
 6. **`subscription-expiring-1-day` says "ends tomorrow" even when `days = 0`** (expires today). The bucket covers both.
