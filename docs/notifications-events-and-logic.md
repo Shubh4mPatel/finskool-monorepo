@@ -34,7 +34,7 @@ Three separate processes take part:
   └─ queue.add(email / push /       ├─ fan-out jobs (post,          ├─ expiry sweep
        fan-out job)                 │   post)                       ├─ admin digests
                                     ├─ email jobs                   ├─ service-quote expiry
- LiveNotificationsFeed              └─ push job → FCM               └─ stale push-token cleanup
+ LiveNotificationsFeed              └─ push job → FCM               └─ stale push-token + old-inbox cleanup
   subscribes to Redis
   "notifications:live" and
   forwards to open sockets
@@ -312,6 +312,7 @@ A push is skipped for a recipient when any of these is true: `pushEnabled = fals
 | 02:00 daily | `expire-subscriptions` | Every active subscription with `validUntil < today` is set inactive and the member gets `subscription-expired` (inbox, live, email, push). No grace period. |
 | 03:00 daily | `ticket-upload-cleanup` | Orphan ticket uploads. Not a notification. |
 | 03:30 daily | `push-token-cleanup` | Clears device tokens older than 90 days. |
+| 03:45 daily | `notification-cleanup` | Deletes notifications that are **read** and older than **90 days** (`createdAt`), in slices of 5,000 (at most 200 slices a run; the rest waits for the next day). Unread notifications are never deleted. Backed by the partial index `idx_notifications_read_created`. Safe for the send-once rules, which key on events that are long over by then. |
 | 09:00 daily | `subscription-lifecycle-sweep` | Reminders (below). |
 | 09:30 daily | `admin-unreplied-digest` | One digest per admin. |
 | 10:00 Mondays | `admin-expiry-report` | One digest per admin. |

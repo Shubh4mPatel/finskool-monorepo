@@ -25,6 +25,7 @@ export const EXPIRE_SUBSCRIPTIONS_JOB = 'expire-subscriptions'
 export const TICKET_UPLOAD_CLEANUP_JOB = 'ticket-upload-cleanup'
 export const SERVICE_QUOTE_EXPIRY_JOB = 'service-quote-expiry'
 export const PUSH_TOKEN_CLEANUP_JOB = 'push-token-cleanup'
+export const NOTIFICATION_CLEANUP_JOB = 'notification-cleanup'
 
 export interface CommunityPostNotificationJobPayload {
   communityId: string

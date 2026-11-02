@@ -13,6 +13,7 @@ import {
   TICKET_UPLOAD_CLEANUP_JOB,
   SERVICE_QUOTE_EXPIRY_JOB,
   PUSH_TOKEN_CLEANUP_JOB,
+  NOTIFICATION_CLEANUP_JOB,
   digestQueue,
 } from './lib/queue.js'
 import prisma from './lib/prisma.js'
@@ -22,6 +23,7 @@ import { refreshAllStockClosePrices } from './lib/stock-quote-api.js'
 import { runSubscriptionLifecycleSweep, expireLapsedSubscriptions } from './lib/subscription-lifecycle.js'
 import { runAdminUnrepliedDigest, runAdminExpiryDigest } from './lib/admin-digests.js'
 import { sweepOrphanTicketUploads } from './lib/ticket-upload-cleanup.js'
+import { cleanupOldNotifications } from './lib/notification-cleanup.js'
 import { cleanupStalePushTokens } from './modules/push/push.service.js'
 import { expireServiceQuotes } from './lib/service-quote-expiry.js'
 
@@ -51,6 +53,7 @@ const digestWorker = new Worker(
     if (job.name === TICKET_UPLOAD_CLEANUP_JOB) return sweepOrphanTicketUploads(prisma)
     if (job.name === SERVICE_QUOTE_EXPIRY_JOB) return expireServiceQuotes(prisma)
     if (job.name === PUSH_TOKEN_CLEANUP_JOB) return cleanupStalePushTokens(prisma)
+    if (job.name === NOTIFICATION_CLEANUP_JOB) return cleanupOldNotifications(prisma)
   },
   { connection, concurrency: 1 },
 )
@@ -113,6 +116,11 @@ async function registerSchedulers() {
     'daily-push-token-cleanup',
     { pattern: '30 3 * * *', tz: 'Asia/Kolkata' }, // every day, 3:30 AM IST
     { name: PUSH_TOKEN_CLEANUP_JOB },
+  )
+  await digestQueue.upsertJobScheduler(
+    'daily-notification-cleanup',
+    { pattern: '45 3 * * *', tz: 'Asia/Kolkata' }, // every day, 3:45 AM IST
+    { name: NOTIFICATION_CLEANUP_JOB },
   )
 }
 
