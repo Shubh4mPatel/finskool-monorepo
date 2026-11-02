@@ -135,7 +135,7 @@ export default function CommunitiesPage() {
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3" aria-label="Loading communities">
           {[0, 1, 2].map((i) => (
             <div key={i} className="overflow-hidden rounded-2xl bg-white shadow-card">
-              <Skeleton className="aspect-video rounded-none" />
+              <Skeleton className="aspect-[5/2] rounded-none" />
               <div className="space-y-3 p-4">
                 <Skeleton className="h-4 w-2/3" />
                 <Skeleton className="h-3 w-full" />
@@ -197,8 +197,8 @@ export default function CommunitiesPage() {
                   deleting ? "pointer-events-none opacity-50" : ""
                 }`}
               >
-                {/* Cover — the full 16:9 frame, so the photo isn't cropped or tinted */}
-                <div className="relative aspect-video overflow-hidden" style={{ background: FALLBACK_COVER }}>
+                {/* Cover — the full 5:2 frame, so the photo isn't cropped or tinted */}
+                <div className="relative aspect-[5/2] overflow-hidden" style={{ background: FALLBACK_COVER }}>
                   {c.coverImageUrl && (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={c.coverImageUrl} alt={c.name} className="absolute inset-0 h-full w-full object-cover" />

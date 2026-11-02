@@ -7,6 +7,7 @@ import ReactMarkdown from "react-markdown";
 import { ArrowDown, ArrowUp, Check, ChevronLeft, ChevronRight, ImagePlus, Info, Loader2, Plus, Trash2, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { SERVICE_LIMITS } from "@/lib/services";
+import { checkBannerRatio } from "@/lib/banner-image";
 import type { CatalogService, QuoteDefaults, ServiceTypeOption } from "@/lib/services";
 import { useToast } from "@/components/ui/Toast";
 import MarkdownField from "@/components/admin/welcome-kit/MarkdownField";
@@ -61,12 +62,15 @@ function ImagePicker({
   title,
   hint,
   className,
+  banner = false,
 }: {
   value: string | null;
   onChange: (url: string | null) => void;
   title: string;
   hint: string;
   className: string;
+  /** The wide card thumbnail: must have a 5:2 ratio. */
+  banner?: boolean;
 }) {
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -79,6 +83,13 @@ function ImagePicker({
     if (file.size > 5 * 1024 * 1024) {
       toast.error("Please choose an image under 5 MB.");
       return;
+    }
+    if (banner) {
+      const wrongRatio = await checkBannerRatio(file, title.toLowerCase());
+      if (wrongRatio) {
+        toast.error(wrongRatio);
+        return;
+      }
     }
     setUploading(true);
     try {
@@ -323,8 +334,8 @@ export default function ServiceForm({ serviceId }: { serviceId?: string }) {
 
       {step === 1 ? (
         <>
-          <Section title="Thumbnail image" hint="Shown at the top of the service card. JPG, PNG or WebP, under 5 MB.">
-            <ImagePicker value={form.imageUrl} onChange={(imageUrl) => patch({ imageUrl })} title="Thumbnail image" hint="Recommended 1200 × 675 px (16:9)" className="h-52 w-full" />
+          <Section title="Thumbnail image" hint="Shown at the top of the service card. 5:2 ratio, JPG, PNG or WebP, under 5 MB.">
+            <ImagePicker value={form.imageUrl} onChange={(imageUrl) => patch({ imageUrl })} title="Thumbnail image" hint="5:2 ratio, e.g. 1500 × 600 px" className="aspect-[5/2] w-full" banner />
             <div className="flex items-center gap-4">
               <ImagePicker value={form.iconUrl} onChange={(iconUrl) => patch({ iconUrl })} title="Icon" hint="Square, 256 × 256 px" className="h-24 w-24 shrink-0" />
               <p className="text-xs text-muted">A small square icon shown next to the service name. Optional.</p>

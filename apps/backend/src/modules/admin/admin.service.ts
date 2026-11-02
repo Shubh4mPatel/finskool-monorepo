@@ -26,6 +26,7 @@ import type { LiveNotificationEvent } from '../../lib/queue.js'
 import { BadRequestError, ConflictError, NotFoundError, ForbiddenError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
 import { normalizePhone } from '../../lib/phone.js'
+import { assertBannerImage } from '../../lib/banner-image.js'
 import { toVideoDTO, toMediaShape } from '../posts/posts.service.js'
 import { ensureFreeSubscription } from '../../lib/free-community.js'
 import { formatEmailDate } from '../../lib/email-templates.js'
@@ -849,6 +850,8 @@ export class AdminService {
     const base = slugify(data.slug ?? data.name)
     if (!base) throw new BadRequestError('Name must contain at least one letter or number')
 
+    if (data.coverImageUrl) await assertBannerImage(data.coverImageUrl, 'communities', 'cover image')
+
     let slug = base
     let suffix = 2
     while (await this.db.community.findUnique({ where: { slug } })) {
@@ -896,6 +899,10 @@ export class AdminService {
 
     const existing = await this.db.community.findUnique({ where: { id: communityId } })
     if (!existing || existing.deletedAt) throw new NotFoundError('Community not found')
+    // Only a new cover is checked: an existing one that predates the 5:2 rule must not block other edits.
+    if (data.coverImageUrl && data.coverImageUrl !== existing.coverImageUrl) {
+      await assertBannerImage(data.coverImageUrl, 'communities', 'cover image')
+    }
 
     const community = await this.db.community.update({
       where: { id: communityId },

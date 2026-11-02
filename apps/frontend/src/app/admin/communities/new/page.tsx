@@ -379,7 +379,7 @@ export default function AddCommunityPage() {
               <div className="overflow-hidden rounded-xl border border-divider">
                 {coverImageUrl && (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={coverImageUrl} alt="Thumbnail" className="aspect-video w-full object-cover" />
+                  <img src={coverImageUrl} alt="Thumbnail" className="aspect-[5/2] w-full object-cover" />
                 )}
                 <div className="p-4">
                   <div className="flex items-center gap-2.5">

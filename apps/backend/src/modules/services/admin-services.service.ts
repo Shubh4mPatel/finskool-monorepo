@@ -4,6 +4,7 @@ import type { PrismaClient } from '../../generated/prisma/client.js'
 import { getAllAdminIds } from '../../lib/community-access.js'
 import { publishServiceEvent } from '../../lib/live-tickets-feed.js'
 import { generateUploadUrl } from '../../lib/minio.js'
+import { assertBannerImage } from '../../lib/banner-image.js'
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors/index.js'
 import { createUploadUrl } from '../tickets/tickets.shared.js'
 import type { AdminViewer } from '../tickets/tickets.shared.js'
@@ -86,6 +87,7 @@ export class AdminServicesService {
   }
 
   async createService(admin: AdminViewer, dto: CreateCatalogServiceDTO): Promise<AdminServiceDTO> {
+    if (dto.imageUrl) await assertBannerImage(dto.imageUrl, 'services', 'thumbnail image')
     const row = await this.db.service.create({
       data: {
         name: dto.name ?? dto.title,
@@ -105,8 +107,10 @@ export class AdminServicesService {
   }
 
   async updateService(serviceId: string, dto: UpdateCatalogServiceDTO): Promise<AdminServiceDTO> {
-    const existing = await this.db.service.findFirst({ where: { id: serviceId, deletedAt: null }, select: { id: true } })
+    const existing = await this.db.service.findFirst({ where: { id: serviceId, deletedAt: null }, select: { id: true, imageUrl: true } })
     if (!existing) throw new NotFoundError('Service not found')
+    // Only a new thumbnail is checked: an existing one that predates the 5:2 rule must not block other edits.
+    if (dto.imageUrl && dto.imageUrl !== existing.imageUrl) await assertBannerImage(dto.imageUrl, 'services', 'thumbnail image')
     // Only the fields that were sent: the project's strict optional typing rejects explicit undefineds.
     const data: Prisma.ServiceUpdateInput = {}
     if (dto.name !== undefined) data.name = dto.name

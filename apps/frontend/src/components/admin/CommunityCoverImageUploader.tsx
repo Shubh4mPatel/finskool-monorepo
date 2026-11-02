@@ -2,8 +2,9 @@
 
 import { useRef, useState } from "react";
 import { Image, X } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
+import { BANNER_HINT, checkBannerRatio } from "@/lib/banner-image";
 
 const MAX_BYTES = 5 * 1024 * 1024;
 
@@ -34,6 +35,12 @@ export default function CommunityCoverImageUploader({
       return;
     }
 
+    const wrongRatio = await checkBannerRatio(file, "cover image");
+    if (wrongRatio) {
+      toast.error(wrongRatio);
+      return;
+    }
+
     setUploading(true);
     try {
       const { uploadUrl, publicUrl } = await api.get<{ uploadUrl: string; publicUrl: string }>(
@@ -45,8 +52,8 @@ export default function CommunityCoverImageUploader({
         headers: { "Content-Type": file.type },
       });
       onChange(publicUrl);
-    } catch {
-      toast.error("Failed to upload cover image. Please try again.");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to upload cover image. Please try again.");
     } finally {
       setUploading(false);
     }
@@ -65,7 +72,7 @@ export default function CommunityCoverImageUploader({
       {coverImageUrl ? (
         <div className="relative overflow-hidden rounded-xl border border-divider">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={coverImageUrl} alt="Cover image" className={large ? "aspect-[2/1] w-full object-cover" : "max-h-48 w-full object-cover"} />
+          <img src={coverImageUrl} alt="Cover image" className={large ? "aspect-[5/2] w-full object-cover" : "aspect-[5/2] w-full object-cover"} />
           <button
             type="button"
             onClick={() => onChange(null)}
@@ -79,10 +86,10 @@ export default function CommunityCoverImageUploader({
           type="button"
           onClick={() => inputRef.current?.click()}
           disabled={uploading}
-          className="flex aspect-[2/1] w-full flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-[#d6d9cc] bg-background px-4 text-center transition-colors hover:border-accent disabled:cursor-not-allowed disabled:opacity-60"
+          className="flex aspect-[5/2] w-full flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-[#d6d9cc] bg-background px-4 text-center transition-colors hover:border-accent disabled:cursor-not-allowed disabled:opacity-60"
         >
           <span className="text-sm font-medium text-primary/80">{uploading ? "Uploading…" : "Upload cover image"}</span>
-          <span className="text-xs text-subtle">Recommended size: 2:1 Ratio · JPG or PNG · Max 5MB</span>
+          <span className="text-xs text-subtle">Recommended size: 5:2 Ratio · JPG or PNG · Max 5MB</span>
         </button>
       ) : (
         <button
@@ -92,7 +99,7 @@ export default function CommunityCoverImageUploader({
           className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-divider bg-background py-5 text-sm font-semibold text-muted transition-colors hover:border-accent hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Image size={16} />
-          {uploading ? "Uploading…" : "Add Cover Image"}
+          {uploading ? "Uploading…" : `Add Cover Image (${BANNER_HINT})`}
         </button>
       )}
     </div>

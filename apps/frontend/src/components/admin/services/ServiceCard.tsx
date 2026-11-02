@@ -25,9 +25,9 @@ export default function ServiceCardBody({
       <div className="relative">
         {service.imageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={service.imageUrl} alt="" className="h-44 w-full bg-background object-cover" />
+          <img src={service.imageUrl} alt="" className="aspect-[5/2] w-full bg-background object-cover" />
         ) : (
-          <div className="flex h-44 w-full items-center justify-center bg-background text-subtle"><Briefcase size={30} /></div>
+          <div className="flex aspect-[5/2] w-full items-center justify-center bg-background text-subtle"><Briefcase size={30} /></div>
         )}
         {service.iconUrl && (
           // eslint-disable-next-line @next/next/no-img-element
