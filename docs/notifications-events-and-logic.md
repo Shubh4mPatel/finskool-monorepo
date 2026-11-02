@@ -32,7 +32,7 @@ Three separate processes take part:
   ├─ write Notification row         "notifications" queue          the "digest" queue
   ├─ redis.publish (live)           (concurrency 5)                 ├─ subscription reminders
   └─ queue.add(email / push /       ├─ fan-out jobs (post,          ├─ expiry sweep
-       fan-out job)                 │   recommendation)             ├─ admin digests
+       fan-out job)                 │   post)                       ├─ admin digests
                                     ├─ email jobs                   ├─ service-quote expiry
  LiveNotificationsFeed              └─ push job → FCM               └─ stale push-token cleanup
   subscribes to Redis
@@ -82,7 +82,7 @@ Three separate processes take part:
 **Unique key `(userId, type, sourceId)`** (`uq_notifications_user_type_source`). This is the idempotency mechanism: the same event reported twice cannot create two rows. Each producer picks a `sourceId` that identifies "this exact event":
 
 - subscription events use the subscription id,
-- post/recommendation use the post/recommendation id,
+- post uses the post id,
 - ticket/service updates use the message id / quote id / invoice id (or the ticket / request id for terminal events),
 - digests and import-complete use a fresh `randomUUID()` so they never collide.
 
@@ -90,7 +90,7 @@ Three separate processes take part:
 
 | Field | Effect |
 |---|---|
-| `User.postNotificationsEnabled` (default `true`) | If `false`, the member gets **nothing** for new posts and new recommendations: no row, no email, no push, no live event. Section 7. |
+| `User.postNotificationsEnabled` (default `true`) | If `false`, the member gets **nothing** for new posts: no row, no email, no push, no live event. Section 7. |
 | `User.pushEnabled` (default `true`) | If `false`, no pushes. Inbox, socket and email are unaffected. |
 | `MobileSession.fcmToken` | The device token. One mobile session per user, so one token per user. |
 
@@ -107,8 +107,6 @@ Legend: ✅ sent, ➖ not sent.
 | `type` | Trigger | Recipient | Inbox | Live | Email | Push |
 |---|---|---|---|---|---|---|
 | `post` | Admin publishes a post (`PostsService.publishPost`) | Community fan-out (section 4.4) | ✅ | ✅ | ✅ | ✅ |
-| `recommendation` | Admin creates a stock recommendation | Community fan-out | ✅ | ✅ | ✅ | ➖ (explicitly `push: false`) |
-| `thread` | Someone replies to a member's comment | The parent comment's author (not if replying to self) | ✅ | ✅ | ✅ (`thread-reply`) | ➖ |
 | `reaction` | Someone reacts to a post | The post's author (not if self-reaction) | ✅ | ✅ | ➖ | ➖ |
 | `community-added` | First paid access to a community (payment, or admin adds the community to a member) | The member | ✅ | ✅ | ✅ | ✅ |
 | `subscription-extended` | Renewal (member payment, or admin extends) | The member | ✅ | ✅ | ✅ | ✅ |
@@ -146,7 +144,9 @@ Sent through `notificationsQueue` email jobs. Subject lines come from `lib/email
 | `password-reset-otp-email` | Your Finskool21 password reset code is {code} | Mobile forgot-password |
 | `mobile-new-login-email` | New login to your Finskool21 account | Every mobile login |
 
-### 4.4 How community fan-out works (`post`, `recommendation`)
+### 4.4 How community fan-out works (`post`)
+
+> New recommendations and replies to a member's comment **no longer notify** (decided 2026-11-02): no inbox row, push or email. Their producers, the fan-out job, the `thread-reply` email job and its template were removed. Older `recommendation` and `thread` rows can still exist in inboxes.
 
 `NotificationsService.fanOutCommunity`, run in the worker:
 
@@ -158,15 +158,14 @@ Sent through `notificationsQueue` email jobs. Subject lines come from `lib/email
 
 **Triggering and retries**
 - Post: queued on publish with `jobId: post-published-{postId}`, 5 attempts, exponential backoff from 5 s. Publishing the same post twice is impossible ("already published" error), and the fixed `jobId` stops duplicate jobs.
-- Recommendation: one job per community the recommendation targets, `jobId: recommendation-created-{recId}`.
 
 **Content**
 
-| | `post` | `recommendation` |
-|---|---|---|
-| title | `New announcement in {community name}` (the email subject) | `New recommendation — {SYMBOL}` |
-| message | `New post: "{post title}"` | `New recommendation: {SYMBOL} — {BUY/SELL/...}` |
-| email | `new-announcement` template | Plain message plus "View Recommendation" button to `{FRONTEND_URL}/recommendations` |
+| | `post` |
+|---|---|
+| title | `New announcement in {community name}` (the email subject) |
+| message | `New post: "{post title}"` |
+| email | `new-announcement` template |
 
 ### 4.5 Exact texts for every event with a row
 
@@ -175,8 +174,6 @@ Sent through `notificationsQueue` email jobs. Subject lines come from `lib/email
 | `type` | `title` | `message` | `data` |
 |---|---|---|---|
 | `post` | `New announcement in {community}` | `New post: "{title}"` | `{type:'post', id:postId, communityId}` (free community: `{type:'feed', id:postId}`) |
-| `recommendation` | `New recommendation — {SYMBOL}` | `New recommendation: {SYMBOL} — {CALL}` | `{type:'recommendation', id:recId, communityId}` (free: `type:'feed'`) |
-| `thread` | `{replier} replied to you` | `{replier} replied to your comment on "{post title}"` | post routing |
 | `reaction` | `New reaction on your post` | `{reactor} reacted to your post "{post title}"` | post routing |
 | `new-member-reply` | `New thread on {post title}` | `{member} asked a question in {community}.` | post routing |
 | `community-added` (payment) | `You've been added to {community}` | `You're active until {date}.` | `{type:'subscription', id:communityId, communityId, event:'community-added'}` |
@@ -210,8 +207,8 @@ Sent through `notificationsQueue` email jobs. Subject lines come from `lib/email
 | `type` | `id` is | Used by |
 |---|---|---|
 | `feed` | post id | Anything belonging to the **free community**. The free community's content is the general feed, which is not scoped to a community, so `type` becomes `feed` and `communityId` is omitted. |
-| `post` | post id | post, thread, reaction, new-member-reply |
-| `recommendation` | recommendation id | recommendation |
+| `post` | post id | post, reaction, new-member-reply (and older `thread` rows) |
+| `recommendation` | recommendation id | older rows only (no longer sent) |
 | `subscription` | community id | membership events; `event` is `community-added`, `extended`, `expiring-7`, `expiring-1`, `expired` |
 | `ticket` | ticket id | ticket-update; `event` is `reply`, `resolved` |
 | `service` | request id | service-update; `event` is `reply`, `quote`, `paid`, `closed`, `quote-expired` |
@@ -360,7 +357,7 @@ The windows (not exact days) mean a missed run is caught the next day. `notifyOn
 
 Observed in the code; some may be intentional, none are fixed by this document.
 
-1. **No push for `thread`, `reaction`, `recommendation`.** They reach members only through the inbox, the live socket and (for `thread`) email.
+1. ~~No push for `thread`, `reaction`, `recommendation`.~~ Resolved: recommendations and comment replies no longer notify at all; `reaction` is admin-only and has no push.
 2. **Members' own ticket and service messages don't create inbox rows for admins.** Admins see them through the `/ws/tickets` live events only. Only admin actions notify the member.
 3. **Retried fan-out resends emails and live events.** `sendEmailBatch` and the live publish run for every chunk even when `createMany` created nothing (a retried job). Only the push is guarded by `result.count > 0`. A retry after a partial failure can therefore email the same people again.
 4. **Push data has no notification id.** The push `data` is the routing object only, so an app cannot match a tapped push to an inbox row, or to a socket event, by id.

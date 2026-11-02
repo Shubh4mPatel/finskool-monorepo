@@ -204,7 +204,7 @@ Each phase ends in a state that can be merged on its own.
 | Closed | Ticket reply | One system banner, tap cold starts into the ticket |
 | Any | Quote sent | "Your quote is ready" (no amount), opens service chat |
 | Any | Payment received | "Payment received", opens service chat |
-| Any | New community post | Banner, opens post (recommendations: inbox and socket only, no push) |
+| Any | New community post | Banner, opens post (new recommendations no longer notify) |
 | Any | Free-community post | Routes as `feed`, no community switch |
 | Any | Subscription expiring or expired | Opens subscription screen with renew option |
 | Push off in settings | Any event | No push, inbox and in-app banner still work |

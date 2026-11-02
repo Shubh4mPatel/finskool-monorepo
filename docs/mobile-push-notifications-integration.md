@@ -162,7 +162,7 @@ Extra delivery settings the server sets: Android `priority: high`; iOS `apns-pri
 | Service closed | `Your service is complete` / `Your service request was closed` | `Tap to see the details and rate it.` / `Tap to see why.` | `{type:'service', ..., event:'closed'}` |
 | Quote expired | `Your quote expired` | `Ask for a new quote in your service request chat.` | `{type:'service', ..., event:'quote-expired'}` |
 
-**These do not send a push** (inbox and socket only): new recommendation, a reply to your comment, a reaction on your post.
+**No notification at all any more** (no inbox row, push or email): a new recommendation, and a reply to a member's comment. A reaction on a post is only for the post's author (an admin) and does not send a push.
 
 Service updates have no `communityId` (service requests belong to no community). Ticket updates include it.
 
@@ -174,7 +174,7 @@ Route on `data.type`; `data.id` is the entity, and `data.event` tells you which 
 |---|---|---|
 | `post` | post id | Post detail (use `communityId` for community context). |
 | `feed` | post id | Post detail in the general (free) feed. There is no `communityId`. |
-| `recommendation` | recommendation id | Recommendation detail. |
+| `recommendation` | recommendation id | Recommendation detail. Only older inbox rows carry this now; keep the route so they still open. |
 | `subscription` | community id | Membership/plan screen for that community. `event` is `community-added`, `extended`, `expiring-7`, `expiring-1`, `expired`. A good place to show the renew call to action for `expiring-*` and `expired`. |
 | `ticket` | ticket id | Ticket chat. `event`: `reply`, `resolved`. |
 | `service` | service request id | Service request chat. `event`: `reply`, `quote`, `paid`, `closed`, `quote-expired`. |
@@ -244,7 +244,7 @@ GET /api/v1/notifications?page=1&pageSize=20&communityId=<uuid>
 
 ### `type` values the member can receive
 
-`post`, `recommendation`, `thread`, `reaction`, `community-added`, `subscription-extended`, `subscription-expiring-7-days`, `subscription-expiring-1-day`, `subscription-expired`, `ticket-update`, `service-update`. Treat `type` as an open set: unknown values should still render from `title` and `message`.
+`post`, `community-added`, `subscription-extended`, `subscription-expiring-7-days`, `subscription-expiring-1-day`, `subscription-expired`, `ticket-update`, `service-update`. Treat `type` as an open set: unknown values should still render from `title` and `message`.
 
 The `data.type` (routing) is a different field from the row's `type`. Route on `data.type`.
 
@@ -338,7 +338,7 @@ Pushes are retried by the server up to 5 times with exponential backoff on tempo
 1. `PUT /mobile/push-token` returned `200` for the current session (not `404`).
 2. `GET /mobile/push-settings` shows `pushEnabled: true`.
 3. For post events: `postNotificationsEnabled` is on, and the member has an active subscription (`validUntil` today or later) in that community. The member who published it never gets it.
-4. The event actually pushes (section 6.2): recommendations, replies and reactions never do.
+4. The event actually pushes (section 6.2). Recommendations and comment replies no longer notify at all.
 5. Server side: `FCM not configured, push skipped` in the worker log means the deployment has no Firebase credentials; the Firebase project must match the app (section 3); and the worker process (`worker.ts`) must be running, because pushes are sent from it, not from the API process.
 6. Android: notification permission and channel; iOS: APNs key in Firebase and permission granted.
 
