@@ -23,16 +23,18 @@ export type PushOutcome =
   // Temporary (Firebase unavailable, rate limited, ...): retry later.
   | { ok: false; kind: 'transient'; code: string }
   // Anything else (bad credentials, malformed payload): retrying will not help, but the token may still be fine.
-  | { ok: false; kind: 'failed'; code: string }
+  | { ok: false; kind: 'failed'; code: string; message: string }
 
 // FCM accepts at most 500 messages per sendEach call.
 export const FCM_BATCH_SIZE = 500
 
-const INVALID_TOKEN_CODES = new Set([
-  'messaging/registration-token-not-registered',
-  'messaging/invalid-registration-token',
-  'messaging/invalid-argument',
-])
+// These two always mean the token itself is dead (the app was uninstalled, or the token is malformed).
+const INVALID_TOKEN_CODES = new Set(['messaging/registration-token-not-registered', 'messaging/invalid-registration-token'])
+// Firebase uses this one code both for a bad token ("The registration token is not a valid FCM registration
+// token") and for a bad MESSAGE (too big, reserved data key, wrong type...). Only the first means the token is
+// dead; treating the second that way would wipe the tokens of everyone the broken message went to.
+const INVALID_ARGUMENT_CODE = 'messaging/invalid-argument'
+const TOKEN_PROBLEM_MESSAGE = /registration token/i
 const TRANSIENT_CODES = new Set([
   'messaging/server-unavailable',
   'messaging/internal-error',
@@ -42,10 +44,11 @@ const TRANSIENT_CODES = new Set([
   'messaging/unknown-error',
 ])
 
-export function classifyFcmError(code: string): PushOutcome {
+export function classifyFcmError(code: string, message = ''): PushOutcome {
   if (INVALID_TOKEN_CODES.has(code)) return { ok: false, kind: 'invalid-token', code }
+  if (code === INVALID_ARGUMENT_CODE && TOKEN_PROBLEM_MESSAGE.test(message)) return { ok: false, kind: 'invalid-token', code }
   if (TRANSIENT_CODES.has(code)) return { ok: false, kind: 'transient', code }
-  return { ok: false, kind: 'failed', code }
+  return { ok: false, kind: 'failed', code, message }
 }
 
 function credentialJson(): string {
@@ -103,12 +106,12 @@ export async function sendPushBatch(messages: PushMessage[]): Promise<PushOutcom
       body: JSON.stringify({ messages }),
     })
     if (!res.ok) throw new Error(`fake FCM responded ${res.status}`)
-    const body = (await res.json()) as { responses: { success: boolean; error?: { code: string } }[] }
-    return body.responses.map(r => (r.success ? { ok: true } : classifyFcmError(r.error?.code ?? 'messaging/unknown-error')))
+    const body = (await res.json()) as { responses: { success: boolean; error?: { code: string; message?: string } }[] }
+    return body.responses.map(r => (r.success ? { ok: true } : classifyFcmError(r.error?.code ?? 'messaging/unknown-error', r.error?.message ?? '')))
   }
 
   const fb = firebaseApp()
   if (!fb) throw new Error('FCM is not configured')
   const result = await getMessaging(fb).sendEach(messages.map(toFirebaseMessage))
-  return result.responses.map(r => (r.success ? { ok: true } : classifyFcmError(r.error?.code ?? 'messaging/unknown-error')))
+  return result.responses.map(r => (r.success ? { ok: true } : classifyFcmError(r.error?.code ?? 'messaging/unknown-error', r.error?.message ?? '')))
 }

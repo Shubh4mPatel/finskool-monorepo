@@ -391,6 +391,9 @@ export class NotificationsService {
     let sent = 0
     const deadTokens: string[] = []
     const retryUserIds: string[] = []
+    // Failures that are not about the token (a bad message, bad credentials): counted per reason and logged once,
+    // never per member, and the tokens are kept.
+    const failures = new Map<string, { code: string; message: string; count: number }>()
     for (let i = 0; i < targets.length; i += FCM_BATCH_SIZE) {
       const chunk = targets.slice(i, i + FCM_BATCH_SIZE)
       const outcomes = await sendPushBatch(
@@ -402,11 +405,24 @@ export class NotificationsService {
         if (outcome.ok) sent++
         else if (outcome.kind === 'invalid-token') deadTokens.push(target.token)
         else if (outcome.kind === 'transient') retryUserIds.push(target.userId)
-        else logger.error({ userId: target.userId, code: outcome.code }, 'notifications.sendPush: send failed')
+        else {
+          const key = `${outcome.code}|${outcome.message}`
+          const seen = failures.get(key)
+          if (seen) seen.count++
+          else failures.set(key, { code: outcome.code, message: outcome.message, count: 1 })
+        }
       })
     }
 
+    for (const f of failures.values()) {
+      logger.error(
+        { code: f.code, firebaseMessage: f.message, failedSends: f.count, pushType: payload.data['type'], event: payload.data['event'], titleLength: payload.title.length, bodyLength: payload.body.length, dataKeys: Object.keys(payload.data) },
+        'notifications.sendPush: Firebase rejected the message itself, so the device tokens were KEPT; fix the message',
+      )
+    }
+
     if (deadTokens.length > 0) {
+      logger.info({ cleared: deadTokens.length, pushType: payload.data['type'] }, 'notifications.sendPush: clearing tokens Firebase says are dead')
       await this.db.mobileSession.updateMany({ where: { fcmToken: { in: deadTokens } }, data: { fcmToken: null, fcmTokenUpdatedAt: null } })
     }
     if (retryUserIds.length > 0) {

@@ -275,9 +275,9 @@ A push is skipped for a recipient when any of these is true: `pushEnabled = fals
    - Looks up `MobileSession` rows for the user ids with a token, for users that are `pushEnabled`, `active` and not deleted. Everyone else counts as `skipped`.
    - If FCM credentials are not configured, it logs a warning and sends nothing.
    - Sends in batches of 500 using `sendEach`, then sorts each result:
-     - **invalid token** (`registration-token-not-registered`, `invalid-registration-token`, `invalid-argument`): the token is cleared from the session and never retried.
+     - **invalid token** (`registration-token-not-registered`, `invalid-registration-token`, or `invalid-argument` **only when Firebase's message mentions the registration token**): the token is cleared from the session and never retried. Firebase also returns `invalid-argument` for a bad *message* (too big, reserved data key, wrong type), so those keep the token.
      - **transient** (`server-unavailable`, `internal-error`, rate-limit codes, `unknown-error`): that user is kept for retry.
-     - **other failure**: logged, not retried, token kept.
+     - **other failure** (including `invalid-argument` about the message): not retried, token kept. Logged **once per batch** (not per member) as `Firebase rejected the message itself, so the device tokens were KEPT`, with Firebase's message, the number of failed sends, the push type and event, the title and body lengths and the data keys, so the bad message can be found and fixed.
    - If any transient failures exist, it rewrites the job's `userIds` to only those users and throws, so BullMQ's retry never re-sends to someone who already got it.
 3. **Message shape** (`toFirebaseMessage`):
    - `notification: { title, body }`
