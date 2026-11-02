@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ArrowRight, Smartphone, UserPlus, UserRoundCheck } from "lucide-react";
 import { dashboardApi, type RegistrationItem, type StatusTone } from "@/lib/dashboard";
@@ -28,6 +29,7 @@ function statusOf(r: RegistrationItem): { label: string; tone: StatusTone } {
 }
 
 export function NewRegistrations({ className = "", delay = 0 }: { className?: string; delay?: number }) {
+  const router = useRouter();
   const { data, error, loading, retry } = usePanel("registrations", dashboardApi.registrations);
   const [now] = useState(() => Date.now());
 
@@ -85,16 +87,23 @@ export function NewRegistrations({ className = "", delay = 0 }: { className?: st
                   <tr
                     key={r.userId}
                     style={stagger(i, delay + 150)}
-                    className="animate-fade border-b border-divider/70 transition-colors last:border-0 hover:bg-background/60"
+                    // The whole row opens the profile; the name link inside is what keyboard and middle-click use.
+                    onClick={() => router.push(`/admin/members/${r.userId}`)}
+                    className="animate-fade cursor-pointer border-b border-divider/70 transition-colors last:border-0 hover:bg-background/60"
                   >
                     <td className="px-3 py-3">
-                      <span className="flex items-center gap-3">
+                      <Link
+                        href={`/admin/members/${r.userId}`}
+                        onClick={e => e.stopPropagation()}
+                        title={`Open ${r.name}'s profile`}
+                        className="group/member flex items-center gap-3"
+                      >
                         <TintAvatar name={r.name} />
                         <span className="min-w-0">
-                          <span className="block truncate font-bold text-primary">{r.name}</span>
+                          <span className="block truncate font-bold text-primary transition-colors group-hover/member:text-accent">{r.name}</span>
                           <span className="block text-xs tabular-nums text-muted">{r.phone}</span>
                         </span>
-                      </span>
+                      </Link>
                     </td>
                     <td className="max-w-[14rem] truncate px-3 py-3 text-muted">{r.email ?? "—"}</td>
                     <td className="whitespace-nowrap px-3 py-3 text-primary">{formatRegistered(r.registeredAt, now)}</td>

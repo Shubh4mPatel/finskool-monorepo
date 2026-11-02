@@ -68,10 +68,14 @@ export function RecentTickets({ className = "", delay = 0 }: { className?: strin
                     </Link>
                   </td>
                   <td className="px-3 py-3.5">
-                    <span className="flex items-center gap-2.5">
+                    <Link
+                      href={`/admin/members/${t.member.id}`}
+                      title={`Open ${t.member.name}'s profile`}
+                      className="group/member flex items-center gap-2.5"
+                    >
                       <TintAvatar name={t.member.name} className="h-8 w-8" />
-                      <span className="font-semibold text-primary">{t.member.name}</span>
-                    </span>
+                      <span className="font-semibold text-primary transition-colors group-hover/member:text-accent">{t.member.name}</span>
+                    </Link>
                   </td>
                   <td className="px-3 py-3.5">
                     <span
