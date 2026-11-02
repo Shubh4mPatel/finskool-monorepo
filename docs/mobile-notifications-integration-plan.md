@@ -56,11 +56,11 @@ Each phase ends in a state that can be merged on its own.
 
 1. **Notification model and repository.** Fields: `id`, `communityId` (nullable), `type`, `title`, `message`, `data` (nullable `Map<String, String>`), `isRead`, `createdAt`, `updatedAt`. Parse tolerantly: unknown extra fields are ignored, `data` may be `null`.
 2. **API calls** (`docs/mobile-notifications.md` section 2):
-   - `GET /api/v1/notifications?page=&pageSize=&communityId=`
+   - `GET /api/v1/notifications?pageSize=&communityId=&cursor=` (page with `cursor` = the previous response's `nextCursor`, not page numbers)
    - `GET /api/v1/notifications/unread-count`
    - `PATCH /api/v1/notifications/:id/read`
    - `PATCH /api/v1/notifications/mark-all-read`
-3. **Inbox screen.** Paginated list (infinite scroll, `pageSize` 20, newest first), pull to refresh, unread styling, "Mark all read" action, empty and error states. Optional community filter.
+3. **Inbox screen.** Paginated list (infinite scroll by `cursor`, `pageSize` 20, newest first), pull to refresh, unread styling, "Mark all read" action, empty and error states. Optional community filter.
 4. **Bell badge.** Show `unread-count` on the bell in the app bar. One shared state holder (provider, bloc or similar) used by the badge and the inbox, because the socket will update both in Phase 2.
 5. **Central routing function** `routeNotification(Map<String, dynamic> data)` (`docs/mobile-notifications.md` section 4). It is the only place that maps `data.type` to a screen. Rules:
    - `post`, `feed`, `recommendation`, `ticket`, `service`, `subscription` open their screens.

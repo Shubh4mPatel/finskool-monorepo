@@ -552,14 +552,15 @@ model Notification {
   // Routing info the mobile app reads when a notification (or its push) is tapped, e.g. { "type": "ticket", "id": "..." }.
   data        Json?
   isRead      Boolean  @default(false) @map("is_read")
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  // Millisecond precision: the inbox pages by (createdAt, id), and a cursor carries a JS Date.
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   community Community? @relation(fields: [communityId], references: [id], onDelete: Cascade)
   user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, type, sourceId], name: "uq_notifications_user_type_source")
-  @@index([userId, createdAt(sort: Desc)], name: "idx_notifications_user_feed")
+  @@index([userId, createdAt(sort: Desc), id(sort: Desc)], name: "idx_notifications_user_feed")
   @@index([userId, isRead], name: "idx_notifications_user_unread")
   @@index([communityId], name: "idx_notifications_community")
   @@map("notifications")

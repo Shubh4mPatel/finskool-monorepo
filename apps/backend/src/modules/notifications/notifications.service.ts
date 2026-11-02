@@ -1,4 +1,5 @@
 import type { PrismaClient } from '../../generated/prisma/client.js'
+import { decodeCursor, encodeCursor } from '../tickets/tickets.shared.js'
 import { NotFoundError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
 import { sendMail } from '../../lib/mailer.js'
@@ -73,19 +74,35 @@ export interface AdminExpiryDigestEmailPayload {
 export class NotificationsService {
   constructor(private readonly db: PrismaClient) {}
 
-  async listForUser(userId: string, page: number, pageSize: number, communityId?: string): Promise<ListNotificationsResponseDTO> {
-    const where = communityId ? { userId, communityId } : { userId }
+  /**
+   * The inbox, newest first (createdAt, then id, so the order is total).
+   *
+   * Two ways to page:
+   *  - `cursor` (use this in the app): "the items older than this one". New notifications arriving at the top cannot
+   *    shift anything, so no item repeats or is skipped. Totals are not computed.
+   *  - page numbers (the website): `skip` + `take`, with totals. Kept as it was.
+   * Both return `nextCursor`, so a client can start with page 1 and continue by cursor.
+   */
+  async listForUser(userId: string, page: number, pageSize: number, communityId?: string, cursor?: string): Promise<ListNotificationsResponseDTO> {
+    const base = communityId ? { userId, communityId } : { userId }
+    const after = cursor ? decodeCursor(cursor) : null
+    const where = after ? { ...base, OR: [{ createdAt: { lt: after.at } }, { createdAt: after.at, id: { lt: after.id } }] } : base
+    const orderBy = [{ createdAt: 'desc' as const }, { id: 'desc' as const }]
 
-    const [notifications, total] = await Promise.all([
+    // One extra row tells us whether anything older exists, without counting.
+    const [fetched, total] = await Promise.all([
       this.db.notification.findMany({
         where,
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
+        orderBy,
+        ...(after ? {} : { skip: (page - 1) * pageSize }),
+        take: pageSize + 1,
         include: { community: { select: { isFree: true } } },
       }),
-      this.db.notification.count({ where }),
+      after ? Promise.resolve(null) : this.db.notification.count({ where }),
     ])
+    const notifications = fetched.slice(0, pageSize)
+    const last = notifications[notifications.length - 1]
+    const nextCursor = fetched.length > pageSize && last ? encodeCursor(last.createdAt, last.id) : null
 
     const postIds = await this.postIdsFor(notifications)
 
@@ -97,10 +114,9 @@ export class NotificationsService {
           : n.data
         return toNotificationItem({ ...n, data })
       }),
-      total,
-      page,
       pageSize,
-      totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      nextCursor,
+      ...(total === null ? {} : { total, page, totalPages: Math.max(1, Math.ceil(total / pageSize)) }),
     }
   }
 

@@ -229,7 +229,7 @@ Mounted at `/api/v1/notifications`. Uses `authenticate`, so it accepts both the 
 
 | Method and path | Behaviour |
 |---|---|
-| `GET /` | Query `page` (default 1), `pageSize` (default 20, max 50), `communityId` (optional UUID). Newest first by `createdAt`. Response `{ success, data: { notifications, total, page, pageSize, totalPages } }`. |
+| `GET /` | Query `pageSize` (default 20, max 50), `communityId` (optional UUID), and either `cursor` (the app: pages by "older than this item", ordered `createdAt desc, id desc`, no totals) or `page` (default 1, the website: page numbers with totals). Response `{ success, data: { notifications, pageSize, nextCursor, total?, page?, totalPages? } }`; `nextCursor` is returned in both modes and is `null` on the last page. Bad cursor: 400 `INVALID_CURSOR`. `notifications.created_at` is millisecond precision and indexed `(user_id, created_at desc, id desc)` for this. |
 | `GET /unread-count` | `{ success, data: { count } }`. Counts all of the user's unread rows, regardless of community. |
 | `PATCH /:id/read` | Marks one read. 404 `Notification not found` if it is not the caller's; 422 `Validation failed` (`errors.id`) if the id is not a UUID. |
 | `PATCH /mark-all-read` | Marks all read. `{ success, data: { count } }`. |

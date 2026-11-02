@@ -200,12 +200,17 @@ Uses the same mobile cookie. Base `<API>/api/v1/notifications`.
 ### List
 
 ```
-GET /api/v1/notifications?page=1&pageSize=20&communityId=<uuid>
+GET /api/v1/notifications?pageSize=20&communityId=<uuid>&cursor=<nextCursor>
 ```
 
-- `page` default 1; `pageSize` default 20, max 50; `communityId` optional filter.
-- Newest first, ordered by `createdAt`.
-
+- `pageSize` default 20, max 50; `communityId` optional filter.
+- Newest first. **Page by `cursor`, not by page number.**
+  1. First load: call without `cursor`. The response has `nextCursor`.
+  2. To load older items, call again with `cursor=<nextCursor>` (URL-encode it). Keep doing this while `nextCursor` is not `null`; `null` means there is nothing older.
+  3. Why: new notifications keep arriving at the top (every ticket message is one). With page numbers they push older items down, so page 2 repeats items you already have or skips some. A cursor means "older than the last item I have", so arrivals cannot move anything. Items that arrive while the member scrolls come through the live socket (`notification.created`) and go on top of the list yourself; do not refetch page 1 to find them.
+  4. A cursor response has no `total`, `page` or `totalPages` (counting is skipped). Use `GET /unread-count` for the badge.
+  5. An invalid or edited cursor returns `400` with `code: "INVALID_CURSOR"`: restart from the first page.
+- The old `page=N` still works (the website uses it) and returns the totals, but the app should not use it. It also returns `nextCursor`, so a client can start with page 1 and continue by cursor.
 ```json
 {
   "success": true,
@@ -223,13 +228,13 @@ GET /api/v1/notifications?page=1&pageSize=20&communityId=<uuid>
         "updatedAt": "2026-10-30T09:00:00.000Z"
       }
     ],
-    "total": 42,
-    "page": 1,
     "pageSize": 20,
-    "totalPages": 3
+    "nextCursor": "MjAyNi0xMC0zMFQwOTowMDowMC4wMDBafGJmNWY…"
   }
 }
 ```
+
+(`nextCursor` is `null` on the last page. `total`, `page` and `totalPages` appear only when you page by number.)
 
 `data` can be `null` on old rows that predate routing data; open the inbox item's detail by `type` if you can, or do nothing.
 

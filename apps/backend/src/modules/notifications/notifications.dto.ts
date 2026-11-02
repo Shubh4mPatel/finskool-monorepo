@@ -33,10 +33,13 @@ export interface NotificationItemDTO {
 
 export interface ListNotificationsResponseDTO {
   notifications: NotificationItemDTO[]
-  total: number
-  page: number
   pageSize: number
-  totalPages: number
+  /** Pass as `cursor` to get the next (older) page; null when there is nothing older. Present in both paging modes. */
+  nextCursor: string | null
+  // Page-number mode only (no `cursor` sent): totals are skipped when paging by cursor, which is cheaper.
+  total?: number
+  page?: number
+  totalPages?: number
 }
 
 interface NotificationRow {
