@@ -13,7 +13,7 @@ import {
 } from '../../lib/queue.js'
 import type { LiveNotificationEvent } from '../../lib/queue.js'
 import redis from '../../lib/redis.js'
-import { BadRequestError, NotFoundError, ConflictError } from '../../shared/errors/index.js'
+import { AppError, BadRequestError, NotFoundError, ConflictError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
 import { subscriptionRouting } from '../../lib/notification-routing.js'
 import { NotificationType } from '../notifications/notifications.dto.js'
@@ -75,12 +75,29 @@ export class PaymentsService {
       throw new BadRequestError('This plan is priced below the minimum payable amount')
     }
 
-    const order = await getRazorpayClient().orders.create({
-      amount: amountPaise,
-      currency: 'INR',
-      receipt: `plan_${plan.id.slice(0, 8)}_${Date.now()}`,
-      notes: { userId, communityId, planId },
-    })
+    if (!env.razorpay.keyId || !env.razorpay.keySecret) {
+      logger.error('payments.createOrder: RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET are not set on the server')
+      throw new AppError(503, 'Payments are not available right now', 'PAYMENTS_NOT_CONFIGURED')
+    }
+
+    let order: { id: string }
+    try {
+      order = await getRazorpayClient().orders.create({
+        amount: amountPaise,
+        currency: 'INR',
+        receipt: `plan_${plan.id.slice(0, 8)}_${Date.now()}`,
+        notes: { userId, communityId, planId },
+      })
+    } catch (err) {
+      // The Razorpay SDK rejects with a plain object ({ statusCode, error: { code, description } }), not an
+      // Error, so without this a rejected key, a network problem or a bad amount all surface as a bare 500.
+      const e = err as { statusCode?: number; error?: { code?: string; description?: string; reason?: string }; message?: string }
+      logger.error(
+        { userId, communityId, planId, statusCode: e.statusCode, razorpayCode: e.error?.code, description: e.error?.description ?? e.message },
+        'payments.createOrder: Razorpay could not create the order',
+      )
+      throw new AppError(502, 'Could not start the payment. Please try again.', 'PAYMENT_GATEWAY_ERROR')
+    }
 
     await this.db.planOrder.create({
       data: {
