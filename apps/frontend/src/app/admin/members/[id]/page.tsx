@@ -12,6 +12,7 @@ import PasswordInput from "@/components/auth/PasswordInput";
 import DatePicker from "@/components/ui/DatePicker";
 import { durationPresets } from "@/components/admin/members/datePresets";
 import { addDays, parseDateParam, startOfToday } from "@/lib/dates";
+import MemberReceipts from "@/components/admin/members/MemberReceipts";
 import { type MemberItem, getInitials, formatDate, SOURCE_LABELS } from "@/lib/memberFormat";
 
 type FormErrors = Partial<Record<"name" | "phone" | "email", string>>;
@@ -371,6 +372,10 @@ export default function MemberDetailPage() {
               </div>
             </div>
           </div>
+
+          <div className="h-px w-full bg-divider" />
+
+          <MemberReceipts userId={member.id} />
 
           <div className="h-px w-full bg-divider" />
 

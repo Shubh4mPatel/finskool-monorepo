@@ -32,3 +32,12 @@ Errors: `404` the receipt does not exist or belongs to someone else; `400` the i
 ## 3. Email
 
 The member also gets the PDF as an attachment on the "added to community" or "access extended" email. Members without an email on file just get the in-app receipt.
+
+## 4. Service invoices (GST) for the app
+
+Paid service requests keep their GST invoice as before: the request detail has `invoice` and the download call is in `mobile-quote-payment.md`. Both kinds are stored as PDFs in the invoices bucket and attached to the payment email.
+
+## 5. Admin side
+
+- Web: the member's page (`/admin/members/<id>`) shows a "Payment receipts" list with a download button for each.
+- API: `GET /api/v1/admin/receipts?userId=<id>` and `GET /api/v1/admin/receipts/<receiptId>/download`. An admin can use them only for members they may open (a subscription in a community they manage); super admins see everyone. Service invoices: `GET /api/v1/admin/services/<requestId>/invoice`.

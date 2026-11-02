@@ -2,6 +2,8 @@ import PDFDocument from 'pdfkit'
 import type { Prisma, PrismaClient } from '../generated/prisma/client.js'
 import { generateInvoiceDownloadUrl, uploadInvoicePdf } from './minio.js'
 import { logger } from '../shared/logger.js'
+import { hasMemberAccess } from './community-access.js'
+import { NotFoundError, ForbiddenError } from '../shared/errors/index.js'
 import { loadBillingSettings } from '../modules/services/billing-settings.js'
 import { amountInWords, financialYearOf, rupeesToPaise } from '../modules/services/services.billing.js'
 
@@ -190,4 +192,19 @@ export async function listReceipts(db: PrismaClient, userId: string) {
     select: { id: true, number: true, issuedAt: true, description: true, amount: true, currency: true },
   })
   return rows.map(r => ({ id: r.id, number: r.number, issuedAt: r.issuedAt.toISOString(), description: r.description, amount: Number(r.amount), currency: r.currency }))
+}
+
+/** Receipts of one member, for an admin who is allowed to see that member (same rule as the member profile). */
+export async function listReceiptsForAdmin(db: PrismaClient, accessibleCommunityIds: string[] | null, userId: string) {
+  if (!(await hasMemberAccess(db, accessibleCommunityIds, userId))) throw new ForbiddenError('You do not have access to this member', 'MEMBER_ACCESS_DENIED')
+  return listReceipts(db, userId)
+}
+
+export async function getReceiptDownloadUrlForAdmin(db: PrismaClient, accessibleCommunityIds: string[] | null, receiptId: string): Promise<{ url: string; fileName: string }> {
+  const receipt = await db.planReceipt.findUnique({ where: { id: receiptId }, select: { id: true, number: true, userId: true } })
+  if (!receipt) throw new NotFoundError('Receipt not found')
+  if (!(await hasMemberAccess(db, accessibleCommunityIds, receipt.userId))) throw new ForbiddenError('You do not have access to this member', 'MEMBER_ACCESS_DENIED')
+  const objectKey = await ensureReceiptPdf(db, receipt.id)
+  const fileName = pdfFileName(receipt)
+  return { url: await generateInvoiceDownloadUrl(objectKey, fileName), fileName }
 }

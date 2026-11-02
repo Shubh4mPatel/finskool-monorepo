@@ -29,8 +29,8 @@ import type {
 } from '../../lib/queue.js'
 import { FCM_BATCH_SIZE, isPushConfigured, sendPushBatch } from '../../lib/fcm.js'
 import { queuePushFor } from '../../lib/push.js'
-import { renderInvoicePdf } from '../services/services.invoice.js'
-import { renderReceiptPdf } from '../../lib/plan-receipt.js'
+import { ensureInvoicePdf, renderInvoicePdf } from '../services/services.invoice.js'
+import { ensureReceiptPdf, renderReceiptPdf } from '../../lib/plan-receipt.js'
 import { requestLabel } from '../services/services.shared.js'
 import { routingData, RoutingModule } from '../../lib/notification-routing.js'
 import type { RoutingData } from '../../lib/notification-routing.js'
@@ -272,6 +272,7 @@ export class NotificationsService {
     const receipt = await this.db.planReceipt.findUnique({ where: { id: receiptId } })
     if (!receipt) return {}
     const content = await renderReceiptPdf(receipt)
+    ensureReceiptPdf(this.db, receipt.id).catch(err => logger.error({ err, receiptId: receipt.id }, 'receipt: storing the PDF failed'))
     return { attachments: [{ filename: `${receipt.number.replace(/\//g, '-')}.pdf`, content, contentType: 'application/pdf' }] }
   }
 
@@ -283,6 +284,8 @@ export class NotificationsService {
     })
     if (!invoice) throw new NotFoundError('Invoice not found')
     const pdf = await renderInvoicePdf(invoice)
+    // Keep a copy in the invoices bucket (the member / admin download link uses it); never blocks the email.
+    ensureInvoicePdf(this.db, invoice.id).catch(err => logger.error({ err, invoiceId: invoice.id }, 'service invoice: storing the PDF failed'))
     const { subject, html } = renderEmail('service-invoice', {
       first_name: firstNameOf(payload.name),
       service_title: invoice.request.service.title,
