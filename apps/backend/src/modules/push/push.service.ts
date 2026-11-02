@@ -1,5 +1,6 @@
 import type { PrismaClient } from '../../generated/prisma/client.js'
 import { NotFoundError } from '../../shared/errors/index.js'
+import { lockPushToken, withTokenRetry } from '../../lib/push-token.js'
 
 export class PushService {
   constructor(private readonly db: PrismaClient) {}
@@ -10,13 +11,16 @@ export class PushService {
    * of that phone without the app reporting it). Idempotent.
    */
   async registerToken(userId: string, token: string, appVersion: string | undefined): Promise<void> {
-    const saved = await this.db.$transaction(async tx => {
-      await tx.mobileSession.updateMany({ where: { fcmToken: token, NOT: { userId } }, data: { fcmToken: null, fcmTokenUpdatedAt: null } })
-      return tx.mobileSession.updateMany({
-        where: { userId },
-        data: { fcmToken: token, fcmTokenUpdatedAt: new Date(), ...(appVersion ? { appVersion } : {}) },
-      })
-    })
+    const saved = await withTokenRetry(() =>
+      this.db.$transaction(async tx => {
+        await lockPushToken(tx, token)
+        await tx.mobileSession.updateMany({ where: { fcmToken: token, NOT: { userId } }, data: { fcmToken: null, fcmTokenUpdatedAt: null } })
+        return tx.mobileSession.updateMany({
+          where: { userId },
+          data: { fcmToken: token, fcmTokenUpdatedAt: new Date(), ...(appVersion ? { appVersion } : {}) },
+        })
+      }),
+    )
     if (saved.count === 0) throw new NotFoundError('No active mobile session')
   }
 

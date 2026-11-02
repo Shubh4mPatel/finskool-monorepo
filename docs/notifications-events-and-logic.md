@@ -298,7 +298,7 @@ A push is skipped for a recipient when any of these is true: `pushEnabled = fals
 ### 8.1 Device token lifecycle (`modules/push`)
 
 - Stored on the user's single `MobileSession` (`fcmToken`, `fcmTokenUpdatedAt`, `appVersion`).
-- Set by mobile login (optional `fcmToken` in the body) or `PUT /api/v1/mobile/push-token`. A phone belongs to one logged-in member: registering a token first clears that same token from any other user's session.
+- Set by mobile login (optional `fcmToken` in the body) or `PUT /api/v1/mobile/push-token`. A phone belongs to one logged-in member: registering a token first clears that same token from any other user's session. This is enforced by a unique index on `fcm_token` (NULLs allowed), and registrations of the same token take turns (a Postgres advisory lock), so two members can never hold the same token, even if they register at the same instant.
 - A new login replaces the session, so the previous token is dropped unless the new login brings its own.
 - Cleared by: `DELETE /mobile/push-token`, logout (the session row is deleted), FCM reporting the token dead, or the cleanup job (below).
 - **Daily 03:30 IST cleanup** clears tokens whose `fcmTokenUpdatedAt` is older than **90 days**. The app is expected to re-register on every launch.

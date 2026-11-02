@@ -606,7 +606,8 @@ model MobileSession {
   // token per user: a logout deletes this row (token gone), a login on another
   // phone overwrites it. fcmToken is cleared by the push worker when FCM reports
   // it dead, and by the cleanup job when it hasn't been refreshed for 90 days.
-  fcmToken          String?   @map("fcm_token") @db.VarChar(512)
+  // Unique: one phone token belongs to at most one session (NULLs are not constrained).
+  fcmToken          String?   @unique @map("fcm_token") @db.VarChar(512)
   fcmTokenUpdatedAt DateTime? @map("fcm_token_updated_at") @db.Timestamptz
   appVersion        String?   @map("app_version") @db.VarChar(32)
 
@@ -615,7 +616,6 @@ model MobileSession {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([fcmToken], name: "idx_mobile_sessions_fcm_token")
   @@map("mobile_sessions")
 }
 

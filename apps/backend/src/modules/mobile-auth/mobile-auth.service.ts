@@ -1,3 +1,4 @@
+import { lockPushToken, withTokenRetry } from '../../lib/push-token.js'
 import { randomInt, randomBytes, randomUUID, createHash } from 'crypto'
 import bcrypt from 'bcryptjs'
 import { UAParser } from 'ua-parser-js'
@@ -283,15 +284,18 @@ export class MobileAuthService {
       fcmTokenUpdatedAt: data.fcmToken ? new Date() : null,
       appVersion: data.appVersion ?? null,
     }
-    await this.db.$transaction(async tx => {
-      // A phone belongs to one logged-in member: if another account still holds this token, take it over.
-      if (data.fcmToken) await tx.mobileSession.updateMany({ where: { fcmToken: data.fcmToken, NOT: { userId: user.id } }, data: { fcmToken: null, fcmTokenUpdatedAt: null } })
-      await tx.mobileSession.upsert({
-        where: { userId: user.id },
-        create: { userId: user.id, ...sessionData },
-        update: sessionData,
-      })
-    })
+    await withTokenRetry(() =>
+      this.db.$transaction(async tx => {
+        // A phone belongs to one logged-in member: if another account still holds this token, take it over.
+        if (data.fcmToken) await lockPushToken(tx, data.fcmToken)
+        if (data.fcmToken) await tx.mobileSession.updateMany({ where: { fcmToken: data.fcmToken, NOT: { userId: user.id } }, data: { fcmToken: null, fcmTokenUpdatedAt: null } })
+        await tx.mobileSession.upsert({
+          where: { userId: user.id },
+          create: { userId: user.id, ...sessionData },
+          update: sessionData,
+        })
+      }),
+    )
 
     try {
       await notificationsQueue.add(
