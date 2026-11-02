@@ -309,7 +309,7 @@ A push is skipped for a recipient when any of these is true: `pushEnabled = fals
 
 | Schedule | Job | Effect |
 |---|---|---|
-| 02:00 daily | `expire-subscriptions` | Every active subscription with `validUntil < today` is set inactive and the member gets `subscription-expired` (inbox, live, email, push). No grace period. |
+| 02:00 daily | `expire-subscriptions` | Every active subscription with `validUntil < today` gets its member told (`subscription-expired`: inbox, live, email, push) and is then set inactive. No grace period. Each subscription is handled on its own: if telling a member fails, that subscription stays open and is retried tomorrow, and the other members are not affected. Nobody is told twice on a retry. Suspended and deleted members are closed but not told. The run reports `{ expired, failed }`. |
 | 03:00 daily | `ticket-upload-cleanup` | Orphan ticket uploads. Not a notification. |
 | 03:30 daily | `push-token-cleanup` | Clears device tokens older than 90 days. |
 | 03:45 daily | `notification-cleanup` | Deletes notifications that are **read** and older than **90 days** (`createdAt`), in slices of 5,000 (at most 200 slices a run; the rest waits for the next day). Unread notifications are never deleted. Backed by the partial index `idx_notifications_read_created`. Safe for the send-once rules, which key on events that are long over by then. |

@@ -128,7 +128,7 @@ export async function runSubscriptionLifecycleSweep(
 export async function expireLapsedSubscriptions(
   db: PrismaClient,
   notifications: NotificationsService,
-): Promise<{ expired: number }> {
+): Promise<{ expired: number; failed: number }> {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
 
@@ -143,38 +143,53 @@ export async function expireLapsedSubscriptions(
     },
   })
 
+  let expired = 0
+  let failed = 0
   for (const sub of subs) {
-    await db.subscription.update({ where: { id: sub.id }, data: { isActive: false } })
+    // One member's failure must not stop the others, so each subscription is handled on its own.
+    try {
+      // A suspended or deleted member is not told, but their subscription is still closed.
+      const tellMember = sub.user.status === 'active' && !sub.user.deletedAt
 
-    // The subscription is still closed, but a suspended or deleted member is not told about it.
-    if (sub.user.status !== 'active' || sub.user.deletedAt) continue
-
-    const createdId = await notifyOnce({
-      db, communityId: sub.communityId, userId: sub.user.id,
-      type: NotificationType.SubscriptionExpired, sourceId: sub.id,
-      title: 'Access paused',
-      message: `Email support@finskool21.com to restore your ${sub.community.name} access.`,
-      data: subscriptionRouting(sub.communityId, 'expired'),
-      push: { data: subscriptionRouting(sub.communityId, 'expired') },
-    })
-    if (createdId === null) continue // reminder sweep already notified for this subscription
-
-    if (sub.user.email) {
-      try {
-        await notifications.sendSubscriptionExpiredEmail({
-          toEmail: sub.user.email,
-          name: sub.user.name,
-          phone: sub.user.phone,
-          communityName: sub.community.name,
-          validTill: sub.validUntil.toISOString(),
-          paymentLink: sub.community.paymentLink,
+      // Tell the member FIRST and close the subscription LAST. The subscription is the job's only to-do list
+      // (an inactive one is never picked up again), so if telling the member fails, it stays open and is
+      // retried tomorrow instead of being closed with the member never told. Nothing is sent twice on a retry:
+      // the notification is keyed to this subscription (notifyOnce), and the email only goes out the first time.
+      if (tellMember) {
+        const createdId = await notifyOnce({
+          db, communityId: sub.communityId, userId: sub.user.id,
+          type: NotificationType.SubscriptionExpired, sourceId: sub.id,
+          title: 'Access paused',
+          message: `Email support@finskool21.com to restore your ${sub.community.name} access.`,
+          data: subscriptionRouting(sub.communityId, 'expired'),
+          push: { data: subscriptionRouting(sub.communityId, 'expired') },
         })
-      } catch (err) {
-        logger.error({ err, subscriptionId: sub.id }, 'expireLapsedSubscriptions: email send failed')
+
+        // createdId === null: the reminder sweep (or an earlier attempt of this job) already told them.
+        if (createdId !== null && sub.user.email) {
+          try {
+            await notifications.sendSubscriptionExpiredEmail({
+              toEmail: sub.user.email,
+              name: sub.user.name,
+              phone: sub.user.phone,
+              communityName: sub.community.name,
+              validTill: sub.validUntil.toISOString(),
+              paymentLink: sub.community.paymentLink,
+            })
+          } catch (err) {
+            logger.error({ err, subscriptionId: sub.id }, 'expireLapsedSubscriptions: email send failed')
+          }
+        }
       }
+
+      await db.subscription.update({ where: { id: sub.id }, data: { isActive: false } })
+      expired++
+    } catch (err) {
+      failed++
+      logger.error({ err, subscriptionId: sub.id, userId: sub.user.id }, 'expireLapsedSubscriptions: could not process this subscription; it stays open and is retried on the next run')
     }
   }
 
-  logger.info({ expired: subs.length }, 'expireLapsedSubscriptions: done')
-  return { expired: subs.length }
+  logger.info({ expired, failed }, 'expireLapsedSubscriptions: done')
+  return { expired, failed }
 }
