@@ -25,7 +25,7 @@ import { notifyAdmins } from '../../lib/admin-notify.js'
 import { routingData, RoutingModule } from '../../lib/notification-routing.js'
 import { NotificationType } from '../notifications/notifications.dto.js'
 import { ensureFreeSubscription } from '../../lib/free-community.js'
-import { encryptPan } from '../../lib/pan-crypto.js'
+import { decryptPan, encryptPan } from '../../lib/pan-crypto.js'
 import {
   ConflictError,
   ForbiddenError,
@@ -45,6 +45,8 @@ import type {
   PaidCommunityDTO,
   MobileProfileDTO,
   SubmitKycDTO,
+  KycStatusDTO,
+  UpdateKycDTO,
 } from './mobile-auth.dto.js'
 
 const BCRYPT_ROUNDS = 12
@@ -655,9 +657,45 @@ export class MobileAuthService {
       },
     })
     if (updated.count === 0) {
-      throw new ConflictError('Your details have already been submitted and cannot be changed.', 'KYC_ALREADY_SUBMITTED')
+      throw new ConflictError('Your details were already submitted. Use the edit option to change them.', 'KYC_ALREADY_SUBMITTED')
     }
     logger.info({ userId }, 'mobileAuth.submitKyc: success')
+  }
+
+  /** The flag the app checks to decide whether to ask for date of birth and PAN. Never returns the full PAN. */
+  async getKycStatus(userId: string): Promise<KycStatusDTO> {
+    const user = await this.db.user.findUnique({ where: { id: userId }, select: { deletedAt: true, dateOfBirth: true, panEncrypted: true } })
+    if (!user || user.deletedAt) throw new UnauthorizedError('User not found')
+    const dateOfBirth = user.dateOfBirth?.toISOString().split('T')[0] ?? null
+    let panMasked: string | null = null
+    if (user.panEncrypted) {
+      try {
+        panMasked = `XXXXXX${decryptPan(user.panEncrypted).slice(-4)}`
+      } catch (err) {
+        // A bad key must not break the flag; the app only needs to know it was submitted.
+        logger.error({ err, userId }, 'mobileAuth.getKycStatus: could not decrypt PAN to mask it')
+      }
+    }
+    return { completed: user.panEncrypted !== null && user.dateOfBirth !== null, dateOfBirth, panMasked }
+  }
+
+  /** Changes date of birth and/or PAN after they were first submitted. Never log the values. */
+  async updateKyc(userId: string, data: UpdateKycDTO): Promise<void> {
+    const user = await this.db.user.findUnique({ where: { id: userId }, select: { deletedAt: true } })
+    if (!user || user.deletedAt) throw new UnauthorizedError('User not found')
+
+    // Conditional on "already submitted", so an edit can never be the first save (that is POST /me/kyc).
+    const updated = await this.db.user.updateMany({
+      where: { id: userId, panEncrypted: { not: null } },
+      data: {
+        ...(data.dateOfBirth ? { dateOfBirth: new Date(`${data.dateOfBirth}T00:00:00.000Z`) } : {}),
+        ...(data.panNumber ? { panEncrypted: encryptPan(data.panNumber) } : {}),
+      },
+    })
+    if (updated.count === 0) {
+      throw new ConflictError('Submit your date of birth and PAN first.', 'KYC_NOT_SUBMITTED')
+    }
+    logger.info({ userId, changed: [data.dateOfBirth ? 'dateOfBirth' : null, data.panNumber ? 'pan' : null].filter(Boolean) }, 'mobileAuth.updateKyc: success')
   }
 
   // Every community ever paid for (excluding the free community and

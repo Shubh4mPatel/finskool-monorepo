@@ -71,8 +71,7 @@ export const resetPasswordSchema = z
 // upper-cased before the check, so " abcde1234f " is accepted and stored normalised.
 const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]$/
 
-export const submitKycSchema = z.object({
-  dateOfBirth: z
+const dateOfBirthField = z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, 'Date of birth must be in YYYY-MM-DD format')
     .superRefine((value, ctx) => {
@@ -87,6 +86,13 @@ export const submitKycSchema = z.object({
       } else if (value < '1900-01-01') {
         ctx.addIssue({ code: 'custom', message: 'Enter a valid date of birth' })
       }
-    }),
-  panNumber: z.string().trim().toUpperCase().regex(PAN_REGEX, 'Enter a valid PAN, e.g. ABCDE1234F'),
-})
+    })
+const panField = z.string().trim().toUpperCase().regex(PAN_REGEX, 'Enter a valid PAN, e.g. ABCDE1234F')
+
+export const submitKycSchema = z.object({ dateOfBirth: dateOfBirthField, panNumber: panField })
+
+// Edit: send the field(s) to change; at least one.
+export const updateKycSchema = z
+  .object({ dateOfBirth: dateOfBirthField.optional(), panNumber: panField.optional() })
+  .refine(v => v.dateOfBirth !== undefined || v.panNumber !== undefined, { message: 'Send dateOfBirth, panNumber or both' })
+

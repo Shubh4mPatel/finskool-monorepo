@@ -479,13 +479,13 @@ router.get('/me', authenticate, requireMobileAuth, controller.getProfile)
  * /auth/mobile/me/kyc:
  *   post:
  *     tags: [Mobile Auth]
- *     summary: Submit date of birth and PAN (once)
+ *     summary: Submit date of birth and PAN (first time)
  *     description: >
  *       Mobile-only (requireMobileAuth). Saves the caller's date of birth and
  *       PAN. The PAN is stored encrypted and is never returned by any mobile
- *       endpoint — `GET /auth/mobile/me` only reports `panSubmitted`. Locked
- *       once set: a second call, even with different values, returns 409
- *       KYC_ALREADY_SUBMITTED and changes nothing. The PAN is trimmed and
+ *       endpoint — `GET /auth/mobile/me` only reports `panSubmitted`. A second
+ *       call, even with different values, returns 409 KYC_ALREADY_SUBMITTED and
+ *       changes nothing; use PUT /auth/mobile/me/kyc to edit. The PAN is trimmed and
  *       upper-cased before validation, so `abcde1234f` is accepted.
  *     requestBody:
  *       required: true
@@ -528,5 +528,51 @@ router.get('/me', authenticate, requireMobileAuth, controller.getProfile)
  *           application/json: { schema: { $ref: '#/components/schemas/ValidationErrorResponse' } }
  */
 router.post('/me/kyc', authenticate, requireMobileAuth, controller.submitKyc)
+
+/**
+ * @openapi
+ * /auth/mobile/me/kyc:
+ *   get:
+ *     tags: [Mobile Auth]
+ *     summary: Has the member given date of birth and PAN? (the flag the app checks)
+ *     description: >
+ *       Call after login / on app start. `completed: false` means the app should show the date of birth + PAN form
+ *       (POST /auth/mobile/me/kyc) and ask again on later launches until it is true. When `completed` is true the
+ *       app never asks or sends them again. The full PAN is never returned, only `panMasked`.
+ *     responses:
+ *       200:
+ *         description: "{ success, data: { completed, dateOfBirth: 'YYYY-MM-DD' | null, panMasked: 'XXXXXX234F' | null } }"
+ *       401:
+ *         description: Not authenticated.
+ */
+router.get('/me/kyc', authenticate, requireMobileAuth, controller.getKyc)
+
+/**
+ * @openapi
+ * /auth/mobile/me/kyc:
+ *   put:
+ *     tags: [Mobile Auth]
+ *     summary: Edit date of birth and/or PAN after they were submitted
+ *     description: >
+ *       Send `dateOfBirth`, `panNumber` or both (same formats as the first submit). Returns the new flag, like GET.
+ *       Returns 409 KYC_NOT_SUBMITTED if nothing was submitted yet (use POST first).
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               dateOfBirth: { type: string, example: "1995-04-12" }
+ *               panNumber: { type: string, example: "ABCDE1234F" }
+ *     responses:
+ *       200:
+ *         description: Updated; body is the same as GET /auth/mobile/me/kyc.
+ *       409:
+ *         description: Nothing submitted yet (code KYC_NOT_SUBMITTED).
+ *       422:
+ *         description: Invalid PAN or date of birth, or neither field sent.
+ */
+router.put('/me/kyc', authenticate, requireMobileAuth, controller.updateKyc)
 
 export default router

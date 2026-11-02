@@ -53,6 +53,19 @@ export interface MobileLoginResultInternal {
   communities: CommunityInfoDTO[]
 }
 
+export interface KycStatusDTO {
+  /** true once both date of birth and PAN are saved: the app stops asking. */
+  completed: boolean
+  dateOfBirth: string | null
+  /** PAN with all but the last 4 characters hidden, e.g. XXXXXX234F. The full PAN is never returned. */
+  panMasked: string | null
+}
+
+export interface UpdateKycDTO {
+  dateOfBirth?: string | undefined
+  panNumber?: string | undefined
+}
+
 export interface SubmitKycDTO {
   dateOfBirth: string // YYYY-MM-DD
   panNumber: string   // already trimmed + upper-cased by submitKycSchema
