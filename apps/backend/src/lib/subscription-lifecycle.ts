@@ -34,7 +34,7 @@ export async function runSubscriptionLifecycleSweep(
     where: {
       isActive: true,
       validUntil: { gte: windowStart, lte: windowEnd },
-      user: { status: 'active' },
+      user: { status: 'active', deletedAt: null },
     },
     select: {
       id: true,
@@ -138,13 +138,16 @@ export async function expireLapsedSubscriptions(
       id: true,
       communityId: true,
       validUntil: true,
-      user: { select: { id: true, name: true, phone: true, email: true } },
+      user: { select: { id: true, name: true, phone: true, email: true, status: true, deletedAt: true } },
       community: { select: { name: true, paymentLink: true } },
     },
   })
 
   for (const sub of subs) {
     await db.subscription.update({ where: { id: sub.id }, data: { isActive: false } })
+
+    // The subscription is still closed, but a suspended or deleted member is not told about it.
+    if (sub.user.status !== 'active' || sub.user.deletedAt) continue
 
     const createdId = await notifyOnce({
       db, communityId: sub.communityId, userId: sub.user.id,

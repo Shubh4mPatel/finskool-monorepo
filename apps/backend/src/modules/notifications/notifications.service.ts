@@ -188,7 +188,8 @@ export class NotificationsService {
     const { communityId, sourceId, title, message, triggeredByUserId, type, data, email, push } = params
 
     const subs = await this.db.subscription.findMany({
-      where: { communityId, isActive: true, validUntil: { gte: startOfToday() } },
+      // Only members who can use the app: a suspended or deleted member gets no inbox row, email or push.
+      where: { communityId, isActive: true, validUntil: { gte: startOfToday() }, user: { status: 'active', deletedAt: null } },
       select: { userId: true, user: { select: { email: true, postNotificationsEnabled: true } } },
       distinct: ['userId'],
     })

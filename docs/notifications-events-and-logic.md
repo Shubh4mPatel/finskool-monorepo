@@ -150,7 +150,7 @@ Sent through `notificationsQueue` email jobs. Subject lines come from `lib/email
 
 `NotificationsService.fanOutCommunity`, run in the worker:
 
-1. **Recipients**: subscriptions in the community with `isActive = true` and `validUntil >= start of today`, de-duplicated per user, then filtered to drop the user who triggered it and anyone with `postNotificationsEnabled = false`. It does not check account status.
+1. **Recipients**: subscriptions in the community with `isActive = true` and `validUntil >= start of today` **and an account that is `active` and not deleted**, de-duplicated per user, then filtered to drop the user who triggered it and anyone with `postNotificationsEnabled = false`. Suspended and deleted members get nothing.
 2. Recipients are processed in **chunks of 500**. For each chunk:
    - `notification.createMany(..., skipDuplicates: true)` writes the rows.
    - In parallel: send emails (skipping members with no email), publish a live event per user, and, if `push` is on **and** the chunk really created at least one row, enqueue one push job for the chunk.
@@ -363,7 +363,7 @@ Observed in the code; some may be intentional, none are fixed by this document.
 4. **Push data has no notification id.** The push `data` is the routing object only, so an app cannot match a tapped push to an inbox row, or to a socket event, by id.
 5. **Reaction rows update in place.** Changing your reaction type updates the existing row's `message`, sets `isRead = false` and bumps `updatedAt`, but the list is ordered by `createdAt`, so it does not jump to the top. Removing a reaction does not delete the row.
 6. **`subscription-expiring-1-day` says "ends tomorrow" even when `days = 0`** (expires today). The bucket covers both.
-7. **Fan-out ignores account status.** A suspended member with a valid subscription still gets inbox rows and emails; only the push is blocked (it requires `active`).
+7. ~~Fan-out ignores account status.~~ Fixed: the post fan-out only includes `active`, non-deleted members. The daily expiry job still closes a suspended or deleted member's subscription but no longer notifies them, and the reminder sweep also skips deleted members.
 8. **Reply notifications fire for any replier**, not only admins. The email job's field is named `adminName` but carries whoever replied.
 9. **Stale comment in `notifications.dto.ts`**: it says ticket/service updates are "one inbox row per ticket / service request, refreshed on every admin action". The code in `notifyMemberThread` creates **one row per event**. The code is what runs.
 10. **`platform` in the push-token body is validated but not stored.** Only `token` and `appVersion` are saved.
