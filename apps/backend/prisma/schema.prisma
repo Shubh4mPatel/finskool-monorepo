@@ -282,6 +282,7 @@ model Community {
   planOrders    PlanOrder[]
   kit           CommunityKit?
   tickets       Ticket[]
+  performanceBoard PerformanceBoard?
 
   @@index([slug], name: "idx_communities_slug")
   @@index([createdBy], name: "idx_communities_created_by")
@@ -1245,4 +1246,115 @@ model AuthIdentity {
   @@unique([provider, providerUserId], name: "uq_auth_identities_provider_sub")
   @@index([userId], name: "idx_auth_identities_user")
   @@map("auth_identities")
+}
+
+// ─── Performance ────────────────────────────────────────────────────────────
+// Trades an admin shared with a community and how they turned out. Only the raw inputs are stored; every
+// derived number (P/L, returns, holding days, hit-rate) is computed on read by performance.calc.ts, so
+// editing a board's capital / margin / charges re-prices its whole history.
+
+enum PerformanceKind {
+  intraday
+  swing
+  investor
+}
+
+// Intraday and swing boards have a single `main` segment. An investor board is split into three.
+enum PerformanceSegment {
+  main
+  investor
+  long_term
+  us_investment
+}
+
+// How a trade is treated for free members: `auto` follows the board's rule bar, `show` / `hide` override it.
+enum TradeVisibility {
+  auto
+  show
+  hide
+}
+
+enum TradeSide {
+  buy
+  sell
+}
+
+// One per community that has a Performance screen. Linked by a super admin, so slugs are never hard-coded.
+model PerformanceBoard {
+  id          String          @id @default(uuid()) @db.Uuid
+  communityId String          @unique @map("community_id") @db.Uuid
+  kind        PerformanceKind
+
+  // Free-member visibility rules, applied to each segment separately.
+  hideNewerThanDays Int @default(7) @map("hide_newer_than_days")
+  maxFreeTrades     Int @default(3) @map("max_free_trades")
+
+  // Intraday sizing. Ignored by swing / investor boards.
+  capital         Decimal @default(50000) @db.Decimal(14, 2)
+  margin          Decimal @default(5) @db.Decimal(5, 2)
+  chargesPerTrade Decimal @default(140) @map("charges_per_trade") @db.Decimal(10, 2)
+  // Banner text on the intraday screen. Null = generated from capital and margin.
+  note            String? @db.VarChar(500)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  community Community           @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  trades    PerformanceTrade[]
+  periods   PerformancePeriod[]
+
+  @@map("performance_boards")
+}
+
+model PerformanceTrade {
+  id        String             @id @default(uuid()) @db.Uuid
+  boardId   String             @map("board_id") @db.Uuid
+  segment   PerformanceSegment @default(main)
+  tradeDate DateTime           @map("trade_date") @db.Date
+
+  // Intraday: the stock's name. Swing / investor: the trade name, with the NSE code in `symbol`.
+  name   String     @db.VarChar(150)
+  symbol String?    @db.VarChar(40)
+  side   TradeSide?
+
+  entryPrice Decimal  @map("entry_price") @db.Decimal(12, 2)
+  exitPrice  Decimal? @map("exit_price") @db.Decimal(12, 2)
+  cmp        Decimal? @db.Decimal(12, 2)
+  targetPct  Decimal? @map("target_pct") @db.Decimal(5, 2)
+
+  // Free text from the sheet: "HOLD", "5% booked", "Can Avg at CMP".
+  analysis String?   @db.VarChar(60)
+  // Swing / investor: a trade with an exit date has met its target.
+  exitDate DateTime? @map("exit_date") @db.Date
+
+  visibility TradeVisibility @default(auto)
+
+  // Normalised natural key, so re-uploading a sheet updates a trade instead of duplicating it. A plain unique
+  // over the nullable columns would not work in Postgres (NULLs are distinct).
+  tradeKey String @map("trade_key") @db.VarChar(220)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  board PerformanceBoard @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  @@unique([boardId, segment, tradeKey], name: "uq_performance_trades_key")
+  @@index([boardId, segment, tradeDate(sort: Desc)], name: "idx_performance_trades_board_date")
+  @@map("performance_trades")
+}
+
+// A hit-rate card ("Oct25 to Aug26"): trades given and met between two months, inclusive.
+model PerformancePeriod {
+  id        String             @id @default(uuid()) @db.Uuid
+  boardId   String             @map("board_id") @db.Uuid
+  segment   PerformanceSegment @default(main)
+  // First day of the month.
+  fromMonth DateTime           @map("from_month") @db.Date
+  toMonth   DateTime           @map("to_month") @db.Date
+  createdAt DateTime           @default(now()) @map("created_at") @db.Timestamptz
+
+  board PerformanceBoard @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  @@index([boardId, segment], name: "idx_performance_periods_board")
+  @@map("performance_periods")
 }

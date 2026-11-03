@@ -21,6 +21,7 @@ import stocksRoutes from './modules/stocks/stocks.routes.js'
 import stockRecommendationsRoutes from './modules/stock-recommendations/stock-recommendations.routes.js'
 import paymentsRoutes from './modules/payments/payments.routes.js'
 import welcomeKitsRoutes, { mobileWelcomeKitsRouter } from './modules/welcome-kits/welcome-kits.routes.js'
+import performanceRoutes, { mobilePerformanceRouter } from './modules/performance/performance.routes.js'
 import adminReceiptsRoutes from './modules/payments/admin-receipts.routes.js'
 import adminTicketsRoutes, { mobileTicketsRouter } from './modules/tickets/tickets.routes.js'
 import adminServicesRoutes, { mobileServicesRouter } from './modules/services/services.routes.js'
@@ -46,6 +47,9 @@ export function createApp() {
   const app = express()
 
   app.use(cors(buildCorsOptions()))
+  // A parsed sheet is a few hundred KB of JSON at the 2,000-row cap, over the default 100 KB. The parser marks the
+  // body as read, so the global one below skips it. Scoped to this one path so no other route's limit changes.
+  app.post('/api/v1/admin/performance/communities/:communityId/import', express.json({ limit: '1mb' }))
   // Webhook routes verify an HMAC over the exact bytes Razorpay sent, so keep them next to the parsed body.
   app.use(
     express.json({
@@ -74,6 +78,7 @@ export function createApp() {
   app.use('/api/v1/admin/tickets', adminTicketsRoutes)
   app.use('/api/v1/admin/receipts', adminReceiptsRoutes)
   app.use('/api/v1/admin/services', adminServicesRoutes)
+  app.use('/api/v1/admin/performance', performanceRoutes)
   app.use('/api/v1/posts', postsRoutes)
   app.use('/api/v1', commentsRoutes)
   app.use('/api/v1', reactionsRoutes)
@@ -89,6 +94,7 @@ export function createApp() {
   app.use('/api/v1/mobile', mobilePushRoutes)
   app.use('/api/v1/mobile/tickets', mobileTicketsRouter)
   app.use('/api/v1/mobile/services', mobileServicesRouter)
+  app.use('/api/v1/mobile/performance', mobilePerformanceRouter)
   app.use('/api/v1/mobile', mobilePostsRouter)
   app.use('/api/v1/mobile', mobileReactionsRouter)
   app.use('/api/v1/mobile', mobileWelcomeKitsRouter)

@@ -26,6 +26,7 @@ const definition: swaggerJSDoc.OAS3Definition = {
     { name: 'Reactions', description: 'Emoji reactions on posts (like, love, haha, wow, sad, angry)' },
     { name: 'Payments', description: 'Community plan purchases via Razorpay Orders (list plans, create order, verify payment)' },
     { name: 'Communities', description: 'Community discovery/paywall listing (mobile-only)' },
+    { name: 'Performance', description: 'Trades shared in a community and how they turned out. Paid members see all of them, free members only what the admin allows (mobile-only, read-only).' },
     { name: 'Support Tickets', description: 'Mobile support tickets. The per-ticket chat (send, history, read) and all live updates run over the /ws/tickets WebSocket, not REST — see docs/support-tickets.md.' },
   ],
   components: {
@@ -68,6 +69,8 @@ export const swaggerSpec = swaggerJSDoc({
     new URL('../modules/payments/*.routes.js', import.meta.url).pathname,
     new URL('../modules/welcome-kits/*.routes.ts', import.meta.url).pathname,
     new URL('../modules/welcome-kits/*.routes.js', import.meta.url).pathname,
+    new URL('../modules/performance/*.routes.ts', import.meta.url).pathname,
+    new URL('../modules/performance/*.routes.js', import.meta.url).pathname,
     // GET /mobile/communities lives inline in app.ts rather than a .routes.ts
     // file (see the comment on that route) — scanned individually here.
     new URL('../app.ts', import.meta.url).pathname,

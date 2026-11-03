@@ -1,0 +1,161 @@
+import type { PerformanceKind, PerformanceSegment, TradeVisibility } from '../../generated/prisma/client.js'
+import type { IntradaySummary, SwingStatus } from './performance.calc.js'
+
+export interface BoardDTO {
+  communityId: string
+  communityName: string
+  communitySlug: string
+  kind: PerformanceKind
+  segments: PerformanceSegment[]
+  hideNewerThanDays: number
+  maxFreeTrades: number
+  /** Intraday sizing. Present on every board, but only intraday boards use it. */
+  capital: number
+  margin: number
+  chargesPerTrade: number
+  /** The admin's own banner text, or null when the default sentence is in use. */
+  note: string | null
+}
+
+export interface BoardListDTO {
+  boards: { communityId: string; name: string; slug: string; kind: PerformanceKind; segments: PerformanceSegment[] }[]
+  /** Non-free communities a super admin can still link a board to. Always empty for other admins. */
+  unlinked: { communityId: string; name: string; slug: string; type: string | null }[]
+}
+
+export interface PeriodDTO {
+  id: string
+  segment: PerformanceSegment
+  /** `YYYY-MM` */
+  fromMonth: string
+  toMonth: string
+  /** "Oct25 to Aug26" */
+  label: string
+  given: number
+  met: number
+  metPct: number
+}
+
+export interface IntradayRowDTO {
+  id: string
+  /** 1-based rank by date within the segment, over every trade (not just the ones listed). */
+  serialNo: number
+  /** `YYYY-MM-DD` */
+  tradeDate: string
+  name: string
+  side: 'buy' | 'sell'
+  entryPrice: number
+  exitPrice: number
+  plPerShare: number
+  plPct: number
+  grossPnl: number
+  charges: number
+  netPnl: number
+}
+
+export interface SwingRowDTO {
+  id: string
+  serialNo: number
+  tradeDate: string
+  name: string
+  symbol: string
+  entryPrice: number
+  cmp: number | null
+  returnPct: number | null
+  status: SwingStatus
+  targetPct: number
+  targetPrice: number
+  analysis: string | null
+  exitDate: string | null
+  holdingDays: number | null
+}
+
+export type TradeRowDTO = IntradayRowDTO | SwingRowDTO
+
+/** What an admin sees for a row: the numbers plus how free members are treated. */
+export type AdminTradeRowDTO = TradeRowDTO & {
+  visibility: TradeVisibility
+  /** Whether a free member can see this trade right now, after the rule bar. */
+  visibleToFree: boolean
+}
+
+/** What the app gets for a row. No serial number and no admin controls. */
+export type MobileTradeRowDTO = DistributiveOmit<TradeRowDTO, 'serialNo'>
+type DistributiveOmit<T, K extends keyof never> = T extends unknown ? Omit<T, K> : never
+
+export interface IntradaySummaryDTO extends IntradaySummary {
+  kind: 'intraday'
+}
+
+export interface SwingSummaryDTO {
+  kind: 'swing' | 'investor'
+  /** Mean holding days of closed trades, null until one closes. */
+  averageHoldingDays: number | null
+  totalTrades: number
+  periods: PeriodDTO[]
+}
+
+export type SummaryDTO = IntradaySummaryDTO | SwingSummaryDTO
+
+export interface OverviewDTO {
+  board: BoardDTO
+  segment: PerformanceSegment
+  summary: SummaryDTO
+  /** The intraday banner: the admin's note, or the default sentence built from capital and margin. */
+  noteText: string | null
+}
+
+export interface TradeListDTO {
+  items: AdminTradeRowDTO[]
+  total: number
+  page: number
+  pageSize: number
+  totalPages: number
+  /** Every `YYYY-MM` that has a trade in this segment, newest first, for the month dropdown. */
+  months: string[]
+}
+
+export interface ImportRowErrorDTO {
+  /** The sheet row, header being row 1. */
+  row: number
+  /** The stock or code on the row, to help find it. */
+  ref: string
+  reason: string
+}
+
+export interface ImportSummaryDTO {
+  total: number
+  created: number
+  updated: number
+  /** Rows that match an existing trade exactly. */
+  unchanged: number
+  errors: ImportRowErrorDTO[]
+  dryRun: boolean
+}
+
+export interface MobileBoardListDTO {
+  boards: {
+    communityId: string
+    name: string
+    slug: string
+    kind: PerformanceKind
+    segments: PerformanceSegment[]
+    access: 'free' | 'paid'
+  }[]
+}
+
+export interface MobilePerformanceDTO {
+  communityId: string
+  communityName: string
+  kind: PerformanceKind
+  access: 'free' | 'paid'
+  segment: PerformanceSegment
+  segments: PerformanceSegment[]
+  /** Over every trade in the segment, the same for free and paid. */
+  summary: SummaryDTO
+  noteText: string | null
+  /** Trades in the segment a free viewer cannot see. Null for paid viewers. */
+  hiddenCount: number | null
+  items: MobileTradeRowDTO[]
+  nextCursor: string | null
+}

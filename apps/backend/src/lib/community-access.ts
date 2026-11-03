@@ -112,6 +112,34 @@ export async function assertMemberAccess(
   }
 }
 
+/** Start of today, the cut-off every "is this subscription still running" check in the backend uses. */
+function subscriptionCutoff(): Date {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return today
+}
+
+/**
+ * Whether a member holds an active, unexpired subscription to a community, checked live. The expiry job only
+ * runs daily, so `isActive` alone is not enough, and the community ids cached on the mobile session go stale
+ * after a purchase or a lapse.
+ */
+export async function isPaidMemberOfCommunity(db: PrismaClient, userId: string, communityId: string): Promise<boolean> {
+  const count = await db.subscription.count({
+    where: { userId, communityId, isActive: true, validUntil: { gte: subscriptionCutoff() } },
+  })
+  return count > 0
+}
+
+/** Every community a member currently holds an active, unexpired subscription to (the free community included). */
+export async function getPaidCommunityIds(db: PrismaClient, userId: string): Promise<Set<string>> {
+  const rows = await db.subscription.findMany({
+    where: { userId, isActive: true, validUntil: { gte: subscriptionCutoff() } },
+    select: { communityId: true },
+  })
+  return new Set(rows.map(r => r.communityId))
+}
+
 export async function assertSuperAdmin(db: PrismaClient, adminId: string): Promise<void> {
   if (!(await isSuperAdmin(db, adminId))) {
     throw new ForbiddenError('Super admin access required', 'SUPER_ADMIN_REQUIRED')
