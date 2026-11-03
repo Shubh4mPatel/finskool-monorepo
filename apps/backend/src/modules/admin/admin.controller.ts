@@ -9,24 +9,47 @@ import { BadRequestError, ForbiddenError } from '../../shared/errors/index.js'
 // the member supplies/confirms a real one at self-registration, which stays required there).
 // An empty-string form value is treated the same as an omitted key; if a value IS present it
 // still has to look like a real email.
+// Field rules shared by every form. The limits match the database columns, so an over-long value is a
+// clear 400 instead of a database error, and a blank name (only spaces) is refused.
+const nameSchema = (label = 'Name') => z.string().trim().min(2, `${label} must be at least 2 characters`).max(100, `${label} can be at most 100 characters`)
+const phoneInput = z.string().trim().min(1, 'Phone is required').max(30, 'Phone number is too long')
+const passwordSchema = z.string().min(8, 'Password must be at least 8 characters').max(128, 'Password can be at most 128 characters')
+const moneySchema = z.number().positive('Payment must be a positive number').max(99_999_999, 'Payment is too large')
+// YYYY-MM-DD that is a real calendar day (2030-02-30 and 2030-13-45 match a plain pattern but are not dates).
+const isoDateSchema = (message: string) =>
+  z.string().regex(/^\d{4}-\d{2}-\d{2}$/, message).refine(v => {
+    const d = new Date(`${v}T00:00:00.000Z`)
+    return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v
+  }, message)
+
+const uuidSchema = z.string().uuid()
+/** A route parameter that must be a UUID: anything else is a 400 here instead of a database error. */
+function uuidParam(req: Request, name: string): string {
+  const raw = req.params[name]
+  const value = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
+  const parsed = uuidSchema.safeParse(value)
+  if (!parsed.success) throw new BadRequestError('Invalid id')
+  return parsed.data
+}
+
 const optionalEmailSchema = z.preprocess(
   v => (v === '' ? undefined : v),
-  z.string().trim().email('Invalid email address').toLowerCase().optional(),
+  z.string().trim().max(255, 'Email address is too long').email('Invalid email address').toLowerCase().optional(),
 )
 
 const addMemberSchema = z.object({
-  phone: z.string().min(1, 'Phone is required'),
-  name: z.string().min(2, 'Name must be at least 2 characters'),
+  phone: phoneInput,
+  name: nameSchema(),
   email: optionalEmailSchema,
   communityId: z.string().uuid('Invalid community'),
-  payment: z.number().positive('Payment must be a positive number'),
-  validUntil: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Valid until must be YYYY-MM-DD'),
+  payment: moneySchema,
+  validUntil: isoDateSchema('Valid until must be YYYY-MM-DD'),
 })
 
 const extendSubscriptionSchema = z.object({
-  validUntil: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Valid until must be YYYY-MM-DD'),
-  payment: z.number().positive('Payment must be a positive number'),
-  paidOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Paid on must be YYYY-MM-DD').optional(),
+  validUntil: isoDateSchema('Valid until must be YYYY-MM-DD'),
+  payment: moneySchema,
+  paidOn: isoDateSchema('Paid on must be YYYY-MM-DD').optional(),
 })
 
 const bulkDeleteMembersSchema = z.object({
@@ -60,11 +83,11 @@ const importQuerySchema = z.object({
 })
 
 const importRowSchema = z.object({
-  name: z.string().min(1),
-  phone: z.string().min(1),
+  name: z.string().trim().min(1).max(100),
+  phone: phoneInput,
   email: optionalEmailSchema,
   service: z.string().min(1),
-  payment: z.coerce.number().positive(),
+  payment: z.coerce.number().positive().max(99_999_999),
   valid: z.string().min(1),
   paidOn: z.string().optional(),
 })
@@ -104,15 +127,16 @@ const listAdminsQuerySchema = z.object({
 })
 
 const createAdminSchema = z.object({
-  name: z.string().min(2, 'Name must be at least 2 characters'),
-  email: z.string().email('Invalid email address').toLowerCase(),
-  phone: z.string().min(1, 'Phone is required'),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
-  communityIds: z.array(z.string().uuid('Invalid community ID')).min(1, 'At least one community is required'),
+  name: nameSchema(),
+  email: z.string().trim().max(255, 'Email address is too long').email('Invalid email address').toLowerCase(),
+  phone: phoneInput,
+  password: passwordSchema,
+  // A repeated id is a client mistake; it is refused here rather than failing on a unique key.
+  communityIds: z.array(z.string().uuid('Invalid community ID')).min(1, 'At least one community is required').refine(ids => new Set(ids).size === ids.length, 'A community is listed twice'),
 })
 
 const updateAdminAccessSchema = z.object({
-  communityIds: z.array(z.string().uuid('Invalid community ID')).min(1, 'At least one community is required'),
+  communityIds: z.array(z.string().uuid('Invalid community ID')).min(1, 'At least one community is required').refine(ids => new Set(ids).size === ids.length, 'A community is listed twice'),
 })
 
 const createCommunitySchema = z.object({
@@ -143,19 +167,19 @@ const communityUploadUrlQuerySchema = z.object({
 })
 
 const updateMemberSchema = z.object({
-  name: z.string().min(2, 'Name must be at least 2 characters'),
-  phone: z.string().min(1, 'Phone is required'),
+  name: nameSchema(),
+  phone: phoneInput,
   email: optionalEmailSchema,
   newCommunity: z.object({
     communityId: z.string().uuid('Invalid community'),
-    payment: z.number().positive('Payment must be a positive number'),
-    paidOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-    validUntil: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Valid until must be YYYY-MM-DD'),
+    payment: moneySchema,
+    paidOn: isoDateSchema('Paid on must be YYYY-MM-DD').optional(),
+    validUntil: isoDateSchema('Valid until must be YYYY-MM-DD'),
   }).optional(),
 })
 
 const resetMemberPasswordSchema = z.object({
-  newPassword: z.string().min(8, 'Password must be at least 8 characters'),
+  newPassword: passwordSchema,
 })
 
 const planSchema = z.object({
@@ -213,8 +237,7 @@ export class AdminController {
 
   markNotificationReplied = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const raw = req.params['id']
-      const id = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
+      const id = uuidParam(req, 'id')
       const result = await this.service.markNotificationReplied(req.user!.accessibleCommunityIds, id)
       res.json({ success: true, data: result })
     } catch (err) {
@@ -333,8 +356,7 @@ export class AdminController {
 
   updateCommunity = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const raw = req.params['id']
-      const id = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
+      const id = uuidParam(req, 'id')
       const parsed = updateCommunitySchema.safeParse(req.body)
       if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
       const result = await this.service.updateCommunity(req.user!.id, id, parsed.data)
@@ -346,8 +368,7 @@ export class AdminController {
 
   deleteCommunity = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const raw = req.params['id']
-      const id = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
+      const id = uuidParam(req, 'id')
       await this.service.deleteCommunity(req.user!.id, id)
       res.json({ success: true, message: 'Community deleted' })
     } catch (err) {
@@ -357,8 +378,7 @@ export class AdminController {
 
   listPlans = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const raw = req.params['communityId']
-      const communityId = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
+      const communityId = uuidParam(req, 'communityId')
       assertCommunityAccessFromToken(req.user!.accessibleCommunityIds, communityId)
       const result = await this.service.listPlans(communityId)
       res.json({ success: true, data: result })
@@ -369,8 +389,7 @@ export class AdminController {
 
   createPlan = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const raw = req.params['communityId']
-      const communityId = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
+      const communityId = uuidParam(req, 'communityId')
       assertCommunityAccessFromToken(req.user!.accessibleCommunityIds, communityId)
       const parsed = planSchema.safeParse(req.body)
       if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
@@ -383,10 +402,8 @@ export class AdminController {
 
   updatePlan = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const communityIdRaw = req.params['communityId']
-      const communityId = Array.isArray(communityIdRaw) ? (communityIdRaw[0] ?? '') : (communityIdRaw ?? '')
-      const planIdRaw = req.params['planId']
-      const planId = Array.isArray(planIdRaw) ? (planIdRaw[0] ?? '') : (planIdRaw ?? '')
+      const communityId = uuidParam(req, 'communityId')
+      const planId = uuidParam(req, 'planId')
       assertCommunityAccessFromToken(req.user!.accessibleCommunityIds, communityId)
       const parsed = planSchema.safeParse(req.body)
       if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
@@ -399,10 +416,8 @@ export class AdminController {
 
   deletePlan = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const communityIdRaw = req.params['communityId']
-      const communityId = Array.isArray(communityIdRaw) ? (communityIdRaw[0] ?? '') : (communityIdRaw ?? '')
-      const planIdRaw = req.params['planId']
-      const planId = Array.isArray(planIdRaw) ? (planIdRaw[0] ?? '') : (planIdRaw ?? '')
+      const communityId = uuidParam(req, 'communityId')
+      const planId = uuidParam(req, 'planId')
       assertCommunityAccessFromToken(req.user!.accessibleCommunityIds, communityId)
       await this.service.deletePlan(communityId, planId, req.user!.id)
       res.json({ success: true, message: 'Plan deleted' })
@@ -424,8 +439,7 @@ export class AdminController {
 
   grantCommunityAccess = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const raw = req.params['adminId']
-      const adminId = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
+      const adminId = uuidParam(req, 'adminId')
       const parsed = z.object({ communityId: z.string().uuid('Invalid community') }).safeParse(req.body)
       if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
       await this.service.grantCommunityAccess(req.user!.id, adminId, parsed.data.communityId)
@@ -437,10 +451,8 @@ export class AdminController {
 
   revokeCommunityAccess = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const adminIdRaw = req.params['adminId']
-      const adminId = Array.isArray(adminIdRaw) ? (adminIdRaw[0] ?? '') : (adminIdRaw ?? '')
-      const communityIdRaw = req.params['communityId']
-      const communityId = Array.isArray(communityIdRaw) ? (communityIdRaw[0] ?? '') : (communityIdRaw ?? '')
+      const adminId = uuidParam(req, 'adminId')
+      const communityId = uuidParam(req, 'communityId')
       await this.service.revokeCommunityAccess(req.user!.id, adminId, communityId)
       res.json({ success: true })
     } catch (err) {
@@ -476,8 +488,7 @@ export class AdminController {
 
   extendSubscription = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const raw = req.params['id']
-      const id = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
+      const id = uuidParam(req, 'id')
       const parsed = extendSubscriptionSchema.safeParse(req.body)
       if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
       const result = await this.service.extendSubscription(id, parsed.data, req.user!.accessibleCommunityIds)
@@ -489,8 +500,7 @@ export class AdminController {
 
   deleteMember = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const raw = req.params['id']
-      const id = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
+      const id = uuidParam(req, 'id')
       const result = await this.service.deleteMember(id, req.user!.accessibleCommunityIds)
       res.json({ success: true, data: result })
     } catch (err) {
@@ -511,8 +521,7 @@ export class AdminController {
 
   suspendMember = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const raw = req.params['id']
-      const id = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
+      const id = uuidParam(req, 'id')
       const parsed = suspendMemberSchema.safeParse(req.body)
       if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
       const result = await this.service.suspendMember(id, parsed.data.reason, req.user!.accessibleCommunityIds)
@@ -524,8 +533,7 @@ export class AdminController {
 
   revokeSuspension = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const raw = req.params['id']
-      const id = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
+      const id = uuidParam(req, 'id')
       const result = await this.service.revokeSuspension(id, req.user!.accessibleCommunityIds)
       res.json({ success: true, data: result })
     } catch (err) {
@@ -546,8 +554,7 @@ export class AdminController {
 
   updateAdminAccess = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const raw = req.params['adminId']
-      const adminId = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
+      const adminId = uuidParam(req, 'adminId')
       const parsed = updateAdminAccessSchema.safeParse(req.body)
       if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
       const result = await this.service.updateAdminAccess(req.user!.id, adminId, parsed.data)
@@ -559,8 +566,7 @@ export class AdminController {
 
   deleteAdmin = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const raw = req.params['adminId']
-      const adminId = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
+      const adminId = uuidParam(req, 'adminId')
       await this.service.deleteAdmin(req.user!.id, adminId)
       res.json({ success: true })
     } catch (err) {
@@ -570,8 +576,7 @@ export class AdminController {
 
   updateMember = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const raw = req.params['id']
-      const id = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
+      const id = uuidParam(req, 'id')
       const parsed = updateMemberSchema.safeParse(req.body)
       if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
       const result = await this.service.updateMember(id, parsed.data, req.user!.id, req.user!.accessibleCommunityIds)
@@ -583,8 +588,7 @@ export class AdminController {
 
   getMember = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const raw = req.params['id']
-      const id = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
+      const id = uuidParam(req, 'id')
       const result = await this.service.getMemberById(id, req.user!.accessibleCommunityIds)
       res.json({ success: true, data: result })
     } catch (err) {
@@ -594,8 +598,7 @@ export class AdminController {
 
   resetMemberPassword = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const raw = req.params['id']
-      const id = Array.isArray(raw) ? (raw[0] ?? '') : (raw ?? '')
+      const id = uuidParam(req, 'id')
       const parsed = resetMemberPasswordSchema.safeParse(req.body)
       if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
       const result = await this.service.resetMemberPassword(id, parsed.data.newPassword, req.user!.accessibleCommunityIds)
@@ -607,10 +610,8 @@ export class AdminController {
 
   revokeMemberCommunity = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const idRaw = req.params['id']
-      const id = Array.isArray(idRaw) ? (idRaw[0] ?? '') : (idRaw ?? '')
-      const communityIdRaw = req.params['communityId']
-      const communityId = Array.isArray(communityIdRaw) ? (communityIdRaw[0] ?? '') : (communityIdRaw ?? '')
+      const id = uuidParam(req, 'id')
+      const communityId = uuidParam(req, 'communityId')
       assertCommunityAccessFromToken(req.user!.accessibleCommunityIds, communityId)
       await this.service.revokeMemberCommunity(id, communityId)
       res.json({ success: true })

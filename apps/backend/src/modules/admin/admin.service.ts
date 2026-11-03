@@ -90,6 +90,18 @@ function slugify(raw: string): string {
 }
 
 
+// Largest payment a sheet row may carry (the column holds 8 digits before the decimals).
+const MAX_IMPORT_PAYMENT = 99_999_999
+
+/** A short, safe reason for the import report; the full error goes to the log, never to the admin's screen. */
+function rowFailureReason(err: unknown): string {
+  const code = (err as { code?: string } | null)?.code
+  if (code === 'P2002') return 'A member with this phone number or email address already exists'
+  if (code === 'P2000') return 'A value in this row is too long'
+  if (code === 'P2020') return 'A number in this row is too large'
+  return 'This row could not be saved'
+}
+
 function parseDate(raw: string): Date | null {
   if (!raw.trim()) return null
   const d = new Date(raw.trim())
@@ -131,6 +143,7 @@ export class AdminService {
     }
 
     const communities = await this.db.community.findMany({
+      where: { deletedAt: null },
       select: { id: true, name: true },
     })
     let notifyCommunityId: string | null = null
@@ -164,9 +177,11 @@ export class AdminService {
         continue
       }
 
-      const rawPayment = (row['Payment'] ?? '').replace(/[^0-9.]/g, '')
-      const payment = parseFloat(rawPayment)
-      if (isNaN(payment) || payment <= 0) {
+      // "₹1,000" and "1000.50" are fine; a minus sign is not (stripping it would turn -5 into 5).
+      const rawPaymentCell = row['Payment'] ?? ''
+      const rawPayment = rawPaymentCell.replace(/[^0-9.]/g, '')
+      const payment = /-/.test(rawPaymentCell) ? NaN : parseFloat(rawPayment)
+      if (isNaN(payment) || payment <= 0 || payment > MAX_IMPORT_PAYMENT) {
         summary.errors.push({ row: rowNum, phone, reason: 'Invalid payment amount' })
         continue
       }
@@ -179,6 +194,10 @@ export class AdminService {
 
       const paidOn = parseDate(row['Paid on'] ?? '') // nullable — "9 June" without year → null
       const name = row['Name'] ?? ''
+      if (name.length < 1 || name.length > 100) {
+        summary.errors.push({ row: rowNum, phone, reason: 'Name is required and can be at most 100 characters' })
+        continue
+      }
 
       // Email is optional — blank is fine, but a non-blank value must be well-formed. Written
       // as null (not ''), since User.email is unique: two blank rows both writing '' would
@@ -188,119 +207,143 @@ export class AdminService {
         summary.errors.push({ row: rowNum, phone, reason: 'Invalid email address' })
         continue
       }
-      const email = rawEmail || null
-
-      const existingUser = await this.db.user.findUnique({ where: { phone } })
-      const existingAp = await this.db.approvedPhone.findUnique({ where: { phone } })
-
-      // A user can have multiple historical subscription rows per community (renewals) —
-      // only the current active one is relevant for import skip/overwrite
-      const existingSub = existingUser
-        ? await this.db.subscription.findFirst({
-            where: { userId: existingUser.id, communityId: community.id, isActive: true },
-          })
-        : null
-
-      // A suspended/deleted member who isn't already in one of this admin's communities
-      // can't be revived or added to by them — same rule as reviveAndAddMember.
-      if (
-        existingUser && existingUser.status !== 'active' && !existingSub &&
-        !(await hasMemberAccess(this.db, accessibleCommunityIds, existingUser.id))
-      ) {
-        summary.errors.push({ row: rowNum, phone, reason: `Member is ${existingUser.status} and belongs to another community` })
+      if (rawEmail.length > 255) {
+        summary.errors.push({ row: rowNum, phone, reason: 'Email address is too long' })
         continue
       }
+      const email = rawEmail || null
 
-      if (existingSub) {
-        // This (user + community) combo has an active subscription — skip or overwrite based on strategy
-        if (strategy === 'skip') {
-          summary.skipped++
+      try {
+        const existingUser = await this.db.user.findUnique({ where: { phone } })
+        const existingAp = await this.db.approvedPhone.findUnique({ where: { phone } })
+
+        // A user can have multiple historical subscription rows per community (renewals) —
+        // only the current active one is relevant for import skip/overwrite
+        const existingSub = existingUser
+          ? await this.db.subscription.findFirst({
+              where: { userId: existingUser.id, communityId: community.id, isActive: true },
+            })
+          : null
+
+        // An admin account is never a member: a sheet row must not hand it a subscription or rename it.
+        if (existingUser && existingUser.role === 'admin') {
+          summary.errors.push({ row: rowNum, phone, reason: 'This phone number belongs to an admin account' })
           continue
         }
-        // overwrite: update subscription dates; update user info only if not yet registered
-        await this.db.$transaction(async tx => {
-          await tx.subscription.update({
-            where: { id: existingSub.id },
-            data: { payment, paidOn, validUntil },
-          })
-          if (existingUser && !existingUser.passwordHash) {
-            await tx.user.update({ where: { id: existingUser.id }, data: { name, email } })
-          }
-          if (existingAp) {
-            await tx.approvedPhone.update({ where: { phone }, data: { name, email, addedBy: adminId } })
-          }
-        })
-        summary.updated++
-        if (!notifyCommunityId) notifyCommunityId = community.id
-      } else if (existingUser && existingUser.status === 'deleted') {
-        // A previously-deleted member coming back — revive them (see reviveMember's own
-        // doc comment for exactly what "revive" does/doesn't reset) rather than just
-        // quietly re-subscribing a dead account. Note: no longer gated on existingAp —
-        // a self-registered-then-deleted user has no ApprovedPhone row at all, and
-        // reviveMember's upsert handles that (creates one) same as any other revive path.
-        const revived = await this.db.$transaction(async tx => {
-          const r = await this.reviveMember(tx, existingUser, phone, name, email, adminId)
-          await ensureFreeSubscription(tx, existingUser.id)
-          return r
-        })
-        await this.db.subscription.create({
-          data: { userId: existingUser.id, communityId: community.id, payment, paidOn, validUntil },
-        })
-        summary.created++
-        if (!notifyCommunityId) notifyCommunityId = community.id
-
-        if (email) {
-          try {
-            await notificationsQueue.add(
-              revived.wasAlreadyRegistered ? MEMBER_REINSTATED_EMAIL_JOB : WELCOME_EMAIL_JOB,
-              revived.wasAlreadyRegistered
-                ? { toEmail: email, name }
-                : { toEmail: email, name, phone, communityName: community.name, validTill: validUntil.toISOString() },
-              { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
-            )
-          } catch (err) {
-            logger.error({ err, phone }, 'admin.importUsers: failed to enqueue revive email job')
+        // An email already used by a different account would fail the unique key halfway through the file.
+        if (email && (!existingUser || existingUser.passwordHash === null)) {
+          const emailOwner = await this.db.user.findUnique({ where: { email }, select: { id: true } })
+          if (emailOwner && emailOwner.id !== existingUser?.id) {
+            summary.errors.push({ row: rowNum, phone, reason: 'This email address already belongs to another member' })
+            continue
           }
         }
-      } else if (existingUser) {
-        // User exists (admin-added or self-registered) but NOT subscribed to this
-        // community yet — add subscription only.
-        await ensureFreeSubscription(this.db, existingUser.id)
-        await this.db.subscription.create({
-          data: {
-            userId: existingUser.id,
-            communityId: community.id,
-            payment,
-            paidOn,
-            validUntil,
-          },
-        })
-        summary.created++
-        if (!notifyCommunityId) notifyCommunityId = community.id
-      } else {
-        // Brand new user — create User + ApprovedPhone + Subscription in one transaction
-        await this.db.$transaction(async tx => {
-          const user = await tx.user.create({ data: { phone, name, email } })
-          await tx.approvedPhone.create({ data: { phone, name, email, addedBy: adminId } })
-          await ensureFreeSubscription(tx, user.id)
-          await tx.subscription.create({
-            data: { userId: user.id, communityId: community.id, payment, paidOn, validUntil },
-          })
-        })
-        summary.created++
-        if (!notifyCommunityId) notifyCommunityId = community.id
 
-        if (email) {
-          try {
-            await notificationsQueue.add(
-              WELCOME_EMAIL_JOB,
-              { toEmail: email, name, phone, communityName: community.name, validTill: validUntil.toISOString() },
-              { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
-            )
-          } catch (err) {
-            logger.error({ err, phone }, 'admin.importUsers: failed to enqueue welcome email job')
+        // A suspended/deleted member who isn't already in one of this admin's communities
+        // can't be revived or added to by them — same rule as reviveAndAddMember.
+        if (
+          existingUser && existingUser.status !== 'active' && !existingSub &&
+          !(await hasMemberAccess(this.db, accessibleCommunityIds, existingUser.id))
+        ) {
+          summary.errors.push({ row: rowNum, phone, reason: `Member is ${existingUser.status} and belongs to another community` })
+          continue
+        }
+
+        if (existingSub) {
+          // This (user + community) combo has an active subscription — skip or overwrite based on strategy
+          if (strategy === 'skip') {
+            summary.skipped++
+            continue
+          }
+          // overwrite: update subscription dates; update user info only if not yet registered
+          await this.db.$transaction(async tx => {
+            await tx.subscription.update({
+              where: { id: existingSub.id },
+              data: { payment, paidOn, validUntil },
+            })
+            if (existingUser && !existingUser.passwordHash) {
+              await tx.user.update({ where: { id: existingUser.id }, data: { name, email } })
+            }
+            if (existingAp) {
+              await tx.approvedPhone.update({ where: { phone }, data: { name, email, addedBy: adminId } })
+            }
+          })
+          summary.updated++
+          if (!notifyCommunityId) notifyCommunityId = community.id
+        } else if (existingUser && existingUser.status === 'deleted') {
+          // A previously-deleted member coming back — revive them (see reviveMember's own
+          // doc comment for exactly what "revive" does/doesn't reset) rather than just
+          // quietly re-subscribing a dead account. Note: no longer gated on existingAp —
+          // a self-registered-then-deleted user has no ApprovedPhone row at all, and
+          // reviveMember's upsert handles that (creates one) same as any other revive path.
+          const revived = await this.db.$transaction(async tx => {
+            const r = await this.reviveMember(tx, existingUser, phone, name, email, adminId)
+            await ensureFreeSubscription(tx, existingUser.id)
+            return r
+          })
+          await this.db.subscription.create({
+            data: { userId: existingUser.id, communityId: community.id, payment, paidOn, validUntil },
+          })
+          summary.created++
+          if (!notifyCommunityId) notifyCommunityId = community.id
+
+          if (email) {
+            try {
+              await notificationsQueue.add(
+                revived.wasAlreadyRegistered ? MEMBER_REINSTATED_EMAIL_JOB : WELCOME_EMAIL_JOB,
+                revived.wasAlreadyRegistered
+                  ? { toEmail: email, name }
+                  : { toEmail: email, name, phone, communityName: community.name, validTill: validUntil.toISOString() },
+                { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
+              )
+            } catch (err) {
+              logger.error({ err, phone }, 'admin.importUsers: failed to enqueue revive email job')
+            }
+          }
+        } else if (existingUser) {
+          // User exists (admin-added or self-registered) but NOT subscribed to this
+          // community yet — add subscription only.
+          await ensureFreeSubscription(this.db, existingUser.id)
+          await this.db.subscription.create({
+            data: {
+              userId: existingUser.id,
+              communityId: community.id,
+              payment,
+              paidOn,
+              validUntil,
+            },
+          })
+          summary.created++
+          if (!notifyCommunityId) notifyCommunityId = community.id
+        } else {
+          // Brand new user — create User + ApprovedPhone + Subscription in one transaction
+          await this.db.$transaction(async tx => {
+            const user = await tx.user.create({ data: { phone, name, email } })
+            await tx.approvedPhone.create({ data: { phone, name, email, addedBy: adminId } })
+            await ensureFreeSubscription(tx, user.id)
+            await tx.subscription.create({
+              data: { userId: user.id, communityId: community.id, payment, paidOn, validUntil },
+            })
+          })
+          summary.created++
+          if (!notifyCommunityId) notifyCommunityId = community.id
+
+          if (email) {
+            try {
+              await notificationsQueue.add(
+                WELCOME_EMAIL_JOB,
+                { toEmail: email, name, phone, communityName: community.name, validTill: validUntil.toISOString() },
+                { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
+              )
+            } catch (err) {
+              logger.error({ err, phone }, 'admin.importUsers: failed to enqueue welcome email job')
+            }
           }
         }
+      } catch (err) {
+        // One row's failure (a race on a unique key, a value the database refuses) must not sink the file.
+        logger.warn({ err, row: rowNum }, 'admin.importUsers: row failed')
+        summary.errors.push({ row: rowNum, phone, reason: rowFailureReason(err) })
       }
     }
 
@@ -330,7 +373,7 @@ export class AdminService {
     const reviveRowNumSet = new Set(reviveRowNums)
     const summary: ImportSummaryDTO = { total: rows.length, created: 0, updated: 0, skipped: 0, errors: [] }
 
-    const communities = await this.db.community.findMany({ select: { id: true, name: true } })
+    const communities = await this.db.community.findMany({ where: { deletedAt: null }, select: { id: true, name: true } })
     let notifyCommunityId: string | null = null
 
     for (const [i, row] of rows.entries()) {
@@ -359,6 +402,10 @@ export class AdminService {
 
       try {
         const existingUser = await this.db.user.findUnique({ where: { phone } })
+        if (existingUser && existingUser.role === 'admin') {
+          summary.errors.push({ row: rowNum, phone, reason: 'This phone number belongs to an admin account' })
+          continue
+        }
         const existingAp = await this.db.approvedPhone.findUnique({ where: { phone } })
         const existingSub = existingUser
           ? await this.db.subscription.findFirst({
@@ -456,8 +503,8 @@ export class AdminService {
           }
         }
       } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Unknown error'
-        summary.errors.push({ row: rowNum, phone, reason: msg })
+        logger.warn({ err, row: rowNum }, 'admin.importUsersFromJSON: row failed')
+        summary.errors.push({ row: rowNum, phone, reason: rowFailureReason(err) })
       }
     }
 
@@ -1104,7 +1151,7 @@ export class AdminService {
     await assertSuperAdmin(this.db, requestingAdminId)
 
     const target = await this.db.user.findUnique({ where: { id: targetAdminId } })
-    if (!target || target.role !== 'admin') throw new NotFoundError('Admin not found')
+    if (!target || target.role !== 'admin' || target.deletedAt) throw new NotFoundError('Admin not found')
 
     const community = await this.db.community.findUnique({ where: { id: communityId, deletedAt: null } })
     if (!community) throw new NotFoundError('Community not found')
@@ -1146,15 +1193,26 @@ export class AdminService {
 
     const passwordHash = await bcrypt.hash(data.password, 12)
 
-    const created = await this.db.$transaction(async tx => {
-      const user = await tx.user.create({
-        data: { phone, name: data.name, email: data.email, passwordHash, role: 'admin' },
+    let created
+    try {
+      created = await this.db.$transaction(async tx => {
+        const user = await tx.user.create({
+          data: { phone, name: data.name, email: data.email, passwordHash, role: 'admin' },
+        })
+        await tx.communityAdmin.createMany({
+          data: data.communityIds.map(cid => ({ adminId: user.id, communityId: cid })),
+        })
+        return user
       })
-      await tx.communityAdmin.createMany({
-        data: data.communityIds.map(cid => ({ adminId: user.id, communityId: cid })),
-      })
-      return user
-    })
+    } catch (err) {
+      // Two requests passed the checks above together; the database's unique keys decide who wins.
+      if ((err as { code?: string } | null)?.code === 'P2002') {
+        const taken = JSON.stringify((err as { meta?: unknown }).meta ?? '')
+        if (taken.includes('email')) throw new ConflictError('Email address already in use', 'EMAIL_EXISTS')
+        throw new ConflictError('Phone number already in use', 'PHONE_EXISTS')
+      }
+      throw err
+    }
 
     logger.info({ adminId: created.id }, 'admin.createAdmin: success')
     return {
@@ -1217,7 +1275,16 @@ export class AdminService {
       throw new NotFoundError('Admin not found')
     }
 
-    await this.db.user.update({ where: { id: targetAdminId }, data: { deletedAt: new Date() } })
+    await this.db.$transaction(async tx => {
+      // Two super admins deleting each other at the same moment would each pass the checks above and leave nobody
+      // able to manage admins. Serialise super-admin deletions and refuse the one that would remove the last.
+      if (target.isSuperAdmin) {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('delete-super-admin'))`
+        const others = await tx.user.count({ where: { role: 'admin', isSuperAdmin: true, deletedAt: null, id: { not: targetAdminId } } })
+        if (others === 0) throw new ConflictError('There must always be at least one super admin', 'LAST_SUPER_ADMIN')
+      }
+      await tx.user.update({ where: { id: targetAdminId }, data: { deletedAt: new Date() } })
+    })
     logger.info({ targetAdminId }, 'admin.deleteAdmin: success')
   }
 
@@ -1226,7 +1293,7 @@ export class AdminService {
     if (!phone) throw new BadRequestError('Invalid phone number')
 
     const community = await this.db.community.findUnique({ where: { id: data.communityId } })
-    if (!community) throw new NotFoundError('Community not found')
+    if (!community || community.deletedAt) throw new NotFoundError('Community not found')
 
     const existingUser = await this.db.user.findUnique({ where: { phone } })
     if (existingUser?.status === 'active') {
@@ -1319,7 +1386,7 @@ export class AdminService {
     if (!phone) throw new BadRequestError('Invalid phone number')
 
     const community = await this.db.community.findUnique({ where: { id: data.communityId } })
-    if (!community) throw new NotFoundError('Community not found')
+    if (!community || community.deletedAt) throw new NotFoundError('Community not found')
 
     const existingUser = await this.db.user.findUnique({ where: { phone } })
     if (!existingUser) {
@@ -1388,6 +1455,9 @@ export class AdminService {
     })
     if (!current) throw new NotFoundError('Subscription not found')
     assertCommunityAccessFromToken(accessibleCommunityIds, current.communityId)
+    const owner = await this.db.user.findUnique({ where: { id: current.userId }, select: { status: true, role: true } })
+    if (!owner || owner.role === 'admin') throw new NotFoundError('Subscription not found')
+    if (owner.status === 'deleted') throw new ConflictError('This member was deleted. Reactivate them before extending their plan.', 'MEMBER_DELETED')
 
     const paidOn = data.paidOn ? new Date(data.paidOn) : new Date()
     const validUntil = new Date(data.validUntil)
@@ -1396,8 +1466,11 @@ export class AdminService {
     }
 
     const created = await this.db.$transaction(async tx => {
+      // Two admins extending at the same moment must not leave two active rows: take a per-(member, community)
+      // lock, then retire every active period before the new one is written. The later request wins.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`subscription:${current.userId}:${current.communityId}`}))`
       // Keep the old period as history — only the newest row is the active subscription
-      await tx.subscription.update({ where: { id: current.id }, data: { isActive: false } })
+      await tx.subscription.updateMany({ where: { userId: current.userId, communityId: current.communityId, isActive: true }, data: { isActive: false } })
       const sub = await tx.subscription.create({
         data: {
           userId: current.userId,

@@ -43,6 +43,31 @@ export function errorMiddleware(
     return
   }
 
+  // A database error that got past validation is still the caller's input, not a server fault: answer with a clean
+  // 4xx instead of a 500 (the real error is logged). Unique keys are a conflict, malformed / too long / out of
+  // range values are a bad request.
+  const db = err as { code?: string; name?: string } | null
+  if (db && typeof db === 'object' && db.name === 'PrismaClientKnownRequestError') {
+    if (db.code === 'P2002') {
+      logger.warn({ err, ...requestContext(req) }, 'unique key conflict')
+      res.status(409).json({ success: false, message: 'That value is already in use', code: 'CONFLICT' })
+      return
+    }
+    if (db.code === 'P2000' || db.code === 'P2007' || db.code === 'P2020') {
+      logger.warn({ err, ...requestContext(req) }, 'database refused an input value')
+      res.status(400).json({ success: false, message: 'One of the values you sent is not valid', code: 'INVALID_VALUE' })
+      return
+    }
+  }
+
+  // Upload errors from multer (file too big, too many files)
+  const upload = err as { name?: string; code?: string } | null
+  if (upload && typeof upload === 'object' && upload.name === 'MulterError') {
+    const tooBig = upload.code === 'LIMIT_FILE_SIZE'
+    res.status(tooBig ? 413 : 400).json({ success: false, message: tooBig ? 'That file is too large' : 'The upload was not accepted', code: tooBig ? 'FILE_TOO_LARGE' : 'UPLOAD_INVALID' })
+    return
+  }
+
   // The body parser's own errors (malformed JSON, body too large) are the caller's mistake, not a server fault.
   const parsed = err as { type?: string; status?: number } | null
   if (parsed && typeof parsed === 'object' && parsed.type === 'entity.parse.failed') {

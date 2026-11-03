@@ -681,7 +681,7 @@ router.post('/social/phone', social.phone)
  * /auth/mobile/social/verify-otp:
  *   post:
  *     tags: [Mobile Auth]
- *     summary: Confirm the OTP: account created or claimed, Google linked, logged in (final step)
+ *     summary: "Confirm the OTP: account created or claimed, Google linked, logged in (final step)"
  *     requestBody:
  *       required: true
  *       content:
