@@ -26,6 +26,7 @@ import { routingData, RoutingModule } from '../../lib/notification-routing.js'
 import { NotificationType } from '../notifications/notifications.dto.js'
 import { ensureFreeSubscription } from '../../lib/free-community.js'
 import { decryptPan, encryptPan } from '../../lib/pan-crypto.js'
+import type { SocialProvider } from '../../lib/social-token.js'
 import {
   ConflictError,
   ForbiddenError,
@@ -77,9 +78,15 @@ interface PendingRegistration {
   // already exists, just with no password yet) — verifyOtp() updates that
   // row instead of creating a new one. Null for a genuinely new phone.
   existingUserId: string | null
+  // Set only for "continue with Google / Apple": the verified identity to link once the phone's OTP is confirmed,
+  // and the signup token to burn at that point. Absent for ordinary password registration.
+  social?: { provider: SocialProvider; sub: string; email: string | null; signupToken: string }
   otpHash: string
   otpAttempts: number
 }
+
+/** What a pending registration holds before the OTP is generated. */
+export type PendingRegistrationInput = Omit<PendingRegistration, 'otpHash' | 'otpAttempts'>
 
 // Mirrors auth.service.ts's own DbUser — kept separate on purpose, see login() below.
 type DbUser = {
@@ -249,6 +256,19 @@ export class MobileAuthService {
       throw new UnauthorizedError('Invalid email or password')
     }
 
+    return this.completeLogin(user, data, meta)
+  }
+
+  /**
+   * Everything after "this person has proven who they are": free community, subscription gate, session row,
+   * push token, new-login email. Shared by password login and the Google / Apple paths, so a social login is
+   * exactly as strict (and as lenient) as a password one.
+   */
+  async completeLogin(
+    user: DbUser,
+    data: { deviceId?: string | undefined; deviceType?: 'ios' | 'android' | undefined; fcmToken?: string | undefined; appVersion?: string | undefined },
+    meta: { userAgent: string | undefined; ip: string | undefined },
+  ): Promise<MobileLoginResultInternal> {
     // Accounts created before the free community existed (or added/imported by
     // an admin) have no free subscription row yet — grant it here so every
     // member has it, and so a member whose paid plans have all lapsed can still
@@ -334,6 +354,18 @@ export class MobileAuthService {
    * Postgres exists for this registration before this call succeeds.
    */
   async verifyOtp(token: string, otp: string): Promise<void> {
+    // Password registration only: a "continue with Google / Apple" token has its own endpoint, which also logs the member in.
+    const { userId, pending } = await this.confirmOtp(token, otp, false)
+    logger.info({ userId, phone: pending.phone }, 'mobileAuth.verifyOtp: success, account created')
+    await this.notifyAdminsOfRegistration(userId, pending)
+  }
+
+  /**
+   * Checks the OTP of a pending registration and, if right, creates (or claims) the account. `social` says which
+   * kind of pending registration is expected; the other kind is answered like an expired code, so a token from one
+   * flow can never be redeemed through the other.
+   */
+  async confirmOtp(token: string, otp: string, social: boolean): Promise<{ userId: string; pending: PendingRegistration }> {
     const raw = await this.redis.get(pendingRegistrationKey(token))
     if (!raw) {
       throw new BadRequestError(
@@ -343,6 +375,9 @@ export class MobileAuthService {
     }
 
     const pending = JSON.parse(raw) as PendingRegistration
+    if (Boolean(pending.social) !== social) {
+      throw new BadRequestError('This code has expired. Please request a new one.', 'OTP_EXPIRED')
+    }
     if (pending.otpAttempts >= MAX_OTP_ATTEMPTS) {
       await this.redis.del(pendingRegistrationKey(token))
       throw new TooManyRequestsError(
@@ -366,10 +401,11 @@ export class MobileAuthService {
     await this.redis.del(pendingRegistrationKey(token))
 
     const userId = await this.finalizeRegistration(pending)
-    logger.info({ userId, phone: pending.phone }, 'mobileAuth.verifyOtp: success, account created')
+    return { userId, pending }
+  }
 
-    // Admins who can open the member's profile (super admins, and admins of a community the member is in)
-    // see the new member in their inbox; tapping it opens that profile.
+  /** Every admin who can open the new member's profile sees them in their inbox; tapping it opens that profile. */
+  async notifyAdminsOfRegistration(userId: string, pending: Pick<PendingRegistration, 'fullName' | 'phone'>): Promise<void> {
     await notifyAdmins({
       db: this.db,
       adminIds: await getAdminIdsWithMemberAccess(this.db, userId),
@@ -389,7 +425,7 @@ export class MobileAuthService {
    * register() ran (an admin could have revoked the phone, someone else
    * could have grabbed the email).
    */
-  private async finalizeRegistration(pending: PendingRegistration): Promise<string> {
+  async finalizeRegistration(pending: PendingRegistration): Promise<string> {
     try {
       return await this.db.$transaction(async tx => {
         if (pending.existingUserId) {
@@ -426,6 +462,8 @@ export class MobileAuthService {
           // Pre-added by an admin with a paid plan, but still needs the free
           // community like every other account.
           await ensureFreeSubscription(tx, pending.existingUserId)
+          // "Continue with Google / Apple": the admin-added account is the one that gets linked, in this same transaction.
+          if (pending.social) await this.linkIdentity(tx, pending.existingUserId, pending.social)
           return pending.existingUserId
         }
 
@@ -455,6 +493,7 @@ export class MobileAuthService {
         // from being locked out of login()'s subscription gate before an admin
         // has done anything.
         await ensureFreeSubscription(tx, created.id)
+        if (pending.social) await this.linkIdentity(tx, created.id, pending.social)
 
         return created.id
       })
@@ -491,6 +530,7 @@ export class MobileAuthService {
       email: pending.email,
       passwordHash: pending.passwordHash,
       existingUserId: pending.existingUserId,
+      ...(pending.social ? { social: pending.social } : {}),
     })
     logger.info({ token }, 'mobileAuth.resendOtp: OTP resent')
     return { otpExpiresInSeconds: OTP_TTL_SECONDS }
@@ -633,6 +673,7 @@ export class MobileAuthService {
         postNotificationsEnabled,
         panSubmitted: user.panEncrypted !== null,
         dateOfBirth: user.dateOfBirth?.toISOString().split('T')[0] ?? null,
+        linkedProviders: (await this.db.authIdentity.findMany({ where: { userId }, select: { provider: true } })).map(i => i.provider),
       },
       communities,
     }
@@ -696,6 +737,16 @@ export class MobileAuthService {
       throw new ConflictError('Submit your date of birth and PAN first.', 'KYC_NOT_SUBMITTED')
     }
     logger.info({ userId, changed: [data.dateOfBirth ? 'dateOfBirth' : null, data.panNumber ? 'pan' : null].filter(Boolean) }, 'mobileAuth.updateKyc: success')
+  }
+
+  private async linkIdentity(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    social: { provider: SocialProvider; sub: string; email: string | null },
+  ): Promise<void> {
+    await tx.authIdentity.create({
+      data: { userId, provider: social.provider, providerUserId: social.sub, email: social.email, emailVerified: social.email !== null },
+    })
   }
 
   // Every community ever paid for (excluding the free community and
@@ -779,10 +830,7 @@ export class MobileAuthService {
    * with the same payload), so the two can never drift on TTLs or on what
    * counts as "still pending."
    */
-  private async storePendingRegistration(
-    token: string,
-    data: { fullName: string; phone: string; email: string; passwordHash: string; existingUserId: string | null },
-  ): Promise<void> {
+  async storePendingRegistration(token: string, data: PendingRegistrationInput): Promise<void> {
     const otp = generateOtp()
     // TEMP DEBUG (remove once email delivery is confirmed working): logs the raw OTP so it
     // can be read straight from the logs without depending on the email actually arriving.

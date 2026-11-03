@@ -76,6 +76,8 @@ export interface MobileProfileDTO {
     // itself is never returned — only whether one has been submitted.
     panSubmitted: boolean
     dateOfBirth: string | null // YYYY-MM-DD
+    // Google / Apple logins linked to this account, e.g. ["google"].
+    linkedProviders: string[]
   }
   communities: PaidCommunityDTO[]
 }

@@ -117,6 +117,7 @@ model User {
   mobileSession      MobileSession?
   planOrders         PlanOrder[]
   planReceipts       PlanReceipt[]
+  authIdentities     AuthIdentity[]
   tickets            Ticket[]        @relation("TicketOwner")
   assignedTickets    Ticket[]        @relation("TicketAssignee")
   ticketMessages     TicketMessage[]
@@ -1218,4 +1219,30 @@ model PlanReceipt {
   @@unique([financialYear, sequence], name: "uq_plan_receipts_fy_sequence")
   @@index([userId, issuedAt(sort: Desc)], name: "idx_plan_receipts_user")
   @@map("plan_receipts")
+}
+
+enum AuthProvider {
+  google
+  apple
+}
+
+// A "Sign in with Google / Apple" login linked to a member. The identity is the provider's own user id
+// (`sub`), which never changes, not the email, which can. Rows are created only once the member's phone
+// is verified (new members) or their password is confirmed (existing accounts), never from the token alone.
+model AuthIdentity {
+  id             String       @id @default(uuid()) @db.Uuid
+  userId         String       @map("user_id") @db.Uuid
+  provider       AuthProvider
+  providerUserId String       @map("provider_user_id") @db.VarChar(255)
+  // As reported by the provider at the last login; for display and support only.
+  email          String?      @db.VarChar(255)
+  emailVerified  Boolean      @default(false) @map("email_verified")
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  lastLoginAt    DateTime     @default(now()) @map("last_login_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerUserId], name: "uq_auth_identities_provider_sub")
+  @@index([userId], name: "idx_auth_identities_user")
+  @@map("auth_identities")
 }

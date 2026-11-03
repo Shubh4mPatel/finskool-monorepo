@@ -149,6 +149,16 @@ export const env = {
     // When true, a registration OTP whose WhatsApp delivery fails (all retries) is emailed instead.
     emailFallback: process.env['WHATSAPP_EMAIL_FALLBACK_ENABLED'] === 'true',
   },
+  // Sign in with Google / Apple for the mobile app (docs/mobile-social-login.md). Off until SOCIAL_LOGIN_ENABLED=true.
+  social: {
+    enabled: process.env['SOCIAL_LOGIN_ENABLED'] === 'true',
+    // Comma lists: every OAuth client ID (Google) / bundle ID (Apple) whose tokens we accept as the audience.
+    googleClientIds: (process.env['GOOGLE_CLIENT_IDS'] ?? '').split(',').map(v => v.trim()).filter(Boolean),
+    appleBundleIds: (process.env['APPLE_BUNDLE_IDS'] ?? '').split(',').map(v => v.trim()).filter(Boolean),
+    // Where the providers publish their signing keys. Overridden only by tests, with a local fake key server.
+    googleJwksUrl: process.env['GOOGLE_JWKS_URL'] ?? 'https://www.googleapis.com/oauth2/v3/certs',
+    appleJwksUrl: process.env['APPLE_JWKS_URL'] ?? 'https://appleid.apple.com/auth/keys',
+  },
 } as const satisfies {
   nodeEnv: 'development' | 'production' | 'test'
   port: number
@@ -171,4 +181,5 @@ export const env = {
   fcm: { serviceAccountJson: string; serviceAccountFile: string; fakeUrl: string }
   pan: { encryptionKey: string }
   whatsapp: { baseUrl: string; apiKey: string; phoneNoId: string; templateName: string; emailFallback: boolean }
+  social: { enabled: boolean; googleClientIds: string[]; appleBundleIds: string[]; googleJwksUrl: string; appleJwksUrl: string }
 }

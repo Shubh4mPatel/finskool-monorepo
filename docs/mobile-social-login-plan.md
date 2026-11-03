@@ -1,6 +1,6 @@
 # Plan: Google (and Apple) sign-in for the mobile app
 
-Status: plan, nothing built yet. Decisions below were confirmed on 2026-11-03.
+Status: **built** (phases 1 to 5; the developer guide is `mobile-social-login.md`). Left for later: the admin member page "Google" tag, unlinking, in-app account deletion. Decisions below were confirmed on 2026-11-03.
 
 ## Decisions already made
 

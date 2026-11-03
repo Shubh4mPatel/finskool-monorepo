@@ -96,3 +96,49 @@ export const updateKycSchema = z
   .object({ dateOfBirth: dateOfBirthField.optional(), panNumber: panField.optional() })
   .refine(v => v.dateOfBirth !== undefined || v.panNumber !== undefined, { message: 'Send dateOfBirth, panNumber or both' })
 
+
+// ─── Sign in with Google / Apple ───────────────────────────────────────────
+
+const socialDevice = {
+  deviceId: z.string().max(255).optional(),
+  deviceType: z.enum(['ios', 'android']).optional(),
+  fcmToken: fcmTokenSchema.optional(),
+  appVersion: z.string().trim().max(32).optional(),
+}
+const socialProvider = z.enum(['google', 'apple'])
+const idTokenField = z.string().min(20, 'idToken is required').max(4096)
+const nonceField = z.string().min(8).max(200).optional()
+
+export const socialLoginSchema = z.object({
+  provider: socialProvider,
+  idToken: idTokenField,
+  // The random value the app signed in with. Strongly recommended: it stops a stolen token from being replayed.
+  nonce: nonceField,
+  // Apple sends the name only on the very first sign-in, and not inside the token; the app passes it here.
+  fullName: z.string().trim().min(2).max(100).optional(),
+  ...socialDevice,
+})
+
+export const socialLinkSchema = z.object({
+  linkToken: z.string().uuid('Invalid link token'),
+  password: z.string().min(1, 'Password is required').max(128),
+  ...socialDevice,
+})
+
+export const socialPhoneSchema = z.object({
+  signupToken: z.string().uuid('Invalid signup token'),
+  phone: phoneSchema,
+  fullName: z.string().trim().min(2, 'Full name must be at least 2 characters').max(100).optional(),
+})
+
+export const socialVerifyOtpSchema = z.object({
+  otpToken: z.string().uuid('Invalid OTP token'),
+  otp: z.string().regex(/^\d{6}$/, 'OTP must be 6 digits'),
+  ...socialDevice,
+})
+
+export const meSocialLinkSchema = z.object({
+  provider: socialProvider,
+  idToken: idTokenField,
+  nonce: nonceField,
+})

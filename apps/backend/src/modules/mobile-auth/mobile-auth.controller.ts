@@ -29,7 +29,7 @@ const MOBILE_COOKIE_BASE: CookieOptions = {
 // ends). Long enough to effectively never expire on its own.
 const MOBILE_SESSION_MAX_AGE = 400 * 24 * 60 * 60 * 1000
 
-function setMobileSessionCookie(res: Response, sessionId: string): void {
+export function setMobileSessionCookie(res: Response, sessionId: string): void {
   res.cookie('mobile_session_id', sessionId, { ...MOBILE_COOKIE_BASE, maxAge: MOBILE_SESSION_MAX_AGE })
 }
 

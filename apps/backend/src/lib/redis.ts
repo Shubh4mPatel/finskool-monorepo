@@ -47,6 +47,16 @@ export function pendingRegistrationCooldownKey(token: string): string {
   return `mobile:pending_registration:cooldown:${token}`
 }
 
+// "Continue with Google / Apple" steps, each a single-use token held in Redis for 15 minutes: a new person who still has to
+// give a phone (signup), and a Google login for an existing password account that still has to enter the password (link).
+export function socialSignupKey(token: string): string {
+  return `mobile:social_signup:${token}`
+}
+
+export function socialLinkKey(token: string): string {
+  return `mobile:social_link:${token}`
+}
+
 // Mobile forgot-password OTP — keyed by (lowercased) email, not userId, since
 // the "send OTP" endpoint deliberately never reveals whether a userId exists
 // for that email (see mobile-auth.service.ts#forgotPassword).

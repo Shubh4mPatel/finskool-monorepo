@@ -1,12 +1,15 @@
 import { Router } from 'express'
 import { MobileAuthService } from './mobile-auth.service.js'
 import { MobileAuthController } from './mobile-auth.controller.js'
+import { SocialAuthService } from './social-auth.service.js'
+import { SocialAuthController } from './social-auth.controller.js'
 import { authenticate, requireMobileAuth } from '../../middlewares/auth.middleware.js'
 import prisma from '../../lib/prisma.js'
 import redis from '../../lib/redis.js'
 
 const service = new MobileAuthService(prisma, redis)
 const controller = new MobileAuthController(service)
+const social = new SocialAuthController(new SocialAuthService(prisma, redis, service))
 
 const router = Router()
 
@@ -574,5 +577,153 @@ router.get('/me/kyc', authenticate, requireMobileAuth, controller.getKyc)
  *         description: Invalid PAN or date of birth, or neither field sent.
  */
 router.put('/me/kyc', authenticate, requireMobileAuth, controller.updateKyc)
+
+// ─── Sign in with Google / Apple ───────────────────────────────────────────
+// Full guide: docs/mobile-social-login.md. Off until SOCIAL_LOGIN_ENABLED=true (404 SOCIAL_LOGIN_DISABLED).
+
+/**
+ * @openapi
+ * /auth/mobile/social/login:
+ *   post:
+ *     tags: [Mobile Auth]
+ *     summary: Continue with Google or Apple (step 1)
+ *     description: >
+ *       Send the provider's ID token. The answer is one of three, in `data.status`:
+ *       `logged_in` (known login: session cookie set, body has `user` and `communities` like password login),
+ *       `link_required` (an account with this verified email already exists: ask for its password, then POST /social/link),
+ *       `phone_required` (new person, or a member an admin added: ask for the phone, then POST /social/phone).
+ *       Nothing is created or linked from the token alone.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [provider, idToken]
+ *             properties:
+ *               provider: { type: string, enum: [google, apple] }
+ *               idToken: { type: string }
+ *               nonce: { type: string, description: "The random value the sign-in was started with (recommended)." }
+ *               fullName: { type: string, description: "Apple only: the name Apple gave the app on the first sign-in." }
+ *               deviceId: { type: string }
+ *               deviceType: { type: string, enum: [ios, android] }
+ *               fcmToken: { type: string }
+ *               appVersion: { type: string }
+ *     responses:
+ *       200: { description: "{ success, data: { status, ... } }" }
+ *       400: { description: Email not verified (SOCIAL_EMAIL_UNVERIFIED). }
+ *       401: { description: Token invalid (SOCIAL_TOKEN_INVALID) or the account is deactivated. }
+ *       404: { description: Feature switched off (SOCIAL_LOGIN_DISABLED). }
+ *       429: { description: Too many attempts. }
+ */
+router.post('/social/login', social.login)
+
+/**
+ * @openapi
+ * /auth/mobile/social/link:
+ *   post:
+ *     tags: [Mobile Auth]
+ *     summary: Confirm the password of the existing account to link Google or Apple (step 2 after link_required)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [linkToken, password]
+ *             properties:
+ *               linkToken: { type: string, format: uuid }
+ *               password: { type: string }
+ *               deviceId: { type: string }
+ *               deviceType: { type: string, enum: [ios, android] }
+ *               fcmToken: { type: string }
+ *               appVersion: { type: string }
+ *     responses:
+ *       200: { description: "Linked and logged in: same body as POST /social/login with status logged_in." }
+ *       400: { description: Step expired (SOCIAL_STEP_EXPIRED). }
+ *       401: { description: Wrong password (SOCIAL_LINK_PASSWORD_INVALID). }
+ *       429: { description: Five wrong passwords (SOCIAL_LINK_LOCKED) or rate limited. }
+ */
+router.post('/social/link', social.link)
+
+/**
+ * @openapi
+ * /auth/mobile/social/phone:
+ *   post:
+ *     tags: [Mobile Auth]
+ *     summary: Give the phone number and get the WhatsApp OTP (step 2 after phone_required)
+ *     description: >
+ *       If an admin already added this phone, that same account (with its plans) is the one claimed and linked
+ *       after the OTP, not a second account. A phone that already belongs to a registered account answers 409
+ *       ALREADY_REGISTERED. Use POST /auth/mobile/resend-otp with `userId` = `otpToken` to resend the code.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [signupToken, phone]
+ *             properties:
+ *               signupToken: { type: string, format: uuid }
+ *               phone: { type: string }
+ *               fullName: { type: string, description: "Needed only when the provider gave no name." }
+ *     responses:
+ *       200: { description: "{ success, data: { otpToken, phone, otpExpiresInSeconds } }" }
+ *       400: { description: Step expired (SOCIAL_STEP_EXPIRED) or no name (NAME_REQUIRED). }
+ *       403: { description: Access revoked (PHONE_INACTIVE). }
+ *       409: { description: ALREADY_REGISTERED or EMAIL_TAKEN. }
+ *       429: { description: Too many attempts. }
+ */
+router.post('/social/phone', social.phone)
+
+/**
+ * @openapi
+ * /auth/mobile/social/verify-otp:
+ *   post:
+ *     tags: [Mobile Auth]
+ *     summary: Confirm the OTP: account created or claimed, Google linked, logged in (final step)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [otpToken, otp]
+ *             properties:
+ *               otpToken: { type: string, format: uuid }
+ *               otp: { type: string, pattern: '^\d{6}$' }
+ *               deviceId: { type: string }
+ *               deviceType: { type: string, enum: [ios, android] }
+ *               fcmToken: { type: string }
+ *               appVersion: { type: string }
+ *     responses:
+ *       200: { description: "Same body as POST /social/login with status logged_in; the session cookie is set." }
+ *       400: { description: OTP_EXPIRED or OTP_INVALID. }
+ *       429: { description: OTP_LOCKED after 5 wrong codes. }
+ */
+router.post('/social/verify-otp', social.verifyOtp)
+
+/**
+ * @openapi
+ * /auth/mobile/me/social/link:
+ *   post:
+ *     tags: [Mobile Auth]
+ *     summary: Add Google or Apple to the logged-in account
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [provider, idToken]
+ *             properties:
+ *               provider: { type: string, enum: [google, apple] }
+ *               idToken: { type: string }
+ *               nonce: { type: string }
+ *     responses:
+ *       200: { description: "{ success, data: { linkedProviders: ['google'] } }" }
+ *       409: { description: Already linked to another member (SOCIAL_ALREADY_LINKED) or another account of this provider is linked (SOCIAL_PROVIDER_ALREADY_LINKED). }
+ */
+router.post('/me/social/link', authenticate, requireMobileAuth, social.linkToAccount)
 
 export default router

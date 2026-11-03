@@ -46,6 +46,7 @@
     "firebase-admin": "^13.10.0",
     "fluent-ffmpeg": "^2.1.3",
     "ioredis": "^5.11.1",
+    "jose": "^6.2.15",
     "jsonwebtoken": "^9.0.3",
     "libphonenumber-js": "^1.13.9",
     "minio": "^8.0.7",
