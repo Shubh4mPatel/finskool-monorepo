@@ -43,6 +43,17 @@ export function errorMiddleware(
     return
   }
 
+  // The body parser's own errors (malformed JSON, body too large) are the caller's mistake, not a server fault.
+  const parsed = err as { type?: string; status?: number } | null
+  if (parsed && typeof parsed === 'object' && parsed.type === 'entity.parse.failed') {
+    res.status(400).json({ success: false, message: 'Request body is not valid JSON', code: 'INVALID_JSON' })
+    return
+  }
+  if (parsed && typeof parsed === 'object' && parsed.type === 'entity.too.large') {
+    res.status(413).json({ success: false, message: 'Request body is too large', code: 'BODY_TOO_LARGE' })
+    return
+  }
+
   logger.error({ err, ...requestContext(req) }, 'unhandled error')
   res.status(500).json({ success: false, message: 'Internal server error' })
 }

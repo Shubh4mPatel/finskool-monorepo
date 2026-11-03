@@ -48,3 +48,47 @@ Returns `200` with the same body as `GET /me/kyc`, already updated.
 ## Security notes
 
 The PAN is stored encrypted (AES-256-GCM, key `PAN_ENCRYPTION_KEY` on the server) and is never logged or returned in full. The app should send it only over HTTPS, never store it on the device, and never write it to logs.
+
+## Rules the server enforces
+
+| Field | Accepted | Rejected (422) |
+|---|---|---|
+| `panNumber` | 5 letters + 4 digits + 1 letter. Spaces around it and lower case are fixed for you (`  abcde1234f ` is saved as `ABCDE1234F`) | too short or long, digits first, a space inside, accented letters, empty, a number / null / array instead of text |
+| `dateOfBirth` | `YYYY-MM-DD`, a real calendar date (2000-02-29 is fine), from 1900-01-01 up to today | 2001-02-29, 2026-02-30, month 13, a future date, before 1900, `95-04-12`, `1995/04/12`, `12-04-1995`, `1995-4-12`, empty |
+
+Other behaviour the app should expect:
+
+| Situation | Response |
+|---|---|
+| No session cookie | `401` |
+| Suspended or deleted member | `401` (`SESSION_INVALIDATED`), the app logs the member out |
+| Web login instead of a mobile session | `403 MOBILE_ONLY` |
+| Body is not valid JSON | `400 INVALID_JSON` |
+| Extra fields in the body (for example `role`) | ignored, they cannot change anything else |
+| Two taps at the same time on the first submit | one `201`, the others `409 KYC_ALREADY_SUBMITTED`; nothing is lost or doubled |
+| Edits at the same time | all succeed, the last one wins |
+
+## How it is stored
+
+`users.date_of_birth` (a date) and `users.pan_encrypted`. The PAN is encrypted with AES-256-GCM and a fresh random IV each time, so saving the same PAN twice gives different ciphertext. The database row never holds the plain PAN, and neither does the backend log. If the key on the server is ever wrong or a value is damaged, `GET /me/kyc` still answers (`completed: true`, `panMasked: null`) and an edit with a new PAN repairs the row.
+
+Server setting: `PAN_ENCRYPTION_KEY` (64 hex characters, `openssl rand -hex 32`). **Do not change it after members have submitted**: old values could no longer be read. Keep a backup of it.
+
+## Test results (2026-11-03, local server, real Postgres and Redis)
+
+50 checks passed, run against 6 members with their own sessions:
+
+- 4 members submitted different values; each flag showed only that member's date and masked PAN; a member who had not submitted stayed `completed: false`.
+- 15 simultaneous first submits gave exactly one `201` and 14 `409`; 10 simultaneous edits all succeeded.
+- 11 PAN formats and 4 wrong types, and 13 date formats (leap day, impossible dates, boundaries), gave the accept / reject results in the table above.
+- Edit before the first submit gave `409 KYC_NOT_SUBMITTED`; a second first-submit gave `409` and changed nothing; editing only the date, only the PAN, or both worked and left the other value alone.
+- Web login gave `403`, no session gave `401`, a suspended member gave `401`.
+- The stored value is `v1:iv:tag:ciphertext`; no plain PAN in the row or in the log; a damaged ciphertext did not break the flag and was repaired by an edit.
+
+One bug found and fixed while testing: a request whose body was not valid JSON returned `500` on every endpoint. It now returns `400 INVALID_JSON` (and `413` for a body that is too large).
+
+## Open points
+
+- An edit needs only the logged-in session. Asking for the password or an OTP before a PAN change is possible if you want it.
+- There is no limit on how often a member can edit, and no history of old values.
+- Today's date is accepted as a date of birth; there is no minimum age.
