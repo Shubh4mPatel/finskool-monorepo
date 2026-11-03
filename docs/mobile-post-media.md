@@ -5,6 +5,8 @@ uploaded image and video and returns it, so the app can lay a post out before th
 
 The files are stored exactly as the admin uploaded them: nothing is cropped or re-encoded. The app decides how to fit them.
 
+> How to lay these out in the app (frame, fitting, carousel, videos): see `mobile-post-media-layout.md`.
+
 ## What changed in the post responses
 
 These fields are added to every post object (`GET /mobile/posts`, `GET /posts/my-comments`, and the admin post endpoints).
