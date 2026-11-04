@@ -1,16 +1,21 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Briefcase, ChevronRight, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useIsSuperAdmin } from "@/lib/session";
+import { useClientPage } from "@/lib/useClientPage";
+import Pagination from "@/components/ui/Pagination";
 import type { CatalogService } from "@/lib/services";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/Toast";
 import ServiceCardBody from "@/components/admin/services/ServiceCard";
 
 const BASE = "/api/v1/admin/services/catalog";
+
+/** Three cards a row, three rows a page. */
+const PAGE_SIZE = 9;
 
 function ServiceCatalogManager() {
   const confirm = useConfirm();
@@ -37,6 +42,13 @@ function ServiceCatalogManager() {
   }, [version]);
 
   const reload = () => setVersion((v) => v + 1);
+
+  const { page, pageItems, setPage } = useClientPage(services ?? [], PAGE_SIZE);
+  const gridRef = useRef<HTMLDivElement>(null);
+  function goToPage(next: number) {
+    setPage(next);
+    gridRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 
   async function toggleActive(s: CatalogService) {
     try {
@@ -102,46 +114,55 @@ function ServiceCatalogManager() {
           <p className="text-xs text-muted">Add the first service members can enquire about.</p>
         </div>
       ) : (
-        <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-          {services!.map((s) => (
-            <article key={s.id} className={`flex flex-col overflow-hidden rounded-3xl bg-white shadow-card ${s.isActive ? "" : "opacity-70"}`}>
-              <ServiceCardBody service={s} />
-              <div className="flex flex-1 flex-col px-5 pb-5">
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  {s.openRequests > 0 && (
-                    <span className="rounded-full bg-[#fff6dc] px-2.5 py-1 text-[11px] font-bold text-[#7a5200]">
-                      {s.openRequests} open {s.openRequests === 1 ? "enquiry" : "enquiries"}
-                    </span>
-                  )}
-                  {!s.isActive && <span className="rounded-full bg-[#f1efe6] px-2.5 py-1 text-[11px] font-bold text-muted">Hidden from members</span>}
+        <div ref={gridRef} className="flex scroll-mt-4 flex-col gap-5">
+          <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+            {pageItems.map((s) => (
+              <article key={s.id} className={`flex flex-col overflow-hidden rounded-3xl bg-white shadow-card ${s.isActive ? "" : "opacity-70"}`}>
+                <ServiceCardBody service={s} />
+                <div className="flex flex-1 flex-col px-5 pb-5">
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    {s.openRequests > 0 && (
+                      <span className="rounded-full bg-[#fff6dc] px-2.5 py-1 text-[11px] font-bold text-[#7a5200]">
+                        {s.openRequests} open {s.openRequests === 1 ? "enquiry" : "enquiries"}
+                      </span>
+                    )}
+                    {!s.isActive && <span className="rounded-full bg-[#f1efe6] px-2.5 py-1 text-[11px] font-bold text-muted">Hidden from members</span>}
+                  </div>
+                  <p className="mt-3 text-xs text-muted">
+                    <strong className="text-primary">Pricing on request</strong> · quote per enquiry
+                  </p>
+                  <div className="mt-auto flex items-center gap-2 pt-4">
+                    <Link
+                      href={`/admin/services?serviceId=${s.id}`}
+                      className="flex h-9 items-center gap-1 whitespace-nowrap rounded-full border border-[#dcd9d0] px-4 text-xs font-bold text-primary transition-colors hover:border-accent"
+                    >
+                      View enquiries <ChevronRight size={12} />
+                    </Link>
+                    <button onClick={() => toggleActive(s)} className="h-9 rounded-full border border-[#dcd9d0] px-4 text-xs font-bold text-primary transition-colors hover:border-accent">
+                      {s.isActive ? "Hide" : "Show"}
+                    </button>
+                    <Link
+                      href={`/admin/services/catalog/${s.id}/edit`}
+                      aria-label={`Edit ${s.title}`}
+                      className="ml-auto flex h-9 w-9 items-center justify-center rounded-full text-muted transition-colors hover:bg-background hover:text-primary"
+                    >
+                      <Pencil size={14} />
+                    </Link>
+                    <button onClick={() => remove(s)} aria-label={`Delete ${s.title}`} className="flex h-9 w-9 items-center justify-center rounded-full text-muted transition-colors hover:bg-[#fff0f2] hover:text-[#e11d48]">
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
                 </div>
-                <p className="mt-3 text-xs text-muted">
-                  <strong className="text-primary">Pricing on request</strong> · quote per enquiry
-                </p>
-                <div className="mt-auto flex items-center gap-2 pt-4">
-                  <Link
-                    href={`/admin/services?serviceId=${s.id}`}
-                    className="flex h-9 items-center gap-1 whitespace-nowrap rounded-full border border-[#dcd9d0] px-4 text-xs font-bold text-primary transition-colors hover:border-accent"
-                  >
-                    View enquiries <ChevronRight size={12} />
-                  </Link>
-                  <button onClick={() => toggleActive(s)} className="h-9 rounded-full border border-[#dcd9d0] px-4 text-xs font-bold text-primary transition-colors hover:border-accent">
-                    {s.isActive ? "Hide" : "Show"}
-                  </button>
-                  <Link
-                    href={`/admin/services/catalog/${s.id}/edit`}
-                    aria-label={`Edit ${s.title}`}
-                    className="ml-auto flex h-9 w-9 items-center justify-center rounded-full text-muted transition-colors hover:bg-background hover:text-primary"
-                  >
-                    <Pencil size={14} />
-                  </Link>
-                  <button onClick={() => remove(s)} aria-label={`Delete ${s.title}`} className="flex h-9 w-9 items-center justify-center rounded-full text-muted transition-colors hover:bg-[#fff0f2] hover:text-[#e11d48]">
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </div>
-            </article>
-          ))}
+              </article>
+            ))}
+          </div>
+          <Pagination
+            page={page}
+            pageSize={PAGE_SIZE}
+            total={services!.length}
+            noun={services!.length === 1 ? "service" : "services"}
+            onPage={goToPage}
+          />
         </div>
       )}
     </div>

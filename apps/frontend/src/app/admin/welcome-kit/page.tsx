@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, CheckCircle2, Gift, Pencil, Plus, Trash2 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
@@ -10,6 +10,11 @@ import CommunityBadgeIcon from "@/components/CommunityBadgeIcon";
 import { EmptyState, Skeleton, stagger } from "@/components/admin/dashboard/Panel";
 import type { KitListItem, KitListResponse, KitListStatus } from "@/lib/welcome-kit";
 import { timeAgo } from "@/lib/tickets";
+import { useClientPage } from "@/lib/useClientPage";
+import Pagination from "@/components/ui/Pagination";
+
+/** Three cards a row, three rows a page. */
+const PAGE_SIZE = 9;
 
 
 export default function WelcomeKitListPage() {
@@ -69,6 +74,13 @@ export default function WelcomeKitListPage() {
   const loading = result === null;
   const refreshing = result !== null && result.status !== filter;
   const items: KitListItem[] = result?.items ?? [];
+  // Each tab is its own list, so switching tab starts again from the first page.
+  const { page, pageItems, setPage } = useClientPage(items, PAGE_SIZE, filter);
+  const gridRef = useRef<HTMLDivElement>(null);
+  function goToPage(next: number) {
+    setPage(next);
+    gridRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
   const readyCount = result?.counts.ready ?? 0;
   const total = result?.counts.all ?? 0;
   const percent = total > 0 ? Math.round((readyCount / total) * 100) : 0;
@@ -157,98 +169,107 @@ export default function WelcomeKitListPage() {
               {filter === "ready" ? "No community has a welcome kit yet." : "Every community has a welcome kit. Nice work!"}
             </EmptyState>
           ) : (
-            <div
-              aria-busy={refreshing}
-              className={`grid grid-cols-1 gap-4 transition-opacity duration-300 sm:grid-cols-2 xl:grid-cols-3 ${
-                refreshing ? "pointer-events-none opacity-50" : ""
-              }`}
-            >
-              {items.map((c, i) => {
-                const deleting = deletingId === c.communityId;
-                const editHref = `/admin/welcome-kit/${c.communityId}`;
-                return (
-                  <div
-                    key={c.communityId}
-                    style={{ background: "linear-gradient(120deg, #0a5f57, #108b8b)", ...stagger(i, 120) }}
-                    className={`animate-enter group relative flex h-44 flex-col justify-between overflow-hidden rounded-2xl text-white shadow-card transition-all duration-300 hover:-translate-y-0.5 hover:shadow-card-hover ${
-                      deleting ? "pointer-events-none opacity-50" : ""
-                    }`}
-                  >
-                    {c.coverImageUrl && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={c.coverImageUrl}
-                        alt=""
-                        className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
-                      />
-                    )}
-                    <span className="absolute inset-0 bg-gradient-to-t from-[#06433d]/95 via-[#0a5f57]/70 to-[#0a5f57]/25" />
-
-                    {/* The whole card opens the editor; the buttons sit above it. */}
-                    <Link
-                      href={editHref}
-                      aria-label={`${c.hasKit ? "Edit" : "Set up"} welcome kit for ${c.name}`}
-                      className="absolute inset-0 z-10 rounded-2xl focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-lime/70"
-                    />
-
-                    {/* Top: badge + status */}
-                    <div className="relative flex items-start justify-between p-4">
-                      <span className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-white shadow-sm ring-2 ring-white/40">
-                        <CommunityBadgeIcon badgeUrl={c.badgeUrl} className="h-6 w-6 object-contain" />
-                      </span>
-                      {c.hasKit ? (
-                        <span className="inline-flex items-center gap-1.5 rounded-full bg-lime px-2.5 py-1 text-[11px] font-bold text-primary">
-                          <CheckCircle2 size={12} aria-hidden />
-                          Kit ready
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1.5 rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-bold text-primary">
-                          <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden />
-                          Not set up
-                        </span>
+            <div ref={gridRef} className="flex scroll-mt-4 flex-col gap-4">
+              <div
+                aria-busy={refreshing}
+                className={`grid grid-cols-1 gap-4 transition-opacity duration-300 sm:grid-cols-2 xl:grid-cols-3 ${
+                  refreshing ? "pointer-events-none opacity-50" : ""
+                }`}
+              >
+                {pageItems.map((c, i) => {
+                  const deleting = deletingId === c.communityId;
+                  const editHref = `/admin/welcome-kit/${c.communityId}`;
+                  return (
+                    <div
+                      key={c.communityId}
+                      style={{ background: "linear-gradient(120deg, #0a5f57, #108b8b)", ...stagger(i, 120) }}
+                      className={`animate-enter group relative flex h-44 flex-col justify-between overflow-hidden rounded-2xl text-white shadow-card transition-all duration-300 hover:-translate-y-0.5 hover:shadow-card-hover ${
+                        deleting ? "pointer-events-none opacity-50" : ""
+                      }`}
+                    >
+                      {c.coverImageUrl && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={c.coverImageUrl}
+                          alt=""
+                          className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
+                        />
                       )}
-                    </div>
+                      <span className="absolute inset-0 bg-gradient-to-t from-[#06433d]/95 via-[#0a5f57]/70 to-[#0a5f57]/25" />
 
-                    {/* Bottom: name, last update, actions */}
-                    <div className="relative flex items-end justify-between gap-3 p-4">
-                      <div className="min-w-0">
-                        {c.type && <span className="block truncate text-[10px] font-semibold uppercase tracking-wider text-white/70">{c.type}</span>}
-                        <span className="block truncate font-display text-base font-bold leading-tight">{c.name}</span>
-                        <span className="mt-1 block truncate text-[11px] font-medium text-white/75">
-                          {c.hasKit
-                            ? c.updatedAt
-                              ? `Updated ${timeAgo(c.updatedAt, now).toLowerCase()}`
-                              : "Kit added"
-                            : "Members get no welcome kit yet"}
+                      {/* The whole card opens the editor; the buttons sit above it. */}
+                      <Link
+                        href={editHref}
+                        aria-label={`${c.hasKit ? "Edit" : "Set up"} welcome kit for ${c.name}`}
+                        className="absolute inset-0 z-10 rounded-2xl focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-lime/70"
+                      />
+
+                      {/* Top: badge + status */}
+                      <div className="relative flex items-start justify-between p-4">
+                        <span className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-white shadow-sm ring-2 ring-white/40">
+                          <CommunityBadgeIcon badgeUrl={c.badgeUrl} className="h-6 w-6 object-contain" />
                         </span>
+                        {c.hasKit ? (
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-lime px-2.5 py-1 text-[11px] font-bold text-primary">
+                            <CheckCircle2 size={12} aria-hidden />
+                            Kit ready
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-bold text-primary">
+                            <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden />
+                            Not set up
+                          </span>
+                        )}
                       </div>
 
-                      <div className="relative z-20 flex shrink-0 items-center gap-1.5">
-                        {c.hasKit && (
-                          <button
-                            type="button"
-                            onClick={() => void handleDelete(c)}
-                            disabled={deleting}
-                            title="Delete welcome kit"
-                            aria-label={`Delete welcome kit for ${c.name}`}
-                            className="flex h-8 w-8 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur transition-all hover:bg-red-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                      {/* Bottom: name, last update, actions */}
+                      <div className="relative flex items-end justify-between gap-3 p-4">
+                        <div className="min-w-0">
+                          {c.type && <span className="block truncate text-[10px] font-semibold uppercase tracking-wider text-white/70">{c.type}</span>}
+                          <span className="block truncate font-display text-base font-bold leading-tight">{c.name}</span>
+                          <span className="mt-1 block truncate text-[11px] font-medium text-white/75">
+                            {c.hasKit
+                              ? c.updatedAt
+                                ? `Updated ${timeAgo(c.updatedAt, now).toLowerCase()}`
+                                : "Kit added"
+                              : "Members get no welcome kit yet"}
+                          </span>
+                        </div>
+
+                        <div className="relative z-20 flex shrink-0 items-center gap-1.5">
+                          {c.hasKit && (
+                            <button
+                              type="button"
+                              onClick={() => void handleDelete(c)}
+                              disabled={deleting}
+                              title="Delete welcome kit"
+                              aria-label={`Delete welcome kit for ${c.name}`}
+                              className="flex h-8 w-8 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur transition-all hover:bg-red-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                          <Link
+                            href={editHref}
+                            className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-bold text-primary shadow-sm transition-all hover:bg-lime focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime"
                           >
-                            <Trash2 size={14} />
-                          </button>
-                        )}
-                        <Link
-                          href={editHref}
-                          className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-bold text-primary shadow-sm transition-all hover:bg-lime focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime"
-                        >
-                          {c.hasKit ? <Pencil size={12} /> : <Plus size={13} strokeWidth={2.5} />}
-                          {c.hasKit ? "Edit kit" : "Set up kit"}
-                          <ArrowRight size={12} className="transition-transform duration-200 group-hover:translate-x-0.5" />
-                        </Link>
+                            {c.hasKit ? <Pencil size={12} /> : <Plus size={13} strokeWidth={2.5} />}
+                            {c.hasKit ? "Edit kit" : "Set up kit"}
+                            <ArrowRight size={12} className="transition-transform duration-200 group-hover:translate-x-0.5" />
+                          </Link>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
+              <Pagination
+                page={page}
+                pageSize={PAGE_SIZE}
+                total={items.length}
+                noun={items.length === 1 ? "community" : "communities"}
+                onPage={goToPage}
+              />
             </div>
           )}
         </div>

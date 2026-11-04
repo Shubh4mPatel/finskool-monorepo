@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Building2, Pencil, Plus, Search, SearchX, Trash2, Users, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useIsSuperAdmin } from "@/lib/session";
+import { useClientPage } from "@/lib/useClientPage";
+import Pagination from "@/components/ui/Pagination";
 import CommunityBadgeIcon from "@/components/CommunityBadgeIcon";
 import CommunityFormModal from "@/components/admin/communities/CommunityFormModal";
 import type { Community } from "@/components/admin/communities/types";
@@ -14,6 +16,9 @@ import { EmptyState, Skeleton, stagger } from "@/components/admin/dashboard/Pane
 
 /** Search is only worth the space once the grid is more than a screenful. */
 const SEARCH_THRESHOLD = 6;
+
+/** Three cards a row, three rows a page. */
+const PAGE_SIZE = 9;
 
 // The brand gradient shown behind a community that has no cover image.
 const FALLBACK_COVER = "linear-gradient(120deg, #0a5f57, #108b8b)";
@@ -81,6 +86,12 @@ export default function CommunitiesPage() {
         : communities,
     [communities, needle],
   );
+  const { page, pageItems, setPage } = useClientPage(visible, PAGE_SIZE, needle);
+  const gridRef = useRef<HTMLDivElement>(null);
+  function goToPage(next: number) {
+    setPage(next);
+    gridRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
   const totalMembers = communities.reduce((sum, c) => sum + c.memberCount, 0);
 
   return (
@@ -186,94 +197,103 @@ export default function CommunitiesPage() {
           </EmptyState>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {visible.map((c, i) => {
-            const deleting = deletingId === c.id;
-            return (
-              <article
-                key={c.id}
-                style={stagger(Math.min(i, 8), 60, 55)}
-                className={`animate-enter group flex flex-col overflow-hidden rounded-2xl bg-white shadow-card ring-1 ring-primary/[0.04] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-card-hover ${
-                  deleting ? "pointer-events-none opacity-50" : ""
-                }`}
-              >
-                {/* Cover — the full 5:2 frame, so the photo isn't cropped or tinted */}
-                <div className="relative aspect-[5/2] overflow-hidden" style={{ background: FALLBACK_COVER }}>
-                  {c.coverImageUrl && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={c.coverImageUrl} alt={c.name} className="absolute inset-0 h-full w-full object-cover" />
-                  )}
-                  {!c.coverImageUrl && <Building2 size={30} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-white/30" aria-hidden />}
-                  {/* A soft shade only behind the top-corner controls, so they stay readable on any photo. */}
-                  {(c.isFree || isSuperAdmin) && <span aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-14 bg-gradient-to-b from-black/25 to-transparent" />}
+        <div ref={gridRef} className="flex scroll-mt-4 flex-col gap-5">
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {pageItems.map((c, i) => {
+              const deleting = deletingId === c.id;
+              return (
+                <article
+                  key={c.id}
+                  style={stagger(Math.min(i, 8), 60, 55)}
+                  className={`animate-enter group flex flex-col overflow-hidden rounded-2xl bg-white shadow-card ring-1 ring-primary/[0.04] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-card-hover ${
+                    deleting ? "pointer-events-none opacity-50" : ""
+                  }`}
+                >
+                  {/* Cover — the full 5:2 frame, so the photo isn't cropped or tinted */}
+                  <div className="relative aspect-[5/2] overflow-hidden" style={{ background: FALLBACK_COVER }}>
+                    {c.coverImageUrl && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={c.coverImageUrl} alt={c.name} className="absolute inset-0 h-full w-full object-cover" />
+                    )}
+                    {!c.coverImageUrl && <Building2 size={30} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-white/30" aria-hidden />}
+                    {/* A soft shade only behind the top-corner controls, so they stay readable on any photo. */}
+                    {(c.isFree || isSuperAdmin) && <span aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-14 bg-gradient-to-b from-black/25 to-transparent" />}
 
-                  {c.isFree && (
-                    <span className="absolute left-3 top-3 rounded-full bg-lime px-2.5 py-1 text-[11px] font-bold text-primary">Open feed</span>
-                  )}
+                    {c.isFree && (
+                      <span className="absolute left-3 top-3 rounded-full bg-lime px-2.5 py-1 text-[11px] font-bold text-primary">Open feed</span>
+                    )}
 
-                  {isSuperAdmin && (
-                    <div className="absolute right-3 top-3 flex gap-1.5">
-                      <button
-                        onClick={() => setEditingCommunity(c)}
-                        title="Edit community"
-                        aria-label={`Edit ${c.name}`}
-                        className="flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-muted shadow-card backdrop-blur transition-all hover:scale-105 hover:text-accent"
-                      >
-                        <Pencil size={14} />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(c)}
-                        disabled={deleting}
-                        title="Delete community"
-                        aria-label={`Delete ${c.name}`}
-                        className="flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-muted shadow-card backdrop-blur transition-all hover:scale-105 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex flex-1 flex-col p-4">
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-background ring-1 ring-divider">
-                      <CommunityBadgeIcon badgeUrl={c.badgeUrl} className="h-6 w-6 object-contain" />
-                    </span>
-                    <div className="min-w-0">
-                      <h2 className="truncate font-display text-base font-bold leading-tight text-primary">{c.name}</h2>
-                      <p className="truncate text-xs text-subtle">/{c.slug}</p>
-                    </div>
+                    {isSuperAdmin && (
+                      <div className="absolute right-3 top-3 flex gap-1.5">
+                        <button
+                          onClick={() => setEditingCommunity(c)}
+                          title="Edit community"
+                          aria-label={`Edit ${c.name}`}
+                          className="flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-muted shadow-card backdrop-blur transition-all hover:scale-105 hover:text-accent"
+                        >
+                          <Pencil size={14} />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(c)}
+                          disabled={deleting}
+                          title="Delete community"
+                          aria-label={`Delete ${c.name}`}
+                          className="flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-muted shadow-card backdrop-blur transition-all hover:scale-105 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    )}
                   </div>
-                  {c.description && <p className="mt-3 line-clamp-2 text-xs leading-relaxed text-muted">{c.description}</p>}
-                  {c.tags.length > 0 && (
-                    <div className="mt-3 flex flex-wrap gap-1.5">
-                      {c.tags.slice(0, 4).map((tag) => (
-                        <span key={tag} className="rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-bold text-primary">
-                          {tag}
-                        </span>
-                      ))}
-                      {c.tags.length > 4 && (
-                        <span className="rounded-full bg-divider px-2 py-0.5 text-[10px] font-bold text-muted" title={c.tags.slice(4).join(", ")}>
-                          +{c.tags.length - 4}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                  <div className="mt-auto pt-4">
-                    <div className="flex items-center justify-between border-t border-divider pt-3">
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-lime/40 px-2.5 py-1 text-[11px] font-bold text-primary">
-                        <Users size={12} aria-hidden />
-                        <span className="tabular-nums">{c.memberCount.toLocaleString("en-IN")}</span> member{c.memberCount === 1 ? "" : "s"}
+
+                  <div className="flex flex-1 flex-col p-4">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-background ring-1 ring-divider">
+                        <CommunityBadgeIcon badgeUrl={c.badgeUrl} className="h-6 w-6 object-contain" />
                       </span>
-                      {c.paymentLink && (
-                        <span className="text-[11px] font-semibold text-muted" title={c.paymentLink}>Payment link set</span>
-                      )}
+                      <div className="min-w-0">
+                        <h2 className="truncate font-display text-base font-bold leading-tight text-primary">{c.name}</h2>
+                        <p className="truncate text-xs text-subtle">/{c.slug}</p>
+                      </div>
+                    </div>
+                    {c.description && <p className="mt-3 line-clamp-2 text-xs leading-relaxed text-muted">{c.description}</p>}
+                    {c.tags.length > 0 && (
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        {c.tags.slice(0, 4).map((tag) => (
+                          <span key={tag} className="rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-bold text-primary">
+                            {tag}
+                          </span>
+                        ))}
+                        {c.tags.length > 4 && (
+                          <span className="rounded-full bg-divider px-2 py-0.5 text-[10px] font-bold text-muted" title={c.tags.slice(4).join(", ")}>
+                            +{c.tags.length - 4}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    <div className="mt-auto pt-4">
+                      <div className="flex items-center justify-between border-t border-divider pt-3">
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-lime/40 px-2.5 py-1 text-[11px] font-bold text-primary">
+                          <Users size={12} aria-hidden />
+                          <span className="tabular-nums">{c.memberCount.toLocaleString("en-IN")}</span> member{c.memberCount === 1 ? "" : "s"}
+                        </span>
+                        {c.paymentLink && (
+                          <span className="text-[11px] font-semibold text-muted" title={c.paymentLink}>Payment link set</span>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              </article>
-            );
-          })}
+                </article>
+              );
+            })}
+          </div>
+          <Pagination
+            page={page}
+            pageSize={PAGE_SIZE}
+            total={visible.length}
+            noun={visible.length === 1 ? "community" : "communities"}
+            onPage={goToPage}
+          />
         </div>
       )}
 
