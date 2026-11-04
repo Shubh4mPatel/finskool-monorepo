@@ -1,16 +1,22 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { AlertTriangle, ArrowRight, CheckCircle2 } from "lucide-react";
 import { api } from "@/lib/api";
+import { fetchCursorPage } from "@/lib/cursorPages";
 import { formatInr } from "@/lib/services";
 import type { AdminServiceRequest } from "@/lib/services";
 import { timeAgo } from "@/lib/tickets";
 import type { TicketPage } from "@/lib/tickets";
 import { EmptyState, Skeleton } from "@/components/admin/dashboard/Panel";
 import { TintAvatar } from "@/components/admin/dashboard/TintAvatar";
+import Pagination from "@/components/ui/Pagination";
+
+const PAGE_SIZE = 10;
+const listUrl = (cursor?: string) =>
+  `/api/v1/admin/services?review=true&limit=${PAGE_SIZE}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
 
 // Payments that reached Razorpay but could not be applied (amount mismatch, quote already replaced...).
 // An admin refunds them in Razorpay, then resolves the flag on the request. Notifications land here.
@@ -19,19 +25,36 @@ function PaymentFlagsContent() {
   const [rows, setRows] = useState<AdminServiceRequest[] | null>(null);
   const [error, setError] = useState(false);
   const [now] = useState(() => Date.now());
+  const [page, setPage] = useState(1);
+  // The page the rows on screen belong to: while it differs from `page`, a new page is on its way.
+  const [loadedPage, setLoadedPage] = useState(1);
+  // Flagged payments across every page — what the page numbers are counted from.
+  const [total, setTotal] = useState(0);
+  // The server pages by cursor; the cursors met so far let a click on a page number go straight there.
+  const cursors = useRef<string[]>([]);
+  const listRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     try {
-      const page = await api.get<TicketPage<AdminServiceRequest>>("/api/v1/admin/services?review=true&limit=50");
-      setRows(page.items);
+      const res = await fetchCursorPage((cursor) => api.get<TicketPage<AdminServiceRequest>>(listUrl(cursor)), page, cursors.current);
+      cursors.current = res.cursors;
+      setRows(res.data.items);
+      setTotal(res.data.total ?? res.data.items.length);
+      setLoadedPage(res.page);
+      // Flags were resolved meanwhile and this page is gone: land on the last one that exists.
+      if (res.page !== page) setPage(res.page);
       setError(false);
     } catch {
       setError(true);
     }
-  }, []);
+  }, [page]);
+
+  function goToPage(next: number) {
+    setPage(next);
+    listRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
   }, [load]);
 
@@ -45,7 +68,7 @@ function PaymentFlagsContent() {
         </p>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-divider bg-white">
+      <div ref={listRef} className="scroll-mt-4 overflow-hidden rounded-2xl border border-divider bg-white">
         {rows === null && !error ? (
           <div className="flex flex-col gap-3 p-5" aria-label="Loading">
             {[0, 1, 2].map(i => (
@@ -82,6 +105,16 @@ function PaymentFlagsContent() {
               </span>
             </Link>
           ))
+        )}
+        {rows && rows.length > 0 && !error && (
+          <Pagination
+            className={`px-5 pb-4 transition-opacity duration-300 ${loadedPage !== page ? "opacity-50" : ""}`}
+            page={page}
+            pageSize={PAGE_SIZE}
+            total={total}
+            noun={total === 1 ? "flagged payment" : "flagged payments"}
+            onPage={goToPage}
+          />
         )}
       </div>
     </div>

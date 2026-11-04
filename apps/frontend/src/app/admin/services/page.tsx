@@ -10,7 +10,6 @@ import {
   CheckCircle2,
   FileText,
   Inbox,
-  Loader2,
   Search,
   SearchX,
   Send,
@@ -20,12 +19,14 @@ import {
   X,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { fetchCursorPage } from "@/lib/cursorPages";
 import { useIsSuperAdmin } from "@/lib/session";
 import { formatInr } from "@/lib/services";
 import type { AdminServiceRequest, ServiceStats } from "@/lib/services";
 import { timeAgo } from "@/lib/tickets";
 import type { TicketPage } from "@/lib/tickets";
 import { ticketSocketStore } from "@/store/tickets/ticketSocketStore";
+import Pagination from "@/components/ui/Pagination";
 import { pillClass } from "@/components/ui/Select";
 import { EmptyState, Skeleton, stagger, TH } from "@/components/admin/dashboard/Panel";
 import { TintAvatar } from "@/components/admin/dashboard/TintAvatar";
@@ -34,7 +35,7 @@ import { RequestStatusBadge } from "@/components/admin/services/ServiceBadges";
 
 type Tab = "all" | "unassigned" | "mine" | "requested" | "quote_sent" | "paid" | "closed" | "review";
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 10;
 
 // "Unassigned" / "Mine" are open-request counts in /stats, so those tabs list open requests only.
 function tabParams(tab: Tab): Record<string, string> {
@@ -70,11 +71,11 @@ function AdminServicesInbox() {
   const [search, setSearch] = useState("");
 
   const [requests, setRequests] = useState<AdminServiceRequest[]>([]);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  // Requests matching the filters across every page — what the page numbers are counted from.
+  const [matching, setMatching] = useState(0);
   const [stats, setStats] = useState<ServiceStats | null>(null);
-  // The query the current `requests` belong to — "loading" is simply "not loaded for the current filters yet".
+  // The filters and page the current `requests` belong to — "loading" is simply "not loaded for these yet".
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState(false);
   const [now, setNow] = useState(() => Date.now());
 
@@ -119,64 +120,66 @@ function AdminServicesInbox() {
 
   // Guards against an older, slower response overwriting a newer one (fast tab switching).
   const requestSeq = useRef(0);
-  // Pages pulled in with "Load more". A live refresh re-fetches that many pages, so it updates rows in
-  // place instead of collapsing the list back to the first page.
-  const pagesLoaded = useRef(1);
 
-  const queryKey = buildQuery();
-  const loading = loadedKey !== queryKey;
+  // The page belongs to the filters it was picked under: change the tab, a filter or the search and it falls back
+  // to page 1 by itself.
+  const filterKey = buildQuery();
+  const [pageState, setPageState] = useState({ key: filterKey, page: 1 });
+  const page = pageState.key === filterKey ? pageState.page : 1;
+  const loadedFor = `${filterKey}#${page}`;
+  const loading = loadedKey !== loadedFor;
 
+  // The server pages by cursor; the cursors met so far let a click on a page number go straight there.
+  const cursorCache = useRef<{ key: string; cursors: string[] }>({ key: filterKey, cursors: [] });
+
+  // One page plus the counters. `fresh` ignores the remembered cursors and walks from page 1, which a live refresh
+  // needs because new activity moves requests between pages. Pure fetch — state is applied by `load`.
   const fetchRequests = useCallback(
-    async (pages: number) => {
-      const [first, s] = await Promise.all([
-        api.get<TicketPage<AdminServiceRequest>>(`/api/v1/admin/services?${buildQuery()}`),
+    async (wanted: number, fresh: boolean) => {
+      const known = !fresh && cursorCache.current.key === buildQuery() ? cursorCache.current.cursors : [];
+      const [result, s] = await Promise.all([
+        fetchCursorPage((cursor) => api.get<TicketPage<AdminServiceRequest>>(`/api/v1/admin/services?${buildQuery(cursor)}`), wanted, known),
         api.get<ServiceStats>("/api/v1/admin/services/stats"),
       ]);
-      let items = first.items;
-      let nextCursor = first.nextCursor;
-      for (let i = 1; i < pages && nextCursor; i++) {
-        const page = await api.get<TicketPage<AdminServiceRequest>>(`/api/v1/admin/services?${buildQuery(nextCursor)}`);
-        const seen = new Set(items.map((r) => r.id));
-        items = [...items, ...page.items.filter((r) => !seen.has(r.id))];
-        nextCursor = page.nextCursor;
-      }
-      return { items, nextCursor, stats: s };
+      return { ...result, stats: s };
     },
     [buildQuery],
   );
 
   const load = useCallback(
-    (pages: number) => {
+    (fresh: boolean) => {
       const seq = ++requestSeq.current;
       const key = buildQuery();
-      return fetchRequests(pages).then(
+      return fetchRequests(page, fresh).then(
         (res) => {
           if (seq !== requestSeq.current) return;
-          setRequests(res.items);
-          setNextCursor(res.nextCursor);
+          cursorCache.current = { key, cursors: res.cursors };
+          setRequests(res.data.items);
+          setMatching(res.data.total ?? res.data.items.length);
           setStats(res.stats);
           setNow(Date.now());
           setError(false);
-          setLoadedKey(key);
+          // Requests were closed or removed meanwhile and this page is gone: land on the last one that exists.
+          if (res.page !== page) setPageState({ key, page: res.page });
+          setLoadedKey(`${key}#${res.page}`);
           window.dispatchEvent(new Event("admin-services:updated"));
         },
         () => {
           if (seq !== requestSeq.current) return;
           setError(true);
-          setLoadedKey(key);
+          setLoadedKey(`${key}#${page}`);
         },
       );
     },
-    [buildQuery, fetchRequests],
+    [buildQuery, fetchRequests, page],
   );
 
-  // New filters / search start again from the first page.
+  // New filters / search / page: load it, reusing the cursors already known.
   useEffect(() => {
-    pagesLoaded.current = 1;
-    load(1);
+    load(false);
   }, [load]);
 
-  // Live: any service activity refreshes the list + counters (coalesced so a burst is one reload).
+  // Live: any service activity refreshes the page + counters (coalesced so a burst is one reload).
   useEffect(() => {
     ticketSocketStore.connect();
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -184,7 +187,7 @@ function AdminServicesInbox() {
       if (timer) return;
       timer = setTimeout(() => {
         timer = null;
-        load(pagesLoaded.current);
+        load(true);
       }, 400);
     };
     const offEvents = ticketSocketStore.subscribeServices(refresh);
@@ -196,22 +199,13 @@ function AdminServicesInbox() {
     };
   }, [load]);
 
-  async function loadMore() {
-    if (!nextCursor || loadingMore) return;
-    setLoadingMore(true);
-    try {
-      const page = await api.get<TicketPage<AdminServiceRequest>>(`/api/v1/admin/services?${buildQuery(nextCursor)}`);
-      setRequests((prev) => [...prev, ...page.items.filter((r) => !prev.some((p) => p.id === r.id))]);
-      setNextCursor(page.nextCursor);
-      pagesLoaded.current += 1;
-    } catch {
-      // keep the current list; the button stays so the admin can retry
-    } finally {
-      setLoadingMore(false);
-    }
+  const listRef = useRef<HTMLElement>(null);
+  function goToPage(next: number) {
+    setPageState({ key: filterKey, page: next });
+    listRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  const total = stats ? stats.requested + stats.quoteSent + stats.paid + stats.closed : undefined;
+  const allRequests = stats ? stats.requested + stats.quoteSent + stats.paid + stats.closed : undefined;
 
   // `loading` = nothing to show yet. After the first load, a changed filter keeps the current rows on
   // screen (dimmed) until the new ones arrive, rather than swapping them for a spinner.
@@ -337,7 +331,7 @@ function AdminServicesInbox() {
         />
       </div>
 
-      <section className="animate-enter rounded-2xl bg-white shadow-card ring-1 ring-primary/[0.04]" style={{ animationDelay: "260ms" }}>
+      <section ref={listRef} className="animate-enter scroll-mt-4 rounded-2xl bg-white shadow-card ring-1 ring-primary/[0.04]" style={{ animationDelay: "260ms" }}>
         {/* Filters */}
         <div className="flex flex-col gap-3 border-b border-divider p-4 sm:p-5">
           <div className="flex flex-wrap items-center gap-3">
@@ -368,7 +362,7 @@ function AdminServicesInbox() {
           </div>
 
           <div role="group" aria-label="Show requests" className="flex w-fit max-w-full flex-wrap rounded-full bg-background p-1">
-            <TabButton active={tab === "all"} label="All" count={total} onClick={() => setTab("all")} />
+            <TabButton active={tab === "all"} label="All" count={allRequests} onClick={() => setTab("all")} />
             <TabButton active={tab === "unassigned"} label="Unassigned" count={stats?.unassigned} onClick={() => setTab("unassigned")} />
             <TabButton active={tab === "mine"} label="Mine" count={stats?.mine} onClick={() => setTab("mine")} />
             <TabButton active={tab === "requested"} label="Requested" count={stats?.requested} onClick={() => setTab("requested")} />
@@ -389,7 +383,7 @@ function AdminServicesInbox() {
             <span className="flex flex-col items-center gap-3">
               Couldn&apos;t load requests.
               <button
-                onClick={() => { setLoadedKey(null); pagesLoaded.current = 1; load(1); }}
+                onClick={() => { setLoadedKey(null); load(true); }}
                 className="rounded-full bg-primary px-5 py-2 text-sm font-bold text-white transition-all hover:-translate-y-px hover:bg-[#1c4c48]"
               >
                 Retry
@@ -491,22 +485,14 @@ function AdminServicesInbox() {
 
         {/* Footer */}
         {!firstLoad && !error && requests.length > 0 && (
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-divider px-5 py-4">
-            <p className="text-sm text-muted">
-              Showing <span className="font-semibold tabular-nums text-primary">{requests.length}</span> request{requests.length === 1 ? "" : "s"}
-              {nextCursor ? "" : " — that's all of them"}
-            </p>
-            {nextCursor && (
-              <button
-                onClick={loadMore}
-                disabled={loadingMore}
-                className="flex items-center gap-2 rounded-full border border-divider bg-white px-5 py-2 text-sm font-semibold text-primary transition-all hover:border-accent hover:text-accent disabled:opacity-50"
-              >
-                {loadingMore && <Loader2 size={14} className="animate-spin" />}
-                Load more
-              </button>
-            )}
-          </div>
+          <Pagination
+            className="px-5 pb-4"
+            page={page}
+            pageSize={PAGE_SIZE}
+            total={matching}
+            noun={matching === 1 ? "request" : "requests"}
+            onPage={goToPage}
+          />
         )}
       </section>
     </div>

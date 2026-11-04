@@ -64,6 +64,8 @@ export interface AdminTicketDetail extends AdminTicket {
 export interface TicketPage<T> {
   items: T[];
   nextCursor: string | null;
+  /** The admin ticket and service lists only: rows matching the filters across every page. */
+  total?: number;
 }
 
 export interface TicketStats {
