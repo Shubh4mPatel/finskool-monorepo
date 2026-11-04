@@ -7,6 +7,7 @@ import { formatMonth, performanceApi, recentMonths, type BoardRef, type Performa
 import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import Modal from "@/components/ui/Modal";
+import Select from "@/components/ui/Select";
 import { FormField, inputCls, primaryBtn, secondaryBtn } from "@/components/admin/members/memberUi";
 
 /** Add or edit a hit-rate card: the months it runs from and to, both inclusive. */
@@ -36,6 +37,7 @@ export default function PeriodModal({
     }
     return [...all].sort().reverse();
   }, [period]);
+  const monthOptions = useMemo(() => months.map(m => ({ value: m, label: formatMonth(m) })), [months]);
 
   const [from, setFrom] = useState(period?.fromMonth ?? months[Math.min(5, months.length - 1)]!);
   const [to, setTo] = useState(period?.toMonth ?? months[0]!);
@@ -112,22 +114,28 @@ export default function PeriodModal({
         The card counts the trades given between these two months, and how many of them have met their target.
       </p>
       <FormField label="From">
-        <select value={from} onChange={e => setFrom(e.target.value)} disabled={busy} className={inputCls()}>
-          {months.map(m => (
-            <option key={m} value={m}>
-              {formatMonth(m)}
-            </option>
-          ))}
-        </select>
+        <Select
+          value={from}
+          onChange={setFrom}
+          options={monthOptions}
+          ariaLabel="From month"
+          portal
+          disabled={busy}
+          className="w-full"
+          triggerClassName={`${inputCls()} relative flex items-center text-left disabled:cursor-not-allowed disabled:opacity-60`}
+        />
       </FormField>
       <FormField label="To" error={invalid ? "The period cannot end before it starts" : undefined}>
-        <select value={to} onChange={e => setTo(e.target.value)} disabled={busy} className={inputCls(invalid ? "x" : undefined)}>
-          {months.map(m => (
-            <option key={m} value={m}>
-              {formatMonth(m)}
-            </option>
-          ))}
-        </select>
+        <Select
+          value={to}
+          onChange={setTo}
+          options={monthOptions}
+          ariaLabel="To month"
+          portal
+          disabled={busy}
+          className="w-full"
+          triggerClassName={`${inputCls(invalid ? "x" : undefined)} relative flex items-center text-left disabled:cursor-not-allowed disabled:opacity-60`}
+        />
       </FormField>
     </Modal>
   );

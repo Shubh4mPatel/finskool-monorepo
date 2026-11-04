@@ -6,6 +6,7 @@ import { ApiError } from "@/lib/api";
 import { KIND_LABEL, KIND_ORDER, performanceApi, type BoardList, type PerformanceKind } from "@/lib/performance";
 import { useToast } from "@/components/ui/Toast";
 import Modal from "@/components/ui/Modal";
+import Select from "@/components/ui/Select";
 import { FormField, inputCls, primaryBtn, secondaryBtn } from "@/components/admin/members/memberUi";
 
 /** Super admin: attach a Performance board of one kind to a community. */
@@ -63,23 +64,29 @@ export default function LinkBoardModal({
       ) : (
         <>
           <FormField label="Board">
-            <select value={kind} onChange={e => setKind(e.target.value as PerformanceKind)} disabled={busy} className={inputCls()}>
-              {KIND_ORDER.map(k => (
-                <option key={k} value={k}>
-                  {KIND_LABEL[k]}
-                </option>
-              ))}
-            </select>
+            <Select
+              value={kind}
+              onChange={v => setKind(v as PerformanceKind)}
+              options={KIND_ORDER.map(k => ({ value: k, label: KIND_LABEL[k] }))}
+              ariaLabel="Board"
+              portal
+              searchable={false}
+              disabled={busy}
+              className="w-full"
+              triggerClassName={`${inputCls()} relative flex items-center text-left disabled:cursor-not-allowed disabled:opacity-60`}
+            />
           </FormField>
           <FormField label="Community">
-            <select value={communityId} onChange={e => setCommunityId(e.target.value)} disabled={busy} className={inputCls()}>
-              {unlinked.map(c => (
-                <option key={c.communityId} value={c.communityId}>
-                  {c.name}
-                  {c.type ? ` (${c.type})` : ""}
-                </option>
-              ))}
-            </select>
+            <Select
+              value={communityId}
+              onChange={setCommunityId}
+              options={unlinked.map(c => ({ value: c.communityId, label: c.name, ...(c.type ? { hint: c.type } : {}) }))}
+              ariaLabel="Community"
+              portal
+              disabled={busy}
+              className="w-full"
+              triggerClassName={`${inputCls()} relative flex items-center text-left disabled:cursor-not-allowed disabled:opacity-60`}
+            />
           </FormField>
           <p className="text-xs text-muted">The free community cannot have a board. Each community has at most one.</p>
         </>

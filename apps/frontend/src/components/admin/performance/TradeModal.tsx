@@ -18,6 +18,7 @@ import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import Modal from "@/components/ui/Modal";
 import DatePicker from "@/components/ui/DatePicker";
+import Select from "@/components/ui/Select";
 import { FormField, inputCls, primaryBtn, secondaryBtn } from "@/components/admin/members/memberUi";
 
 type Errors = Partial<Record<string, string>>;
@@ -283,16 +284,21 @@ export default function TradeModal({
         )}
 
         <FormField label="Free users">
-          <select
+          <Select
             value={form.visibility}
-            onChange={e => set("visibility", e.target.value as TradeVisibility)}
+            onChange={v => set("visibility", v as TradeVisibility)}
+            options={[
+              { value: "auto", label: "Auto (follow the rules)" },
+              { value: "show", label: "Show" },
+              { value: "hide", label: "Hide" },
+            ]}
+            ariaLabel="Free users"
+            portal
+            searchable={false}
             disabled={busy}
-            className={inputCls()}
-          >
-            <option value="auto">Auto (follow the rules)</option>
-            <option value="show">Show</option>
-            <option value="hide">Hide</option>
-          </select>
+            className="w-full"
+            triggerClassName={`${inputCls()} relative flex items-center text-left disabled:cursor-not-allowed disabled:opacity-60`}
+          />
         </FormField>
       </div>
       {!intraday && (

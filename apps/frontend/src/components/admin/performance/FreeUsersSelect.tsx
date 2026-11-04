@@ -1,7 +1,7 @@
 "use client";
 
-import { ChevronDown } from "lucide-react";
 import type { TradeVisibility } from "@/lib/performance";
+import Select, { type SelectOption } from "@/components/ui/Select";
 
 const STYLE: Record<TradeVisibility, string> = {
   auto: "bg-divider text-muted",
@@ -9,11 +9,15 @@ const STYLE: Record<TradeVisibility, string> = {
   hide: "bg-red-50 text-red-600",
 };
 
-const LABEL: Record<TradeVisibility, string> = { auto: "Auto", show: "Show", hide: "Hide" };
+const OPTIONS: SelectOption[] = [
+  { value: "auto", label: "Auto", hint: "Follows the board's rules" },
+  { value: "show", label: "Show", hint: "Always visible to free members" },
+  { value: "hide", label: "Hide", hint: "Never visible to free members" },
+];
 
 /**
- * The per-row "Free users" control. A styled native <select>, not the shared Select: that one's popover is not
- * portalled and would be clipped by the table's horizontal scroll.
+ * The per-row "Free users" control: the site's own dropdown, drawn on the page (portal) so the table's horizontal
+ * scroll cannot clip its list. The pill takes the colour of the choice: grey Auto, green Show, red Hide.
  */
 export function FreeUsersSelect({
   value,
@@ -27,21 +31,17 @@ export function FreeUsersSelect({
   ariaLabel: string;
 }) {
   return (
-    <span className="relative inline-flex">
-      <select
-        aria-label={ariaLabel}
-        value={value}
-        disabled={disabled}
-        onChange={e => onChange(e.target.value as TradeVisibility)}
-        className={`cursor-pointer appearance-none rounded-full py-1 pl-3 pr-6 text-[11px] font-bold transition-opacity focus:outline-none focus-visible:ring-4 focus-visible:ring-accent/15 disabled:cursor-wait disabled:opacity-60 ${STYLE[value]}`}
-      >
-        {(Object.keys(LABEL) as TradeVisibility[]).map(v => (
-          <option key={v} value={v}>
-            {LABEL[v]}
-          </option>
-        ))}
-      </select>
-      <ChevronDown size={11} aria-hidden className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 opacity-70" />
-    </span>
+    <Select
+      value={value}
+      onChange={v => onChange(v as TradeVisibility)}
+      options={OPTIONS}
+      ariaLabel={ariaLabel}
+      portal
+      compact
+      searchable={false}
+      disabled={disabled}
+      className="inline-flex"
+      triggerClassName={`relative flex items-center gap-1 rounded-full py-1 pl-3 text-[11px] font-bold transition-opacity focus:outline-none focus-visible:ring-4 focus-visible:ring-accent/15 disabled:cursor-wait disabled:opacity-60 ${STYLE[value]}`}
+    />
   );
 }
