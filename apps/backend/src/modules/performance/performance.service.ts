@@ -46,12 +46,16 @@ import type {
 import {
   SEGMENTS_BY_KIND,
   buildTradeKey,
+  inMonthRange,
   isoDate,
   isoMonth,
+  monthRangeOf,
   parseIsoDate,
   parseIsoMonth,
+  rangeLabel,
   resolveSegment,
   shortMonth,
+  type MonthRange,
 } from './performance.shared.js'
 import {
   intradayPatchSchema,
@@ -244,11 +248,21 @@ export class PerformanceService {
     return row
   }
 
-  /** Board-wide numbers, over every trade in the segment whoever is looking and whatever month is filtered. */
-  private async summarise(board: PerformanceBoard, segment: PerformanceSegment, trades: TradeRow[]): Promise<SummaryDTO> {
+  /**
+   * Board-wide numbers, over every trade in the segment whoever is looking. A mobile caller can narrow them to some
+   * months with `range`; the admin's fixed period cards still cover their own months either way.
+   */
+  private async summarise(
+    board: PerformanceBoard,
+    segment: PerformanceSegment,
+    trades: TradeRow[],
+    range: MonthRange | null = null,
+  ): Promise<SummaryDTO> {
+    const scoped = range === null ? trades : trades.filter(t => inMonthRange(t.tradeDate, range))
+
     if (board.kind === 'intraday') {
       const params = intradayParams(board)
-      const results = trades.map(t => intradayTrade({ side: t.side!, entryPrice: t.entryPrice, exitPrice: t.exitPrice! }, params))
+      const results = scoped.map(t => intradayTrade({ side: t.side!, entryPrice: t.entryPrice, exitPrice: t.exitPrice! }, params))
       return { kind: 'intraday', ...intradaySummary(results, params) }
     }
 
@@ -257,6 +271,7 @@ export class PerformanceService {
       swingTrade({ tradeDate: t.tradeDate, entryPrice: t.entryPrice, cmp: t.cmp, targetPct: t.targetPct, exitDate: t.exitDate }, kind),
     )
     const withStatus = trades.map((t, i) => ({ tradeDate: t.tradeDate, status: results[i]!.status }))
+    const scopedResults = results.filter((_, i) => inMonthRange(trades[i]!.tradeDate, range))
     const periods = await this.db.performancePeriod.findMany({
       where: { boardId: board.id, segment },
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
@@ -269,7 +284,21 @@ export class PerformanceService {
       label: `${shortMonth(p.fromMonth)} to ${shortMonth(p.toMonth)}`,
       ...periodStats(withStatus, p.fromMonth, p.toMonth),
     }))
-    return { kind, averageHoldingDays: averageHoldingDays(results), totalTrades: trades.length, periods: periodDTOs }
+    return {
+      kind,
+      averageHoldingDays: averageHoldingDays(scopedResults),
+      totalTrades: scopedResults.length,
+      periods: periodDTOs,
+      range:
+        range === null
+          ? null
+          : {
+              fromMonth: range.from,
+              toMonth: range.to,
+              label: rangeLabel(range),
+              ...periodStats(withStatus, parseIsoMonth(range.from), parseIsoMonth(range.to)),
+            },
+    }
   }
 
   // ─── Admin: boards ────────────────────────────────────────────────────────
@@ -733,14 +762,18 @@ export class PerformanceService {
     const board = await this.findBoard(communityId)
     const access = await this.accessFor(user, communityId)
     const segment = resolveSegment(board.kind, q.segment)
+    const range = monthRangeOf(q)
     const trades = await this.segmentTrades(board.id, segment)
 
-    const summary = await this.summarise(board, segment, trades)
+    const summary = await this.summarise(board, segment, trades, range)
+    // The free rules (days, quota) are worked out over the whole segment, as the admin sees them; the months picked
+    // then narrow what is shown and what is counted as held back.
     const visible = access === 'paid' ? null : freeVisibleIds(trades, rulesOf(board), todayIst())
-    const hiddenCount = visible === null ? null : trades.length - visible.size
+    const inRange = range === null ? trades : trades.filter(t => inMonthRange(t.tradeDate, range))
+    const hiddenCount = visible === null ? null : inRange.filter(t => !visible.has(t.id)).length
 
     const serials = new Map(trades.map((t, i) => [t.id, i + 1]))
-    let list = trades.filter(t => (visible === null || visible.has(t.id)) && (!q.month || isoMonth(t.tradeDate) === q.month))
+    let list = inRange.filter(t => visible === null || visible.has(t.id))
     // Newest first by (date, id), the exact order the cursor walks.
     list = list.sort((a, b) => b.tradeDate.getTime() - a.tradeDate.getTime() || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0))
 
@@ -766,6 +799,8 @@ export class PerformanceService {
       access,
       segment,
       segments: [...SEGMENTS_BY_KIND[board.kind]],
+      filter: range === null ? null : { fromMonth: range.from, toMonth: range.to },
+      months: [...new Set(trades.map(t => isoMonth(t.tradeDate)))].sort().reverse(),
       summary,
       noteText: noteText(board),
       hiddenCount,

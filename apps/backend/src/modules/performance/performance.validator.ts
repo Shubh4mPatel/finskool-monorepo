@@ -147,12 +147,31 @@ export const listTradesQuerySchema = z.object({
   order: z.enum(['asc', 'desc']).default('asc'),
 })
 
-export const mobileTradesQuerySchema = z.object({
-  segment: segment.optional(),
-  month: month.optional(),
-  cursor: z.string().min(1).max(200).optional(),
-  limit: z.coerce.number().int().min(1).max(50).default(20),
-})
+// `month` is one month; `fromMonth` + `toMonth` is a run of months. Either one narrows the summary and the trades
+// together. They are two ways to say the same thing, so mixing them, giving only one end, or running backwards is
+// a validation error rather than a guess.
+export const mobileTradesQuerySchema = z
+  .object({
+    segment: segment.optional(),
+    month: month.optional(),
+    fromMonth: month.optional(),
+    toMonth: month.optional(),
+    cursor: z.string().min(1).max(200).optional(),
+    limit: z.coerce.number().int().min(1).max(50).default(20),
+  })
+  .superRefine((q, ctx) => {
+    if (q.month !== undefined && (q.fromMonth !== undefined || q.toMonth !== undefined)) {
+      ctx.addIssue({ code: 'custom', path: ['month'], message: 'Use month, or fromMonth and toMonth, not both' })
+    } else if ((q.fromMonth === undefined) !== (q.toMonth === undefined)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: [q.fromMonth === undefined ? 'fromMonth' : 'toMonth'],
+        message: 'fromMonth and toMonth must be given together',
+      })
+    } else if (q.fromMonth !== undefined && q.toMonth !== undefined && q.fromMonth > q.toMonth) {
+      ctx.addIssue({ code: 'custom', path: ['toMonth'], message: 'toMonth cannot be before fromMonth' })
+    }
+  })
 
 export type SettingsInput = z.infer<typeof settingsSchema>
 export type ListTradesQuery = z.infer<typeof listTradesQuerySchema>

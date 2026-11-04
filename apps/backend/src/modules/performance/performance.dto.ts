@@ -91,12 +91,28 @@ export interface IntradaySummaryDTO extends IntradaySummary {
   kind: 'intraday'
 }
 
+/** Trades Given / Met / Met % for the months a caller picked, worked out on the spot (a period card without an id). */
+export interface RangeStatsDTO {
+  /** `YYYY-MM` */
+  fromMonth: string
+  toMonth: string
+  /** "Aug26 to Sep26", or "Aug26" for a single month */
+  label: string
+  given: number
+  met: number
+  metPct: number
+}
+
 export interface SwingSummaryDTO {
   kind: 'swing' | 'investor'
-  /** Mean holding days of closed trades, null until one closes. */
+  /** Mean holding days of closed trades, null until one closes. Over the picked months when a filter is given. */
   averageHoldingDays: number | null
+  /** Over the picked months when a filter is given. */
   totalTrades: number
+  /** The admin's fixed hit-rate cards. They always cover their own months, whatever filter the caller gave. */
   periods: PeriodDTO[]
+  /** The hit-rate card for the months the caller picked; null when no month filter was given. */
+  range: RangeStatsDTO | null
 }
 
 export type SummaryDTO = IntradaySummaryDTO | SwingSummaryDTO
@@ -155,10 +171,14 @@ export interface MobilePerformanceDTO {
   access: 'free' | 'paid'
   segment: PerformanceSegment
   segments: PerformanceSegment[]
-  /** Over every trade in the segment, the same for free and paid. */
+  /** The months the caller asked for, echoed back; null when they asked for everything. */
+  filter: { fromMonth: string; toMonth: string } | null
+  /** Every `YYYY-MM` that has a trade in this segment, newest first, to build the month pickers from. */
+  months: string[]
+  /** Over every trade in the segment (or in the picked months), the same for free and paid. */
   summary: SummaryDTO
   noteText: string | null
-  /** Trades in the segment a free viewer cannot see. Null for paid viewers. */
+  /** Trades in the segment (or in the picked months) a free viewer cannot see. Null for paid viewers. */
   hiddenCount: number | null
   items: MobileTradeRowDTO[]
   nextCursor: string | null

@@ -35,6 +35,35 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 /** "Oct25", the way the period cards name their range ends. */
 export const shortMonth = (d: Date): string => `${MONTHS[d.getUTCMonth()]}${String(d.getUTCFullYear()).slice(2)}`
 
+/** A run of whole months, both ends included, as `YYYY-MM` (which sorts the same as the calendar). */
+export interface MonthRange {
+  from: string
+  to: string
+}
+
+/**
+ * The months a mobile caller asked for: `month` is one month, `fromMonth` + `toMonth` is a run of them, and neither
+ * is "everything". The query schema has already made sure the two forms are not mixed and the run is not backwards.
+ */
+export function monthRangeOf(q: { month?: string | undefined; fromMonth?: string | undefined; toMonth?: string | undefined }): MonthRange | null {
+  if (q.month) return { from: q.month, to: q.month }
+  if (q.fromMonth && q.toMonth) return { from: q.fromMonth, to: q.toMonth }
+  return null
+}
+
+/** Whether a trade date falls in the range. No range means every date does. */
+export const inMonthRange = (date: Date, range: MonthRange | null): boolean => {
+  if (range === null) return true
+  const m = isoMonth(date)
+  return m >= range.from && m <= range.to
+}
+
+/** "Aug26" for one month, "Aug26 to Sep26" for a run: the same naming the period cards use. */
+export const rangeLabel = (range: MonthRange): string =>
+  range.from === range.to
+    ? shortMonth(parseIsoMonth(range.from))
+    : `${shortMonth(parseIsoMonth(range.from))} to ${shortMonth(parseIsoMonth(range.to))}`
+
 interface KeyFields {
   /** `YYYY-MM-DD` */
   tradeDate: string

@@ -82,13 +82,18 @@ mobilePerformanceRouter.get('/boards', controller.listBoardsMobile)
  *     tags: [Performance]
  *     summary: A community's trades and results
  *     description: >
- *       `summary` covers every trade in the segment and is the same for free and paid callers. `items` is every
- *       trade for a paid caller, and only the trades the admin allows for a free caller (`hiddenCount` says how many
- *       are held back; it is null for paid callers). Newest first, cursor-paginated.
+ *       `summary` covers every trade in the segment, or every trade in the months picked with `month` or
+ *       `fromMonth` + `toMonth`, and is the same for free and paid callers. `items` is every trade (in those months)
+ *       for a paid caller, and only the trades the admin allows for a free caller (`hiddenCount` says how many are
+ *       held back; it is null for paid callers). Newest first, cursor-paginated. `months` lists the months that have
+ *       trades, for building the pickers. On swing and investor boards `summary.range` is the Trades Given / Met /
+ *       Met % card for the picked months.
  *     parameters:
  *       - { name: communityId, in: path, required: true, schema: { type: string, format: uuid } }
  *       - { name: segment, in: query, required: false, description: "Investor boards only: investor, long_term or us_investment.", schema: { type: string, enum: [main, investor, long_term, us_investment] } }
- *       - { name: month, in: query, required: false, description: "Only trades from this month (YYYY-MM). Does not change `summary`.", schema: { type: string, example: "2026-10" } }
+ *       - { name: month, in: query, required: false, description: "One month (YYYY-MM): narrows both `summary` and `items`. Not with fromMonth / toMonth.", schema: { type: string, example: "2026-10" } }
+ *       - { name: fromMonth, in: query, required: false, description: "First month of a run (YYYY-MM), inclusive. Needs toMonth.", schema: { type: string, example: "2026-08" } }
+ *       - { name: toMonth, in: query, required: false, description: "Last month of a run (YYYY-MM), inclusive. Needs fromMonth and must not be before it.", schema: { type: string, example: "2026-09" } }
  *       - { name: cursor, in: query, required: false, schema: { type: string } }
  *       - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
  *     responses:
