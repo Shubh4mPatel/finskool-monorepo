@@ -95,12 +95,22 @@ The shape depends on `kind`. Check `summary.kind`.
   "averageHoldingDays": 46.3,
   "totalTrades": 48,
   "periods": [
-    { "id": "…", "segment": "main", "fromMonth": "2025-10", "toMonth": "2026-08", "label": "Oct25 to Aug26", "given": 44, "met": 34, "metPct": 77.27 }
+    { "id": "…", "segment": "main", "fromMonth": "2025-10", "toMonth": "2026-08", "label": "Oct25 to Aug26", "given": 44, "met": 34, "metPct": 77.27 },
+    { "id": "…", "segment": "main", "fromMonth": "2026-01", "toMonth": "2026-08", "label": "Jan26 to Aug26", "given": 32, "met": 23, "metPct": 71.88 }
   ]
 }
 ```
 
-- `averageHoldingDays` is the mean over trades that have closed, to one decimal, and `null` until one closes. Show "Shown on the app" style cards as the design asks.
+That is the Swing Alpha board as the admin sees it: **three cards in a row**, the same three the dashboard shows:
+
+| Card | From the response |
+|---|---|
+| **Average Holding Days** (`46.3`) | `summary.averageHoldingDays` (show "-" when it is `null`) |
+| **Oct25 to Aug26**: Trades Given 44, Trades Met 34, Met % 77.27% | `summary.periods[0]`: `label`, `given`, `met`, `metPct` |
+| **Jan26 to Aug26**: Trades Given 32, Trades Met 23, Met % 71.88% | `summary.periods[1]` |
+
+Draw **one card per entry in `periods`**, in the order given (the admin can add or remove cards at any time, so do not assume two). The two hit-rate cards are part of the app's summary, not an admin-only extra: they come in the same call as the average, for free and paid members alike. If the app only shows Average Holding Days, the cards are being dropped by the screen, not left out by the server.
+
 - Each entry in `periods` is a hit-rate card: **Trades Given** is `given`, **Trades Met** is `met`, **Met %** is `metPct`. `label` is ready to display. `periods` can be empty, in which case show no cards.
 - For an `investor` board the summary is **per segment**: pass `segment` and the numbers cover that segment only.
 

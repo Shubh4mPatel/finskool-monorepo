@@ -135,6 +135,58 @@ describe('free versus paid', () => {
   })
 })
 
+describe('hit-rate cards (the period cards the admin sets up)', () => {
+  // Two cards, as on the Swing Alpha dashboard: Oct25 to Aug26 and Jan26 to Aug26. Trades: 2 in Oct25, 1 in Jan26,
+  // 1 in Aug26, and 1 in Sep26 (outside both cards); the Oct25, Jan26 and Aug26 ones have an exit date (target met).
+  async function seedCards() {
+    const add = (symbol: string, date: string, exitDate: string | null) =>
+      prisma.performanceTrade.create({
+        data: { boardId: swingBoardId, segment: 'main', name: symbol, symbol, entryPrice: 100, cmp: 110, tradeKey: `${date}|${symbol}`, tradeDate: new Date(date), exitDate: exitDate ? new Date(exitDate) : null } as never,
+      })
+    await add('A1', '2025-10-07', '2025-10-20')
+    await add('A2', '2025-10-15', null)
+    await add('B1', '2026-01-12', '2026-02-02')
+    await add('C1', '2026-08-04', '2026-08-30')
+    await add('D1', '2026-09-16', '2026-10-19')
+    await prisma.performancePeriod.create({ data: { boardId: swingBoardId, segment: 'main', fromMonth: new Date('2025-10-01'), toMonth: new Date('2026-08-01') } })
+    await prisma.performancePeriod.create({ data: { boardId: swingBoardId, segment: 'main', fromMonth: new Date('2026-01-01'), toMonth: new Date('2026-08-01') } })
+  }
+
+  it('the app gets both cards, with given, met and met %, in the order the admin made them', async () => {
+    await seedCards()
+    const res = await get(paidMember, `/communities/${swing.id}`)
+    expect(res.status).toBe(200)
+    expect(res.body.data.summary.periods).toMatchObject([
+      { label: 'Oct25 to Aug26', fromMonth: '2025-10', toMonth: '2026-08', given: 4, met: 3, metPct: 75 },
+      { label: 'Jan26 to Aug26', fromMonth: '2026-01', toMonth: '2026-08', given: 2, met: 2, metPct: 100 },
+    ])
+  })
+
+  it('a free member gets the same two cards, counted over every trade, hidden ones included', async () => {
+    await seedCards()
+    const [free, paid] = await Promise.all([get(freeMember, `/communities/${swing.id}`), get(paidMember, `/communities/${swing.id}`)])
+    expect(free.body.data.summary.periods).toHaveLength(2)
+    expect(free.body.data.summary.periods).toEqual(paid.body.data.summary.periods)
+    expect(free.body.data.hiddenCount).toBeGreaterThan(0)
+  })
+
+  it('the cards do not change with the month filter, and a new card shows at once', async () => {
+    await seedCards()
+    const filtered = await get(paidMember, `/communities/${swing.id}?month=2026-09`)
+    expect(filtered.body.data.summary.periods).toHaveLength(2)
+    expect((filtered.body.data.items as Item[]).map(i => i.name)).toEqual(['D1'])
+    await prisma.performancePeriod.create({ data: { boardId: swingBoardId, segment: 'main', fromMonth: new Date('2025-10-01'), toMonth: new Date('2026-10-01') } })
+    const more = await get(paidMember, `/communities/${swing.id}`)
+    expect(more.body.data.summary.periods.map((p: { label: string }) => p.label)).toEqual(['Oct25 to Aug26', 'Jan26 to Aug26', 'Oct25 to Oct26'])
+    expect(more.body.data.summary.periods[2]).toMatchObject({ given: 5, met: 4, metPct: 80 })
+  })
+
+  it('a board with no cards sends an empty list, never a missing field', async () => {
+    const res = await get(paidMember, `/communities/${swing.id}`)
+    expect(res.body.data.summary.periods).toEqual([])
+  })
+})
+
 describe('the rule bar', () => {
   beforeEach(seedSwingTrades)
 

@@ -26,6 +26,7 @@ export function PeriodCards({ periods, onEdit }: { periods: Period[]; onEdit: (p
             <Figure label="Trades Met" value={String(p.met)} />
             <Figure label="Met %" value={formatPct(p.metPct)} tone="text-emerald-600" />
           </dl>
+          <p className="mt-3 text-[11px] text-subtle">Shown on the app</p>
         </Card>
       ))}
     </>
