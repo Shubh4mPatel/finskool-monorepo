@@ -2,22 +2,26 @@ import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import request from 'supertest'
 
 // Stand in for Razorpay: the invoice asks it how a plan was paid.
-const razorpay = vi.hoisted(() => ({ fetch: vi.fn() }))
+const razorpay = vi.hoisted(() => ({ fetch: vi.fn(), createOrder: vi.fn() }))
 vi.mock('../../src/lib/razorpay.js', () => ({
-  getRazorpayClient: () => ({ payments: { fetch: razorpay.fetch } }),
+  getRazorpayClient: () => ({ payments: { fetch: razorpay.fetch }, orders: { create: razorpay.createOrder } }),
   verifyPaymentSignature: vi.fn(),
   verifyWebhookSignature: vi.fn(),
 }))
 
 import { createApp } from '../../src/app.js'
+import { env } from '../../src/config/env.js'
 import { describePayment, maskUpiId } from '../../src/lib/payment-details.js'
+import { loadGstRules, priceWithGst } from '../../src/lib/plan-gst.js'
+import { PaymentsService } from '../../src/modules/payments/payments.service.js'
 import { issuePlanReceipt, renderReceiptPdf } from '../../src/lib/plan-receipt.js'
 import { buildReceiptView, formatDay, formatDayAndTime, formatRupees } from '../../src/lib/receipt-pdf.js'
 import { prisma, resetDb, createAdmin, createCommunity, createMobileMember, type TestAdmin } from '../helpers/fixtures.js'
 
 // The invoice a member gets for a plan: what it says (buildReceiptView), that it draws (renderReceiptPdf), what is
-// kept when it is issued (issuePlanReceipt), and the seller details it prints (Settings > Billing). Plan prices carry
-// no GST, so there is no tax split anywhere on it.
+// kept when it is issued (issuePlanReceipt), and the seller details it prints (Settings > Billing). A plan's price is
+// before GST: GST is added on top, Razorpay charges the total, and the invoice shows the split. Until the seller's
+// billing details are complete no GST is added, and the member gets a plain receipt with no tax lines.
 
 const app = createApp()
 
@@ -91,6 +95,11 @@ function receipt(over: Record<string, unknown> = {}) {
     amount: 7000,
     currency: 'INR',
     razorpayPaymentId: 'pay_PqR8sT2uV9wXyZ',
+    taxableValue: null,
+    gstRatePercent: null,
+    cgst: null,
+    sgst: null,
+    igst: null,
     periodStart: new Date('2026-10-30'),
     periodEnd: new Date('2027-04-29'),
     payment: { method: 'UPI', detail: 'aman.v•••@okhdfcbank', paidAt: '2026-10-30T05:12:00.000Z', orderId: 'order_PqR7aB3cD4eF' },
@@ -153,10 +162,62 @@ describe('what the invoice says', () => {
     expect(v.footer.fineprint.at(-1)).toBe('This is a computer-generated invoice and does not require a signature. Grievances: support@finskool21.com · scores.sebi.gov.in')
   })
 
-  it('has no tax split: plan prices carry no GST, so the total is what was paid', () => {
-    const printed = JSON.stringify(buildReceiptView(receipt()))
+  it('a plain receipt, where no GST was added, has no tax lines and its total is what was paid', () => {
+    const v = buildReceiptView(receipt())
+    expect(v.detailsHeading).toBe('INVOICE DETAILS')
+    expect(v.taxRows).toEqual([])
+    const printed = JSON.stringify(v)
     for (const word of ['CGST', 'SGST', 'IGST', 'Taxable', 'inclusive of GST', 'Place of supply']) expect(printed).not.toContain(word)
     expect(buildReceiptView(receipt({ amount: 1180 })).total).toBe('₹1,180.00')
+  })
+
+  describe('a tax invoice, where GST was added on top of the price', () => {
+    const taxed = (over: Record<string, unknown> = {}) =>
+      receipt({
+        number: 'FS/2026-27/0184',
+        buyer: { name: 'Aman Verma', email: 'aman.verma@example.com', phone: '+91 98765 43210', stateCode: '06', stateName: 'Haryana' },
+        taxableValue: 5932.2,
+        gstRatePercent: 18,
+        cgst: 533.9,
+        sgst: 533.9,
+        igst: 0,
+        ...over,
+      })
+
+    it('shows the taxable value, CGST and SGST that add up to the total paid', () => {
+      const v = buildReceiptView(taxed())
+      expect(v.detailsHeading).toBe('TAX INVOICE')
+      expect(v.taxRows).toEqual([
+        ['Taxable value', '₹5,932.20'],
+        ['CGST 9%', '₹533.90'],
+        ['SGST 9%', '₹533.90'],
+      ])
+      expect(v.item.amount).toBe('₹5,932.20') // the line is the price before GST
+      expect(v.total).toBe('₹7,000.00')
+      expect(v.totalInWords).toBe('Rupees Seven Thousand Only · inclusive of GST')
+      expect(v.amount).toBe('₹7,000.00')
+      expect(v.details).toContainEqual(['Place of supply', 'Haryana (06)'])
+      expect(5932.2 + 533.9 + 533.9).toBeCloseTo(7000, 2)
+    })
+
+    it('shows one IGST line for a sale made in another state', () => {
+      const v = buildReceiptView(taxed({ cgst: 0, sgst: 0, igst: 1067.8, buyer: { name: 'A', email: null, phone: '1', stateCode: '27', stateName: 'Maharashtra' } }))
+      expect(v.taxRows).toEqual([
+        ['Taxable value', '₹5,932.20'],
+        ['IGST 18%', '₹1,067.80'],
+      ])
+      expect(v.details).toContainEqual(['Place of supply', 'Maharashtra (27)'])
+    })
+
+    it('names a rate that does not halve evenly properly', () => {
+      expect(buildReceiptView(taxed({ gstRatePercent: 5 })).taxRows.map(r => r[0])).toEqual(['Taxable value', 'CGST 2.5%', 'SGST 2.5%'])
+    })
+
+    it('draws on one page', async () => {
+      const pdf = await renderReceiptPdf(taxed())
+      expect(pdf.subarray(0, 5).toString()).toBe('%PDF-')
+      expect((pdf.toString('latin1').match(/\/Type \/Page\b(?!s)/g) ?? []).length).toBe(1)
+    })
   })
 
   it('leaves out what it does not know, instead of printing blanks', () => {
@@ -333,6 +394,160 @@ describe('issuing it', () => {
     const numbers: string[] = []
     for (let i = 0; i < 3; i++) numbers.push((await issuePlanReceipt(prisma, (await paidOrder()).id)).number.split('/').at(-1)!)
     expect(numbers).toEqual(['0001', '0002', '0003'])
+  })
+})
+
+// ─── GST on top of the plan's price ─────────────────────────────────────────
+
+describe('GST on a plan', () => {
+  const ON = { applies: true, ratePercent: 18 }
+
+  it('adds 18% on top of the price, to the paisa: ₹5,932.20 becomes ₹7,000.00', () => {
+    expect(priceWithGst(5932.2, ON)).toEqual({ gstApplies: true, ratePercent: 18, basePaise: 593220, gstPaise: 106780, totalPaise: 700000 })
+    expect(priceWithGst('999', ON)).toMatchObject({ gstPaise: 17982, totalPaise: 117882 })
+    expect(priceWithGst(1000, ON)).toMatchObject({ gstPaise: 18000, totalPaise: 118000 })
+  })
+
+  it('rounds the GST half-up, once', () => {
+    expect(priceWithGst(100.05, ON).gstPaise).toBe(1801) // 18.009 -> 18.01
+    expect(priceWithGst(0.03, ON).gstPaise).toBe(1) // 0.0054 -> 0.01
+  })
+
+  it('adds nothing when GST does not apply', () => {
+    expect(priceWithGst(5932.2, { applies: false, ratePercent: 18 })).toEqual({ gstApplies: false, ratePercent: 0, basePaise: 593220, gstPaise: 0, totalPaise: 593220 })
+  })
+
+  describe('with the billing settings', () => {
+    let community: { id: string }
+    let member: { id: string }
+    let plan: { id: string }
+    const complete = { legalName: 'Finskool21', addressLine: 'C9 803, Sector 88', city: 'Faridabad', pincode: '121002', stateCode: '06', gstin: SELLER.gstin, sacCode: '998399', defaultGstRatePercent: 18 }
+
+    beforeEach(async () => {
+      razorpay.createOrder.mockReset()
+      razorpay.createOrder.mockResolvedValue({ id: 'order_new_1' })
+      Object.assign(env.razorpay, { keyId: 'rzp_test_stand_in', keySecret: 'stand_in_secret' })
+      await resetDb()
+      const boss = await createAdmin({ isSuperAdmin: true })
+      community = await createCommunity(boss.id, { name: 'Swing Alpha' })
+      member = await createMobileMember({ name: 'Aman Verma' })
+      plan = await prisma.plan.create({ data: { communityId: community.id, name: 'Half-yearly', durationMonths: 6, price: 5932.2 } })
+    })
+
+    afterAll(() => {
+      Object.assign(env.razorpay, { keyId: '', keySecret: '' })
+    })
+
+    const configure = (over: Record<string, unknown> = {}) =>
+      prisma.billingSettings.upsert({ where: { id: 'default' }, create: { id: 'default', ...complete, ...over } as never, update: { ...complete, ...over } as never })
+
+    it('applies once the seller details are complete and the rate is above zero, not before', async () => {
+      expect(await loadGstRules(prisma)).toEqual({ applies: false, ratePercent: 18 }) // a fresh install has no GSTIN yet
+      await configure()
+      expect(await loadGstRules(prisma)).toEqual({ applies: true, ratePercent: 18 })
+      await configure({ defaultGstRatePercent: 0 })
+      expect((await loadGstRules(prisma)).applies).toBe(false)
+      await configure({ defaultGstRatePercent: 18, gstin: null })
+      expect((await loadGstRules(prisma)).applies).toBe(false)
+    })
+
+    it('lists each plan with the price, the GST and what the member pays', async () => {
+      await configure()
+      const plans = await new PaymentsService(prisma).listPlans(community.id)
+      expect(plans).toEqual([{ id: plan.id, name: 'Half-yearly', durationMonths: 6, price: 5932.2, gstRatePercent: 18, gstAmount: 1067.8, totalAmount: 7000 }])
+    })
+
+    it('lists the plain price as the total while no GST is added', async () => {
+      const [listed] = await new PaymentsService(prisma).listPlans(community.id)
+      expect(listed).toMatchObject({ price: 5932.2, gstRatePercent: 0, gstAmount: 0, totalAmount: 5932.2 })
+    })
+
+    it('asks Razorpay for the price plus GST, and remembers the split it charged', async () => {
+      await configure()
+      const result = await new PaymentsService(prisma).createOrder(member.id, community.id, plan.id)
+
+      expect(razorpay.createOrder).toHaveBeenCalledWith(expect.objectContaining({ amount: 700000, currency: 'INR' }))
+      expect(result).toMatchObject({ orderId: 'order_new_1', amount: 700000, baseAmount: 593220, gstAmount: 106780, gstRatePercent: 18 })
+      const order = await prisma.planOrder.findUniqueOrThrow({ where: { razorpayOrderId: 'order_new_1' } })
+      expect([Number(order.amount), Number(order.baseAmount), Number(order.gstAmount), Number(order.gstRatePercent)]).toEqual([7000, 5932.2, 1067.8, 18])
+    })
+
+    it('keeps charging what the order said when the price or the rate changes before it is paid', async () => {
+      await configure()
+      await new PaymentsService(prisma).createOrder(member.id, community.id, plan.id)
+      await prisma.plan.update({ where: { id: plan.id }, data: { price: 9999 } })
+      await configure({ defaultGstRatePercent: 5 })
+      const order = await prisma.planOrder.findUniqueOrThrow({ where: { razorpayOrderId: 'order_new_1' } })
+      expect(Number(order.amount)).toBe(7000)
+      expect(Number(order.gstRatePercent)).toBe(18)
+    })
+
+    it('charges the plain price, with no split, while the billing details are incomplete', async () => {
+      const result = await new PaymentsService(prisma).createOrder(member.id, community.id, plan.id)
+      expect(razorpay.createOrder).toHaveBeenCalledWith(expect.objectContaining({ amount: 593220 }))
+      expect(result).toMatchObject({ amount: 593220, baseAmount: 593220, gstAmount: 0, gstRatePercent: 0 })
+      const order = await prisma.planOrder.findUniqueOrThrow({ where: { razorpayOrderId: 'order_new_1' } })
+      expect(order.baseAmount).toBeNull()
+      expect(order.gstAmount).toBeNull()
+    })
+
+    it('still refuses a plan whose total is under the ₹1 Razorpay minimum', async () => {
+      await configure()
+      await prisma.plan.update({ where: { id: plan.id }, data: { price: 0.5 } })
+      await expect(new PaymentsService(prisma).createOrder(member.id, community.id, plan.id)).rejects.toThrow(/minimum/)
+    })
+
+    it('issues a GST tax invoice for such an order, in the service invoices\' number series', async () => {
+      await configure()
+      razorpay.fetch.mockRejectedValue(new Error('no lookup'))
+      // 41 service invoices have already used up this year's series.
+      const fy = (await import('../../src/modules/services/services.billing.js')).financialYearOf(new Date())
+      await prisma.$executeRaw`INSERT INTO invoice_counters (financial_year, last_number) VALUES (${fy}, 41)`
+
+      await new PaymentsService(prisma).createOrder(member.id, community.id, plan.id)
+      const order = await prisma.planOrder.findUniqueOrThrow({ where: { razorpayOrderId: 'order_new_1' } })
+      await prisma.planOrder.update({ where: { id: order.id }, data: { status: 'paid', razorpayPaymentId: 'pay_gst_1' } })
+
+      const invoice = await issuePlanReceipt(prisma, order.id, { start: new Date('2026-10-30'), end: new Date('2027-04-29') })
+      expect(invoice.number).toBe(`FS/${fy}/0042`)
+      expect(Number(invoice.amount)).toBe(7000)
+      expect([invoice.taxableValue, invoice.cgst, invoice.sgst, invoice.igst, invoice.gstRatePercent].map(Number)).toEqual([5932.2, 533.9, 533.9, 0, 18])
+      expect(invoice.buyer).toMatchObject({ stateCode: '06', stateName: 'Haryana' })
+
+      const view = buildReceiptView(invoice)
+      expect(view.detailsHeading).toBe('TAX INVOICE')
+      expect(view.taxRows).toEqual([['Taxable value', '₹5,932.20'], ['CGST 9%', '₹533.90'], ['SGST 9%', '₹533.90']])
+      expect(view.total).toBe('₹7,000.00')
+    })
+
+    it('gives an order with no GST a plain receipt in its own series, which never uses up an invoice number', async () => {
+      razorpay.fetch.mockRejectedValue(new Error('no lookup'))
+      const fy = (await import('../../src/modules/services/services.billing.js')).financialYearOf(new Date())
+      await prisma.$executeRaw`INSERT INTO invoice_counters (financial_year, last_number) VALUES (${fy}, 41)`
+      await new PaymentsService(prisma).createOrder(member.id, community.id, plan.id)
+      const order = await prisma.planOrder.findUniqueOrThrow({ where: { razorpayOrderId: 'order_new_1' } })
+      await prisma.planOrder.update({ where: { id: order.id }, data: { status: 'paid', razorpayPaymentId: 'pay_plain_1' } })
+
+      const receipt = await issuePlanReceipt(prisma, order.id)
+      expect(receipt.number).toBe(`RCPT/${fy}/0001`)
+      expect(receipt.taxableValue).toBeNull()
+      expect(buildReceiptView(receipt).taxRows).toEqual([])
+      const series = await prisma.$queryRaw<{ last_number: number }[]>`SELECT last_number FROM invoice_counters WHERE financial_year = ${fy}`
+      expect(series[0]!.last_number).toBe(41) // untouched
+    })
+
+    it('tax invoices and plain receipts can reach the same sequence in a year', async () => {
+      razorpay.fetch.mockRejectedValue(new Error('no lookup'))
+      const orders = []
+      for (let i = 0; i < 2; i++) {
+        orders.push(await prisma.planOrder.create({ data: { userId: member.id, communityId: community.id, planId: plan.id, razorpayOrderId: `order_mix_${i}`, razorpayPaymentId: `pay_mix_${i}`, amount: 7000, status: 'paid', ...(i === 0 ? { baseAmount: 5932.2, gstAmount: 1067.8, gstRatePercent: 18 } : {}) } as never }))
+      }
+      await configure()
+      const [invoice, receipt] = [await issuePlanReceipt(prisma, orders[0]!.id), await issuePlanReceipt(prisma, orders[1]!.id)]
+      expect(invoice.sequence).toBe(1)
+      expect(receipt.sequence).toBe(1)
+      expect(invoice.number).not.toBe(receipt.number)
+    })
   })
 })
 

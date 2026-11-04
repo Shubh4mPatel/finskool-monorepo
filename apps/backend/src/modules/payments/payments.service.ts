@@ -17,6 +17,8 @@ import { AppError, BadRequestError, NotFoundError, ConflictError } from '../../s
 import { logger } from '../../shared/logger.js'
 import { subscriptionRouting } from '../../lib/notification-routing.js'
 import { issuePlanReceipt, renderReceiptInBackground } from '../../lib/plan-receipt.js'
+import { loadGstRules, planListItem, priceWithGst } from '../../lib/plan-gst.js'
+import { paiseToDecimal } from '../services/services.billing.js'
 import { NotificationType } from '../notifications/notifications.dto.js'
 import type {
   PlanListItemDTO,
@@ -56,7 +58,8 @@ export class PaymentsService {
       orderBy: { durationMonths: 'asc' },
       select: { id: true, name: true, durationMonths: true, price: true },
     })
-    return plans.map(p => ({ id: p.id, name: p.name, durationMonths: p.durationMonths, price: Number(p.price) }))
+    const rules = await loadGstRules(this.db)
+    return plans.map(p => planListItem(p, rules))
   }
 
   async createOrder(userId: string, communityId: string, planId: string): Promise<CreatePlanOrderResultDTO> {
@@ -69,7 +72,9 @@ export class PaymentsService {
       throw new NotFoundError('Plan not found')
     }
 
-    const amountPaise = Math.round(Number(plan.price) * 100)
+    // The plan's price is before GST; GST is added on top, so Razorpay charges the total.
+    const pricing = priceWithGst(plan.price, await loadGstRules(this.db))
+    const amountPaise = pricing.totalPaise
     // Razorpay rejects orders below ₹1 — a mispriced plan (e.g. an admin typo)
     // would otherwise surface as an opaque 500 from the orders.create() call below.
     if (amountPaise < 100) {
@@ -82,7 +87,7 @@ export class PaymentsService {
     }
 
     const keyMode = env.razorpay.keyId.startsWith('rzp_live_') ? 'live' : env.razorpay.keyId.startsWith('rzp_test_') ? 'test' : 'unrecognised'
-    logger.info({ userId, communityId, planId, amountPaise, keyMode }, 'payments.createOrder: asking Razorpay for an order')
+    logger.info({ userId, communityId, planId, amountPaise, gstPaise: pricing.gstPaise, keyMode }, 'payments.createOrder: asking Razorpay for an order')
     let order: { id: string }
     try {
       order = await getRazorpayClient().orders.create({
@@ -108,7 +113,11 @@ export class PaymentsService {
         communityId,
         planId,
         razorpayOrderId: order.id,
-        amount: plan.price,
+        amount: paiseToDecimal(pricing.totalPaise),
+        // The split is remembered as it was charged: the plan's price and the rate can change before it is paid.
+        ...(pricing.gstApplies
+          ? { baseAmount: paiseToDecimal(pricing.basePaise), gstAmount: paiseToDecimal(pricing.gstPaise), gstRatePercent: pricing.ratePercent.toFixed(2) }
+          : {}),
         currency: 'INR',
         status: 'created',
       },
@@ -123,6 +132,9 @@ export class PaymentsService {
       keyId: env.razorpay.keyId,
       planId,
       communityId,
+      baseAmount: pricing.basePaise,
+      gstAmount: pricing.gstPaise,
+      gstRatePercent: pricing.ratePercent,
     }
   }
 

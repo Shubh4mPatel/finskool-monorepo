@@ -27,6 +27,7 @@ import adminTicketsRoutes, { mobileTicketsRouter } from './modules/tickets/ticke
 import adminServicesRoutes, { mobileServicesRouter } from './modules/services/services.routes.js'
 import razorpayWebhookRoutes, { RAW_BODY_PATH_PREFIX } from './modules/services/razorpay-webhook.routes.js'
 import type { PlanListItemDTO } from './modules/payments/payments.dto.js'
+import { loadGstRules, planListItem } from './lib/plan-gst.js'
 import prisma from './lib/prisma.js'
 import { authenticate, requireMobileAuth } from './middlewares/auth.middleware.js'
 
@@ -214,10 +215,11 @@ export function createApp() {
         orderBy: { durationMonths: 'asc' },
         select: { id: true, communityId: true, name: true, durationMonths: true, price: true },
       })
+      const gstRules = await loadGstRules(prisma)
       const plansByCommunity = new Map<string, PlanListItemDTO[]>()
       for (const p of plans) {
         const list = plansByCommunity.get(p.communityId) ?? []
-        list.push({ id: p.id, name: p.name, durationMonths: p.durationMonths, price: Number(p.price) })
+        list.push(planListItem(p, gstRules))
         plansByCommunity.set(p.communityId, list)
       }
 

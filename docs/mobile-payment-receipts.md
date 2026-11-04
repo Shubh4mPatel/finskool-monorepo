@@ -2,7 +2,12 @@
 
 When a member pays for a community plan, the server issues a **payment receipt** (PDF), stores it, and attaches it to the "You're active" email. The app can list the receipts and open the PDF at any time.
 
-The PDF is laid out as an invoice (see "What the PDF shows" below), but plan prices carry no GST, so there is no tax split on it: the total is the amount paid. Service quotes still get a full GST invoice (see `mobile-quote-payment.md`).
+The PDF is laid out as an invoice (see "What the PDF shows" below). A plan's price is before GST and GST is added on top (see `mobile-community-payment-integration.md`), so:
+
+- **When GST was charged** (the seller's billing details are complete) the PDF is a **GST tax invoice**: the plan's price as the taxable value, CGST 9% and SGST 9% (or IGST 18%), and the total paid. It is numbered in the same series as the service invoices (`FS/2026-27/0184`).
+- **When no GST was added** it is a plain payment receipt with no tax lines, numbered `RCPT/2026-27/0003`. Those numbers never use up a GST invoice number.
+
+Service quotes still get their own GST invoice (see `mobile-quote-payment.md`).
 
 ## 1. List receipts
 
@@ -37,9 +42,10 @@ One A4 page, in the brand's colours and the Inter font (so the rupee sign prints
 |---|---|
 | Header | The logo and seller name, with "SEBI Registered Research Analyst · <registration no.>" when that number is set. On the right, **Amount paid** and "Paid on <date>" |
 | Billed to | The member's name, email and phone |
-| Invoice details | The receipt number (`RCPT/2026-27/0184`) and date |
-| Item | The community and plan, what the plan is, the SAC code (when set), the **days of access** it bought (first and last day), and the amount |
-| Total | The amount paid, and in words |
+| Invoice details | The number and date, and on a tax invoice the **place of supply** (the seller's own state, because members' states are not collected). The heading reads "TAX INVOICE" when GST was charged |
+| Item | The community and plan, what the plan is, the SAC code (when set), the **days of access** it bought (first and last day), and the amount (before GST on a tax invoice) |
+| Tax (tax invoice only) | Taxable value, then CGST 9% and SGST 9% (or IGST), each in rupees |
+| Total | The amount paid, and in words ("… · inclusive of GST" on a tax invoice) |
 | Payment | How it was paid (UPI / card / netbanking, with the id masked: `aman.v•••@okhdfcbank`, `Visa ••••4242`), paid through Razorpay, the time paid, the payment and order ids, and the status |
 | Note | "Access is active from <date> to <date> and does not renew automatically", and who to write to about billing |
 | Footer | Seller name and proprietor, address, GSTIN and PAN, contact email, phone and website, and the SEBI disclaimer |
@@ -52,7 +58,7 @@ Anything that is not known is left out rather than printed blank. In particular:
 
 Who sold it comes from **Settings > Billing** (super admin): legal name, address, GSTIN, SAC code, contact details, and the optional **Proprietor**, **PAN**, **SEBI registration no.** and **Website**. It is copied onto each receipt when it is issued, so changing the settings later does not alter receipts already issued.
 
-The JSON in sections 1 and 2 is unchanged: the app needs no update for the new look.
+The JSON in sections 1 and 2 is unchanged: `amount` is the total paid, GST included. The app needs no update for the new look.
 
 ## 3. Email
 

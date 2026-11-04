@@ -330,9 +330,9 @@ export default function BillingSettingsPage() {
         </Card>
 
         <div className="flex flex-col gap-5">
-          <Card icon={<Percent size={18} />} title="Quote defaults" subtitle="Applied to every new quote" delay={120}>
+          <Card icon={<Percent size={18} />} title="Quote defaults" subtitle="Applied to every new quote. The GST rate is also added on top of plan prices" delay={120}>
             <div className="grid grid-cols-2 gap-3">
-              <Field id={fid("defaultGstRatePercent")} label="GST rate" error={errors["defaultGstRatePercent"]}>
+              <Field id={fid("defaultGstRatePercent")} label="GST rate" hint="quotes and plans" error={errors["defaultGstRatePercent"]}>
                 <UnitInput unit="%" id={fid("defaultGstRatePercent")} value={form.defaultGstRatePercent} onChange={set("defaultGstRatePercent")} inputMode="decimal" className={`${cls("defaultGstRatePercent")} tabular-nums`} />
               </Field>
               <Field id={fid("defaultQuoteExpiryDays")} label="Quote valid for" error={errors["defaultQuoteExpiryDays"]}>

@@ -305,3 +305,49 @@ describe('Razorpay webhook for a plan purchase', () => {
     expect(current.validUntil.getTime()).toBeGreaterThan(new Date(daysFromNow(30)).getTime())
   })
 })
+
+// A plan's price is before GST. Once the seller's billing details are complete, GST is added on top and Razorpay is
+// asked for the total; the webhook accepts only that total, and the member gets a GST tax invoice.
+describe('GST on top of the plan price', () => {
+  beforeEach(async () => {
+    Object.assign(env.razorpay, { keyId: 'rzp_test_gst' })
+    await prisma.plan.update({ where: { id: planId }, data: { price: 999 } })
+    await prisma.billingSettings.create({
+      data: { id: 'default', legalName: 'Finskool21', addressLine: 'C9 803, Sector 88', city: 'Faridabad', pincode: '121002', stateCode: '06', gstin: '06ABCDE1234F1Z4', sacCode: '998399', defaultGstRatePercent: 18 },
+    })
+  })
+
+  it('shows the checkout page the price, the GST and the total to pay', async () => {
+    const { opened } = await openCheckout()
+    expect(opened.body.data).toMatchObject({ amount: 117882, baseAmount: 99900, gstAmount: 17982, gstRatePercent: 18 })
+  })
+
+  it('grants the plan for a payment of the total, records what was paid, and issues a GST tax invoice', async () => {
+    const { orderId } = await openCheckout()
+    const res = await webhook('payment.captured', orderId, 'pay_gst_1', 117882)
+
+    expect(res.status).toBe(200)
+    const subscription = await prisma.subscription.findFirstOrThrow({ where: { userId: member.id, communityId, isActive: true } })
+    expect(Number(subscription.payment)).toBe(1178.82)
+
+    const receipt = await prisma.planReceipt.findFirstOrThrow({ where: { userId: member.id } })
+    expect(receipt.number).toMatch(/^FS\/\d{4}-\d{2}\/0001$/)
+    expect([receipt.amount, receipt.taxableValue, receipt.cgst, receipt.sgst, receipt.igst, receipt.gstRatePercent].map(Number)).toEqual([1178.82, 999, 89.91, 89.91, 0, 18])
+  })
+
+  it('does not grant for a payment of only the price before GST', async () => {
+    const { orderId } = await openCheckout()
+    await webhook('payment.captured', orderId, 'pay_gst_2', 99900)
+
+    expect(await prisma.subscription.count({ where: { userId: member.id, communityId } })).toBe(0)
+    expect((await prisma.planOrder.findUniqueOrThrow({ where: { razorpayOrderId: orderId } })).status).toBe('created')
+  })
+
+  it('the member\'s page verifies a payment of the total the same way', async () => {
+    const { sessionToken, orderId } = await openCheckout()
+    const res = await verify(sessionToken, 'pay_gst_3', sign(orderId, 'pay_gst_3'))
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.payment).toBe(1178.82)
+  })
+})

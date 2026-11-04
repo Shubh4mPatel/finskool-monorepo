@@ -4,7 +4,7 @@ import { logger } from '../shared/logger.js'
 import { hasMemberAccess } from './community-access.js'
 import { NotFoundError, ForbiddenError } from '../shared/errors/index.js'
 import { loadBillingSettings } from '../modules/services/billing-settings.js'
-import { financialYearOf } from '../modules/services/services.billing.js'
+import { financialYearOf, formatInvoiceNumber, gstStateName, paiseToDecimal, rupeesToPaise, splitGst } from '../modules/services/services.billing.js'
 import { fetchPaymentSnapshot, type PaymentSnapshot } from './payment-details.js'
 import { renderReceiptPdf, type ReceiptBuyer, type ReceiptSeller } from './receipt-pdf.js'
 
@@ -21,8 +21,12 @@ const RECEIPT_PREFIX = 'RCPT'
 
 /**
  * Issues the receipt for a paid plan order, once. Safe to call again for the same order (a retry, or the
- * verify call racing the webhook): the second call returns the receipt the first one made. The number comes
- * from its own counter row ("R2026-27") so it never uses up a GST invoice number.
+ * verify call racing the webhook): the second call returns the receipt the first one made.
+ *
+ * When GST was added on top of the plan's price (the order remembers the split it charged) this is a GST tax invoice,
+ * numbered in the same series as the service invoices ("FS/2026-27/0185"), with the tax split into CGST + SGST (or
+ * IGST). Otherwise it is a plain receipt in its own series ("RCPT/2026-27/0003", counter row "R2026-27"), which never
+ * uses up a GST invoice number.
  */
 export async function issuePlanReceipt(db: PrismaClient, planOrderId: string, period?: ReceiptPeriod): Promise<PlanReceiptRow> {
   const existing = await db.planReceipt.findUnique({ where: { planOrderId } })
@@ -58,15 +62,27 @@ export async function issuePlanReceipt(db: PrismaClient, planOrderId: string, pe
   // cannot be had the invoice just has fewer details: the order id we already hold is kept.
   const looked = order.razorpayPaymentId ? await fetchPaymentSnapshot(order.razorpayPaymentId) : null
   const payment: PaymentSnapshot = { method: null, detail: null, paidAt: null, ...looked, orderId: looked?.orderId ?? order.razorpayOrderId }
-  const buyer: ReceiptBuyer = { name: order.user.name, email: order.user.email, phone: order.user.phone }
+  // GST on top of the price: split it the way the quote invoices do. A member's state is not collected, so the sale is
+  // taken to be made in the seller's own state (where the supplier's location decides when the recipient's is not on
+  // record), which is CGST + SGST.
+  const taxed = order.baseAmount !== null && order.gstAmount !== null
+  const sellerState = settings.stateCode ?? ''
+  const split = taxed ? splitGst(rupeesToPaise(order.gstAmount!.toString()), sellerState, sellerState) : null
+  const buyer: ReceiptBuyer = {
+    name: order.user.name,
+    email: order.user.email,
+    phone: order.user.phone,
+    ...(taxed && sellerState ? { stateCode: sellerState, stateName: gstStateName(sellerState) } : {}),
+  }
   const issuedAt = new Date()
   const financialYear = financialYearOf(issuedAt)
   const description = `${order.community.name} - ${order.plan.name} (${order.plan.durationMonths} month${order.plan.durationMonths === 1 ? '' : 's'})`
 
   try {
     return await db.$transaction(async tx => {
+      // Tax invoices count in the service invoices' series (one consecutive run for the year); plain receipts in theirs.
       const counter = await tx.$queryRaw<{ last_number: number }[]>`
-        INSERT INTO invoice_counters (financial_year, last_number) VALUES (${`R${financialYear}`}, 1)
+        INSERT INTO invoice_counters (financial_year, last_number) VALUES (${taxed ? financialYear : `R${financialYear}`}, 1)
         ON CONFLICT (financial_year) DO UPDATE SET last_number = invoice_counters.last_number + 1
         RETURNING last_number`
       const sequence = counter[0]!.last_number
@@ -74,7 +90,7 @@ export async function issuePlanReceipt(db: PrismaClient, planOrderId: string, pe
         data: {
           planOrderId,
           userId: order.userId,
-          number: `${RECEIPT_PREFIX}/${financialYear}/${String(sequence).padStart(4, '0')}`,
+          number: taxed ? formatInvoiceNumber(settings.invoicePrefix, financialYear, sequence) : `${RECEIPT_PREFIX}/${financialYear}/${String(sequence).padStart(4, '0')}`,
           financialYear,
           sequence,
           issuedAt,
@@ -84,6 +100,15 @@ export async function issuePlanReceipt(db: PrismaClient, planOrderId: string, pe
           amount: order.amount,
           currency: order.currency,
           razorpayPaymentId: order.razorpayPaymentId,
+          ...(split
+            ? {
+                taxableValue: order.baseAmount,
+                gstRatePercent: order.gstRatePercent,
+                cgst: paiseToDecimal(split.cgstPaise),
+                sgst: paiseToDecimal(split.sgstPaise),
+                igst: paiseToDecimal(split.igstPaise),
+              }
+            : {}),
           ...(access ? { periodStart: access.start, periodEnd: access.end } : {}),
           payment: payment as unknown as Prisma.InputJsonValue,
         },

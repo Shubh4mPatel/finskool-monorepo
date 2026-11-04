@@ -221,7 +221,14 @@ model PlanOrder {
   planId            String    @map("plan_id") @db.Uuid
   razorpayOrderId   String    @unique @map("razorpay_order_id") @db.VarChar(64)
   razorpayPaymentId String?   @unique @map("razorpay_payment_id") @db.VarChar(64)
+  // The total Razorpay charges: the plan's price plus GST when GST applies.
   amount            Decimal   @db.Decimal(10, 2)
+  // The plan's price before GST, the GST added on top, and its rate, as they were when the order was made (the plan's
+  // price and the rate can change later). Null on orders made before GST was added, or while the billing settings
+  // were not complete enough to charge it.
+  baseAmount        Decimal?  @map("base_amount") @db.Decimal(10, 2)
+  gstAmount         Decimal?  @map("gst_amount") @db.Decimal(10, 2)
+  gstRatePercent    Decimal?  @map("gst_rate_percent") @db.Decimal(5, 2)
   currency          String    @default("INR") @db.VarChar(10)
   status            String    @default("created") @db.VarChar(20) // created | paid | failed
   subscriptionId    String?   @map("subscription_id") @db.Uuid    // set once verify succeeds
@@ -1213,8 +1220,16 @@ model PlanReceipt {
   seller        Json
   buyer         Json
   description   String   @db.VarChar(500)
+  // The total paid. On a tax invoice it is `taxableValue` plus the GST below.
   amount        Decimal  @db.Decimal(10, 2)
   currency      String   @default("INR") @db.VarChar(10)
+  // The tax split, when GST was charged on top of the plan's price (a GST tax invoice, numbered in the same series as
+  // the service invoices). All null on a plain receipt. Same state as the seller: CGST + SGST. Another state: IGST.
+  taxableValue   Decimal? @map("taxable_value") @db.Decimal(10, 2)
+  gstRatePercent Decimal? @map("gst_rate_percent") @db.Decimal(5, 2)
+  cgst           Decimal? @db.Decimal(10, 2)
+  sgst           Decimal? @db.Decimal(10, 2)
+  igst           Decimal? @db.Decimal(10, 2)
   razorpayPaymentId String? @map("razorpay_payment_id") @db.VarChar(64)
   // The days of access this payment bought, first and last day included. Null on receipts issued before these were kept.
   periodStart   DateTime? @map("period_start") @db.Date
@@ -1228,7 +1243,8 @@ model PlanReceipt {
   planOrder PlanOrder @relation(fields: [planOrderId], references: [id], onDelete: Cascade)
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([financialYear, sequence], name: "uq_plan_receipts_fy_sequence")
+  // `number` is the unique one: plain receipts (RCPT) and tax invoices count in different series that can reach the same
+  // sequence in the same year.
   @@index([userId, issuedAt(sort: Desc)], name: "idx_plan_receipts_user")
   @@map("plan_receipts")
 }

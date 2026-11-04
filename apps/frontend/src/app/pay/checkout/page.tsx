@@ -13,7 +13,12 @@ interface Order {
   sessionToken: string;
   status: string;
   orderId: string;
+  /** Paise: the total, GST included. */
   amount: number;
+  /** Paise: the plan's price before GST, and the GST added on top (0 when none). */
+  baseAmount: number;
+  gstAmount: number;
+  gstRatePercent: number;
   currency: string;
   keyId: string;
   planName: string;
@@ -163,7 +168,8 @@ export default function CheckoutPage() {
     rzp.open();
   }, [order, checkPaid]);
 
-  const rupees = order ? (order.amount / 100).toLocaleString("en-IN", { style: "currency", currency: order.currency }) : "";
+  const money = (paise: number) => (paise / 100).toLocaleString("en-IN", { style: "currency", currency: order?.currency ?? "INR" });
+  const rupees = order ? money(order.amount) : "";
 
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-10 text-center">
@@ -174,6 +180,11 @@ export default function CheckoutPage() {
           <h1 className="text-xl font-semibold">{order.communityName}</h1>
           <p className="mt-1 text-sm text-gray-500">{order.planName}</p>
           <p className="mt-6 text-3xl font-bold">{rupees}</p>
+          {order.gstAmount > 0 && (
+            <p className="mt-2 text-sm text-gray-500">
+              {money(order.baseAmount)} + {money(order.gstAmount)} GST ({order.gstRatePercent}%)
+            </p>
+          )}
           <button
             type="button"
             onClick={pay}

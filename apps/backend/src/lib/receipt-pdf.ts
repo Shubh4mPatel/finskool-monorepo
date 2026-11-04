@@ -26,6 +26,9 @@ export interface ReceiptBuyer {
   name: string
   email: string | null
   phone: string
+  /** Where the sale is taken to be made, on a tax invoice: GST state code and name. */
+  stateCode?: string
+  stateName?: string
 }
 
 export type ReceiptData = Prisma.PlanReceiptGetPayload<object>
@@ -47,8 +50,12 @@ export interface ReceiptView {
   amount: string
   paidOn: string
   billedTo: { name: string; lines: string[] }
+  /** "TAX INVOICE" when GST was charged on top of the price, "INVOICE DETAILS" for a plain receipt. */
+  detailsHeading: string
   details: [label: string, value: string][]
   item: { title: string; subtitle: string; sac: string | null; period: string[] | null; amount: string }
+  /** Taxable value, then CGST + SGST (or IGST): the lines above the total on a tax invoice. Empty on a plain receipt. */
+  taxRows: [label: string, amount: string][]
   total: string
   totalInWords: string
   payment: PaymentCell[]
@@ -92,6 +99,19 @@ export function buildReceiptView(receipt: ReceiptData): ReceiptView {
   const amount = formatRupees(receipt.amount)
   const registered = Boolean(seller.sebiRegistrationNo)
 
+  // A tax invoice: the plan's price (taxable value) and the GST on top of it add up to the total paid.
+  const taxed = receipt.taxableValue !== null
+  const percent = (n: number) => String(Number(n.toFixed(2)))
+  const rate = Number(receipt.gstRatePercent ?? 0)
+  const taxRows: [string, string][] = []
+  if (taxed) {
+    taxRows.push(['Taxable value', formatRupees(receipt.taxableValue!)])
+    if (Number(receipt.cgst ?? 0) > 0 || Number(receipt.sgst ?? 0) > 0) {
+      taxRows.push([`CGST ${percent(rate / 2)}%`, formatRupees(receipt.cgst ?? 0)], [`SGST ${percent(rate / 2)}%`, formatRupees(receipt.sgst ?? 0)])
+    }
+    if (Number(receipt.igst ?? 0) > 0) taxRows.push([`IGST ${percent(rate)}%`, formatRupees(receipt.igst!)])
+  }
+  const supplyState = buyer.stateName && buyer.stateCode ? `${buyer.stateName} (${buyer.stateCode})` : null
   const period =
     receipt.periodStart && receipt.periodEnd ? [`${formatDay(receipt.periodStart)} –`, formatDay(receipt.periodEnd)] : null
 
@@ -129,19 +149,23 @@ export function buildReceiptView(receipt: ReceiptData): ReceiptView {
     amount,
     paidOn: formatDay(paidAt),
     billedTo: { name: buyer.name, lines: [buyer.email, buyer.phone].filter((l): l is string => Boolean(l)) },
+    detailsHeading: taxed ? 'TAX INVOICE' : 'INVOICE DETAILS',
     details: [
       ['Invoice no.', receipt.number],
       ['Invoice date', formatDay(receipt.issuedAt)],
+      ...(taxed && supplyState ? [['Place of supply', supplyState] as [string, string]] : []),
     ],
     item: {
       title: receipt.description,
       subtitle: `Research subscription with community access in the ${seller.legalName} app`,
       sac: seller.sacCode || null,
       period,
-      amount,
+      // On a tax invoice the line is the price before GST; the GST is added below it.
+      amount: taxed ? formatRupees(receipt.taxableValue!) : amount,
     },
+    taxRows,
     total: amount,
-    totalInWords: amountInWords(rupeesToPaise(receipt.amount.toString())),
+    totalInWords: `${amountInWords(rupeesToPaise(receipt.amount.toString()))}${taxed ? ' · inclusive of GST' : ''}`,
     payment: paymentCells,
     accessNote,
     footer: {
@@ -223,7 +247,7 @@ export function renderReceiptPdf(receipt: ReceiptData): Promise<Buffer> {
       text(line, LEFT, billedBottom + 4, { size: 9, color: BODY, width: 230 })
       billedBottom += 4 + heightOf(line, 230, 'regular', 9)
     }
-    text('INVOICE DETAILS', detailsX, 144, { size: 7.6, color: MUTED, spacing: 0.9, width: 220 })
+    text(v.detailsHeading, detailsX, 144, { size: 7.6, color: MUTED, spacing: 0.9, width: 220 })
     let detailsBottom = 158
     for (const [label, value] of v.details) {
       text(label, detailsX, detailsBottom, { size: 9, color: MUTED, width: 90 })
@@ -262,7 +286,13 @@ export function renderReceiptPdf(receipt: ReceiptData): Promise<Buffer> {
 
     // ── Total
     const totalX = 335
-    const totalTop = rowBottom + 30
+    let totalTop = rowBottom + 30
+    for (const [label, taxAmount] of v.taxRows) {
+      text(label, totalX, totalTop, { size: 9.5, color: BODY, width: 110 })
+      text(taxAmount, totalX, totalTop, { size: 9.5, color: INK, width: RIGHT - totalX, align: 'right' })
+      totalTop += 19
+    }
+    if (v.taxRows.length > 0) totalTop += 6
     rule(totalTop, totalX, RIGHT, INK, 1)
     text('Total', totalX, totalTop + 11, { font: 'semibold', size: 11, color: PRIMARY, width: 100 })
     text(v.total, totalX, totalTop + 9, { font: 'semibold', size: 13.5, color: PRIMARY, width: RIGHT - totalX, align: 'right' })

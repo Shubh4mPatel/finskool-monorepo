@@ -99,6 +99,10 @@ export class PaymentsCheckoutService {
       status: order.status,
       orderId: order.razorpayOrderId,
       amount: Math.round(Number(order.amount) * 100),
+      // Before GST, the GST on top and its rate, as they were charged. An order with no GST is all base.
+      baseAmount: Math.round(Number(order.baseAmount ?? order.amount) * 100),
+      gstAmount: Math.round(Number(order.gstAmount ?? 0) * 100),
+      gstRatePercent: Number(order.gstRatePercent ?? 0),
       currency: order.currency,
       keyId: env.razorpay.keyId,
       planName: order.plan.name,

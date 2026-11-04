@@ -44,7 +44,10 @@ const router = Router()
  *                       id: { type: string, format: uuid }
  *                       name: { type: string, example: "3 Month" }
  *                       durationMonths: { type: integer, example: 3 }
- *                       price: { type: number, example: 999 }
+ *                       price: { type: number, description: The plan's price before GST, example: 999 }
+ *                       gstRatePercent: { type: number, description: GST added on top, in percent (0 when none), example: 18 }
+ *                       gstAmount: { type: number, description: The GST in rupees, example: 179.82 }
+ *                       totalAmount: { type: number, description: What the member pays - show this one, example: 1178.82 }
  *       404:
  *         description: Community not found.
  *         content:
@@ -59,8 +62,9 @@ router.get('/communities/:communityId/plans', authenticate, controller.listPlans
  *     tags: [Payments]
  *     summary: Create a Razorpay order to buy a plan
  *     description: >
- *       Creates a Razorpay order for the plan's price and records a pending
- *       PlanOrder row. Open Razorpay Checkout on the client with the returned
+ *       Creates a Razorpay order for the plan's price plus GST (GST is added on top of the
+ *       price; none is added until the seller's billing details are complete) and records
+ *       a pending PlanOrder row with the split it charged. Open Razorpay Checkout on the client with the returned
  *       orderId/amount/currency/keyId, then call POST /payments/verify with
  *       the result.
  *     parameters:
@@ -85,7 +89,10 @@ router.get('/communities/:communityId/plans', authenticate, controller.listPlans
  *                   type: object
  *                   properties:
  *                     orderId: { type: string, example: "order_ABC123" }
- *                     amount: { type: integer, description: Smallest currency unit (paise), example: 99900 }
+ *                     amount: { type: integer, description: The total in the smallest currency unit (paise), GST included, example: 117882 }
+ *                     baseAmount: { type: integer, description: The plan's price before GST, in paise, example: 99900 }
+ *                     gstAmount: { type: integer, description: The GST added on top, in paise (0 when none), example: 17982 }
+ *                     gstRatePercent: { type: number, description: 0 when no GST is added, example: 18 }
  *                     currency: { type: string, example: INR }
  *                     keyId: { type: string, description: Razorpay public key id }
  *                     planId: { type: string, format: uuid }

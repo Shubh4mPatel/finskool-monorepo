@@ -14,7 +14,7 @@ All paths below are under `/api/v1`.
 | 2 | Member | Taps **Buy** on a plan |
 | 3 | App | Asks the backend for a checkout (`POST /payments/checkout-sessions`) and gets a `checkoutUrl` |
 | 4 | App | Opens `checkoutUrl` in a **webview** |
-| 5 | Webview page | Shows the community, plan and price, and opens Razorpay Checkout when the member taps **Pay** |
+| 5 | Webview page | Shows the community, plan and total (with the GST), and opens Razorpay Checkout when the member taps **Pay** |
 | 6 | Member | Pays (UPI, card, netbanking, wallet) inside Razorpay |
 | 7 | Backend | Confirms the payment and gives the member access. Either the page's verify call does it **or** Razorpay's webhook does, whichever arrives first |
 | 8 | Webview page | Tells the app `paid` (a `postMessage`) |
@@ -57,9 +57,20 @@ Error:
 
 ### 2.3 Money
 
-- Prices on the plan list are **rupees** (`price: 999`).
-- The checkout order uses **paise** (`amount: 99900`). The server decides the amount from the plan. The app can never set it.
-- Currency is always `INR`. A plan priced below ₹1 cannot be bought.
+- Prices on the plan list are **rupees**. `price` is what the plan costs **before GST**; **GST is added on top**, so what the member pays is `totalAmount` (see "GST" below).
+- The checkout order uses **paise** (`amount: 117882`), and that is the **total, GST included**. The server decides the amount from the plan. The app can never set it.
+- Currency is always `INR`. A plan whose total is below ₹1 cannot be bought.
+
+**GST.** A plan's `price` does not include GST. The server adds GST on top (18% by default, set by the admin in Settings > Billing) and Razorpay charges the total. Every plan in a response carries the split, so the app shows:
+
+| Field | Meaning | Example |
+|---|---|---|
+| `price` | The plan's price before GST | `999` |
+| `gstRatePercent` | The GST rate added on top | `18` |
+| `gstAmount` | The GST in rupees | `179.82` |
+| `totalAmount` | What the member pays | `1178.82` |
+
+**Show `totalAmount` as the amount to pay** (for example "₹1,178.82", with "₹999 + ₹179.82 GST (18%)" beneath it). If you show `price` alone the member is shown less than Razorpay charges. While the admin's billing details are incomplete no GST is added, and then `gstRatePercent` and `gstAmount` are `0` and `totalAmount` equals `price`, so the same code works either way. Do not work the GST out in the app: use the fields.
 
 ## 3. Step 1: show the communities and plans
 
@@ -83,8 +94,8 @@ Mobile only. Returns every paid community (the one free community is never liste
       "whatsIncluded": ["Daily trade ideas", "Live Q&A"],
       "subscribedMemberCount": 128,
       "plans": [
-        { "id": "a1b2…-uuid", "name": "1 Month", "durationMonths": 1, "price": 399 },
-        { "id": "c3d4…-uuid", "name": "3 Month", "durationMonths": 3, "price": 999 }
+        { "id": "a1b2…-uuid", "name": "1 Month", "durationMonths": 1, "price": 399, "gstRatePercent": 18, "gstAmount": 71.82, "totalAmount": 470.82 },
+        { "id": "c3d4…-uuid", "name": "3 Month", "durationMonths": 3, "price": 999, "gstRatePercent": 18, "gstAmount": 179.82, "totalAmount": 1178.82 }
       ]
     }
   ]
@@ -96,7 +107,7 @@ Mobile only. Returns every paid community (the one free community is never liste
 - A community can have an empty `plans` array. Do not show a Buy button then.
 - This list does **not** say whether the member already owns a community. Get that from `GET /auth/mobile/me` (section 6) and decide in the app whether the button says **Buy** or **Renew**.
 
-There is also `GET /communities/:communityId/plans` that returns just the plans of one community (`[{ id, name, durationMonths, price }]`). You do not need it if you use the list above. It returns `404` for an unknown or deleted community and an empty array for the free community.
+There is also `GET /communities/:communityId/plans` that returns just the plans of one community (`[{ id, name, durationMonths, price, gstRatePercent, gstAmount, totalAmount }]`). You do not need it if you use the list above. It returns `404` for an unknown or deleted community and an empty array for the free community.
 
 ## 4. Step 2: start the checkout
 
@@ -253,7 +264,10 @@ You do not call these from the app. The webview page calls them. They are listed
   "sessionToken": "…",
   "status": "created",
   "orderId": "order_ABC123",
-  "amount": 99900,
+  "amount": 117882,
+  "baseAmount": 99900,
+  "gstAmount": 17982,
+  "gstRatePercent": 18,
   "currency": "INR",
   "keyId": "rzp_live_…",
   "planName": "3 Month",
@@ -317,10 +331,10 @@ If the member is looking at the payment screen when this arrives, do not show a 
 
 - **Buying the same community again renews it.** If the member's plan is still active, the new period is added **after the current end date**, so buying early never loses remaining days. If it already lapsed, the new period starts today.
 - **Duration is calendar months.** A 3 Month plan bought on 1 Nov 2026 ends 1 Feb 2027. When the day does not exist in the target month (for example 31 Jan + 1 month), the end date is the last day of that month.
-- **The price paid is fixed when the order is made.** If an admin changes the plan price after the member started the checkout, the member is still charged (and recorded as paying) the price they were shown.
+- **The price paid is fixed when the order is made.** If an admin changes the plan price or the GST rate after the member started the checkout, the member is still charged (and recorded as paying) the total they were shown.
 - **The same order can only be paid once.** Extra payments for an already paid order are not given a second plan. They are logged for a refund.
 - **A failed payment does not close the order.** The member can try again with the same order (it is reused for 15 minutes), and after that a new one is made.
-- **A payment for the wrong amount is not given access.** The webhook only grants the plan when the amount paid equals the order price.
+- **A payment for the wrong amount is not given access.** The webhook only grants the plan when the amount paid equals the order's total (GST included).
 - **The free community cannot be bought.** Every member is in it already.
 
 ## 10. If money is taken but the app never hears back
@@ -340,10 +354,10 @@ The backend also has plain endpoints for a native checkout, if you prefer the Ra
 1. `POST /communities/:communityId/plans/:planId/orders` (no body) returns `201`:
 
    ```json
-   { "orderId": "order_ABC123", "amount": 99900, "currency": "INR", "keyId": "rzp_live_…", "planId": "…", "communityId": "…" }
+   { "orderId": "order_ABC123", "amount": 117882, "currency": "INR", "keyId": "rzp_live_…", "planId": "…", "communityId": "…", "baseAmount": 99900, "gstAmount": 17982, "gstRatePercent": 18 }
    ```
 
-   Errors: `400` (free community, or price below ₹1), `404` (community or plan not found).
+   `amount` is the total in paise, GST included; `baseAmount` and `gstAmount` are its parts (`gstAmount` is `0` when no GST is added). Errors: `400` (free community, or total below ₹1), `404` (community or plan not found).
 2. Open the Razorpay SDK with `keyId`, `orderId`, `amount` and `currency`.
 3. On success, Razorpay returns `razorpay_order_id`, `razorpay_payment_id` and `razorpay_signature`. Send them to `POST /payments/verify`:
 
