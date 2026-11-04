@@ -1,5 +1,14 @@
 import { describe, it, expect } from 'vitest'
-import { fetchCursorPage } from '@/lib/cursorPages'
+
+type FetchCursorPage = <R extends { nextCursor: string | null }>(
+  fetchWith: (cursor?: string) => Promise<R>,
+  page: number,
+  known?: readonly string[],
+) => Promise<{ data: R; page: number; cursors: string[] }>
+
+// The helper lives in the web app. It is loaded by path so this package's type-check does not have to compile it.
+const helperPath = '../../../frontend/src/lib/cursorPages.ts'
+const { fetchCursorPage } = (await import(/* @vite-ignore */ helperPath)) as { fetchCursorPage: FetchCursorPage }
 
 // The admin Tickets / Services / Payment flags screens number their pages on top of cursor paging.
 // A fake server of 7 rows, 3 a page: cursor "c2" fetches page 2, "c3" page 3.
