@@ -158,7 +158,10 @@ export function createApp() {
    *                             id: { type: string, format: uuid }
    *                             name: { type: string }
    *                             durationMonths: { type: integer }
-   *                             price: { type: number }
+   *                             price: { type: number, description: "The plan's price before GST." }
+   *                             gstRatePercent: { type: number, description: "GST added on top, in percent (0 when none is added)." }
+   *                             gstAmount: { type: number, description: "The GST in rupees." }
+   *                             totalAmount: { type: number, description: "What the member pays (price plus GST). Show this as the amount to pay." }
    *       401:
    *         description: Not authenticated.
    *         content:
