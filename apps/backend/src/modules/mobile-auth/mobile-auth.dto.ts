@@ -56,6 +56,8 @@ export interface MobileLoginResultInternal {
 export interface KycStatusDTO {
   /** true once both date of birth and PAN are saved: the app stops asking. */
   completed: boolean
+  /** false when the server cannot save these details right now (its encryption key is not set): the app should not ask yet. */
+  available: boolean
   dateOfBirth: string | null
   /** PAN with all but the last 4 characters hidden, e.g. XXXXXX234F. The full PAN is never returned. */
   panMasked: string | null

@@ -9,10 +9,11 @@ All three calls need the logged-in mobile session cookie. Base path: `/api/v1/au
 `GET /me/kyc`
 
 ```json
-{ "success": true, "data": { "completed": false, "dateOfBirth": null, "panMasked": null } }
+{ "success": true, "data": { "completed": false, "available": true, "dateOfBirth": null, "panMasked": null } }
 ```
 
-- `completed: false` -> show the form (step 2). Ask again on every launch (or on a sensible reminder schedule) until it is true.
+- `available: false` -> the server cannot save these details right now (a server setting is missing). Do not show the form yet; try again on a later launch.
+- `completed: false` (and `available: true`) -> show the form (step 2). Ask again on every launch (or on a sensible reminder schedule) until it is true.
 - `completed: true` -> do nothing. `dateOfBirth` and `panMasked` (for example `XXXXXX234F`) are there only to pre-fill an edit screen. The full PAN is never returned.
 
 ## 2. Send the details (first time)
@@ -64,6 +65,7 @@ Other behaviour the app should expect:
 | Suspended or deleted member | `401` (`SESSION_INVALIDATED`), the app logs the member out |
 | Web login instead of a mobile session | `403 MOBILE_ONLY` |
 | Body is not valid JSON | `400 INVALID_JSON` |
+| The server has no encryption key set | `503 KYC_UNAVAILABLE` ("Saving your details is not available right now."). Show it as is; the member did nothing wrong |
 | Extra fields in the body (for example `role`) | ignored, they cannot change anything else |
 | Two taps at the same time on the first submit | one `201`, the others `409 KYC_ALREADY_SUBMITTED`; nothing is lost or doubled |
 | Edits at the same time | all succeed, the last one wins |
@@ -92,3 +94,13 @@ One bug found and fixed while testing: a request whose body was not valid JSON r
 - An edit needs only the logged-in session. Asking for the password or an OTP before a PAN change is possible if you want it.
 - There is no limit on how often a member can edit, and no history of old values.
 - Today's date is accepted as a date of birth; there is no minimum age.
+
+## When the member sees an error after entering the details
+
+| What the app gets | Cause | Fix |
+|---|---|---|
+| `422 Validation failed` with `errors.dateOfBirth` or `errors.panNumber` | The value is in the wrong shape. Show `errors.<field>[0]`, which says what to fix | Send `dateOfBirth` as plain `YYYY-MM-DD` (not `12/04/1995`, not a timestamp such as `1995-04-12T00:00:00.000Z`: a timestamp built from a local midnight can be the day before in UTC) and `panNumber` as 10 characters with no spaces inside |
+| `503 KYC_UNAVAILABLE` | `PAN_ENCRYPTION_KEY` is not set on the server, or is still the placeholder from `.env.example` | Server: generate a key (`openssl rand -hex 32`), put it in the server `.env`, recreate the backend container. The log line is `kyc: PAN_ENCRYPTION_KEY is missing...` |
+| `409 KYC_ALREADY_SUBMITTED` | The details were saved before | Use the edit call |
+| `403 MOBILE_ONLY` | The call was made with a web login (for example from Postman with the dashboard token) | Use the mobile session cookie |
+| `401` | No session, or the member was suspended | Log in again |

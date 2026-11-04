@@ -7,9 +7,16 @@ const VERSION = 'v1'
 
 // Read lazily so an environment without PAN_ENCRYPTION_KEY still boots — only
 // the code paths that actually touch a PAN fail there.
+const KEY_FORMAT = /^[0-9a-fA-F]{64}$/
+
+/** Whether the server has a usable key, so callers can refuse cleanly instead of failing halfway. */
+export function isPanKeyConfigured(): boolean {
+  return KEY_FORMAT.test(env.pan.encryptionKey)
+}
+
 function getKey(): Buffer {
   const hex = env.pan.encryptionKey
-  if (!/^[0-9a-fA-F]{64}$/.test(hex)) {
+  if (!KEY_FORMAT.test(hex)) {
     throw new Error('PAN_ENCRYPTION_KEY must be 64 hex characters (32 bytes) — generate one with `openssl rand -hex 32`')
   }
   return Buffer.from(hex, 'hex')

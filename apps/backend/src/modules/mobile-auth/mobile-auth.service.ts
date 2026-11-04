@@ -25,10 +25,11 @@ import { notifyAdmins } from '../../lib/admin-notify.js'
 import { routingData, RoutingModule } from '../../lib/notification-routing.js'
 import { NotificationType } from '../notifications/notifications.dto.js'
 import { ensureFreeSubscription } from '../../lib/free-community.js'
-import { decryptPan, encryptPan } from '../../lib/pan-crypto.js'
+import { decryptPan, encryptPan, isPanKeyConfigured } from '../../lib/pan-crypto.js'
 import type { SocialProvider } from '../../lib/social-token.js'
 import {
   ConflictError,
+  AppError,
   ForbiddenError,
   BadRequestError,
   NotFoundError,
@@ -686,6 +687,7 @@ export class MobileAuthService {
    * log the PAN or DOB here.
    */
   async submitKyc(userId: string, data: SubmitKycDTO): Promise<void> {
+    this.assertKycAvailable()
     const user = await this.db.user.findUnique({ where: { id: userId }, select: { deletedAt: true } })
     if (!user || user.deletedAt) throw new UnauthorizedError('User not found')
 
@@ -703,6 +705,16 @@ export class MobileAuthService {
     logger.info({ userId }, 'mobileAuth.submitKyc: success')
   }
 
+  /**
+   * Saving a PAN needs the server's PAN_ENCRYPTION_KEY. When it is missing (or still the placeholder from .env.example)
+   * answer with a clear 503 the app can show, and say what is wrong in the log, instead of an anonymous 500.
+   */
+  private assertKycAvailable(): void {
+    if (isPanKeyConfigured()) return
+    logger.error('kyc: PAN_ENCRYPTION_KEY is missing or is not 64 hex characters, so date of birth and PAN cannot be saved. Set it in the server .env (openssl rand -hex 32) and restart the backend.')
+    throw new AppError(503, 'Saving your details is not available right now. Please try again later.', 'KYC_UNAVAILABLE')
+  }
+
   /** The flag the app checks to decide whether to ask for date of birth and PAN. Never returns the full PAN. */
   async getKycStatus(userId: string): Promise<KycStatusDTO> {
     const user = await this.db.user.findUnique({ where: { id: userId }, select: { deletedAt: true, dateOfBirth: true, panEncrypted: true } })
@@ -717,11 +729,12 @@ export class MobileAuthService {
         logger.error({ err, userId }, 'mobileAuth.getKycStatus: could not decrypt PAN to mask it')
       }
     }
-    return { completed: user.panEncrypted !== null && user.dateOfBirth !== null, dateOfBirth, panMasked }
+    return { completed: user.panEncrypted !== null && user.dateOfBirth !== null, available: isPanKeyConfigured(), dateOfBirth, panMasked }
   }
 
   /** Changes date of birth and/or PAN after they were first submitted. Never log the values. */
   async updateKyc(userId: string, data: UpdateKycDTO): Promise<void> {
+    this.assertKycAvailable()
     const user = await this.db.user.findUnique({ where: { id: userId }, select: { deletedAt: true } })
     if (!user || user.deletedAt) throw new UnauthorizedError('User not found')
 

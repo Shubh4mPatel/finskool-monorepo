@@ -1,3 +1,4 @@
+import { isPanKeyConfigured } from './lib/pan-crypto.js'
 import { describeRazorpayConfig } from './lib/razorpay.js'
 import 'dotenv/config'
 import http from 'node:http'
@@ -28,6 +29,8 @@ async function bootstrap() {
   server.listen(env.port, () => {
     logger.info(`finskool-backend running on port ${env.port} [${env.nodeEnv}]`)
     logger.info({ ...describeRazorpayConfig(), checkoutUrl: env.paymentCheckoutUrl }, 'payments: Razorpay configuration')
+    if (isPanKeyConfigured()) logger.info('kyc: PAN encryption key is set')
+    else logger.error('kyc: PAN_ENCRYPTION_KEY is missing or is not 64 hex characters: members cannot save their date of birth and PAN until it is set in the server .env (openssl rand -hex 32) and the backend is restarted')
   })
 
   // Fire-and-forget: only does work (fetch + bulk insert) the first time the
