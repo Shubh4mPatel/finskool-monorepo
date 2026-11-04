@@ -99,6 +99,26 @@ Settings → Secrets and variables → Actions → **Secrets** tab (repository s
   ```
 - `eqlion-certbot` renews every certificate in the shared volume, and `eqlion-nginx` reloads every 12h, so renewal is automatic.
 
+### 6. `502 Bad Gateway` on `/assets/...` (file uploads) or `/api/...`
+
+nginx looked the containers up once, when it started. A container that was restarted or recreated (MinIO, backend,
+frontend) gets a new address, and nginx kept calling the old one: every request to that service answered 502 until
+nginx was restarted. Seen as: profile picture upload (`PUT .../assets/finskool/avatars/...`) answering 502 while
+`/api` still worked. The nginx error log shows it: `connect() failed (111: Connection refused) while connecting to
+upstream, upstream: "http://172.x.x.x:9000/..."`, where that address is not the one `docker inspect finskool-minio`
+reports.
+
+Fixed in `docker/nginx.conf`: it now uses Docker's DNS (`resolver 127.0.0.11 valid=5s`) with the container names in
+variables, so a new address is picked up within seconds with no restart, and nginx starts even when a container is not
+up yet (it used to refuse with `host not found in upstream`). The signed-URL path and query string are passed to MinIO
+byte for byte. A 502 can still appear while a container is really down or still starting; it clears by itself once the
+container is healthy.
+
+If a 502 persists: `docker ps` (is `finskool-minio` / `finskool-backend` up and healthy?), then
+`docker logs finskool-nginx --tail 100 | grep -iE "upstream|502"`, and as a quick cure `docker restart finskool-nginx`.
+The outer `eqlion-nginx` (not in this repo) has the same once-at-start lookup towards `finskool-nginx`: if the whole
+domain answers 502 after `finskool-nginx` was recreated, reload `eqlion-nginx`.
+
 ## Operations cheat sheet
 
 ```bash

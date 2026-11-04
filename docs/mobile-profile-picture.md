@@ -60,6 +60,7 @@ Content-Type: image/jpeg
 - The `Content-Type` must be the real type of the image. A picture uploaded with a different type (for example `text/html`) is refused in step 3.
 - Success is `200` with an empty body.
 - If it fails with `403` or `400` after a while, the link expired: go back to step 1 for a new one.
+- `502`, `503` or `504` (an HTML page, not our JSON) means the storage service was briefly unreachable, for example while the server is updating. It is temporary: wait a couple of seconds and retry the same step 2 once or twice with the same link (it is good for 5 minutes); if it still fails, start again from step 1. Do not call step 3 after a failed step 2.
 
 ## Step 3: tell the server to use it
 
