@@ -7,6 +7,7 @@ import { loadBillingSettings } from '../modules/services/billing-settings.js'
 import { financialYearOf, formatInvoiceNumber, gstStateName, paiseToDecimal, rupeesToPaise, splitGst } from '../modules/services/services.billing.js'
 import { fetchPaymentSnapshot, type PaymentSnapshot } from './payment-details.js'
 import { renderReceiptPdf, type ReceiptBuyer, type ReceiptSeller } from './receipt-pdf.js'
+import type { PaidCommunityInvoiceDTO } from '../modules/auth/auth.dto.js'
 
 export { renderReceiptPdf }
 export type PlanReceiptRow = Prisma.PlanReceiptGetPayload<object>
@@ -152,9 +153,50 @@ export async function listReceipts(db: PrismaClient, userId: string) {
     where: { userId },
     orderBy: [{ issuedAt: 'desc' }, { id: 'desc' }],
     take: 100,
-    select: { id: true, number: true, issuedAt: true, description: true, amount: true, currency: true },
+    select: { id: true, number: true, issuedAt: true, description: true, amount: true, currency: true, planOrder: { select: { communityId: true } } },
   })
-  return rows.map(r => ({ id: r.id, number: r.number, issuedAt: r.issuedAt.toISOString(), description: r.description, amount: Number(r.amount), currency: r.currency }))
+  return rows.map(r => ({
+    id: r.id,
+    number: r.number,
+    issuedAt: r.issuedAt.toISOString(),
+    description: r.description,
+    amount: Number(r.amount),
+    currency: r.currency,
+    // Which community it was for, so the app can put each invoice next to the community it paid for.
+    communityId: r.planOrder.communityId,
+  }))
+}
+
+/**
+ * The invoice of the member's latest purchase of each given community, with a signed link to its PDF. A community the
+ * member never paid for through the app (an admin added them) has none. A link that cannot be made right now (the
+ * file store is down) comes back as null rather than failing the call it is part of; the member can still fetch it
+ * from the receipts download endpoint.
+ */
+export async function latestInvoiceByCommunity(db: PrismaClient, userId: string, communityIds: string[]): Promise<Map<string, PaidCommunityInvoiceDTO>> {
+  if (communityIds.length === 0) return new Map()
+  const rows = await db.planReceipt.findMany({
+    where: { userId, planOrder: { communityId: { in: communityIds } } },
+    orderBy: [{ issuedAt: 'desc' }, { id: 'desc' }],
+    select: { id: true, number: true, issuedAt: true, amount: true, currency: true, pdfObjectKey: true, planOrder: { select: { communityId: true } } },
+  })
+  const latest = new Map<string, (typeof rows)[number]>()
+  for (const r of rows) if (!latest.has(r.planOrder.communityId)) latest.set(r.planOrder.communityId, r)
+
+  const invoices = await Promise.all(
+    [...latest].map(async ([communityId, r]): Promise<[string, PaidCommunityInvoiceDTO]> => {
+      const fileName = pdfFileName(r)
+      let downloadUrl: string | null = null
+      try {
+        // The PDF is stored right after the purchase; if that has not happened yet it is made now.
+        downloadUrl = await generateInvoiceDownloadUrl(r.pdfObjectKey ?? (await ensureReceiptPdf(db, r.id)), fileName)
+      } catch (err) {
+        logger.warn({ err, receiptId: r.id }, 'receipt: could not make the download link')
+      }
+      return [communityId, { id: r.id, number: r.number, issuedAt: r.issuedAt.toISOString(), amount: Number(r.amount), currency: r.currency, downloadUrl, fileName }]
+    }),
+  )
+  return new Map(invoices)
 }
 
 /** Receipts of one member, for an admin who is allowed to see that member (same rule as the member profile). */

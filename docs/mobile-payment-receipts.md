@@ -22,6 +22,8 @@ Service quotes still get their own GST invoice (see `mobile-quote-payment.md`).
 
 A receipt appears right after a successful payment (the same moment the subscription starts). If the list is empty straight after paying, retry once after a second.
 
+Each item also has `communityId`, the community it was for. Earlier purchases of a community (renewals) are here; the latest one is also on each community in `GET /auth/mobile/me` (see below).
+
 ## 2. Download one
 
 `GET /api/v1/payments/receipts/{id}/download`
@@ -33,6 +35,22 @@ A receipt appears right after a successful payment (the same moment the subscrip
 Open `url` straight away (in the system viewer or a share sheet); it expires after a few minutes, so do not store it. Call this endpoint again whenever the member taps "Download".
 
 Errors: `404` the receipt does not exist or belongs to someone else; `400` the id is not a UUID.
+
+## The invoice on each bought community
+
+`GET /auth/mobile/me` returns the communities the member has bought, and each carries `invoice`: the invoice for the **latest purchase** of that community, with `downloadUrl`, a signed link to the PDF.
+
+```json
+"invoice": {
+  "id": "9b1e…-uuid", "number": "FS/2026-27/0184", "issuedAt": "2026-11-01T05:12:00.000Z",
+  "amount": 1178.82, "currency": "INR",
+  "downloadUrl": "https://…signed…", "fileName": "FS-2026-27-0184.pdf"
+}
+```
+
+- It is `null` for a community the member never paid for in the app (an admin added them): no invoice exists, so hide the button.
+- The link works for about **5 minutes**. Open it when the member taps **Download invoice**. If it has expired, or `downloadUrl` is `null` (the file could not be prepared at that moment, which does not fail the call), use `GET /payments/receipts/{id}/download` with the invoice `id` for a fresh link.
+- For older purchases of the same community, use the list in section 1 and filter on `communityId`.
 
 ## What the PDF shows
 

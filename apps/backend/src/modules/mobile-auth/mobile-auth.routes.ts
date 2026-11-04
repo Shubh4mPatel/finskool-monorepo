@@ -466,6 +466,20 @@ router.post('/logout', controller.logout)
  *                           coverImageUrl: { type: string, nullable: true }
  *                           badgeUrl: { type: string, nullable: true }
  *                           expiresAt: { type: string, example: "2026-03-15", description: "Latest subscription's expiry for this community, past or future." }
+ *                           invoice:
+ *                             type: object
+ *                             nullable: true
+ *                             description: >
+ *                               The invoice for the member's latest purchase of this community. Null when they never
+ *                               paid for it through the app (an admin added them).
+ *                             properties:
+ *                               id: { type: string, format: uuid, description: "Pass to GET /payments/receipts/{id}/download for a fresh link." }
+ *                               number: { type: string, example: "FS/2026-27/0184" }
+ *                               issuedAt: { type: string, format: date-time }
+ *                               amount: { type: number, description: "The total paid, GST included.", example: 1178.82 }
+ *                               currency: { type: string, example: INR }
+ *                               downloadUrl: { type: string, nullable: true, description: "A signed link to the PDF, valid for about 5 minutes. Null if it could not be prepared just now." }
+ *                               fileName: { type: string, example: "FS-2026-27-0184.pdf" }
  *       401:
  *         description: Not authenticated.
  *         content:

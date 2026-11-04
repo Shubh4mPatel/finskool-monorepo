@@ -178,7 +178,7 @@ router.post('/payments/verify', authenticate, controller.verifyPayment)
  *     security: [{ bearerAuth: [] }]
  *     responses:
  *       200:
- *         description: "{ success, data: [{ id, number, issuedAt, description, amount, currency }] }"
+ *         description: "{ success, data: [{ id, number, issuedAt, description, amount, currency, communityId }] }"
  */
 router.get('/payments/receipts', authenticate, controller.listReceipts)
 

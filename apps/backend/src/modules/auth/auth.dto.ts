@@ -64,6 +64,22 @@ export interface PaidCommunityDTO {
   coverImageUrl: string | null
   badgeUrl: string | null
   expiresAt: string
+  // The invoice for the member's latest purchase of this community. Null when they never paid for it through the app
+  // (an admin added them), so there is no invoice.
+  invoice: PaidCommunityInvoiceDTO | null
+}
+
+export interface PaidCommunityInvoiceDTO {
+  id: string
+  number: string
+  issuedAt: string
+  /** The total paid, GST included. */
+  amount: number
+  currency: string
+  /** A signed link to the PDF that works for about 5 minutes. Null if the file could not be prepared just now. */
+  downloadUrl: string | null
+  /** The name to save the PDF under. */
+  fileName: string
 }
 
 export interface MobileProfileDTO {

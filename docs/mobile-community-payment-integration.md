@@ -222,7 +222,16 @@ Mobile only. Returns the profile and **every paid community the member has ever 
         "tags": ["stocks"],
         "coverImageUrl": "https://…",
         "badgeUrl": "https://…",
-        "expiresAt": "2027-02-01"
+        "expiresAt": "2027-02-01",
+        "invoice": {
+          "id": "9b1e…-uuid",
+          "number": "FS/2026-27/0184",
+          "issuedAt": "2026-11-01T05:12:00.000Z",
+          "amount": 1178.82,
+          "currency": "INR",
+          "downloadUrl": "https://…signed…/FS-2026-27-0184.pdf?X-Amz-…",
+          "fileName": "FS-2026-27-0184.pdf"
+        }
       }
     ]
   }
@@ -231,6 +240,8 @@ Mobile only. Returns the profile and **every paid community the member has ever 
 
 - `expiresAt` is a date (`YYYY-MM-DD`), the **last day** the member has access. They have access today if `expiresAt >= today`. An older date means the plan lapsed (the community stays in the list so you can show **Renew**).
 - If the community you just bought has the new `expiresAt`, the purchase is done. Show success.
+- `invoice` is the invoice for the member's **latest purchase** of that community, so a **Download invoice** button can sit next to each community. It is `null` when the member never paid for it in the app (an admin added them), so hide the button then. `amount` is the total paid, GST included.
+- `downloadUrl` is a signed link straight to the PDF. **It works for about 5 minutes**, so open it when the member taps the button; do not store it. If it has expired, or it is `null` (the file could not be prepared at that moment), call `GET /payments/receipts/{invoice.id}/download` for a fresh one (see `mobile-payment-receipts.md`).
 
 ### If it is not there yet
 

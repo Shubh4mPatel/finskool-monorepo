@@ -3,6 +3,13 @@ import request from 'supertest'
 
 // Stand in for Razorpay: the invoice asks it how a plan was paid.
 const razorpay = vi.hoisted(() => ({ fetch: vi.fn(), createOrder: vi.fn() }))
+// And for the file store: signing a link needs its credentials, which the test environment does not have.
+const storage = vi.hoisted(() => ({ sign: vi.fn(), upload: vi.fn() }))
+vi.mock('../../src/lib/minio.js', async importOriginal => ({
+  ...(await importOriginal<typeof import('../../src/lib/minio.js')>()),
+  generateInvoiceDownloadUrl: storage.sign,
+  uploadInvoicePdf: storage.upload,
+}))
 vi.mock('../../src/lib/razorpay.js', () => ({
   getRazorpayClient: () => ({ payments: { fetch: razorpay.fetch }, orders: { create: razorpay.createOrder } }),
   verifyPaymentSignature: vi.fn(),
@@ -16,7 +23,7 @@ import { loadGstRules, priceWithGst } from '../../src/lib/plan-gst.js'
 import { PaymentsService } from '../../src/modules/payments/payments.service.js'
 import { issuePlanReceipt, renderReceiptPdf } from '../../src/lib/plan-receipt.js'
 import { buildReceiptView, formatDay, formatDayAndTime, formatRupees } from '../../src/lib/receipt-pdf.js'
-import { prisma, resetDb, createAdmin, createCommunity, createMobileMember, type TestAdmin } from '../helpers/fixtures.js'
+import { prisma, resetDb, createAdmin, createCommunity, createMobileMember, mobileCookie, daysFromNow, type TestAdmin } from '../helpers/fixtures.js'
 
 // The invoice a member gets for a plan: what it says (buildReceiptView), that it draws (renderReceiptPdf), what is
 // kept when it is issued (issuePlanReceipt), and the seller details it prints (Settings > Billing). A plan's price is
@@ -609,5 +616,137 @@ describe('Settings > Billing', () => {
   it('only a super admin can change them', async () => {
     const scoped = await createAdmin({ isSuperAdmin: false })
     expect((await put(scoped, { ...base, pan: 'ABCDE1234F' })).status).toBe(403)
+  })
+})
+
+// ─── The communities a member has bought, each with its invoice ─────────────
+
+describe('GET /auth/mobile/me: the invoice of each community bought', () => {
+  let boss: TestAdmin
+  let swing: { id: string }
+  let options: { id: string }
+  let swingPlan: { id: string }
+  let n = 0
+
+  const me = (m: Parameters<typeof mobileCookie>[0]) => request(app).get('/api/v1/auth/mobile/me').set('Cookie', mobileCookie(m))
+  const community = (res: request.Response, id: string) => res.body.data.communities.find((c: { id: string }) => c.id === id)
+
+  /** A paid order for a community and its invoice, `daysAgo` days old. Its PDF counts as stored unless `stored` is false. */
+  async function bought(memberId: string, communityId: string, planId: string, daysAgo: number, stored = true) {
+    n += 1
+    const order = await prisma.planOrder.create({
+      data: { userId: memberId, communityId, planId, razorpayOrderId: `order_me_${n}`, razorpayPaymentId: `pay_me_${n}`, amount: 1178.82, baseAmount: 999, gstAmount: 179.82, gstRatePercent: 18, status: 'paid' } as never,
+    })
+    const receipt = await issuePlanReceipt(prisma, order.id, { start: new Date('2026-10-30'), end: new Date('2027-01-30') })
+    return prisma.planReceipt.update({
+      where: { id: receipt.id },
+      data: { issuedAt: new Date(Date.now() - daysAgo * 86_400_000), ...(stored ? { pdfObjectKey: `receipts/${receipt.financialYear}/${receipt.number.replace(/\//g, '-')}.pdf` } : {}) },
+    })
+  }
+
+  beforeEach(async () => {
+    razorpay.fetch.mockReset()
+    razorpay.fetch.mockRejectedValue(new Error('no lookup'))
+    storage.sign.mockReset()
+    storage.sign.mockImplementation(async (key: string, fileName: string) => `https://files.test/${key}?file=${fileName}&X-Amz-Expires=300`)
+    storage.upload.mockReset()
+    storage.upload.mockResolvedValue(undefined)
+    await resetDb()
+    boss = await createAdmin({ isSuperAdmin: true })
+    swing = await createCommunity(boss.id, { name: 'Swing Alpha' })
+    options = await createCommunity(boss.id, { name: 'Options Lab' })
+    swingPlan = await prisma.plan.create({ data: { communityId: swing.id, name: '3 Month', durationMonths: 3, price: 999 } })
+    await prisma.billingSettings.create({
+      data: { id: 'default', legalName: 'Finskool21', addressLine: 'C9 803, Sector 88', city: 'Faridabad', pincode: '121002', stateCode: '06', gstin: SELLER.gstin, sacCode: '998399', defaultGstRatePercent: 18 },
+    })
+  })
+
+  it('gives each community the invoice of its latest purchase, with a link that opens the PDF', async () => {
+    const member = await createMobileMember({ subscriptions: [{ communityId: swing.id, validUntil: daysFromNow(60) }] })
+    const invoice = await bought(member.id, swing.id, swingPlan.id, 2)
+
+    const res = await me(member)
+    expect(res.status).toBe(200)
+    const row = community(res, swing.id)
+    expect(row.invoice).toMatchObject({
+      id: invoice.id,
+      number: invoice.number,
+      amount: 1178.82,
+      currency: 'INR',
+      issuedAt: invoice.issuedAt.toISOString(),
+      fileName: `${invoice.number.replace(/\//g, '-')}.pdf`,
+    })
+    // A signed link to the stored PDF, under the name it should be saved as.
+    expect(storage.sign).toHaveBeenCalledWith(invoice.pdfObjectKey, row.invoice.fileName)
+    expect(row.invoice.downloadUrl).toBe(`https://files.test/${invoice.pdfObjectKey}?file=${row.invoice.fileName}&X-Amz-Expires=300`)
+    expect(storage.upload).not.toHaveBeenCalled() // it was stored already, so nothing is drawn again
+    expect(row.expiresAt).toBe(daysFromNow(60))
+  })
+
+  it('shows the latest purchase\'s invoice when the member renewed', async () => {
+    const member = await createMobileMember({ subscriptions: [{ communityId: swing.id, validUntil: daysFromNow(60) }] })
+    await bought(member.id, swing.id, swingPlan.id, 90)
+    const renewal = await bought(member.id, swing.id, swingPlan.id, 3)
+    await bought(member.id, swing.id, swingPlan.id, 40)
+
+    expect(community(await me(member), swing.id).invoice.id).toBe(renewal.id)
+  })
+
+  it('has no invoice for a community the member was added to by an admin', async () => {
+    const member = await createMobileMember({
+      subscriptions: [{ communityId: swing.id, validUntil: daysFromNow(60) }, { communityId: options.id, validUntil: daysFromNow(30) }],
+    })
+    const invoice = await bought(member.id, swing.id, swingPlan.id, 2)
+
+    const res = await me(member)
+    expect(community(res, swing.id).invoice.id).toBe(invoice.id)
+    expect(community(res, options.id).invoice).toBeNull()
+  })
+
+  it('keeps a lapsed community, and its invoice, in the list', async () => {
+    const member = await createMobileMember({ subscriptions: [{ communityId: swing.id, validUntil: daysFromNow(-20), isActive: false }] })
+    await bought(member.id, swing.id, swingPlan.id, 100)
+    const row = community(await me(member), swing.id)
+    expect(row.expiresAt < daysFromNow(0)).toBe(true)
+    expect(row.invoice).not.toBeNull()
+  })
+
+  it('never shows another member\'s invoice', async () => {
+    const mine = await createMobileMember({ subscriptions: [{ communityId: swing.id, validUntil: daysFromNow(60) }] })
+    const theirs = await createMobileMember({ subscriptions: [{ communityId: swing.id, validUntil: daysFromNow(60) }] })
+    await bought(theirs.id, swing.id, swingPlan.id, 1)
+
+    expect(community(await me(mine), swing.id).invoice).toBeNull()
+  })
+
+  it('draws and stores the PDF first when that has not happened yet', async () => {
+    const member = await createMobileMember({ subscriptions: [{ communityId: swing.id, validUntil: daysFromNow(60) }] })
+    const invoice = await bought(member.id, swing.id, swingPlan.id, 2, false)
+
+    const row = community(await me(member), swing.id)
+    expect(row.invoice.downloadUrl).toMatch(/^https:\/\/files\.test\/receipts\/.+\.pdf\?file=.+\.pdf/)
+    expect(storage.upload).toHaveBeenCalledTimes(1)
+    const [key, pdf] = storage.upload.mock.calls[0] as [string, Buffer]
+    expect(pdf.subarray(0, 5).toString()).toBe('%PDF-')
+    expect((await prisma.planReceipt.findUniqueOrThrow({ where: { id: invoice.id } })).pdfObjectKey).toBe(key)
+  })
+
+  it('still answers, with no link, when the PDF is not stored and storage cannot be reached', async () => {
+    storage.upload.mockRejectedValue(new Error('storage is down'))
+    const member = await createMobileMember({ subscriptions: [{ communityId: swing.id, validUntil: daysFromNow(60) }] })
+    const invoice = await bought(member.id, swing.id, swingPlan.id, 2, false)
+
+    const res = await me(member)
+    expect(res.status).toBe(200)
+    const row = community(res, swing.id)
+    expect(row.invoice).toMatchObject({ id: invoice.id, number: invoice.number, downloadUrl: null })
+  })
+
+  it('the receipts list says which community each invoice is for', async () => {
+    const member = await createMobileMember({ subscriptions: [{ communityId: swing.id, validUntil: daysFromNow(60) }] })
+    const invoice = await bought(member.id, swing.id, swingPlan.id, 2)
+    const res = await request(app).get('/api/v1/payments/receipts').set('Cookie', mobileCookie(member))
+    expect(res.status).toBe(200)
+    expect(res.body.data).toEqual([expect.objectContaining({ id: invoice.id, communityId: swing.id, amount: 1178.82 })])
   })
 })

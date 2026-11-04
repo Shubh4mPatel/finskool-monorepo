@@ -26,6 +26,7 @@ import { routingData, RoutingModule } from '../../lib/notification-routing.js'
 import { NotificationType } from '../notifications/notifications.dto.js'
 import { ensureFreeSubscription } from '../../lib/free-community.js'
 import { decryptPan, encryptPan, isPanKeyConfigured } from '../../lib/pan-crypto.js'
+import { latestInvoiceByCommunity } from '../../lib/plan-receipt.js'
 import type { SocialProvider } from '../../lib/social-token.js'
 import {
   ConflictError,
@@ -781,9 +782,10 @@ export class MobileAuthService {
       select: { id: true, name: true, slug: true, description: true, tags: true, coverImageUrl: true, badgeUrl: true },
     })
     const expiryByCommunity = new Map(grouped.map(g => [g.communityId, g._max.validUntil!]))
+    const invoiceByCommunity = await latestInvoiceByCommunity(this.db, userId, communities.map(c => c.id))
 
     return communities
-      .map(c => ({ ...c, expiresAt: expiryByCommunity.get(c.id)!.toISOString().split('T')[0]! }))
+      .map(c => ({ ...c, expiresAt: expiryByCommunity.get(c.id)!.toISOString().split('T')[0]!, invoice: invoiceByCommunity.get(c.id) ?? null }))
       .sort((a, b) => b.expiresAt.localeCompare(a.expiresAt))
   }
 
