@@ -425,7 +425,7 @@ export default function AdminServiceRequestPage() {
 
         <aside className="flex flex-col gap-5">
           <SideCard title="Request details" icon={<Receipt size={14} />} delay={100}>
-            <MemberBlock name={request.user.name} phone={request.user.phone} />
+            <MemberBlock name={request.user.name} phone={request.user.phone} avatarUrl={request.user.avatarUrl} />
             <dl className="mt-4 flex flex-col gap-2.5 border-t border-divider pt-4">
               <DetailRow label="Request ID"><span className="tabular-nums">#{request.label}</span></DetailRow>
               <DetailRow label="Service">{request.service.title}</DetailRow>

@@ -7,7 +7,7 @@ import { ArrowRight, Smartphone, UserPlus, UserRoundCheck } from "lucide-react";
 import { dashboardApi, type RegistrationItem, type StatusTone } from "@/lib/dashboard";
 import { formatDate } from "@/lib/memberFormat";
 import { Card, EmptyState, PanelError, Pill, SectionHeader, Skeleton, stagger, TH } from "./Panel";
-import { TintAvatar } from "./TintAvatar";
+import { UserAvatar } from "@/components/admin/UserAvatar";
 import { usePanel } from "./usePanel";
 
 /** "Today, 10:42 am" / "Yesterday" / "23 Oct 2026". */
@@ -98,7 +98,7 @@ export function NewRegistrations({ className = "", delay = 0 }: { className?: st
                         title={`Open ${r.name}'s profile`}
                         className="group/member flex items-center gap-3"
                       >
-                        <TintAvatar name={r.name} />
+                        <UserAvatar name={r.name} avatarUrl={r.avatarUrl} />
                         <span className="min-w-0">
                           <span className="block truncate font-bold text-primary transition-colors group-hover/member:text-accent">{r.name}</span>
                           <span className="block text-xs tabular-nums text-muted">{r.phone}</span>

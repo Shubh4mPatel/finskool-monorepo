@@ -29,7 +29,7 @@ import Select, { pillClass } from "@/components/ui/Select";
 import DatePicker from "@/components/ui/DatePicker";
 import { CountUp } from "@/components/admin/dashboard/CountUp";
 import { EmptyState, Skeleton, stagger, TH } from "@/components/admin/dashboard/Panel";
-import { TintAvatar } from "@/components/admin/dashboard/TintAvatar";
+import { UserAvatar } from "@/components/admin/UserAvatar";
 import AddMemberModal from "@/components/admin/members/AddMemberModal";
 import EditMemberModal from "@/components/admin/members/EditMemberModal";
 import ExtendModal from "@/components/admin/members/ExtendModal";
@@ -513,12 +513,7 @@ function MembersContent() {
 
   const memberCell = (m: MemberItem, size: string) => (
     <button type="button" onClick={() => router.push(`/admin/members/${m.id}`)} className="group/m flex min-w-0 items-center gap-3 text-left">
-      {m.avatarUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={m.avatarUrl} alt="" className={`${size} shrink-0 rounded-full object-cover ring-2 ring-white`} />
-      ) : (
-        <TintAvatar name={m.name} className={size} />
-      )}
+      <UserAvatar name={m.name} avatarUrl={m.avatarUrl} className={size} />
       <span className="min-w-0">
         <span className="block truncate font-bold text-primary transition-colors group-hover/m:text-accent">{m.name}</span>
         <span className="block text-xs tabular-nums text-muted">{m.phone}</span>

@@ -5,7 +5,7 @@ import { ArrowRight, CalendarCheck } from "lucide-react";
 import { dashboardApi, type StatusTone } from "@/lib/dashboard";
 import { formatDate } from "@/lib/memberFormat";
 import { Card, EmptyState, PanelError, Pill, SectionHeader, Skeleton, stagger } from "./Panel";
-import { TintAvatar } from "./TintAvatar";
+import { UserAvatar } from "@/components/admin/UserAvatar";
 import { usePanel } from "./usePanel";
 
 function daysLabel(days: number): string {
@@ -66,7 +66,7 @@ export function ExpiringSoon({ className = "", delay = 0 }: { className?: string
                 style={stagger(i, delay + 150)}
                 className="animate-enter flex items-center gap-3 rounded-xl px-2 py-2.5 transition-colors hover:bg-background"
               >
-                <TintAvatar name={item.name} />
+                <UserAvatar name={item.name} avatarUrl={item.avatarUrl} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
                     <p className="truncate text-sm font-bold text-primary">{item.name}</p>

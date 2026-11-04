@@ -19,8 +19,7 @@ import {
 } from "@/lib/tickets";
 import { formatInr } from "@/lib/services";
 import type { AdminServiceEvent, AdminServiceRequestDetail, ServiceMessage, ServiceQuote } from "@/lib/services";
-import { Avatar } from "@/components/admin/tickets/TicketBadges";
-import { TintAvatar } from "@/components/admin/dashboard/TintAvatar";
+import { UserAvatar } from "@/components/admin/UserAvatar";
 import { ChatComposer, ChatLockedBar, ChatNotice, DayDivider, JumpToLatest, dayKey, dayLabel } from "@/components/admin/chat/ChatParts";
 import { AttachmentCard, AttachmentViewerProvider } from "@/components/admin/attachments/AttachmentViewer";
 import { QuoteStatusPill, RequestStatusBadge } from "@/components/admin/services/ServiceBadges";
@@ -87,10 +86,12 @@ function QuoteCard({ quote }: { quote: ServiceQuote }) {
 function MessageRow({
   message,
   name,
+  avatarUrl,
   isNew,
 }: {
   message: Pick<ServiceMessage, "senderRole" | "createdAt" | "body" | "attachments" | "quote">;
   name: string;
+  avatarUrl: string | null;
   isNew: boolean;
 }) {
   const admin = message.senderRole === "admin";
@@ -114,7 +115,7 @@ function MessageRow({
           </p>
           <div className="mt-1.5"><QuoteCard quote={message.quote} /></div>
         </div>
-        <Avatar name={name} dark className="h-9 w-9" />
+        <UserAvatar name={name} avatarUrl={avatarUrl} dark className="h-9 w-9" />
       </div>
     );
   }
@@ -131,14 +132,14 @@ function MessageRow({
             {content}
           </div>
         </div>
-        <Avatar name={name} dark className="h-9 w-9" />
+        <UserAvatar name={name} avatarUrl={avatarUrl} dark className="h-9 w-9" />
       </div>
     );
   }
 
   return (
     <div className="animate-fade flex items-start gap-3">
-      <TintAvatar name={name} className="h-9 w-9" />
+      <UserAvatar name={name} avatarUrl={avatarUrl} className="h-9 w-9" />
       <div className="min-w-0 max-w-[80%]">
         <p className="flex items-center gap-2 text-xs">
           <span className="font-bold text-primary">{name}</span>
@@ -342,6 +343,7 @@ export default function ServiceChat({ request, messages, events, hasOlder, loadi
     <MessageRow
       key="original"
       name={request.user.name}
+      avatarUrl={request.user.avatarUrl}
       isNew={isAwaiting(request.createdAt) && messages.length === 0}
       message={{ senderRole: "user", createdAt: request.createdAt, body: request.needs, attachments: request.attachments, quote: null }}
     />,
@@ -361,6 +363,7 @@ export default function ServiceChat({ request, messages, events, hasOlder, loadi
         <MessageRow
           key={item.message.id}
           name={item.message.senderName}
+          avatarUrl={item.message.senderAvatarUrl}
           message={item.message}
           isNew={item.message.senderRole === "user" && isAwaiting(item.message.createdAt)}
         />

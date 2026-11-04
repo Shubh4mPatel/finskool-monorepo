@@ -44,6 +44,8 @@ export interface ServiceMessage {
   senderId: string | null;
   senderRole: "user" | "admin" | "system";
   senderName: string;
+  /** The sender's profile picture; null when they have none or the message is from the system. */
+  senderAvatarUrl: string | null;
   kind: "text" | "quote" | "system";
   body: string | null;
   quote: ServiceQuote | null;
@@ -68,8 +70,8 @@ export interface AdminServiceRequest {
   ratedAt: string | null;
   createdAt: string;
   service: { id: string; name: string; title: string; imageUrl: string | null };
-  user: { id: string; name: string; phone: string };
-  assignedAdmin: { id: string; name: string } | null;
+  user: { id: string; name: string; phone: string; avatarUrl: string | null };
+  assignedAdmin: { id: string; name: string; avatarUrl: string | null } | null;
   unreadCount: number;
   quote: ServiceQuote | null;
   invoice: ServiceInvoiceSummary | null;

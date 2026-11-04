@@ -11,7 +11,7 @@ import type { AdminServiceRequest } from "@/lib/services";
 import { timeAgo } from "@/lib/tickets";
 import type { TicketPage } from "@/lib/tickets";
 import { EmptyState, Skeleton } from "@/components/admin/dashboard/Panel";
-import { TintAvatar } from "@/components/admin/dashboard/TintAvatar";
+import { UserAvatar } from "@/components/admin/UserAvatar";
 import Pagination from "@/components/ui/Pagination";
 
 const PAGE_SIZE = 10;
@@ -92,7 +92,7 @@ function PaymentFlagsContent() {
               <AlertTriangle size={16} className="shrink-0 text-red-500" aria-hidden />
               <span className="w-20 font-bold tabular-nums">#{r.label}</span>
               <span className="flex min-w-0 flex-1 items-center gap-3">
-                <TintAvatar name={r.user.name} className="h-9 w-9" />
+                <UserAvatar name={r.user.name} avatarUrl={r.user.avatarUrl} className="h-9 w-9" />
                 <span className="min-w-0">
                   <span className="block truncate font-semibold">{r.user.name}</span>
                   <span className="block truncate text-[11px] text-muted">{r.service.title}</span>

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { TintAvatar } from "@/components/admin/dashboard/TintAvatar";
+import { UserAvatar } from "@/components/admin/UserAvatar";
 
 // Building blocks for the right-hand column of the ticket and service-request pages.
 
@@ -29,10 +29,10 @@ export function DetailRow({ label, children }: { label: string; children: ReactN
 }
 
 /** The member the page is about: avatar, name and phone. */
-export function MemberBlock({ name, phone }: { name: string; phone: string }) {
+export function MemberBlock({ name, phone, avatarUrl }: { name: string; phone: string; avatarUrl?: string | null }) {
   return (
     <div className="flex items-center gap-3 rounded-xl bg-background px-3 py-2.5">
-      <TintAvatar name={name} className="h-10 w-10" />
+      <UserAvatar name={name} avatarUrl={avatarUrl} className="h-10 w-10" />
       <div className="min-w-0">
         <p className="truncate text-sm font-bold text-primary">{name}</p>
         <p className="text-xs tabular-nums text-muted">{phone}</p>

@@ -16,6 +16,8 @@ export interface TicketMessage {
   senderId: string;
   senderRole: "user" | "admin";
   senderName: string;
+  /** The sender's profile picture; null when they have none (show their initials). */
+  senderAvatarUrl: string | null;
   body: string | null;
   clientMessageId: string;
   attachments: TicketAttachment[];
@@ -40,8 +42,8 @@ export interface AdminTicket {
   ratedAt: string | null;
   resolvedAt: string | null;
   createdAt: string;
-  user: { id: string; name: string; phone: string };
-  assignedAdmin: { id: string; name: string } | null;
+  user: { id: string; name: string; phone: string; avatarUrl: string | null };
+  assignedAdmin: { id: string; name: string; avatarUrl: string | null } | null;
   unreadCount: number;
   canReply: boolean;
   canResolve: boolean;

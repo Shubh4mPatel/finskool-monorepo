@@ -20,8 +20,8 @@ import {
   type TicketAttachment,
   type TicketMessage,
 } from "@/lib/tickets";
-import { Avatar, StatusBadge } from "@/components/admin/tickets/TicketBadges";
-import { TintAvatar } from "@/components/admin/dashboard/TintAvatar";
+import { StatusBadge } from "@/components/admin/tickets/TicketBadges";
+import { UserAvatar } from "@/components/admin/UserAvatar";
 import { ChatComposer, ChatLockedBar, ChatNotice, DayDivider, JumpToLatest, dayKey, dayLabel } from "@/components/admin/chat/ChatParts";
 import { AttachmentCard, AttachmentViewerProvider } from "@/components/admin/attachments/AttachmentViewer";
 
@@ -45,6 +45,7 @@ function eventText(e: AdminTicketEvent): string {
 function MessageRow({
   role,
   name,
+  avatarUrl,
   at,
   body,
   attachments,
@@ -52,6 +53,7 @@ function MessageRow({
 }: {
   role: "user" | "admin";
   name: string;
+  avatarUrl: string | null;
   at: string;
   body: string | null;
   attachments: TicketAttachment[];
@@ -79,14 +81,14 @@ function MessageRow({
             {content}
           </div>
         </div>
-        <Avatar name={name} dark className="h-9 w-9" />
+        <UserAvatar name={name} avatarUrl={avatarUrl} dark className="h-9 w-9" />
       </div>
     );
   }
 
   return (
     <div className="animate-fade flex items-start gap-3">
-      <TintAvatar name={name} className="h-9 w-9" />
+      <UserAvatar name={name} avatarUrl={avatarUrl} className="h-9 w-9" />
       <div className="min-w-0 max-w-[80%]">
         <p className="flex items-center gap-2 text-xs">
           <span className="font-bold text-primary">{name}</span>
@@ -290,6 +292,7 @@ export default function TicketChat({ ticket, messages, events, hasOlder, loading
       key="original"
       role="user"
       name={ticket.user.name}
+      avatarUrl={ticket.user.avatarUrl}
       at={ticket.createdAt}
       body={ticket.description}
       attachments={ticket.attachments}
@@ -308,6 +311,7 @@ export default function TicketChat({ ticket, messages, events, hasOlder, loading
           key={item.message.id}
           role={item.message.senderRole}
           name={item.message.senderName}
+          avatarUrl={item.message.senderAvatarUrl}
           at={item.message.createdAt}
           body={item.message.body}
           attachments={item.message.attachments}

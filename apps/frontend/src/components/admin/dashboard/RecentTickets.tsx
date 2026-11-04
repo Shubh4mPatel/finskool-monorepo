@@ -6,7 +6,7 @@ import { ArrowRight, Headset, Inbox, Sparkles } from "lucide-react";
 import { dashboardApi, type DashboardTicketItem } from "@/lib/dashboard";
 import { timeAgo } from "@/lib/tickets";
 import { Card, EmptyState, PanelError, Pill, SectionHeader, Skeleton, stagger, TH } from "./Panel";
-import { TintAvatar } from "./TintAvatar";
+import { UserAvatar } from "@/components/admin/UserAvatar";
 import { usePanel } from "./usePanel";
 
 const detailHref = (t: DashboardTicketItem) => (t.kind === "service" ? `/admin/services/${t.id}` : `/admin/tickets/${t.id}`);
@@ -73,7 +73,7 @@ export function RecentTickets({ className = "", delay = 0 }: { className?: strin
                       title={`Open ${t.member.name}'s profile`}
                       className="group/member flex items-center gap-2.5"
                     >
-                      <TintAvatar name={t.member.name} className="h-8 w-8" />
+                      <UserAvatar name={t.member.name} avatarUrl={t.member.avatarUrl} className="h-8 w-8" />
                       <span className="font-semibold text-primary transition-colors group-hover/member:text-accent">{t.member.name}</span>
                     </Link>
                   </td>

@@ -21,7 +21,7 @@ import Pagination from "@/components/ui/Pagination";
 import Select, { pillClass } from "@/components/ui/Select";
 import { StatTile, TabButton, focusRing } from "@/components/admin/inbox/InboxParts";
 import { EmptyState, Skeleton, stagger, TH } from "@/components/admin/dashboard/Panel";
-import { TintAvatar } from "@/components/admin/dashboard/TintAvatar";
+import { UserAvatar } from "@/components/admin/UserAvatar";
 
 type Tab = "all" | "unassigned" | "mine" | "in_progress" | "resolved";
 
@@ -385,7 +385,7 @@ export default function AdminTicketsPage() {
                       )}
                     </span>
                     <span className="flex min-w-0 items-center gap-3">
-                      <TintAvatar name={t.user.name} className="h-9 w-9" />
+                      <UserAvatar name={t.user.name} avatarUrl={t.user.avatarUrl} className="h-9 w-9" />
                       <span className="min-w-0">
                         <span className="block truncate font-semibold">{t.user.name}</span>
                         <span className={`block truncate text-[11px] ${t.assignedAdmin ? "text-muted" : "font-semibold text-rose-500"}`}>

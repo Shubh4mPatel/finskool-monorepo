@@ -353,7 +353,7 @@ export default function AdminTicketDetailPage() {
 
         <aside className="flex flex-col gap-5">
           <SideCard title="Ticket details" icon={<TicketIcon size={14} />} delay={100}>
-            <MemberBlock name={ticket.user.name} phone={ticket.user.phone} />
+            <MemberBlock name={ticket.user.name} phone={ticket.user.phone} avatarUrl={ticket.user.avatarUrl} />
             <div className="mt-3 flex flex-wrap gap-2">
               <span className="rounded-full bg-background px-3 py-1 text-[11px] font-bold text-primary">{TYPE_LABEL[ticket.type]}</span>
               <span className="rounded-full bg-background px-3 py-1 text-[11px] font-bold text-primary">{CATEGORY_LABEL[ticket.category]}</span>

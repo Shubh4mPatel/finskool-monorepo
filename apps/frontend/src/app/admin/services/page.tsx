@@ -29,7 +29,7 @@ import { ticketSocketStore } from "@/store/tickets/ticketSocketStore";
 import Pagination from "@/components/ui/Pagination";
 import { pillClass } from "@/components/ui/Select";
 import { EmptyState, Skeleton, stagger, TH } from "@/components/admin/dashboard/Panel";
-import { TintAvatar } from "@/components/admin/dashboard/TintAvatar";
+import { UserAvatar } from "@/components/admin/UserAvatar";
 import { StatTile, TabButton, focusRing } from "@/components/admin/inbox/InboxParts";
 import { RequestStatusBadge } from "@/components/admin/services/ServiceBadges";
 
@@ -437,7 +437,7 @@ function AdminServicesInbox() {
                       {r.requiresReview && <AlertTriangle size={13} className="text-red-500" aria-label="Payment needs review" />}
                     </span>
                     <span className="flex min-w-0 items-center gap-3">
-                      <TintAvatar name={r.user.name} className="h-9 w-9" />
+                      <UserAvatar name={r.user.name} avatarUrl={r.user.avatarUrl} className="h-9 w-9" />
                       <span className="min-w-0">
                         <span className="block truncate font-semibold">{r.user.name}</span>
                         <span className={`block truncate text-[11px] ${r.assignedAdmin ? "text-muted" : "font-semibold text-rose-500"}`}>

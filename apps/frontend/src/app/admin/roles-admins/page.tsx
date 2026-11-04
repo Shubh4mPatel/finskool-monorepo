@@ -10,7 +10,7 @@ import Modal from "@/components/ui/Modal";
 import Pagination from "@/components/ui/Pagination";
 import Select, { pillClass } from "@/components/ui/Select";
 import { EmptyState, Skeleton, stagger, TH } from "@/components/admin/dashboard/Panel";
-import { TintAvatar } from "@/components/admin/dashboard/TintAvatar";
+import { UserAvatar } from "@/components/admin/UserAvatar";
 import { TabButton, focusRing } from "@/components/admin/inbox/InboxParts";
 import { communityOptions, type MemberCommunity } from "@/components/admin/members/communities";
 import { FormField, inputCls, primaryBtn, secondaryBtn } from "@/components/admin/members/memberUi";
@@ -430,12 +430,7 @@ export default function RolesAdminsPage() {
                     >
                       <td className="px-3 py-3.5">
                         <div className="flex items-center gap-3">
-                          {a.avatarUrl ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={a.avatarUrl} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover ring-2 ring-white" />
-                          ) : (
-                            <TintAvatar name={a.name} className="h-10 w-10" />
-                          )}
+                          <UserAvatar name={a.name} avatarUrl={a.avatarUrl} className="h-10 w-10" />
                           <div className="min-w-0">
                             <p className="truncate font-bold text-primary">{a.name}</p>
                             {a.isSuperAdmin ? (
@@ -573,7 +568,7 @@ export default function RolesAdminsPage() {
         >
           <form id={editFormId} onSubmit={handleUpdateAccess} className="flex flex-col gap-4">
             <div className="flex items-center gap-3 rounded-xl bg-background px-3.5 py-3">
-              <TintAvatar name={editTarget.name} className="h-10 w-10" />
+              <UserAvatar name={editTarget.name} avatarUrl={editTarget.avatarUrl} className="h-10 w-10" />
               <div className="min-w-0">
                 <p className="truncate text-sm font-bold text-primary">{editTarget.name}</p>
                 <p className="truncate text-xs text-muted">{editTarget.email}</p>
