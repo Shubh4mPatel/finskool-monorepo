@@ -23,7 +23,7 @@ const definition: swaggerJSDoc.OAS3Definition = {
   tags: [
     { name: 'Mobile Auth', description: 'Self-serve registration + OTP verification' },
     { name: 'Posts', description: 'Community post feed (members) + authoring (admins)' },
-    { name: 'Reactions', description: 'Emoji reactions on posts (like, love, haha, wow, sad, angry)' },
+    { name: 'Reactions', description: 'Reactions on posts (like, love, insightful, haha, celebrate)' },
     { name: 'Payments', description: 'Community plan purchases via Razorpay Orders (list plans, create order, verify payment)' },
     { name: 'Communities', description: 'Community discovery/paywall listing (mobile-only)' },
     { name: 'Performance', description: 'Trades shared in a community and how they turned out. Paid members see all of them, free members only what the admin allows (mobile-only, read-only).' },

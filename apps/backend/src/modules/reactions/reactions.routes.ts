@@ -33,7 +33,7 @@ mobileReactionsRouter.use(authenticate, requireMobileAuth)
  *     tags: [Reactions]
  *     summary: List the available reaction types
  *     description: >
- *       Fixed, seeded set (like, love, haha, wow, sad, angry) — there is no
+ *       Fixed, seeded set (like, love, insightful, haha, celebrate) — there is no
  *       admin CRUD for these, they never change at runtime. Use `id` as the
  *       `reactionTypeId` sent to `PUT /mobile/posts/{postId}/reactions`. Sorted by
  *       `sortOrder`, ascending.

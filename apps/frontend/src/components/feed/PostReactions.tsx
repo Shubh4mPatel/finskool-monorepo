@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { FiChevronDown, FiChevronUp } from "react-icons/fi";
 import { api, ApiError } from "@/lib/api";
+import ReactionBadge from "./ReactionBadge";
 
 interface ReactionType {
   id: number;
@@ -118,7 +119,7 @@ function ReactionList({ postId, reactionType, showCommunity }: { postId: string;
             </div>
             <p className="text-[11px] text-subtle">{timeAgo(r.reactedAt)}</p>
           </div>
-          <span className="text-xl" title={r.reactionType}>{r.emoji}</span>
+          <ReactionBadge name={r.reactionType} emoji={r.emoji} size={28} />
         </div>
       ))}
       {page < totalPages && (
@@ -165,10 +166,11 @@ export default function PostReactions({
     };
   }, []);
 
-  const ordered = [...types]
+  // Every type, in display order, zero counts included (the summary row shows all five); the filter tabs keep only the used ones.
+  const everyType = [...types]
     .sort((a, b) => a.sortOrder - b.sortOrder)
-    .map((type) => ({ type, count: reactionCounts[type.name] ?? 0 }))
-    .filter((r) => r.count > 0);
+    .map((type) => ({ type, count: reactionCounts[type.name] ?? 0 }));
+  const ordered = everyType.filter((r) => r.count > 0);
   const total = Object.values(reactionCounts).reduce((sum, n) => sum + n, 0);
 
   const tab = (active: boolean) =>
@@ -192,10 +194,10 @@ export default function PostReactions({
               {open ? "Hide Reactions" : `View Reactions (${total})`}
             </button>
             {!open && (
-              <span className="flex items-center gap-2 text-xs font-semibold text-primary">
-                {ordered.map(({ type, count }) => (
-                  <span key={type.id} className="flex items-center gap-1">
-                    <span className="text-sm">{type.emoji}</span>
+              <span className="flex items-center gap-4 text-sm font-semibold text-accent">
+                {everyType.map(({ type, count }) => (
+                  <span key={type.id} className="flex items-center gap-1.5">
+                    <ReactionBadge name={type.name} emoji={type.emoji} />
                     {count}
                   </span>
                 ))}
@@ -217,7 +219,10 @@ export default function PostReactions({
                 <button type="button" onClick={() => setFilter(null)} className={tab(filter === null)}>All {total}</button>
                 {ordered.map(({ type, count }) => (
                   <button key={type.id} type="button" onClick={() => setFilter(type.name)} className={tab(filter === type.name)}>
-                    {type.emoji} {count}
+                    <span className="inline-flex items-center gap-1.5">
+                      <ReactionBadge name={type.name} emoji={type.emoji} size={16} />
+                      {count}
+                    </span>
                   </button>
                 ))}
               </div>
