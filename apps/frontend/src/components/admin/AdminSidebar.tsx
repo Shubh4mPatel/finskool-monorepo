@@ -60,6 +60,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
       { href: "/admin/all-posts", label: "All Posts", icon: List },
       { href: "/admin/performance", label: "Performance", icon: ChartLine },
       { href: "/admin/welcome-kit", label: "Welcome Kit", icon: Gift },
+      { href: "/admin/communities", label: "Communities", icon: Building2, superAdminOnly: true },
     ],
   },
   {
@@ -81,7 +82,6 @@ const navGroups: { label: string; items: NavItem[] }[] = [
   {
     label: "Administration",
     items: [
-      { href: "/admin/communities", label: "Communities", icon: Building2, superAdminOnly: true },
       { href: "/admin/roles-admins", label: "Roles & Admins", icon: ShieldCheck, superAdminOnly: true },
     ],
   },
