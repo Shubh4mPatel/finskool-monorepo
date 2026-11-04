@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BellOff, CheckCheck, Inbox, RefreshCw } from "lucide-react";
+import { BellOff, CheckCheck, Inbox, Loader2, RefreshCw } from "lucide-react";
 import { api } from "@/lib/api";
 import { notificationRoute } from "@/lib/notificationRoute";
 import { notificationSocketStore } from "@/store/notifications/notificationSocketStore";
@@ -12,10 +12,24 @@ import {
   type ListNotificationsResponse,
 } from "@/components/NotificationCard";
 import { EmptyState, Skeleton, stagger } from "@/components/admin/dashboard/Panel";
-import Pagination from "@/components/ui/Pagination";
 
-const PAGE_SIZE = 10;
-const listUrl = (page: number) => `/api/v1/notifications?page=${page}&pageSize=${PAGE_SIZE}`;
+/** Notifications fetched at a time: the first screen, then another batch each time the end of the list nears. */
+const BATCH_SIZE = 20;
+const listUrl = (cursor?: string) => `/api/v1/notifications?pageSize=${BATCH_SIZE}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
+
+/** The first `count` batches, newest first. Paging is by cursor, which stays correct while new notifications arrive. */
+async function fetchBatches(count: number): Promise<{ items: Notification[]; cursor: string | null }> {
+  const first = await api.get<ListNotificationsResponse>(listUrl());
+  let items = first.notifications;
+  let cursor = first.nextCursor;
+  for (let i = 1; i < count && cursor; i++) {
+    const next = await api.get<ListNotificationsResponse>(listUrl(cursor));
+    const seen = new Set(items.map(n => n.id));
+    items = [...items, ...next.notifications.filter(n => !seen.has(n.id))];
+    cursor = next.nextCursor;
+  }
+  return { items, cursor };
+}
 
 function SectionTitle({ title, count, highlight = false }: { title: string; count: number; highlight?: boolean }) {
   return (
@@ -37,52 +51,51 @@ function SectionTitle({ title, count, highlight = false }: { title: string; coun
 export default function AdminNotificationsPage() {
   const router = useRouter();
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [page, setPage] = useState(1);
-  // The page the rows on screen belong to: while it differs from `page`, a new page is on its way.
-  const [loadedPage, setLoadedPage] = useState(1);
-  const [paging, setPaging] = useState({ total: 0, pageSize: PAGE_SIZE });
-  // Unread across every page: the header and "Mark all as read" must not depend on which page is showing.
+  // Where the next batch starts; null once everything has been loaded.
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreFailed, setLoadMoreFailed] = useState(false);
+  // Unread across everything, not just what has been scrolled in: the header and "Mark all as read" depend on it.
   const [unreadTotal, setUnreadTotal] = useState(0);
   const [reloadTick, setReloadTick] = useState(0);
-  const topRef = useRef<HTMLDivElement>(null);
-  // `loading` = nothing to show yet (skeleton). Later refreshes — the button, a page change, or a live socket
-  // event — keep the list on screen and only spin the button or dim the rows, so the page never flashes.
+  // How many batches have been loaded. A reload fetches that many again, so a live update refreshes the rows in
+  // place instead of cutting the list back to the first screen.
+  const batchesLoaded = useRef(1);
+  // Bumped by every reload, so a "load more" that was already on its way cannot append to a list that has been replaced.
+  const generation = useRef(0);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  // `loading` = nothing to show yet (skeleton). Later refreshes — the button or a live socket event — keep the list
+  // on screen and only spin the button, so the page never flashes.
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [markingAll, setMarkingAll] = useState(false);
 
-  // The one place the list is fetched: the first load, a page change, the Refresh button and live socket events
-  // (all of which bump `page` or `reloadTick`). State is only set from the request's callbacks, and not after unmount.
+  // The first load, the Refresh button and live socket events (all of which bump `reloadTick`). State is only set
+  // from the request's callbacks, and not after unmount. A failed refresh leaves what is on screen alone.
   useEffect(() => {
     let cancelled = false;
-    let steppedBack = false;
+    generation.current += 1;
     Promise.all([
-      api.get<ListNotificationsResponse>(listUrl(page)),
+      fetchBatches(batchesLoaded.current),
       api.get<{ count: number }>("/api/v1/notifications/unread-count").catch(() => null),
     ])
-      .then(([data, unread]) => {
+      .then(([result, unread]) => {
         if (cancelled) return;
-        // The last notification on the last page was cleared elsewhere: go back a page instead of showing nothing.
-        if (data.notifications.length === 0 && data.total > 0 && page > 1) {
-          steppedBack = true;
-          setPage(Math.max(1, data.totalPages));
-          return;
-        }
-        setNotifications(data.notifications);
-        setPaging({ total: data.total, pageSize: data.pageSize });
-        setLoadedPage(page);
+        setNotifications(result.items);
+        setNextCursor(result.cursor);
+        setLoadMoreFailed(false);
         if (unread) setUnreadTotal(unread.count);
       })
-      .catch(() => !cancelled && setNotifications([]))
+      .catch(() => {})
       .finally(() => {
-        if (cancelled || steppedBack) return;
+        if (cancelled) return;
         setLoading(false);
         setRefreshing(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [page, reloadTick]);
+  }, [reloadTick]);
 
   useEffect(() => {
     notificationSocketStore.connect();
@@ -94,10 +107,41 @@ export default function AdminNotificationsPage() {
     setReloadTick(t => t + 1);
   }, []);
 
-  function goToPage(next: number) {
-    setPage(next);
-    topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
+  const loadMore = useCallback(async () => {
+    if (!nextCursor || loadingMore) return;
+    const started = generation.current;
+    setLoadingMore(true);
+    setLoadMoreFailed(false);
+    try {
+      const next = await api.get<ListNotificationsResponse>(listUrl(nextCursor));
+      if (started !== generation.current) return;
+      setNotifications(prev => {
+        const seen = new Set(prev.map(n => n.id));
+        return [...prev, ...next.notifications.filter(n => !seen.has(n.id))];
+      });
+      setNextCursor(next.nextCursor);
+      batchesLoaded.current += 1;
+    } catch {
+      if (started === generation.current) setLoadMoreFailed(true);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [nextCursor, loadingMore]);
+
+  // Load the next batch when the end of the list comes within a screen of view. The observer is set up afresh after
+  // every batch, so if the new rows still do not fill the screen it fires again. After a failure it waits for Retry.
+  useEffect(() => {
+    const end = sentinelRef.current;
+    if (!end || !nextCursor || loadingMore || loadMoreFailed) return;
+    const observer = new IntersectionObserver(
+      entries => {
+        if (entries.some(e => e.isIntersecting)) void loadMore();
+      },
+      { rootMargin: "0px 0px 400px 0px" },
+    );
+    observer.observe(end);
+    return () => observer.disconnect();
+  }, [nextCursor, loadingMore, loadMoreFailed, loadMore, notifications.length]);
 
   const handleView = useCallback(async (notification: Notification) => {
     if (!notification.isRead) {
@@ -141,7 +185,7 @@ export default function AdminNotificationsPage() {
   return (
     <div className="flex flex-col gap-6">
       {/* Top bar */}
-      <div ref={topRef} className="flex scroll-mt-4 flex-wrap items-end justify-between gap-4">
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-xs font-semibold text-accent">Dashboard &rsaquo; Notifications</p>
           <h1 className="font-display text-2xl font-bold text-primary">Notifications</h1>
@@ -195,7 +239,7 @@ export default function AdminNotificationsPage() {
           <EmptyState icon={<BellOff size={20} />}>No notifications yet. New member activity will show up here.</EmptyState>
         </div>
       ) : (
-        <div aria-busy={loadedPage !== page} className={`flex flex-col gap-6 transition-opacity duration-300 ${loadedPage !== page ? "pointer-events-none opacity-50" : "opacity-100"}`}>
+        <div className="flex flex-col gap-6">
           {/* New / unread */}
           <section className="flex flex-col gap-3">
             <SectionTitle title="New" count={unread.length} highlight />
@@ -237,13 +281,28 @@ export default function AdminNotificationsPage() {
             </section>
           )}
 
-          <Pagination
-            page={loadedPage}
-            pageSize={paging.pageSize}
-            total={paging.total}
-            noun={paging.total === 1 ? "notification" : "notifications"}
-            onPage={goToPage}
-          />
+          {/* End of the list: the next batch loads when this comes near the screen. */}
+          <div ref={sentinelRef} aria-hidden className="h-px" />
+          <div className="flex min-h-6 items-center justify-center text-sm text-muted" aria-live="polite">
+            {loadingMore ? (
+              <span className="flex items-center gap-2">
+                <Loader2 size={15} className="animate-spin" /> Loading more…
+              </span>
+            ) : loadMoreFailed ? (
+              <span className="flex items-center gap-3">
+                Couldn&apos;t load more notifications.
+                <button
+                  type="button"
+                  onClick={() => void loadMore()}
+                  className="rounded-full border border-divider px-4 py-1.5 text-sm font-semibold text-primary transition-colors hover:border-accent"
+                >
+                  Retry
+                </button>
+              </span>
+            ) : !nextCursor ? (
+              <span>That&apos;s all of your notifications.</span>
+            ) : null}
+          </div>
         </div>
       )}
     </div>

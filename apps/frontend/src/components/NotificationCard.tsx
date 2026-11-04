@@ -28,10 +28,13 @@ export interface Notification {
 
 export interface ListNotificationsResponse {
   notifications: Notification[];
-  total: number;
-  page: number;
   pageSize: number;
-  totalPages: number;
+  /** Set while there are older notifications: send it back as `cursor` to get the next batch. */
+  nextCursor: string | null;
+  /** Only when paging by page number (no `cursor`): the count and page numbers. */
+  total?: number;
+  page?: number;
+  totalPages?: number;
 }
 
 export function formatRelativeTime(isoStr: string): string {
