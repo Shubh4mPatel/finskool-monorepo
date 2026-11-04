@@ -19,8 +19,8 @@ export { decodeCursor, encodeCursor, isUniqueViolation, isUuid, resolveAttachmen
 
 export const requestInclude = {
   service: { select: { id: true, name: true, title: true, imageUrl: true } },
-  user: { select: { id: true, name: true, phone: true } },
-  assignedAdmin: { select: { id: true, name: true } },
+  user: { select: { id: true, name: true, phone: true, avatarUrl: true } },
+  assignedAdmin: { select: { id: true, name: true, avatarUrl: true } },
   attachments: { where: { messageId: null }, orderBy: { createdAt: 'asc' } },
   // Only the latest quote: it is the one that can be payable or paid. History is on the detail call.
   quotes: { orderBy: { version: 'desc' }, take: 1 },
@@ -28,7 +28,7 @@ export const requestInclude = {
 } satisfies Prisma.ServiceRequestInclude
 
 export const messageInclude = {
-  sender: { select: { id: true, name: true } },
+  sender: { select: { id: true, name: true, avatarUrl: true } },
   attachments: { orderBy: { createdAt: 'asc' } },
   quote: true,
 } satisfies Prisma.ServiceMessageInclude
@@ -136,6 +136,7 @@ export async function mapMessage(m: ServiceMessageRow): Promise<ServiceMessageDT
     senderId: m.senderId,
     senderRole: m.senderRole,
     senderName: m.sender?.name ?? 'Finskool',
+    senderAvatarUrl: m.sender?.avatarUrl ?? null,
     kind: m.kind,
     body: m.body,
     quote: m.quote ? mapQuote(m.quote) : null,

@@ -19,13 +19,13 @@ import type { PresignDTO } from './tickets.validator.js'
 
 export const ticketInclude = {
   community: { select: { id: true, name: true } },
-  user: { select: { id: true, name: true, phone: true } },
-  assignedAdmin: { select: { id: true, name: true } },
+  user: { select: { id: true, name: true, phone: true, avatarUrl: true } },
+  assignedAdmin: { select: { id: true, name: true, avatarUrl: true } },
   attachments: { where: { messageId: null }, orderBy: { createdAt: 'asc' } },
 } satisfies Prisma.TicketInclude
 
 export const messageInclude = {
-  sender: { select: { id: true, name: true } },
+  sender: { select: { id: true, name: true, avatarUrl: true } },
   attachments: { orderBy: { createdAt: 'asc' } },
 } satisfies Prisma.TicketMessageInclude
 
@@ -138,6 +138,7 @@ export async function mapMessage(m: MessageRow): Promise<TicketMessageDTO> {
     senderId: m.senderId,
     senderRole: m.senderRole,
     senderName: m.sender.name,
+    senderAvatarUrl: m.sender.avatarUrl,
     body: m.body,
     clientMessageId: m.clientMessageId,
     attachments: await Promise.all(m.attachments.map(mapAttachment)),

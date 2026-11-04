@@ -15,6 +15,8 @@ export interface TicketMessageDTO {
   senderId: string
   senderRole: TicketSenderRole
   senderName: string
+  /** The sender's profile picture, null when they have none (show their initials). */
+  senderAvatarUrl: string | null
   body: string | null
   clientMessageId: string
   attachments: TicketAttachmentDTO[]
@@ -49,8 +51,8 @@ export interface UserTicketDTO extends TicketBaseDTO {
 
 /** What a support admin (web dashboard) sees. */
 export interface AdminTicketDTO extends TicketBaseDTO {
-  user: { id: string; name: string; phone: string }
-  assignedAdmin: { id: string; name: string } | null
+  user: { id: string; name: string; phone: string; avatarUrl: string | null }
+  assignedAdmin: { id: string; name: string; avatarUrl: string | null } | null
   unreadCount: number
   // Per requesting admin: assignee (or super admin) on an unresolved ticket can resolve; same
   // plus any admin on an unassigned ticket can reply (reply auto-claims).

@@ -92,6 +92,7 @@ If the cookie is missing or the session is no longer valid, the upgrade is refus
   "senderId": "1000…",
   "senderRole": "admin",
   "senderName": "Admin One",
+  "senderAvatarUrl": "https://community.finskool21.in/assets/finskool/avatars/3f1c….jpg",
   "body": "We are checking this.",
   "clientMessageId": "2d6c9f0e-3a11-4c2e-9b0a-6f2a8f7a1c55",
   "attachments": [],
@@ -100,6 +101,7 @@ If the cookie is missing or the session is no longer valid, the upgrade is refus
 ```
 
 - `senderRole` is `user` (the member) or `admin`. Use it to decide which side of the chat bubble to draw (`user` is the member, so it is "me").
+- `senderAvatarUrl` is the sender's profile picture, or `null` when they have none: draw their initials instead. Do the same if the image fails to load.
 - `body` is `null` for a file-only message.
 - Show the **ticket description as the first message** of the conversation yourself: it is not part of the message history. Its files are `ticket.attachments`.
 

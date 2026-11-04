@@ -141,6 +141,7 @@ The status is **always current**: a quote past its expiry already reads `expired
 {
   "id": "…", "requestId": "…",
   "senderId": "…" , "senderRole": "admin", "senderName": "Admin One",
+  "senderAvatarUrl": "https://community.finskool21.in/assets/finskool/avatars/3f1c….jpg",
   "kind": "text",
   "body": "Yes, happy to. Sending you a quote shortly.",
   "quote": null,
@@ -155,6 +156,8 @@ The status is **always current**: a quote past its expiry already reads `expired
 | `text` | `user` (the member = "me") or `admin` | A normal bubble. `body` is `null` for a file-only message |
 | `quote` | `admin` | **A quote card** built from `message.quote` (its `status` is current). `body` is `null` |
 | `system` | `system` (`senderId` is `null`, `senderName` is "Finskool") | A centred notice, not a bubble. Examples: "Payment received. Thank you!", "This quote has expired…", "We received a payment that could not be matched…" |
+
+`senderAvatarUrl` is the sender's profile picture, or `null` when they have none (always `null` on a `system` message): draw their initials instead. Do the same if the image fails to load.
 
 ## 4. REST endpoints
 

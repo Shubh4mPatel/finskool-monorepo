@@ -41,6 +41,8 @@ export interface ExpiringSubscriptionDTO {
   userId: string
   name: string
   initials: string
+  /** Profile picture, null when the member has none (show the initials). */
+  avatarUrl: string | null
   communityId: string
   communityName: string
   validUntil: string
@@ -58,6 +60,8 @@ export interface RegistrationItemDTO {
   userId: string
   name: string
   initials: string
+  /** Profile picture, null when the member has none (show the initials). */
+  avatarUrl: string | null
   phone: string
   email: string | null
   // Admin-added members get their account when the admin adds them, so for them this is
@@ -80,7 +84,7 @@ export interface DashboardTicketItemDTO {
   id: string
   kind: 'support' | 'service'
   label: string
-  member: { id: string; name: string; initials: string }
+  member: { id: string; name: string; initials: string; avatarUrl: string | null }
   typeLabel: string
   subject: string
   status: { key: string; label: string; tone: TicketStatusTone }

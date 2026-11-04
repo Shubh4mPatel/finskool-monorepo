@@ -443,7 +443,7 @@ describe('GET /tickets', () => {
       id: ids['s1'],
       kind: 'service',
       label: `SR-${nums['s1']}`,
-      member: { id: expect.any(String), name: 'Priya Shah', initials: 'PS' },
+      member: { id: expect.any(String), name: 'Priya Shah', initials: 'PS', avatarUrl: null },
       typeLabel: 'Service enquiry',
       subject: 'Portfolio Analysis',
       status: { key: 'new', label: 'New', tone: 'danger' },

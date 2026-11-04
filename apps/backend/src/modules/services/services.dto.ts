@@ -127,6 +127,8 @@ export interface ServiceMessageDTO {
   senderId: string | null
   senderRole: ServiceSenderRole
   senderName: string
+  /** The sender's profile picture, null when they have none or the message is from the system. */
+  senderAvatarUrl: string | null
   kind: ServiceMessageKind
   body: string | null
   // Set on kind = quote: the card to show (its status is current, so a replaced quote reads superseded).
@@ -166,8 +168,8 @@ export interface MemberServiceRequestDTO extends ServiceRequestBaseDTO {
 /** What a support admin (web dashboard) sees. */
 export interface AdminServiceRequestDTO extends ServiceRequestBaseDTO {
   service: { id: string; name: string; title: string; imageUrl: string | null }
-  user: { id: string; name: string; phone: string }
-  assignedAdmin: { id: string; name: string } | null
+  user: { id: string; name: string; phone: string; avatarUrl: string | null }
+  assignedAdmin: { id: string; name: string; avatarUrl: string | null } | null
   unreadCount: number
   quote: ServiceQuoteDTO | null
   invoice: ServiceInvoiceSummaryDTO | null
