@@ -1117,6 +1117,11 @@ export class AdminService {
         : {}),
     }
 
+    // Paging is opt-in so a caller that wants the whole team (the reassign pickers) still gets it.
+    const paged = filters.page !== undefined || filters.pageSize !== undefined
+    const page = filters.page ?? 1
+    const pageSize = filters.pageSize ?? 10
+
     const [admins, superCount, scopedCount] = await Promise.all([
       this.db.user.findMany({
         where: { ...base, ...(filters.role === 'super' ? { isSuperAdmin: true } : filters.role === 'scoped' ? { isSuperAdmin: false } : {}) },
@@ -1128,13 +1133,23 @@ export class AdminService {
           isSuperAdmin: true,
           communityAccess: { select: { community: { select: { id: true, name: true, slug: true } } } },
         },
-        orderBy: { name: 'asc' },
+        // Two admins can share a name; the id keeps their order, and so the pages, stable.
+        orderBy: [{ name: 'asc' }, { id: 'asc' }],
+        ...(paged ? { skip: (page - 1) * pageSize, take: pageSize } : {}),
       }),
       this.db.user.count({ where: { ...base, isSuperAdmin: true } }),
       this.db.user.count({ where: { ...base, isSuperAdmin: false } }),
     ])
 
+    // The tab counts already cover each role over the same search and community filter, so the total of the
+    // current tab is one of them (or their sum) and needs no query of its own.
+    const total = filters.role === 'super' ? superCount : filters.role === 'scoped' ? scopedCount : superCount + scopedCount
+
     return {
+      total,
+      page: paged ? page : 1,
+      pageSize: paged ? pageSize : Math.max(1, total),
+      totalPages: paged ? Math.ceil(total / pageSize) : 1,
       items: admins.map(a => ({
         id: a.id,
         name: a.name,

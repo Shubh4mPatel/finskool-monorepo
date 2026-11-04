@@ -124,6 +124,9 @@ const listAdminsQuerySchema = z.object({
   role: z.enum(['all', 'super', 'scoped']).default('all'),
   search: z.string().trim().max(100).optional(),
   communityId: z.string().uuid().optional(),
+  // Optional: without either, every match is returned (the reassign pickers need the whole team).
+  page: z.coerce.number().int().min(1).optional(),
+  pageSize: z.coerce.number().int().min(1).max(100).optional(),
 })
 
 const createAdminSchema = z.object({

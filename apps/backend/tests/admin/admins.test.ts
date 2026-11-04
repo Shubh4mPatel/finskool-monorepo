@@ -106,7 +106,7 @@ describe('GET /admin/admins', () => {
 
     it('returns nothing, with zero counts, when nobody matches', async () => {
       const res = await list(boss, { search: 'nobody-called-this' })
-      expect(res.body.data).toEqual({ items: [], counts: { all: 0, super: 0, scoped: 0 } })
+      expect(res.body.data).toEqual({ items: [], total: 0, page: 1, pageSize: 1, totalPages: 1, counts: { all: 0, super: 0, scoped: 0 } })
     })
 
     it('treats % and _ as plain characters, not wildcards', async () => {
@@ -138,6 +138,74 @@ describe('GET /admin/admins', () => {
     // scoped + can manage Options + name/email contains "a": Anita Rao, Omar Khan.
     expect(names(res)).toEqual(['Anita Rao', 'Omar Khan'])
     expect(res.body.data.counts).toEqual({ all: 3, super: 1, scoped: 2 })
+  })
+
+  describe('paging', () => {
+    // Alphabetical: Anita Rao, Omar Khan, Priya Shah, Zoya Boss.
+    it('without page or pageSize returns every admin in one page (the reassign pickers rely on it)', async () => {
+      const res = await list(boss)
+      expect(names(res)).toHaveLength(4)
+      expect(res.body.data).toMatchObject({ total: 4, page: 1, totalPages: 1 })
+    })
+
+    it('returns one page at a time, with the total and the number of pages', async () => {
+      const first = await list(boss, { page: '1', pageSize: '3' })
+      expect(names(first)).toEqual(['Anita Rao', 'Omar Khan', 'Priya Shah'])
+      expect(first.body.data).toMatchObject({ total: 4, page: 1, pageSize: 3, totalPages: 2 })
+
+      const second = await list(boss, { page: '2', pageSize: '3' })
+      expect(names(second)).toEqual(['Zoya Boss'])
+      expect(second.body.data).toMatchObject({ total: 4, page: 2, pageSize: 3, totalPages: 2 })
+    })
+
+    it('pageSize alone starts at page 1, page alone uses 10 a page', async () => {
+      expect(names(await list(boss, { pageSize: '2' }))).toEqual(['Anita Rao', 'Omar Khan'])
+      const pageOnly = await list(boss, { page: '1' })
+      expect(pageOnly.body.data).toMatchObject({ page: 1, pageSize: 10, total: 4, totalPages: 1 })
+    })
+
+    it('a page past the end is empty but still reports the total', async () => {
+      const res = await list(boss, { page: '9', pageSize: '3' })
+      expect(res.status).toBe(200)
+      expect(names(res)).toEqual([])
+      expect(res.body.data).toMatchObject({ total: 4, totalPages: 2 })
+    })
+
+    it('the total follows the role tab, the search and the community, not the whole team', async () => {
+      const scoped = await list(boss, { role: 'scoped', pageSize: '2' })
+      expect(names(scoped)).toEqual(['Anita Rao', 'Omar Khan'])
+      expect(scoped.body.data).toMatchObject({ total: 3, totalPages: 2 })
+      // The tab counts are untouched by paging.
+      expect(scoped.body.data.counts).toEqual({ all: 4, super: 1, scoped: 3 })
+
+      const searched = await list(boss, { search: 'a', pageSize: '2' })
+      expect(searched.body.data.total).toBe(searched.body.data.counts.all)
+
+      const inOptions = await list(boss, { communityId: options.id, role: 'super', pageSize: '1' })
+      expect(names(inOptions)).toEqual(['Zoya Boss'])
+      expect(inOptions.body.data).toMatchObject({ total: 1, totalPages: 1 })
+    })
+
+    it('admins with the same name keep a stable order, so no one repeats or goes missing across pages', async () => {
+      await createAdmin({ isSuperAdmin: false, name: 'Priya Shah', email: 'priya.two@finskool.test' })
+      await createAdmin({ isSuperAdmin: false, name: 'Priya Shah', email: 'priya.three@finskool.test' })
+      const seen: string[] = []
+      for (let page = 1; page <= 7; page++) {
+        const res = await list(boss, { page: String(page), pageSize: '1' })
+        seen.push(...res.body.data.items.map((a: { id: string }) => a.id))
+      }
+      expect(seen).toHaveLength(6)
+      expect(new Set(seen).size).toBe(6)
+    })
+
+    it.each([
+      ['page 0', { page: '0' }],
+      ['a page that is not a number', { page: 'abc' }],
+      ['a pageSize of 0', { pageSize: '0' }],
+      ['a pageSize over 100', { pageSize: '101' }],
+    ])('rejects %s', async (_label, query) => {
+      expect((await list(boss, query)).status).toBe(400)
+    })
   })
 
   it.each([

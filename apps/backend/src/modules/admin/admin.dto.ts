@@ -149,11 +149,22 @@ export interface AdminListFilters {
   search?: string | undefined
   /** Admins who can manage this community — which includes every super admin. */
   communityId?: string | undefined
+  /**
+   * Paging is opt-in: give `page` and/or `pageSize` to get one page (defaults 1 and 10), give neither to get every
+   * match. The reassign pickers on the ticket and service screens rely on the second form.
+   */
+  page?: number | undefined
+  pageSize?: number | undefined
 }
 
 export interface AdminListDTO {
-  /** The admins matching every filter, alphabetical. */
+  /** The admins matching every filter, alphabetical: one page of them when paging was asked for, else all. */
   items: AdminUserDTO[]
+  /** Admins matching every filter, across all pages. */
+  total: number
+  page: number
+  pageSize: number
+  totalPages: number
   /**
    * Admins per role among those matching `search` and `communityId` (but ignoring `role`), so the
    * tabs' numbers always agree with what each tab would list.

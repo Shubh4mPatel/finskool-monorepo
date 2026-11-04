@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Check, Crown, Eye, EyeOff, Lock, Pencil, Plus, Search, SearchX, Shield, ShieldCheck, Trash2, UserCog, UserPlus, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useIsSuperAdmin } from "@/lib/session";
 import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import Modal from "@/components/ui/Modal";
+import Pagination from "@/components/ui/Pagination";
 import Select, { pillClass } from "@/components/ui/Select";
 import { EmptyState, Skeleton, stagger, TH } from "@/components/admin/dashboard/Panel";
 import { TintAvatar } from "@/components/admin/dashboard/TintAvatar";
@@ -29,11 +30,19 @@ interface AdminUser {
 
 type RoleTab = "all" | "super" | "scoped";
 
-/** GET /api/v1/admin/admins — filtered on the server; `counts` ignore the role tab so every tab has its number. */
+/** GET /api/v1/admin/admins — filtered and paged on the server; `counts` ignore the role tab so every tab has its number. */
 interface AdminListResponse {
+  /** One page of the admins matching the tab, search and community. */
   items: AdminUser[];
+  /** Admins matching them, across all pages. */
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
   counts: { all: number; super: number; scoped: number };
 }
+
+const PAGE_SIZE = 10;
 
 type AdminsResult = { query: string; error: boolean } & AdminListResponse;
 
@@ -132,6 +141,7 @@ export default function RolesAdminsPage() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [communityFilter, setCommunityFilter] = useState("");
   const [roleTab, setRoleTab] = useState<RoleTab>("all");
+  const listRef = useRef<HTMLElement>(null);
 
   // Add modal
   const [addOpen, setAddOpen] = useState(false);
@@ -167,14 +177,20 @@ export default function RolesAdminsPage() {
     return () => clearTimeout(t);
   }, [search]);
 
-  // The server does the filtering and the tab counts. The last response remembers which query it
+  // The page belongs to the filters it was picked under: change the tab, the search or the community and it
+  // falls back to page 1 by itself, with no effect to forget.
+  const filterKey = `${roleTab}|${debouncedSearch}|${communityFilter}`;
+  const [pageState, setPageState] = useState({ key: filterKey, page: 1 });
+  const page = pageState.key === filterKey ? pageState.page : 1;
+
+  // The server does the filtering, the paging and the tab counts. The last response remembers which query it
   // answered, so while a new one is in flight the current rows stay up (dimmed) instead of blanking.
   const query = useMemo(() => {
-    const params = new URLSearchParams({ role: roleTab });
+    const params = new URLSearchParams({ role: roleTab, page: String(page), pageSize: String(PAGE_SIZE) });
     if (debouncedSearch) params.set("search", debouncedSearch);
     if (communityFilter) params.set("communityId", communityFilter);
     return params.toString();
-  }, [roleTab, debouncedSearch, communityFilter]);
+  }, [roleTab, debouncedSearch, communityFilter, page]);
 
   const [result, setResult] = useState<AdminsResult | null>(null);
 
@@ -184,22 +200,44 @@ export default function RolesAdminsPage() {
     let cancelled = false;
     api
       .get<AdminListResponse>(`/api/v1/admin/admins?${query}`)
-      .then((data) => !cancelled && setResult({ query, error: false, ...data }))
+      .then((data) => {
+        if (cancelled) return;
+        // Deleting the last admin on the last page leaves that page empty: step back instead of showing "no admins".
+        if (data.items.length === 0 && data.total > 0 && page > 1) {
+          setPageState({ key: filterKey, page: Math.max(1, data.totalPages) });
+          return;
+        }
+        setResult({ query, error: false, ...data });
+      })
       .catch((err) => {
         if (cancelled) return;
         toast.error(err instanceof ApiError ? err.message : "Failed to load data");
-        setResult((r) => ({ query, error: true, items: r?.items ?? [], counts: r?.counts ?? { all: 0, super: 0, scoped: 0 } }));
+        setResult((r) => ({
+          query,
+          error: true,
+          items: r?.items ?? [],
+          total: r?.total ?? 0,
+          page: r?.page ?? 1,
+          pageSize: r?.pageSize ?? PAGE_SIZE,
+          totalPages: r?.totalPages ?? 1,
+          counts: r?.counts ?? { all: 0, super: 0, scoped: 0 },
+        }));
       });
     return () => {
       cancelled = true;
     };
-  }, [isSuperAdmin, query, reloadTick, toast]);
+  }, [isSuperAdmin, query, filterKey, page, reloadTick, toast]);
 
   const refreshing = result !== null && result.query !== query;
   const status: "loading" | "ready" | "error" = result === null ? "loading" : result.error && !refreshing ? "error" : "ready";
   const displayed = result?.items ?? [];
   const counts = result?.counts;
   const hasFilters = !!(search.trim() || communityFilter || roleTab !== "all");
+
+  function goToPage(next: number) {
+    setPageState({ key: filterKey, page: next });
+    listRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 
   function clearFilters() {
     setSearch("");
@@ -301,7 +339,7 @@ export default function RolesAdminsPage() {
         </button>
       </div>
 
-      <section className="animate-enter rounded-2xl bg-white shadow-card ring-1 ring-primary/[0.04]" style={{ animationDelay: "60ms" }}>
+      <section ref={listRef} className="animate-enter scroll-mt-4 rounded-2xl bg-white shadow-card ring-1 ring-primary/[0.04]" style={{ animationDelay: "60ms" }}>
         {/* Filters */}
         <div className="flex flex-col gap-3 border-b border-divider p-4 sm:p-5">
           <div className="flex flex-wrap items-center gap-3">
@@ -469,10 +507,15 @@ export default function RolesAdminsPage() {
           </div>
         )}
 
-        {status === "ready" && displayed.length > 0 && (
-          <div className="border-t border-divider px-5 py-4 text-sm text-muted">
-            Showing <span className="font-semibold tabular-nums text-primary">{displayed.length}</span> admin{displayed.length === 1 ? "" : "s"}
-          </div>
+        {status === "ready" && displayed.length > 0 && result && (
+          <Pagination
+            className="px-5 pb-4"
+            page={result.page}
+            pageSize={result.pageSize}
+            total={result.total}
+            noun={result.total === 1 ? "admin" : "admins"}
+            onPage={goToPage}
+          />
         )}
       </section>
 
