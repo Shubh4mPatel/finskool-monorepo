@@ -52,6 +52,13 @@ async function main() {
   }
   console.log(`communities.badgeUrl: ${communitiesByBadge.length} rows updated`)
 
+  // Stock logos are copies in MinIO too, and keep the host they were saved with.
+  const stocksByLogo = await prisma.stock.findMany({ where: { logoUrl: { startsWith: OLD_PREFIX } }, select: { id: true, logoUrl: true } })
+  for (const stock of stocksByLogo) {
+    await prisma.stock.update({ where: { id: stock.id }, data: { logoUrl: rewrite(stock.logoUrl!) } })
+  }
+  console.log(`stocks.logoUrl: ${stocksByLogo.length} rows updated`)
+
   // Only uploaded files live on MinIO — youtube/instagram rows hold external URLs.
   const videos = await prisma.postVideo.findMany({ where: { kind: 'file', url: { startsWith: OLD_PREFIX } } })
   for (const video of videos) {
