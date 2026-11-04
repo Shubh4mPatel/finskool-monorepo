@@ -25,6 +25,10 @@ interface FormState {
   contactEmail: string;
   contactPhone: string;
   footerNote: string;
+  proprietorName: string;
+  pan: string;
+  sebiRegistrationNo: string;
+  website: string;
   defaultGstRatePercent: string;
   defaultQuoteExpiryDays: string;
   invoicePrefix: string;
@@ -41,6 +45,10 @@ const fromSettings = (s: BillingSettings): FormState => ({
   contactEmail: s.contactEmail ?? "",
   contactPhone: s.contactPhone ?? "",
   footerNote: s.footerNote ?? "",
+  proprietorName: s.proprietorName ?? "",
+  pan: s.pan ?? "",
+  sebiRegistrationNo: s.sebiRegistrationNo ?? "",
+  website: s.website ?? "",
   defaultGstRatePercent: String(s.defaultGstRatePercent),
   defaultQuoteExpiryDays: String(s.defaultQuoteExpiryDays),
   invoicePrefix: s.invoicePrefix,
@@ -209,6 +217,10 @@ export default function BillingSettingsPage() {
         ...(optional(form.contactEmail) ? { contactEmail: form.contactEmail.trim() } : {}),
         ...(optional(form.contactPhone) ? { contactPhone: form.contactPhone.trim() } : {}),
         ...(optional(form.footerNote) ? { footerNote: form.footerNote.trim() } : {}),
+        ...(optional(form.proprietorName) ? { proprietorName: form.proprietorName.trim() } : {}),
+        ...(optional(form.pan) ? { pan: form.pan.trim().toUpperCase() } : {}),
+        ...(optional(form.sebiRegistrationNo) ? { sebiRegistrationNo: form.sebiRegistrationNo.trim().toUpperCase() } : {}),
+        ...(optional(form.website) ? { website: form.website.trim() } : {}),
         defaultGstRatePercent: Number(form.defaultGstRatePercent),
         defaultQuoteExpiryDays: Number(form.defaultQuoteExpiryDays),
         invoicePrefix: form.invoicePrefix.trim().toUpperCase(),
@@ -293,6 +305,22 @@ export default function BillingSettingsPage() {
             </Field>
             <Field id={fid("contactPhone")} label="Contact phone" hint="optional" error={errors["contactPhone"]}>
               <input id={fid("contactPhone")} value={form.contactPhone} onChange={set("contactPhone")} className={cls("contactPhone")} />
+            </Field>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Field id={fid("proprietorName")} label="Proprietor" hint="optional, shown on plan invoices" error={errors["proprietorName"]}>
+              <input id={fid("proprietorName")} value={form.proprietorName} onChange={set("proprietorName")} maxLength={150} className={cls("proprietorName")} />
+            </Field>
+            <Field id={fid("website")} label="Website" hint="optional" error={errors["website"]}>
+              <input id={fid("website")} value={form.website} onChange={set("website")} maxLength={200} placeholder="finskool21.com" className={cls("website")} />
+            </Field>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Field id={fid("pan")} label="PAN" hint="optional" error={errors["pan"]}>
+              <input id={fid("pan")} value={form.pan} onChange={set("pan")} maxLength={10} placeholder="ABCDE1234F" className={`${cls("pan")} uppercase tabular-nums`} />
+            </Field>
+            <Field id={fid("sebiRegistrationNo")} label="SEBI registration no." hint="optional" error={errors["sebiRegistrationNo"]}>
+              <input id={fid("sebiRegistrationNo")} value={form.sebiRegistrationNo} onChange={set("sebiRegistrationNo")} maxLength={12} placeholder="INH000012345" className={`${cls("sebiRegistrationNo")} uppercase tabular-nums`} />
             </Field>
           </div>
           <Field id={fid("footerNote")} label="Footer note" hint="optional" error={errors["footerNote"]}>

@@ -186,6 +186,11 @@ export const billingSettingsSchema = z
     contactEmail: z.string().trim().email().max(255).optional(),
     contactPhone: z.string().trim().max(30).optional(),
     footerNote: z.string().trim().max(500).optional(),
+    // Printed on the invoice a member gets for a plan. All optional: an invoice leaves out whatever is not set.
+    proprietorName: z.string().trim().max(150).optional(),
+    pan: z.string().trim().toUpperCase().regex(/^[A-Z]{5}[0-9]{4}[A-Z]$/, 'A PAN looks like ABCDE1234F').optional(),
+    sebiRegistrationNo: z.string().trim().toUpperCase().regex(/^IN[A-Z][0-9]{9}$/, 'A SEBI registration number looks like INH000012345').optional(),
+    website: z.string().trim().max(200).regex(/^\S+$/, 'A website has no spaces').optional(),
     defaultGstRatePercent: percent,
     defaultQuoteExpiryDays: z.number().int().min(1).max(90),
     invoicePrefix: z.string().trim().regex(/^[A-Z0-9]{1,10}$/, 'Up to 10 capital letters or digits'),

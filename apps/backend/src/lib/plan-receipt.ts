@@ -1,27 +1,20 @@
-import PDFDocument from 'pdfkit'
 import type { Prisma, PrismaClient } from '../generated/prisma/client.js'
 import { generateInvoiceDownloadUrl, uploadInvoicePdf } from './minio.js'
 import { logger } from '../shared/logger.js'
 import { hasMemberAccess } from './community-access.js'
 import { NotFoundError, ForbiddenError } from '../shared/errors/index.js'
 import { loadBillingSettings } from '../modules/services/billing-settings.js'
-import { amountInWords, financialYearOf, rupeesToPaise } from '../modules/services/services.billing.js'
+import { financialYearOf } from '../modules/services/services.billing.js'
+import { fetchPaymentSnapshot, type PaymentSnapshot } from './payment-details.js'
+import { renderReceiptPdf, type ReceiptBuyer, type ReceiptSeller } from './receipt-pdf.js'
 
+export { renderReceiptPdf }
 export type PlanReceiptRow = Prisma.PlanReceiptGetPayload<object>
 
-interface ReceiptSeller {
-  legalName: string
-  address: string | null
-  gstin: string | null
-  contactEmail: string | null
-  contactPhone: string | null
-  footerNote: string | null
-}
-
-interface ReceiptBuyer {
-  name: string
-  email: string | null
-  phone: string
+/** The days of access a payment bought, first and last day included. */
+export interface ReceiptPeriod {
+  start: Date
+  end: Date
 }
 
 const RECEIPT_PREFIX = 'RCPT'
@@ -31,7 +24,7 @@ const RECEIPT_PREFIX = 'RCPT'
  * verify call racing the webhook): the second call returns the receipt the first one made. The number comes
  * from its own counter row ("R2026-27") so it never uses up a GST invoice number.
  */
-export async function issuePlanReceipt(db: PrismaClient, planOrderId: string): Promise<PlanReceiptRow> {
+export async function issuePlanReceipt(db: PrismaClient, planOrderId: string, period?: ReceiptPeriod): Promise<PlanReceiptRow> {
   const existing = await db.planReceipt.findUnique({ where: { planOrderId } })
   if (existing) return existing
 
@@ -51,7 +44,20 @@ export async function issuePlanReceipt(db: PrismaClient, planOrderId: string): P
     contactEmail: settings.contactEmail ?? null,
     contactPhone: settings.contactPhone ?? null,
     footerNote: settings.footerNote ?? null,
+    proprietorName: settings.proprietorName ?? null,
+    pan: settings.pan ?? null,
+    sebiRegistrationNo: settings.sebiRegistrationNo ?? null,
+    website: settings.website ?? null,
+    sacCode: settings.sacCode ?? null,
   }
+  // The days of access this payment bought. The caller knows them exactly (a renewal starts when the old access ends);
+  // failing that, the subscription it created says when it started and when it runs out.
+  const subscription = period || !order.subscriptionId ? null : await db.subscription.findUnique({ where: { id: order.subscriptionId }, select: { paidOn: true, validUntil: true } })
+  const access: ReceiptPeriod | null = period ?? (subscription ? { start: subscription.paidOn ?? subscription.validUntil, end: subscription.validUntil } : null)
+  // How it was paid, asked of Razorpay before the database transaction so a slow answer never holds a lock. If it
+  // cannot be had the invoice just has fewer details: the order id we already hold is kept.
+  const looked = order.razorpayPaymentId ? await fetchPaymentSnapshot(order.razorpayPaymentId) : null
+  const payment: PaymentSnapshot = { method: null, detail: null, paidAt: null, ...looked, orderId: looked?.orderId ?? order.razorpayOrderId }
   const buyer: ReceiptBuyer = { name: order.user.name, email: order.user.email, phone: order.user.phone }
   const issuedAt = new Date()
   const financialYear = financialYearOf(issuedAt)
@@ -78,6 +84,8 @@ export async function issuePlanReceipt(db: PrismaClient, planOrderId: string): P
           amount: order.amount,
           currency: order.currency,
           razorpayPaymentId: order.razorpayPaymentId,
+          ...(access ? { periodStart: access.start, periodEnd: access.end } : {}),
+          payment: payment as unknown as Prisma.InputJsonValue,
         },
       })
     })
@@ -87,76 +95,6 @@ export async function issuePlanReceipt(db: PrismaClient, planOrderId: string): P
     if (winner) return winner
     throw err
   }
-}
-
-const INK = '#1a1a1a'
-const MUTED = '#666666'
-const LINE = '#cfcfcf'
-const istDate = (d: Date): string => d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: '2-digit', year: 'numeric' })
-const inr = (v: Prisma.Decimal | number | string): string =>
-  `INR ${Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-
-export function renderReceiptPdf(receipt: PlanReceiptRow): Promise<Buffer> {
-  const seller = receipt.seller as unknown as ReceiptSeller
-  const buyer = receipt.buyer as unknown as ReceiptBuyer
-  return new Promise<Buffer>((resolve, reject) => {
-    const doc = new PDFDocument({ size: 'A4', margin: 40, info: { Title: `Payment receipt ${receipt.number}`, Author: seller.legalName } })
-    const chunks: Buffer[] = []
-    doc.on('data', (c: Buffer) => chunks.push(c))
-    doc.on('end', () => resolve(Buffer.concat(chunks)))
-    doc.on('error', reject)
-    const left = 40
-    const right = 555
-    const width = right - left
-
-    doc.fillColor(INK).font('Helvetica-Bold').fontSize(16).text(seller.legalName, left, 40, { width: 300 })
-    doc.font('Helvetica').fontSize(9).fillColor(MUTED)
-    if (seller.address) doc.text(seller.address, left, doc.y + 2, { width: 300 })
-    if (seller.gstin) doc.text(`GSTIN: ${seller.gstin}`, { width: 300 })
-    const contact = [seller.contactEmail, seller.contactPhone].filter(Boolean).join('  |  ')
-    if (contact) doc.text(contact, { width: 300 })
-
-    doc.fillColor(INK).font('Helvetica-Bold').fontSize(20).text('PAYMENT RECEIPT', 300, 40, { width: right - 300, align: 'right' })
-    doc.font('Helvetica').fontSize(10)
-    doc.text(`Receipt No: ${receipt.number}`, 300, 70, { width: right - 300, align: 'right' })
-    doc.text(`Date: ${istDate(receipt.issuedAt)}`, 300, doc.y + 2, { width: right - 300, align: 'right' })
-    if (receipt.razorpayPaymentId) doc.text(`Payment ID: ${receipt.razorpayPaymentId}`, 300, doc.y + 2, { width: right - 300, align: 'right' })
-
-    let y = Math.max(doc.y, 120) + 16
-    doc.moveTo(left, y).lineTo(right, y).strokeColor(LINE).stroke()
-    y += 12
-    doc.font('Helvetica-Bold').fontSize(9).fillColor(MUTED).text('RECEIVED FROM', left, y)
-    doc.font('Helvetica-Bold').fontSize(11).fillColor(INK).text(buyer.name, left, doc.y + 2, { width: 320 })
-    doc.font('Helvetica').fontSize(9).fillColor(MUTED)
-    doc.text(buyer.phone, { width: 320 })
-    if (buyer.email) doc.text(buyer.email, { width: 320 })
-
-    y = doc.y + 18
-    doc.rect(left, y, width, 20).fill('#f1f1f1')
-    doc.fillColor(INK).font('Helvetica-Bold').fontSize(8.5)
-    doc.text('Description', left + 6, y + 6, { width: 360 })
-    doc.text('Amount (INR)', 400, y + 6, { width: right - 400 - 4, align: 'right' })
-    y += 28
-    doc.font('Helvetica').fontSize(9.5)
-    const h = doc.heightOfString(receipt.description, { width: 340 })
-    doc.text(receipt.description, left + 6, y, { width: 340 })
-    doc.text(Number(receipt.amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), 400, y, { width: right - 400 - 4, align: 'right' })
-    y += Math.max(h, 14) + 10
-    doc.moveTo(left, y).lineTo(right, y).strokeColor(LINE).stroke()
-
-    y += 12
-    doc.font('Helvetica-Bold').fontSize(11).fillColor(INK).text('Total paid', 340, y, { width: 100 })
-    doc.text(inr(receipt.amount), 440, y, { width: right - 440, align: 'right' })
-    doc.font('Helvetica').fontSize(9).fillColor(MUTED).text('Amount in words', left, y + 26)
-    doc.font('Helvetica-Bold').fontSize(9.5).fillColor(INK).text(amountInWords(rupeesToPaise(receipt.amount.toString())), left, doc.y + 2, { width })
-
-    const footerY = Math.max(doc.y + 40, 700)
-    doc.font('Helvetica').fontSize(8.5).fillColor(MUTED)
-    doc.text('Amount paid is inclusive of applicable taxes.', left, footerY, { width })
-    if (seller.footerNote) doc.text(seller.footerNote, left, doc.y + 4, { width })
-    doc.text('This is a computer-generated receipt and does not require a signature.', left, doc.y + 4, { width })
-    doc.end()
-  })
 }
 
 const pdfFileName = (r: Pick<PlanReceiptRow, 'number'>): string => `${r.number.replace(/\//g, '-')}.pdf`

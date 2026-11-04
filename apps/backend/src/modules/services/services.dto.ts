@@ -69,6 +69,10 @@ export interface BillingSettingsDTO {
   contactEmail: string | null
   contactPhone: string | null
   footerNote: string | null
+  proprietorName: string | null
+  pan: string | null
+  sebiRegistrationNo: string | null
+  website: string | null
   defaultGstRatePercent: number
   defaultQuoteExpiryDays: number
   invoicePrefix: string

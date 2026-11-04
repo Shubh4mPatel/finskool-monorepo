@@ -238,19 +238,19 @@ export class PaymentsService {
         },
       })
 
-      return { subscription, isNewGrant }
+      return { subscription, isNewGrant, period: { start: base, end: validUntil } }
     })
     if (!granted) {
       const fresh = await this.db.planOrder.findUniqueOrThrow({ where: { id: order.id } })
       return this.resultOfPaidOrder(fresh, razorpayPaymentId)
     }
-    const { subscription, isNewGrant } = granted
+    const { subscription, isNewGrant, period } = granted
 
     // The receipt (PDF in the invoices bucket, attached to the email below). A failure here must not undo the
     // payment or lose the email, which just goes without the attachment.
     let receiptId: string | undefined
     try {
-      receiptId = (await issuePlanReceipt(this.db, order.id)).id
+      receiptId = (await issuePlanReceipt(this.db, order.id, period)).id
       renderReceiptInBackground(this.db, receiptId)
     } catch (err) {
       logger.error({ err, planOrderId: order.id }, 'payments.settlePlanOrder: failed to issue receipt')

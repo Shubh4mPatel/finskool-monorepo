@@ -1144,6 +1144,11 @@ model BillingSettings {
   contactEmail           String?  @map("contact_email") @db.VarChar(255)
   contactPhone           String?  @map("contact_phone") @db.VarChar(30)
   footerNote             String?  @map("footer_note") @db.VarChar(500)
+  // Shown on the invoice a member gets for a plan: who runs the business and how to verify it.
+  proprietorName         String?  @map("proprietor_name") @db.VarChar(150)
+  pan                    String?  @db.VarChar(10)
+  sebiRegistrationNo     String?  @map("sebi_registration_no") @db.VarChar(30)
+  website                String?  @db.VarChar(200)
   defaultGstRatePercent  Decimal  @default(18) @map("default_gst_rate_percent") @db.Decimal(5, 2)
   defaultQuoteExpiryDays Int      @default(5) @map("default_quote_expiry_days")
   invoicePrefix          String   @default("FS") @map("invoice_prefix") @db.VarChar(10)
@@ -1211,6 +1216,12 @@ model PlanReceipt {
   amount        Decimal  @db.Decimal(10, 2)
   currency      String   @default("INR") @db.VarChar(10)
   razorpayPaymentId String? @map("razorpay_payment_id") @db.VarChar(64)
+  // The days of access this payment bought, first and last day included. Null on receipts issued before these were kept.
+  periodStart   DateTime? @map("period_start") @db.Date
+  periodEnd     DateTime? @map("period_end") @db.Date
+  // How it was paid (method, masked detail, time), as Razorpay reported it when the receipt was issued. Null if it
+  // could not be looked up.
+  payment       Json?
   pdfObjectKey  String?  @map("pdf_object_key") @db.VarChar(300)
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
 

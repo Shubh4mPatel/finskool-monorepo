@@ -25,6 +25,8 @@ ENV FFPROBE_PATH=/usr/bin/ffprobe
 COPY apps/backend/tsconfig.json apps/backend/prisma.config.ts ./apps/backend/
 COPY apps/backend/prisma ./apps/backend/prisma
 COPY apps/backend/email-template ./apps/backend/email-template
+# Fonts for the invoice PDF (the standard PDF fonts have no rupee sign).
+COPY apps/backend/assets ./apps/backend/assets
 COPY apps/backend/src ./apps/backend/src
 RUN npm run prisma:generate --workspace=apps/backend
 WORKDIR /app/apps/backend
@@ -57,6 +59,8 @@ COPY --from=builder /app/apps/backend/src/generated ./apps/backend/src/generated
 COPY apps/backend/prisma ./apps/backend/prisma
 COPY apps/backend/prisma.config.ts ./apps/backend/prisma.config.ts
 COPY apps/backend/email-template ./apps/backend/email-template
+# Fonts for the invoice PDF (the standard PDF fonts have no rupee sign).
+COPY apps/backend/assets ./apps/backend/assets
 COPY apps/backend/docker-entrypoint.sh ./apps/backend/docker-entrypoint.sh
 RUN chmod +x apps/backend/docker-entrypoint.sh
 WORKDIR /app/apps/backend
