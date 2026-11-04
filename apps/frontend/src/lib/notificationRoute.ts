@@ -46,8 +46,6 @@ export function notificationRoute(n: RoutableNotification): string | null {
         return `/admin/services/${encodeURIComponent(d.id)}`;
       case "payment-flags": // a payment that could not be applied: the review list, with this request marked
         return `/admin/payment-flags?request=${encodeURIComponent(d.id)}`;
-      case "recommendation":
-        return "/admin/stock-recommendations";
     }
   }
   return ROUTE_BY_TYPE[n.type] ?? null;
