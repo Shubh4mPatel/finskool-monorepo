@@ -261,8 +261,8 @@ export default function CreatePostPage() {
               <div className="flex flex-col gap-4" aria-label="Loading communities">
                 <Skeleton className="h-16 w-full rounded-xl" />
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <Skeleton className="h-[117px] rounded-xl" />
-                  <Skeleton className="h-[117px] rounded-xl" />
+                  <Skeleton className="aspect-[5/2] rounded-xl" />
+                  <Skeleton className="aspect-[5/2] rounded-xl" />
                 </div>
               </div>
             )}
@@ -313,11 +313,12 @@ export default function CreatePostPage() {
                         type="button"
                         onClick={() => toggleTarget(c.id)}
                         aria-pressed={selected}
-                        className={`animate-enter group relative flex h-[117px] items-end overflow-hidden rounded-xl text-left text-white transition-all duration-300 hover:-translate-y-0.5 hover:shadow-card-hover ${
+                        className={`animate-enter group relative flex aspect-[5/2] items-end overflow-hidden rounded-xl text-left text-white transition-all duration-300 hover:-translate-y-0.5 hover:shadow-card-hover ${
                           selected ? "ring-2 ring-accent ring-offset-2" : ""
                         }`}
                         style={{ background: "linear-gradient(120deg, #0a5f57, #108b8b)", ...stagger(i) }}
                       >
+                        {/* Covers are uploaded 5:2, and so is this card, so the whole picture shows. */}
                         {c.coverImageUrl && (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img src={c.coverImageUrl} alt="" className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
