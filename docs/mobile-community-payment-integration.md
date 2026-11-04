@@ -283,9 +283,21 @@ You do not call these from the app. The webview page calls them. They are listed
   "keyId": "rzp_live_…",
   "planName": "3 Month",
   "durationMonths": 3,
-  "communityName": "Swing Trading Club"
+  "communityName": "Swing Trading Club",
+  "community": {
+    "name": "Swing Trading Club",
+    "description": "Swing trade ideas with clear entries, targets and exits.",
+    "type": "Short Term Investment",
+    "tags": ["swing trading", "equity"],
+    "coverImageUrl": "https://…",
+    "badgeUrl": "https://…",
+    "whatsIncluded": ["Daily trade ideas", "Live Q&A"],
+    "memberCount": 128
+  }
 }
 ```
+
+The `community` block is what the page shows so the member knows what they are buying: the banner and badge, the name, type, description and topics, the **What you get** list, the number of members with access right now, and then the plan and the total (price, GST and total when GST applies). Any part that is empty is simply left out of the page. The page is set in the same look as the rest of the product, so the webview needs no styling of its own. `communityName` is still sent as before.
 
 `verify` request: `{ "razorpayPaymentId": "pay_…", "razorpaySignature": "…" }`. Response:
 

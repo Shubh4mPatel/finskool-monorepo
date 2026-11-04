@@ -44,6 +44,21 @@ export interface CheckoutSessionResultDTO {
   expiresInSeconds: number
 }
 
+/** What the payment page shows about the community being bought: who it is and what the member gets. */
+export interface CheckoutCommunityDTO {
+  name: string
+  description: string | null
+  /** A short category label such as "Short Term Investment". */
+  type: string | null
+  tags: string[]
+  coverImageUrl: string | null
+  badgeUrl: string | null
+  /** The "What you get" points the admin wrote for the community. Empty when none were written. */
+  whatsIncluded: string[]
+  /** Members with access right now. */
+  memberCount: number
+}
+
 export interface CheckoutExchangeResultDTO {
   sessionToken: string // sent as a Bearer token on verify and status; reaches this one order only
   status: string // created | paid | failed
@@ -57,6 +72,7 @@ export interface CheckoutExchangeResultDTO {
   planName: string
   durationMonths: number
   communityName: string
+  community: CheckoutCommunityDTO
 }
 
 export interface CheckoutStatusDTO {

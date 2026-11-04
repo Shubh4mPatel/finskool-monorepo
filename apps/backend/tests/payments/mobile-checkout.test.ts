@@ -351,3 +351,54 @@ describe('GST on top of the plan price', () => {
     expect(res.body.data.payment).toBe(1178.82)
   })
 })
+
+// The payment page shows the member what they are buying: the community and what they get with it.
+describe('what the checkout shows about the community', () => {
+  beforeEach(async () => {
+    Object.assign(env.razorpay, { keyId: 'rzp_test_info' })
+    await prisma.community.update({
+      where: { id: communityId },
+      data: {
+        name: 'Swing Alpha',
+        description: 'Swing trade ideas with entries, targets and exits.\nBacked by research.',
+        type: 'Short Term Investment',
+        tags: ['swing', 'equity'],
+        coverImageUrl: 'https://files.test/cover.png',
+        badgeUrl: 'https://files.test/badge.png',
+        whatsIncluded: ['Daily trade ideas', 'Live Q&A', 'Performance tracker'],
+      },
+    })
+  })
+
+  it('sends who it is and what the member gets, next to the plan and the price', async () => {
+    const { opened } = await openCheckout()
+    expect(opened.body.data).toMatchObject({ communityName: 'Swing Alpha', planName: '3 Month', durationMonths: 3 })
+    expect(opened.body.data.community).toEqual({
+      name: 'Swing Alpha',
+      description: 'Swing trade ideas with entries, targets and exits.\nBacked by research.',
+      type: 'Short Term Investment',
+      tags: ['swing', 'equity'],
+      coverImageUrl: 'https://files.test/cover.png',
+      badgeUrl: 'https://files.test/badge.png',
+      whatsIncluded: ['Daily trade ideas', 'Live Q&A', 'Performance tracker'],
+      memberCount: 0,
+    })
+  })
+
+  it('counts each member with access once, and not the ones whose access has run out', async () => {
+    const active = await createMobileMember({ subscriptions: [{ communityId, validUntil: daysFromNow(30) }] })
+    await prisma.subscription.create({ data: { userId: active.id, communityId, payment: 100, paidOn: new Date(daysFromNow(-60)), validUntil: new Date(daysFromNow(10)), isActive: true } })
+    await createMobileMember({ subscriptions: [{ communityId, validUntil: daysFromNow(5) }] })
+    await createMobileMember({ subscriptions: [{ communityId, validUntil: daysFromNow(-5) }] })
+    await createMobileMember({ subscriptions: [{ communityId, validUntil: daysFromNow(30), isActive: false }] })
+
+    const { opened } = await openCheckout()
+    expect(opened.body.data.community.memberCount).toBe(2)
+  })
+
+  it('copes with a community that has no description, cover or points', async () => {
+    await prisma.community.update({ where: { id: communityId }, data: { description: null, type: null, tags: [], coverImageUrl: null, badgeUrl: null, whatsIncluded: [] } })
+    const { opened } = await openCheckout()
+    expect(opened.body.data.community).toMatchObject({ description: null, type: null, tags: [], coverImageUrl: null, badgeUrl: null, whatsIncluded: [] })
+  })
+})

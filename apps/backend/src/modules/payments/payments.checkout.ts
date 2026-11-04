@@ -83,13 +83,24 @@ export class PaymentsCheckoutService {
 
     const order = await this.db.planOrder.findUnique({
       where: { id: planOrderId },
-      include: { plan: { select: { name: true, durationMonths: true } }, community: { select: { name: true } } },
+      include: {
+        plan: { select: { name: true, durationMonths: true } },
+        community: { select: { name: true, description: true, type: true, tags: true, coverImageUrl: true, badgeUrl: true, whatsIncluded: true } },
+      },
     })
     if (!order) {
       logger.error({ planOrderId }, 'checkout.exchange: the order behind this link no longer exists')
       throw new UnauthorizedError('This checkout link is no longer valid')
     }
     logger.info({ planOrderId, userId: order.userId, orderStatus: order.status }, 'checkout.exchange: session opened')
+
+    // Members with access right now, each counted once: the same definition the communities list uses.
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const members = await this.db.subscription.groupBy({
+      by: ['userId'],
+      where: { communityId: order.communityId, isActive: true, validUntil: { gte: today } },
+    })
 
     const sessionToken = newToken()
     await redis.set(sessionKey(hashOf(sessionToken)), planOrderId, 'EX', env.paymentSessionTtlSeconds)
@@ -108,6 +119,7 @@ export class PaymentsCheckoutService {
       planName: order.plan.name,
       durationMonths: order.plan.durationMonths,
       communityName: order.community.name,
+      community: { ...order.community, memberCount: members.length },
     }
   }
 
