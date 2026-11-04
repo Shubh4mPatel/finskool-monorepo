@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitest/config'
 import { TEST_ENV } from './tests/setup/test-env.js'
 
@@ -5,6 +6,8 @@ import { TEST_ENV } from './tests/setup/test-env.js'
 // so Prisma's raw queries, unique constraints and transactions are exercised for
 // real. Redis/BullMQ are mocked in tests/setup/mocks.ts — see that file for why.
 export default defineConfig({
+  // The sheet-reading tests run the admin web app's own parser, which imports from '@/lib/...'.
+  resolve: { alias: { '@': fileURLToPath(new URL('../frontend/src', import.meta.url)) } },
   test: {
     include: ['tests/**/*.test.ts'],
     globalSetup: ['tests/setup/global-setup.ts'],

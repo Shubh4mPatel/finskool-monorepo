@@ -17,6 +17,11 @@ const MAX_CAPITAL = 999_999_999_999
 
 const blankToUndefined = (v: unknown): unknown => (typeof v === 'string' && v.trim() === '' ? undefined : v)
 
+/** What an Exit Date cell holds while a trade is still running ("Open", "Hold", "-"): the same as leaving it empty. */
+const NO_EXIT_YET = new Set(['open', 'hold', 'holding', 'running', 'pending', 'na', 'n/a', 'nil', 'none', '-', '–', '—'])
+const exitDateInput = (v: unknown): unknown =>
+  typeof v === 'string' && (v.trim() === '' || NO_EXIT_YET.has(v.trim().toLowerCase())) ? undefined : v
+
 function toNumber(v: unknown): unknown {
   if (typeof v !== 'string') return v
   const cleaned = v.replace(/[,\s₹$%]/g, '')
@@ -46,6 +51,7 @@ const dateCore = (label: string) =>
     .refine(isRealDate, `${label} is not a real date`)
 const requiredDate = (label: string) => dateCore(label)
 const optionalDate = (label: string) => z.preprocess(blankToUndefined, dateCore(label).nullish())
+const optionalExitDate = (label: string) => z.preprocess(exitDateInput, dateCore(label).nullish())
 
 const requiredText = (label: string, max: number) =>
   z
@@ -83,7 +89,7 @@ export const swingTradeSchema = z.object({
   cmp: optionalPrice('CMP'),
   targetPct: optionalPct('Target %'),
   analysis: optionalText('Analysis', 60),
-  exitDate: optionalDate('Exit date'),
+  exitDate: optionalExitDate('Exit date'),
   visibility: visibility.optional(),
 })
 

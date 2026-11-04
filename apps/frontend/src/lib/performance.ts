@@ -334,16 +334,62 @@ export interface ParsedSheet {
   /** Header cells that were read, so the admin can see what was and was not picked up. */
   recognised: string[];
   ignored: string[];
+  /** The tab that was read, and the row its headers were found on (the dashboards keep a title block above them). */
+  sheetName: string;
+  headerRow: number;
 }
 
 export class SheetError extends Error {}
 
+/** Words an Exit Date cell holds while a trade is still running: "Open", "Hold", "-". They mean "no exit date yet". */
+const NO_EXIT_YET = new Set(["open", "hold", "holding", "running", "pending", "na", "n/a", "nil", "none", "-", "–", "—"]);
+
+/** Which tab of a workbook belongs to each investor segment; other boards read the first visible tab. */
+const SEGMENT_TAB: Partial<Record<PerformanceSegment, RegExp>> = {
+  investor: /investor/i,
+  long_term: /long/i,
+  us_investment: /\bus\b|usa|united states|global|international/i,
+};
+
+/** The tab to read: for an investor segment the one named like it ("Long Term", "US Investment"), else the first visible one. */
+function pickSheet(workbook: XLSX.WorkBook, segment: PerformanceSegment): string | undefined {
+  const hidden = new Set(
+    (workbook.Workbook?.Sheets ?? []).flatMap((s, i) => (s.Hidden ? [workbook.SheetNames[i]!] : [])),
+  );
+  const visible = workbook.SheetNames.filter(n => !hidden.has(n));
+  const wanted = SEGMENT_TAB[segment];
+  return (wanted && visible.find(n => wanted.test(n))) || visible[0] || workbook.SheetNames[0];
+}
+
+/** A header cell's canonical column key, or undefined when it is not one the board reads. */
+function keyOfHeader(cell: unknown): string | undefined {
+  const norm = normalizeHeader(String(cell ?? ""));
+  return norm ? Object.entries(ALIASES).find(([, names]) => names.includes(norm))?.[0] : undefined;
+}
+
+/** The row (0-based, within the first 40) that holds the column headers: the one naming the most known columns. */
+function findHeaderRow(grid: unknown[][]): number {
+  let best = -1;
+  let bestCount = 0;
+  grid.slice(0, 40).forEach((cells, i) => {
+    const count = new Set(cells.map(keyOfHeader).filter(Boolean)).size;
+    if (count > bestCount) {
+      best = i;
+      bestCount = count;
+    }
+  });
+  // Fewer than three known columns is not a header row; fall back to the first row so the "missing columns" message names what to add.
+  return bestCount >= 3 ? best : 0;
+}
+
 /**
- * Reads the first sheet of a .csv / .xlsx / .xls file into API rows. Parsing happens in the browser (as on
- * Import CSV); the server validates every row again. CSV text is read as plain strings so a date like
- * "01/10/2026" is not guessed as month-first by the spreadsheet library.
+ * Reads one tab of a .csv / .xlsx / .xls file into API rows. Parsing happens in the browser (as on Import CSV); the
+ * server validates every row again. Real dashboards put a title and notes above the headers and a summary block beside
+ * the table, so the header row is found rather than assumed to be row 1, and cells outside the headed columns are
+ * ignored. An investor workbook holds one tab per segment, so the tab is chosen by the segment being uploaded. CSV text
+ * is read as plain strings so a date like "01/10/2026" is not guessed as month-first by the spreadsheet library.
  */
-export async function parseSheet(file: File, kind: PerformanceKind): Promise<ParsedSheet> {
+export async function parseSheet(file: File, kind: PerformanceKind, segment: PerformanceSegment = "main"): Promise<ParsedSheet> {
   if (!/\.(csv|xlsx|xls)$/i.test(file.name)) throw new SheetError("Please choose a .csv, .xlsx or .xls file.");
   if (file.size > MAX_SHEET_BYTES) throw new SheetError("That file is over 5 MB.");
 
@@ -354,45 +400,58 @@ export async function parseSheet(file: File, kind: PerformanceKind): Promise<Par
   } catch {
     throw new SheetError("Couldn't read that file. Try saving it again as a .csv or .xlsx.");
   }
-  const sheet = workbook.Sheets[workbook.SheetNames[0]!];
-  if (!sheet) throw new SheetError("That file has no sheets.");
+  const sheetName = pickSheet(workbook, segment);
+  const sheet = sheetName ? workbook.Sheets[sheetName] : undefined;
+  if (!sheetName || !sheet) throw new SheetError("That file has no sheets.");
 
-  const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "", raw: true });
-  if (raw.length === 0) throw new SheetError("The sheet has no rows under its header.");
+  // Every row, blank ones included, so a row's number is its real row in the sheet.
+  const grid = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "", raw: true, blankrows: true });
+  const firstSheetRow = sheet["!ref"] ? XLSX.utils.decode_range(sheet["!ref"]).s.r : 0;
+  const headerIdx = findHeaderRow(grid);
+  const headerCells = grid[headerIdx] ?? [];
+  if (grid.length <= headerIdx + 1) throw new SheetError("The sheet has no rows under its header.");
 
-  // header text -> canonical key
-  const headers = Object.keys(raw[0]!);
-  const keyOf = new Map<string, string>();
+  // column position -> canonical key; two header cells for one field: the first wins.
+  const keyAt = new Map<number, string>();
   const recognised: string[] = [];
   const ignored: string[] = [];
-  for (const header of headers) {
-    const norm = normalizeHeader(header);
-    const key = Object.entries(ALIASES).find(([, names]) => names.includes(norm))?.[0];
-    // Two header cells for one field: the first wins.
-    if (key && ![...keyOf.values()].includes(key)) {
-      keyOf.set(header, key);
-      recognised.push(header.trim());
-    } else if (header.trim() && !header.startsWith("__EMPTY")) ignored.push(header.trim());
-  }
+  headerCells.forEach((cell, col) => {
+    const text = String(cell ?? "").trim();
+    const key = keyOfHeader(cell);
+    if (key && ![...keyAt.values()].includes(key)) {
+      keyAt.set(col, key);
+      recognised.push(text);
+    } else if (text && !text.startsWith("__EMPTY")) ignored.push(text);
+  });
 
-  const present = new Set(keyOf.values());
+  const present = new Set(keyAt.values());
   const missing = REQUIRED[kind].filter(c => !present.has(c.key)).map(c => c.label);
 
   const rows: SheetRow[] = [];
-  raw.forEach((record, i) => {
-    const out: SheetRow = { row: i + 2 };
+  for (let gi = headerIdx + 1; gi < grid.length; gi++) {
+    const cells = grid[gi] ?? [];
+    const out: SheetRow = { row: firstSheetRow + gi + 1 };
     let any = false;
-    for (const [header, key] of keyOf) {
-      const v = record[header];
+    for (const [col, key] of keyAt) {
+      const v = cells[col];
       if (v === "" || v === null || v === undefined) continue;
+      if (key === "exitDate" && typeof v === "string" && NO_EXIT_YET.has(v.trim().toLowerCase())) continue;
       any = true;
       out[key] = key === "tradeDate" || key === "exitDate" ? normalizeDate(v) : typeof v === "number" ? v : String(v).trim();
     }
+    // A row that only has a serial number (a formula dragged down the sheet) is not a trade.
     if (any) rows.push(out);
-  });
+  }
+
+  // A Target column formatted as a percentage hands over fractions (5% is 0.05). When every number in the column is
+  // 1 or less they are fractions: no real target is under 1%.
+  const targets = rows.flatMap(r => (typeof r["targetPct"] === "number" ? [r["targetPct"] as number] : []));
+  if (targets.length > 0 && targets.every(t => t > 0 && t <= 1)) {
+    for (const r of rows) if (typeof r["targetPct"] === "number") r["targetPct"] = Math.round((r["targetPct"] as number) * 10000) / 100;
+  }
 
   if (rows.length > MAX_SHEET_ROWS) throw new SheetError(`A sheet can have at most ${MAX_SHEET_ROWS.toLocaleString("en-IN")} rows; this one has ${rows.length.toLocaleString("en-IN")}.`);
-  return { rows, missing, recognised, ignored };
+  return { rows, missing, recognised, ignored, sheetName, headerRow: firstSheetRow + headerIdx + 1 };
 }
 
 const SAMPLE_ROWS: Record<PerformanceKind, string[][]> = {

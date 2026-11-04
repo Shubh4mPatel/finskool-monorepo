@@ -67,7 +67,7 @@ export default function UploadSheetModal({
     setProblem(null);
     setStep("reading");
     try {
-      const sheet = await parseSheet(f, board.kind);
+      const sheet = await parseSheet(f, board.kind, segment);
       setParsed(sheet);
       if (sheet.missing.length > 0 || sheet.rows.length === 0) {
         setStep("choose");
@@ -198,7 +198,7 @@ export default function UploadSheetModal({
                 : step === "checking"
                   ? "Checking the rows…"
                   : parsed
-                    ? `${parsed.rows.length} row${parsed.rows.length === 1 ? "" : "s"} found`
+                    ? `${parsed.rows.length} row${parsed.rows.length === 1 ? "" : "s"} found · tab “${parsed.sheetName}”`
                     : ""}
             </p>
           </div>
