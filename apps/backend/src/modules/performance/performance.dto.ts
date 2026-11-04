@@ -43,6 +43,8 @@ export interface IntradayRowDTO {
   /** `YYYY-MM-DD` */
   tradeDate: string
   name: string
+  /** The stock's logo from the stocks table, or null when the stock is not there or has none (draw the initials then). */
+  logoUrl: string | null
   side: 'buy' | 'sell'
   entryPrice: number
   exitPrice: number
@@ -59,6 +61,8 @@ export interface SwingRowDTO {
   tradeDate: string
   name: string
   symbol: string
+  /** The stock's logo from the stocks table, or null when the stock is not there or has none (draw the initials then). */
+  logoUrl: string | null
   entryPrice: number
   cmp: number | null
   returnPct: number | null

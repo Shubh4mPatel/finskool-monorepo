@@ -121,6 +121,7 @@ Draw **one card per entry in `periods`**, in the order given (the admin can add 
   "id": "…",
   "tradeDate": "2026-10-01",
   "name": "Ambuja Cement",
+  "logoUrl": "https://community.finskool21.in/assets/stock-logos/….png",
   "side": "buy",
   "entryPrice": 368.2,
   "exitPrice": 365.7,
@@ -132,6 +133,7 @@ Draw **one card per entry in `periods`**, in the order given (the admin can add 
 }
 ```
 
+- `logoUrl`: see [Stock logo](#stock-logo) below.
 - `side` is `buy` or `sell`: the **Type** column.
 - `plPerShare` is the **P/L** column, `plPct` the **P/L %** column, `grossPnl` the **P&L** column, `charges` the **Charges** column (show as `-140`) and `netPnl` the **Net P&L** column. Colour positive green and negative red.
 
@@ -143,6 +145,7 @@ Draw **one card per entry in `periods`**, in the order given (the admin can add 
   "tradeDate": "2026-08-12",
   "name": "BLS International",
   "symbol": "BLS",
+  "logoUrl": null,
   "entryPrice": 262,
   "cmp": 209.98,
   "returnPct": -19.85,
@@ -157,7 +160,7 @@ Draw **one card per entry in `periods`**, in the order given (the admin can add 
 
 | Column | Field | Notes |
 |---|---|---|
-| Trade Name | `name` | |
+| Trade Name | `name` | Draw the stock's logo beside it: see [Stock logo](#stock-logo) |
 | NSE Code | `symbol` | |
 | Entry | `entryPrice` | |
 | CMP | `cmp` | Current market price **as of the admin's last upload**, not live. `null` if the admin gave none |
@@ -169,6 +172,16 @@ Draw **one card per entry in `periods`**, in the order given (the admin can add 
 | Holding Days | `holdingDays` | Calendar days from `tradeDate` to `exitDate`. `null` while open: show a dash |
 
 A trade has met its target exactly when it has an `exitDate`. `status` is never derived from `cmp`: a trade can be `target_met` with a `cmp` below its entry.
+
+### Stock logo
+
+Every row (intraday, swing and investor) carries `logoUrl`: the stock's logo, taken from our stocks table. **Draw that image in place of the initials.** When `logoUrl` is `null`, or the image fails to load, fall back to the initials as before.
+
+- `logoUrl` is a ready-to-use absolute URL. Load it as it is, with no auth header and no changes.
+- It is `null` when the stock is not in our table or has no logo yet. That is normal, not an error: some rows will always show initials.
+- Swing and investor rows are matched on `symbol` (the NSE code), ignoring case and spaces. Intraday rows have only a `name`, so the match tries the name as a code (`TATASTEEL`) and then as the stock's name (`Tata Steel Ltd`), ignoring case. An intraday name that is spelled differently from our stock list shows initials.
+- A logo added to the stocks table later appears on the next load of the list. Cache the image by URL, not the row.
+- Same footprint either way: a round avatar, the logo scaled to fit (`contain`) on a white background, so a wide logo is not cropped.
 
 Rows carry no serial number. Number them in the app if the design shows S.N. (the admin screen counts oldest first, the app list is newest first).
 
@@ -303,3 +316,4 @@ Returns:
 13. A swing trade with an `exitDate` shows `status: "target_met"` and a holding-days number, even when `cmp` is below `entryPrice`. An open trade has `exitDate: null` and `holdingDays: null`.
 14. On an intraday board the figures match the admin screen: check one buy and one sell row against `plPerShare`, `plPct`, `grossPnl`, `charges` and `netPnl`.
 15. A web login on either endpoint returns 403 `MOBILE_ONLY`, and no cookie returns 401.
+16. A trade for a stock that has a logo in our stocks table has a `logoUrl` that loads. A trade for a stock with no logo, or one not in the table, has `logoUrl: null` and shows initials. Break the URL on purpose: the row shows initials rather than a broken image.

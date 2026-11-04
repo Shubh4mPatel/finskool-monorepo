@@ -195,8 +195,32 @@ export class PerformanceService {
     return rows.map(toTradeRow)
   }
 
-  private toRow(board: PerformanceBoard, t: TradeRow, serialNo: number): TradeRowDTO {
-    const base = { id: t.id, serialNo, tradeDate: isoDate(t.tradeDate), name: t.name, entryPrice: t.entryPrice }
+  /**
+   * Logos for the trades being shown, from the stocks table. A swing or investor trade is matched on its NSE code; an intraday
+   * trade has none, so its name is tried as a code (`TATASTEEL`) and then as the stock's name (`Tata Steel Ltd`), ignoring case.
+   * Only rows that have a logo are looked up, so a stock without one simply comes back absent and the app shows initials.
+   */
+  private async logosFor(trades: TradeRow[]): Promise<Map<string, string>> {
+    const keyOf = (t: TradeRow) => (t.symbol ?? t.name).trim().toUpperCase()
+    const keys = [...new Set(trades.map(keyOf).filter(k => k.length > 0))]
+    const logos = new Map<string, string>()
+    if (keys.length === 0) return logos
+
+    const stocks = await this.db.stock.findMany({
+      where: { logoUrl: { not: null }, OR: [{ symbol: { in: keys } }, { name: { in: [...new Set(trades.map(t => t.name.trim()))] } }] },
+      select: { symbol: true, name: true, logoUrl: true },
+    })
+    const bySymbol = new Map(stocks.map(s => [s.symbol.toUpperCase(), s.logoUrl!]))
+    const byName = new Map(stocks.map(s => [s.name.trim().toUpperCase(), s.logoUrl!]))
+    for (const t of trades) {
+      const logo = bySymbol.get(keyOf(t)) ?? (t.symbol === null ? byName.get(t.name.trim().toUpperCase()) : undefined)
+      if (logo) logos.set(t.id, logo)
+    }
+    return logos
+  }
+
+  private toRow(board: PerformanceBoard, t: TradeRow, serialNo: number, logos: Map<string, string>): TradeRowDTO {
+    const base = { id: t.id, serialNo, tradeDate: isoDate(t.tradeDate), name: t.name, logoUrl: logos.get(t.id) ?? null, entryPrice: t.entryPrice }
     if (board.kind === 'intraday') {
       const row: IntradayRowDTO = {
         ...base,
@@ -354,8 +378,10 @@ export class PerformanceService {
 
     const total = filtered.length
     const totalPages = Math.max(1, Math.ceil(total / q.pageSize))
-    const items: AdminTradeRowDTO[] = filtered.slice((q.page - 1) * q.pageSize, q.page * q.pageSize).map(({ t, serialNo }) => ({
-      ...this.toRow(board, t, serialNo),
+    const pageRows = filtered.slice((q.page - 1) * q.pageSize, q.page * q.pageSize)
+    const logos = await this.logosFor(pageRows.map(n => n.t))
+    const items: AdminTradeRowDTO[] = pageRows.map(({ t, serialNo }) => ({
+      ...this.toRow(board, t, serialNo, logos),
       visibility: t.visibility,
       visibleToFree: visible.has(t.id),
     }))
@@ -727,8 +753,9 @@ export class PerformanceService {
     const last = page[page.length - 1]
     const nextCursor = list.length > q.limit && last ? encodeCursor(last.tradeDate, last.id) : null
 
+    const logos = await this.logosFor(page)
     const items = page.map(t => {
-      const { serialNo: _serialNo, ...row } = this.toRow(board, t, serials.get(t.id)!)
+      const { serialNo: _serialNo, ...row } = this.toRow(board, t, serials.get(t.id)!, logos)
       return row as MobileTradeRowDTO
     })
 

@@ -15,6 +15,7 @@ import {
   type TradeVisibility,
 } from "@/lib/performance";
 import { FreeUsersSelect } from "./FreeUsersSelect";
+import { StockAvatar } from "./StockAvatar";
 
 interface TableProps<R> {
   rows: R[];
@@ -105,7 +106,8 @@ export function IntradayTable({ rows, busyId, onVisibility, onEdit }: TableProps
           <td className={`${TD} text-muted`}>{r.serialNo}</td>
           <td className={TD}>{formatTradeDate(r.tradeDate)}</td>
           <td className={`${TD} font-bold`}>
-            <span className="flex items-center gap-1.5">
+            <span className="flex items-center gap-2">
+              <StockAvatar name={r.name} logoUrl={r.logoUrl} />
               {r.name}
               <VisibleIcon visible={r.visibleToFree} visibility={r.visibility} />
             </span>
@@ -172,7 +174,8 @@ export function SwingTable({ rows, busyId, onVisibility, onEdit }: TableProps<Sw
           <td className={`${TD} text-muted`}>{r.serialNo}</td>
           <td className={TD}>{formatTradeDate(r.tradeDate)}</td>
           <td className={`${TD} font-bold`}>
-            <span className="flex items-center gap-1.5">
+            <span className="flex items-center gap-2">
+              <StockAvatar name={r.name} logoUrl={r.logoUrl} />
               {r.name}
               <VisibleIcon visible={r.visibleToFree} visibility={r.visibility} />
             </span>

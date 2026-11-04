@@ -91,6 +91,8 @@ interface RowBase {
   serialNo: number;
   tradeDate: string;
   name: string;
+  /** From the stocks table; null when the stock is not there or has no logo, and the row shows initials. */
+  logoUrl: string | null;
   entryPrice: number;
   visibility: TradeVisibility;
   visibleToFree: boolean;
