@@ -88,6 +88,12 @@ export interface ListPage<T> {
   nextCursor: string | null
 }
 
+/** The admin's list also says how many requests match the filters in all, so the screen can number its pages. */
+export interface AdminServiceRequestListPage extends ListPage<AdminServiceRequestDTO> {
+  /** Requests matching the filters across every page (the cursor is not part of the filters). */
+  total: number
+}
+
 /** A catalog entry as members see it (no internal `name`). */
 export interface MemberServiceDTO {
   id: string

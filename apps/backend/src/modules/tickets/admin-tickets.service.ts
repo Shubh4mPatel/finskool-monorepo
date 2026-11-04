@@ -7,6 +7,7 @@ import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '.
 import type {
   AdminTicketDetailDTO,
   AdminTicketDTO,
+  AdminTicketListPage,
   AdminTicketStatsDTO,
   TicketListPage,
   TicketMessageDTO,
@@ -55,7 +56,7 @@ export class AdminTicketsService {
     return createUploadUrl(admin.id, dto)
   }
 
-  async list(admin: AdminActor, query: AdminListTicketsQuery): Promise<TicketListPage<AdminTicketDTO>> {
+  async list(admin: AdminActor, query: AdminListTicketsQuery): Promise<AdminTicketListPage> {
     const cursor = query.cursor ? decodeCursor(query.cursor) : null
     const where: Prisma.TicketWhereInput[] = [this.scope(admin)]
 
@@ -83,21 +84,27 @@ export class AdminTicketsService {
         ],
       })
     }
+    // The total is over the filters alone: where the cursor happens to be must not change it.
+    const matching = [...where]
     if (cursor) {
       where.push({ OR: [{ lastMessageAt: { lt: cursor.at } }, { lastMessageAt: cursor.at, id: { lt: cursor.id } }] })
     }
 
-    const rows = await this.db.ticket.findMany({
-      where: { AND: where },
-      include: ticketInclude,
-      orderBy: [{ lastMessageAt: 'desc' }, { id: 'desc' }],
-      take: query.limit + 1,
-    })
+    const [total, rows] = await Promise.all([
+      this.db.ticket.count({ where: { AND: matching } }),
+      this.db.ticket.findMany({
+        where: { AND: where },
+        include: ticketInclude,
+        orderBy: [{ lastMessageAt: 'desc' }, { id: 'desc' }],
+        take: query.limit + 1,
+      }),
+    ])
     const page = rows.slice(0, query.limit)
     const last = page[page.length - 1]
     return {
       items: await Promise.all(page.map(t => mapAdminTicket(t, admin))),
       nextCursor: rows.length > query.limit && last ? encodeCursor(last.lastMessageAt, last.id) : null,
+      total,
     }
   }
 

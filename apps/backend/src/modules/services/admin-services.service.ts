@@ -14,6 +14,7 @@ import type {
   AdminServiceEventDTO,
   AdminServiceRequestDetailDTO,
   AdminServiceRequestDTO,
+  AdminServiceRequestListPage,
   AdminServiceStatsDTO,
   BillingSettingsDTO,
   ListPage,
@@ -151,7 +152,7 @@ export class AdminServicesService {
     return createUploadUrl(admin.id, dto, 'services')
   }
 
-  async list(admin: AdminViewer, query: AdminListServiceRequestsQuery): Promise<ListPage<AdminServiceRequestDTO>> {
+  async list(admin: AdminViewer, query: AdminListServiceRequestsQuery): Promise<AdminServiceRequestListPage> {
     const cursor = query.cursor ? decodeCursor(query.cursor) : null
     const where: Prisma.ServiceRequestWhereInput[] = []
 
@@ -179,21 +180,27 @@ export class AdminServicesService {
         ],
       })
     }
+    // The total is over the filters alone: where the cursor happens to be must not change it.
+    const matching = [...where]
     if (cursor) {
       where.push({ OR: [{ lastMessageAt: { lt: cursor.at } }, { lastMessageAt: cursor.at, id: { lt: cursor.id } }] })
     }
 
-    const rows = await this.db.serviceRequest.findMany({
-      where: { AND: where },
-      include: requestInclude,
-      orderBy: [{ lastMessageAt: 'desc' }, { id: 'desc' }],
-      take: query.limit + 1,
-    })
+    const [total, rows] = await Promise.all([
+      this.db.serviceRequest.count({ where: { AND: matching } }),
+      this.db.serviceRequest.findMany({
+        where: { AND: where },
+        include: requestInclude,
+        orderBy: [{ lastMessageAt: 'desc' }, { id: 'desc' }],
+        take: query.limit + 1,
+      }),
+    ])
     const page = rows.slice(0, query.limit)
     const last = page[page.length - 1]
     return {
       items: await Promise.all(page.map(r => mapAdminRequest(r, admin))),
       nextCursor: rows.length > query.limit && last ? encodeCursor(last.lastMessageAt, last.id) : null,
+      total,
     }
   }
 

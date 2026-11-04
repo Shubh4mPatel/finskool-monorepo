@@ -78,6 +78,12 @@ export interface TicketListPage<T> {
   nextCursor: string | null
 }
 
+/** The admin's list also says how many tickets match the filters in all, so the screen can number its pages. */
+export interface AdminTicketListPage extends TicketListPage<AdminTicketDTO> {
+  /** Tickets matching the filters across every page (the cursor is not part of the filters). */
+  total: number
+}
+
 export interface TicketCommunityOptionDTO {
   id: string
   name: string
