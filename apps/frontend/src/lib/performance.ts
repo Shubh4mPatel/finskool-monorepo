@@ -162,6 +162,9 @@ export interface SettingsInput {
   note?: string | null;
 }
 
+/** Trades shown per page on the board. */
+export const TRADES_PER_PAGE = 10;
+
 const BASE = "/api/v1/admin/performance";
 const q = (params: Record<string, string | number | undefined>): string => {
   const s = new URLSearchParams();
@@ -176,7 +179,7 @@ export const performanceApi = {
   overview: (communityId: string, segment: PerformanceSegment) =>
     api.get<Overview>(`${BASE}/communities/${communityId}/overview${q({ segment })}`),
   trades: (communityId: string, p: { segment: PerformanceSegment; month?: string; page: number; order: "asc" | "desc" }) =>
-    api.get<TradeList>(`${BASE}/communities/${communityId}/trades${q({ ...p, pageSize: 50 })}`),
+    api.get<TradeList>(`${BASE}/communities/${communityId}/trades${q({ ...p, pageSize: TRADES_PER_PAGE })}`),
   addTrade: (communityId: string, segment: PerformanceSegment, trade: TradeInput) =>
     api.post<{ id: string }>(`${BASE}/communities/${communityId}/trades`, { ...trade, segment }),
   updateTrade: (communityId: string, tradeId: string, trade: TradeInput) =>

@@ -1,0 +1,11 @@
+▲ Next.js 16.2.9 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.0.2.2:3000
+✓ Ready in 3.2s
+○ Compiling middleware ...
+⚠ The "middleware" file convention is deprecated. Please use "proxy" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy
+
+○ Compiling /admin/performance ...
+ GET /admin/performance 200 in 12.0s (next.js: 11.1s, proxy.ts: 196ms, application-code: 657ms)
+ GET /admin/performance 200 in 93ms (next.js: 5ms, proxy.ts: 15ms, application-code: 73ms)
+ GET /admin/performance 200 in 81ms (next.js: 4ms, proxy.ts: 6ms, application-code: 71ms)

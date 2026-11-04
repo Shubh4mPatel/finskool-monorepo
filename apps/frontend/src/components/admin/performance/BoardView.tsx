@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { CalendarDays, ChevronLeft, ChevronRight, ChartLine, Pencil, StickyNote } from "lucide-react";
+import { useEffect, useState } from "react";
+import { CalendarDays, ChartLine, Pencil, StickyNote } from "lucide-react";
 import { ApiError } from "@/lib/api";
 import {
   formatMonth,
@@ -20,6 +20,7 @@ import {
 } from "@/lib/performance";
 import { usePanel } from "@/components/admin/dashboard/usePanel";
 import { Card, EmptyState, PanelError, SectionHeader, Skeleton } from "@/components/admin/dashboard/Panel";
+import Pagination from "@/components/ui/Pagination";
 import Select from "@/components/ui/Select";
 import { useToast } from "@/components/ui/Toast";
 import { KpiCard } from "./KpiCard";
@@ -61,6 +62,14 @@ export default function BoardView({
   const trades = usePanel(`trades:${id}:${segment}:${month}:${page}:${reload}`, () =>
     performanceApi.trades(id, { segment, ...(month === ALL ? {} : { month }), page, order: month === ALL ? "desc" : "asc" }),
   );
+
+  // Deleting the last trade of the last page leaves the page number past the end: step back to the new last page.
+  const empty = trades.data && trades.data.items.length === 0 && trades.data.total > 0 && page > 1;
+  const lastPage = trades.data?.totalPages ?? 1;
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (empty) setPage(lastPage);
+  }, [empty, lastPage]);
 
   const ref = { communityId: id, communityName: board.name, kind: board.kind };
   const summary = overview.data?.summary;
@@ -156,21 +165,14 @@ export default function BoardView({
               <SwingTable rows={trades.data.items as SwingRow[]} busyId={busyId} onVisibility={changeVisibility} onEdit={setEditing} />
             )}
 
-            {trades.data.totalPages > 1 && (
-              <div className="mt-4 flex items-center justify-between gap-3 text-xs text-muted">
-                <span>
-                  Page {trades.data.page} of {trades.data.totalPages}
-                </span>
-                <div className="flex items-center gap-2">
-                  <PagerButton label="Previous page" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>
-                    <ChevronLeft size={14} />
-                  </PagerButton>
-                  <PagerButton label="Next page" disabled={page >= trades.data.totalPages} onClick={() => setPage(p => p + 1)}>
-                    <ChevronRight size={14} />
-                  </PagerButton>
-                </div>
-              </div>
-            )}
+            <Pagination
+              className="mt-4"
+              page={trades.data.page}
+              pageSize={trades.data.pageSize}
+              total={trades.data.total}
+              noun={trades.data.total === 1 ? "trade" : "trades"}
+              onPage={setPage}
+            />
           </div>
         )}
       </Card>
@@ -179,20 +181,6 @@ export default function BoardView({
       {editingPeriod && <PeriodModal board={ref} segment={segment} period={editingPeriod} onClose={() => setEditingPeriod(null)} onDone={onChanged} />}
       {noteOpen && overview.data && <NoteModal board={overview.data.board} onClose={() => setNoteOpen(false)} onDone={onChanged} />}
     </div>
-  );
-}
-
-function PagerButton({ label, disabled, onClick, children }: { label: string; disabled: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      disabled={disabled}
-      onClick={onClick}
-      className="flex h-8 w-8 items-center justify-center rounded-full border border-divider bg-white text-primary transition-colors hover:border-subtle disabled:cursor-not-allowed disabled:opacity-40"
-    >
-      {children}
-    </button>
   );
 }
 
