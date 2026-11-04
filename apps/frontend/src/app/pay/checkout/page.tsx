@@ -195,7 +195,7 @@ export default function CheckoutPage() {
   const buying = (phase === "ready" || phase === "paying") && order && community;
 
   return (
-    <main className={`mx-auto min-h-screen w-full max-w-md px-4 pt-4 ${buying ? "pb-40" : "pb-10"}`}>
+    <main className={`mx-auto min-h-screen w-full max-w-md px-4 pt-4 ${buying || phase === "loading" ? "pb-40" : "pb-10"}`}>
       {phase === "loading" && <LoadingState />}
 
       {buying && (
@@ -378,26 +378,120 @@ function Centered({ children }: { children: React.ReactNode }) {
   return <div className="flex min-h-[80vh] flex-col items-center justify-center px-4 text-center">{children}</div>;
 }
 
-/** Placeholder shapes while the order is fetched, laid out like the page they stand in for. */
+const BONE = "rounded-full bg-divider";
+
+/** One line of text as a bone: the box is as tall as the real line, the bone a little shorter inside it. */
+function Line({ width, box = "h-5", bone = "h-3.5" }: { width: string; box?: string; bone?: string }) {
+  return (
+    <div className={`flex items-center ${box}`}>
+      <div className={`${bone} ${width} ${BONE}`} />
+    </div>
+  );
+}
+
+/**
+ * Placeholder shapes while the order is fetched. Built from the same cards, spacing and bottom bar as the page it
+ * stands in for (banner and badge, name and description, the "What you get" list, the plan and its price, the pay
+ * bar), and each bone sits in a box as tall as the line of text it stands for, so nothing moves when the real content
+ * arrives. It cannot know what a community has filled in, so it shows a typical page; one with more or less simply
+ * ends up taller or shorter.
+ */
 function LoadingState() {
+  const card = "rounded-3xl bg-white shadow-card ring-1 ring-primary/[0.04]";
   return (
     <div className="animate-pulse" role="status" aria-label="Getting your payment ready">
-      <div className="overflow-hidden rounded-3xl bg-white shadow-card">
+      <span className="sr-only">Getting your payment ready…</span>
+
+      {/* Who it is */}
+      <section className={`overflow-hidden ${card}`}>
         <div className="aspect-[5/2] w-full bg-divider" />
-        <div className="space-y-3 px-5 pb-5 pt-9">
-          <div className="h-4 w-24 rounded-full bg-divider" />
-          <div className="h-6 w-2/3 rounded-full bg-divider" />
-          <div className="h-3 w-full rounded-full bg-divider" />
-          <div className="h-3 w-5/6 rounded-full bg-divider" />
+        <div className="relative px-5 pb-5">
+          <span className="absolute -top-7 left-5 h-14 w-14 rounded-full border-2 border-white bg-divider shadow-card" />
+          <div className="pt-9">
+            <div className={`h-5 w-32 ${BONE}`} />
+            <div className="mt-2">
+              <Line width="w-3/5" box="h-[27.5px]" bone="h-5" />
+            </div>
+            <div className={`mt-1.5 h-4 w-24 ${BONE}`} />
+            <div className="mt-3">
+              <Line width="w-full" box="h-[22.75px]" />
+              <Line width="w-full" box="h-[22.75px]" />
+              <Line width="w-2/3" box="h-[22.75px]" />
+            </div>
+            <div className="mt-3 flex gap-1.5">
+              <div className={`h-6 w-24 ${BONE}`} />
+              <div className={`h-6 w-16 ${BONE}`} />
+              <div className={`h-6 w-20 ${BONE}`} />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* What the member gets: some points fit on a line, some wrap */}
+      <section className={`mt-4 p-5 ${card}`}>
+        <div className="flex h-[22.5px] items-center gap-2">
+          <div className={`h-4 w-4 ${BONE}`} />
+          <div className={`h-4 w-28 ${BONE}`} />
+        </div>
+        <ul className="mt-4 flex flex-col gap-3">
+          {[["w-11/12"], ["w-full", "w-1/2"], ["w-3/4"], ["w-full", "w-2/5"], ["w-4/5"]].map((lines, i) => (
+            <li key={i} className="flex items-start gap-3">
+              <span className="mt-0.5 h-5 w-5 shrink-0 rounded-full bg-divider" />
+              <div className="min-w-0 flex-1">
+                {lines.map((width, j) => (
+                  <Line key={j} width={width} box="h-[19.25px]" />
+                ))}
+              </div>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      {/* The plan and what it costs */}
+      <section className={`mt-4 p-5 ${card}`}>
+        <div className="flex h-[22.5px] items-center">
+          <div className={`h-4 w-20 ${BONE}`} />
+        </div>
+        <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl bg-background px-4 py-3">
+          <div className="flex flex-col gap-2">
+            <div className={`h-4 w-20 ${BONE}`} />
+            <div className={`h-3 w-28 ${BONE}`} />
+          </div>
+          <div className={`h-4 w-16 ${BONE}`} />
+        </div>
+        <div className="mt-4 flex flex-col gap-2">
+          <div className="flex h-5 items-center justify-between">
+            <div className={`h-4 w-20 ${BONE}`} />
+            <div className={`h-4 w-16 ${BONE}`} />
+          </div>
+          <div className="flex h-5 items-center justify-between">
+            <div className={`h-4 w-24 ${BONE}`} />
+            <div className={`h-4 w-14 ${BONE}`} />
+          </div>
+          <div className="mt-1 border-t border-divider pt-3">
+            <div className="flex h-7 items-center justify-between">
+              <div className={`h-5 w-12 ${BONE}`} />
+              <div className={`h-6 w-24 ${BONE}`} />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div className="mt-5 px-6">
+        <Line width="w-full" box="h-4" bone="h-3" />
+        <Line width="w-1/2" box="h-4" bone="h-3" />
+      </div>
+
+      {/* The pay bar */}
+      <div className="fixed inset-x-0 bottom-0 z-10 border-t border-divider bg-white/95 px-4 pb-[calc(env(safe-area-inset-bottom)+12px)] pt-3 backdrop-blur">
+        <div className="mx-auto flex max-w-md items-center gap-4">
+          <div className="flex shrink-0 flex-col gap-1.5">
+            <div className={`h-3 w-8 ${BONE}`} />
+            <div className={`h-5 w-24 ${BONE}`} />
+          </div>
+          <div className="h-12 min-w-0 flex-1 rounded-full bg-divider" />
         </div>
       </div>
-      <div className="mt-4 space-y-3 rounded-3xl bg-white p-5 shadow-card">
-        <div className="h-4 w-28 rounded-full bg-divider" />
-        <div className="h-3 w-full rounded-full bg-divider" />
-        <div className="h-3 w-4/5 rounded-full bg-divider" />
-        <div className="h-3 w-3/5 rounded-full bg-divider" />
-      </div>
-      <p className="mt-5 text-center text-xs text-muted">Getting your payment ready…</p>
     </div>
   );
 }
