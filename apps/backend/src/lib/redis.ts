@@ -76,4 +76,19 @@ export function passwordResetCypherKey(cypherHash: string): string {
   return `reset_cypher:${cypherHash}`
 }
 
+// Web (admin console) forgot-password. Deliberately its own key namespace, apart from the mobile one above:
+// a code emailed to a member for the app must never be redeemable on the admin endpoints, or the reverse.
+export function adminPasswordResetOtpKey(email: string): string {
+  return `admin:otp:reset:${email}`
+}
+
+export function adminPasswordResetCooldownKey(email: string): string {
+  return `admin:otp:reset:cooldown:${email}`
+}
+
+// Same idea as passwordResetCypherKey: keyed by a hash of the one-time cypher, resolves to the admin's userId.
+export function adminPasswordResetCypherKey(cypherHash: string): string {
+  return `admin:reset_cypher:${cypherHash}`
+}
+
 export default redis

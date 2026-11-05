@@ -6,7 +6,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'
 // Routes that require authentication
 const PROTECTED = ['/admin']
 // Routes only for unauthenticated users (redirect away if already logged in)
-const AUTH_ONLY = ['/login']
+const AUTH_ONLY = ['/login', '/forgot-password']
 
 function decodeJwtPayload(
   token: string,
@@ -116,5 +116,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/admin/:path*', '/login'],
+  matcher: ['/admin/:path*', '/login', '/forgot-password'],
 }

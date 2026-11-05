@@ -1,14 +1,22 @@
-import { createHash } from "crypto";
+import { createHash, randomBytes, randomInt } from "crypto";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import type { PrismaClient } from "../../generated/prisma/client.js";
 import type { Redis } from "ioredis";
-import { refreshTokenKey, selectedCommunityKey } from "../../lib/redis.js";
+import {
+  refreshTokenKey,
+  selectedCommunityKey,
+  adminPasswordResetOtpKey,
+  adminPasswordResetCooldownKey,
+  adminPasswordResetCypherKey,
+} from "../../lib/redis.js";
+import { hitRateLimit } from "../../lib/rate-limit.js";
+import { revokeRefreshTokensFor } from "../../lib/refresh-tokens.js";
 import { env } from "../../config/env.js";
 import { logger } from "../../shared/logger.js";
 import { generateUploadUrl, avatarExtension, inspectUploadedAvatar, deleteUploadedAvatar, AVATAR_FOLDER, AVATAR_MAX_BYTES } from "../../lib/minio.js";
 import { getAccessibleCommunityIds } from "../../lib/community-access.js";
-import { notificationsQueue, NEW_MEMBER_REGISTERED_EMAIL_JOB, NOTIFICATIONS_PUBSUB_CHANNEL } from "../../lib/queue.js";
+import { notificationsQueue, NEW_MEMBER_REGISTERED_EMAIL_JOB, NOTIFICATIONS_PUBSUB_CHANNEL, PASSWORD_RESET_OTP_EMAIL_JOB } from "../../lib/queue.js";
 import type { LiveNotificationEvent } from "../../lib/queue.js";
 import { formatEmailDate } from "../../lib/email-templates.js";
 import { routingData, RoutingModule } from "../../lib/notification-routing.js";
@@ -18,6 +26,7 @@ import {
   UnauthorizedError,
   ForbiddenError,
   BadRequestError,
+  TooManyRequestsError,
 } from "../../shared/errors/index.js";
 import type {
   AuthTokensInternal,
@@ -33,8 +42,26 @@ import type { JwtPayload } from "../../middlewares/auth.middleware.js";
 
 const BCRYPT_ROUNDS = 12;
 
+// Admin forgot-password: a 6-digit code emailed to the admin, then a single-use "cypher" that authorizes the
+// password change (mirrors the mobile flow, but admin-only and with its own Redis keys).
+const RESET_OTP_TTL_SECONDS = 10 * 60;
+const RESET_OTP_RESEND_COOLDOWN_SECONDS = 60;
+const RESET_MAX_OTP_ATTEMPTS = 5;
+const RESET_CYPHER_TTL_SECONDS = 10 * 60;
+const RESET_INVALID_CODE = "Invalid or expired code. Please request a new one.";
+
+interface ResetOtpRecord {
+  hash: string;
+  attempts: number;
+}
+
 function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
+}
+
+function generateResetOtp(): string {
+  // randomInt is cryptographically secure, unlike Math.random.
+  return String(randomInt(0, 1_000_000)).padStart(6, "0");
 }
 
 function startOfToday(): Date {
@@ -476,6 +503,109 @@ export class AuthService {
     const newHash = await bcrypt.hash(data.newPassword, BCRYPT_ROUNDS);
     await this.db.user.update({ where: { id: userId }, data: { passwordHash: newHash } });
     logger.info({ userId }, 'auth.changePassword: success');
+  }
+
+  /**
+   * Step 1 of "Forgot password" on the admin console. Always resolves silently, whether or not `email` belongs
+   * to an admin, so the response can never be used to find out which emails are registered. Only an active admin
+   * who has a password gets a code; members are ignored here (they reset from the mobile app).
+   */
+  async forgotPassword(email: string, ip: string | undefined): Promise<void> {
+    await hitRateLimit(this.redis, `rl:admin-forgot:ip:${ip ?? "unknown"}`, 10, 60 * 60);
+
+    const user = await this.db.user.findUnique({ where: { email } });
+    const eligible =
+      !!user && !user.deletedAt && user.status === "active" && user.role === "admin" && !!user.passwordHash && !!user.email;
+    if (!eligible) {
+      logger.info({ email }, "auth.forgotPassword: no-op (no matching admin account)");
+      return;
+    }
+
+    // Also silent on cooldown: a 429 here would itself reveal that a reset was just requested for this email.
+    if (await this.redis.get(adminPasswordResetCooldownKey(email))) {
+      logger.info({ email }, "auth.forgotPassword: no-op (cooldown active)");
+      return;
+    }
+
+    const otp = generateResetOtp();
+    const record: ResetOtpRecord = { hash: hashToken(otp), attempts: 0 };
+    await this.redis.set(adminPasswordResetOtpKey(email), JSON.stringify(record), "EX", RESET_OTP_TTL_SECONDS);
+    await this.redis.set(adminPasswordResetCooldownKey(email), "1", "EX", RESET_OTP_RESEND_COOLDOWN_SECONDS);
+
+    try {
+      await notificationsQueue.add(
+        PASSWORD_RESET_OTP_EMAIL_JOB,
+        { toEmail: user.email!, name: user.name, otp, expiryMinutes: RESET_OTP_TTL_SECONDS / 60 },
+        { attempts: 3, backoff: { type: "exponential", delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
+      );
+    } catch (err) {
+      // Swallowed: the caller gets the same generic answer either way; ops still sees it in the logs.
+      logger.error({ err, email }, "auth.forgotPassword: failed to enqueue reset OTP email job");
+    }
+    logger.info({ userId: user.id }, "auth.forgotPassword: code sent");
+  }
+
+  /**
+   * Step 2: checks the emailed code. On success returns a short-lived single-use cypher (not a login) that
+   * resetPassword() redeems. One message for "no code" and "wrong code" so this step can't tell a mistyped email
+   * from a mistyped code. Five wrong guesses burn the code.
+   */
+  async verifyResetOtp(email: string, otp: string, ip: string | undefined): Promise<{ cypher: string; cypherExpiresInSeconds: number }> {
+    await hitRateLimit(this.redis, `rl:admin-reset-verify:ip:${ip ?? "unknown"}`, 30, 10 * 60);
+
+    const raw = await this.redis.get(adminPasswordResetOtpKey(email));
+    if (!raw) throw new BadRequestError(RESET_INVALID_CODE, "OTP_INVALID");
+
+    const record = JSON.parse(raw) as ResetOtpRecord;
+    if (record.attempts >= RESET_MAX_OTP_ATTEMPTS) {
+      await this.redis.del(adminPasswordResetOtpKey(email));
+      throw new TooManyRequestsError("Too many incorrect attempts. Please request a new code.", "OTP_LOCKED");
+    }
+
+    if (hashToken(otp) !== record.hash) {
+      const ttl = await this.redis.ttl(adminPasswordResetOtpKey(email));
+      const updated: ResetOtpRecord = { ...record, attempts: record.attempts + 1 };
+      await this.redis.set(adminPasswordResetOtpKey(email), JSON.stringify(updated), "EX", ttl > 0 ? ttl : RESET_OTP_TTL_SECONDS);
+      throw new BadRequestError(RESET_INVALID_CODE, "OTP_INVALID");
+    }
+
+    // Single use: the code is gone the moment it is right.
+    await this.redis.del(adminPasswordResetOtpKey(email));
+
+    // Re-check: the account may have been suspended or removed since the code was sent.
+    const user = await this.db.user.findUnique({ where: { email } });
+    if (!user || user.deletedAt || user.status !== "active" || user.role !== "admin") {
+      throw new BadRequestError(RESET_INVALID_CODE, "OTP_INVALID");
+    }
+
+    const cypher = randomBytes(32).toString("hex");
+    await this.redis.set(adminPasswordResetCypherKey(hashToken(cypher)), user.id, "EX", RESET_CYPHER_TTL_SECONDS);
+    logger.info({ userId: user.id }, "auth.verifyResetOtp: success, cypher issued");
+    return { cypher, cypherExpiresInSeconds: RESET_CYPHER_TTL_SECONDS };
+  }
+
+  /**
+   * Step 3: sets the new password. The cypher is the only authorization (no session involved) and is deleted as
+   * soon as it is presented, so it cannot be replayed. Every existing web session of the admin is ended, so the
+   * old password (or a stolen session) stops working everywhere; the admin signs in again with the new one.
+   */
+  async resetPassword(cypher: string, newPassword: string, ip: string | undefined): Promise<void> {
+    await hitRateLimit(this.redis, `rl:admin-reset:ip:${ip ?? "unknown"}`, 20, 60 * 60);
+
+    const key = adminPasswordResetCypherKey(hashToken(cypher));
+    const userId = await this.redis.get(key);
+    if (!userId) throw new BadRequestError("This reset session has expired. Please start again.", "RESET_TOKEN_INVALID");
+    await this.redis.del(key);
+
+    const user = await this.db.user.findUnique({ where: { id: userId } });
+    if (!user || user.deletedAt || user.status !== "active" || user.role !== "admin") {
+      throw new BadRequestError("This reset session is no longer valid.", "RESET_TOKEN_INVALID");
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+    await this.db.user.update({ where: { id: user.id }, data: { passwordHash } });
+    const revoked = await revokeRefreshTokensFor(this.redis, user.id);
+    logger.info({ userId: user.id, sessionsEnded: revoked }, "auth.resetPassword: success");
   }
 
   async updateNotifications(userId: string, data: UpdateNotificationsDTO): Promise<PublicUserDTO> {

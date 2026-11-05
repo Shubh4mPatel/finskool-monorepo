@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction, CookieOptions } from 'express'
 import { z } from 'zod'
 import type { AuthService } from './auth.service.js'
-import { loginSchema, updateEmailSchema, updateNameSchema, changePasswordSchema, updateNotificationsSchema, updateAvatarSchema } from './auth.validator.js'
+import { loginSchema, forgotPasswordSchema, verifyResetOtpSchema, resetPasswordSchema, updateEmailSchema, updateNameSchema, changePasswordSchema, updateNotificationsSchema, updateAvatarSchema } from './auth.validator.js'
 import { env } from '../../config/env.js'
 import { ForbiddenError, UnauthorizedError } from '../../shared/errors/index.js'
 
@@ -53,6 +53,38 @@ export class AuthController {
       const { accessToken, refreshToken, user, communities } = await this.service.login(data)
       setAuthCookies(res, accessToken, refreshToken)
       res.json({ success: true, data: { user, communities } })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  forgotPassword = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { email } = forgotPasswordSchema.parse(req.body)
+      await this.service.forgotPassword(email, req.ip)
+      // Same message whether or not the email belongs to an admin, so it can't be used to probe for accounts.
+      res.json({ success: true, message: "If this email belongs to an admin account, we've sent a password reset code." })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  verifyResetOtp = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { email, otp } = verifyResetOtpSchema.parse(req.body)
+      const result = await this.service.verifyResetOtp(email, otp, req.ip)
+      res.json({ success: true, message: 'Code verified.', data: result })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  resetPassword = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { cypher, newPassword } = resetPasswordSchema.parse(req.body)
+      await this.service.resetPassword(cypher, newPassword, req.ip)
+      // No auto-login: the admin signs in again with the new password.
+      res.json({ success: true, message: 'Password reset successfully. Please sign in.' })
     } catch (err) {
       next(err)
     }

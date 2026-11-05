@@ -47,6 +47,11 @@ function buildCorsOptions(): CorsOptions {
 export function createApp() {
   const app = express()
 
+  // The backend always sits behind nginx (docker/nginx.conf sets X-Forwarded-For). Trusting that one hop makes
+  // req.ip the real client address instead of nginx's own, which the per-IP rate limits (social login, admin
+  // forgot-password) and the login-session audit rely on. One hop only, so a client cannot forge its own address.
+  app.set('trust proxy', 1)
+
   app.use(cors(buildCorsOptions()))
   // A parsed sheet is a few hundred KB of JSON at the 2,000-row cap, over the default 100 KB. The parser marks the
   // body as read, so the global one below skips it. Scoped to this one path so no other route's limit changes.

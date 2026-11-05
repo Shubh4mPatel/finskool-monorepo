@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, ChevronRight, Lock, Smartphone } from "lucide-react";
 import AuthLayout from "@/components/auth/AuthLayout";
@@ -158,9 +159,9 @@ export default function LoginForm({ initialAdminOnly = false }: { initialAdminOn
                 <p className="mt-1.5 text-xs text-red-500">{errors.password}</p>
               )}
               <div className="mt-2 text-right">
-                <a href="#" className="text-sm font-semibold text-accent transition-colors hover:text-primary">
+                <Link href="/forgot-password" className="text-sm font-semibold text-accent transition-colors hover:text-primary">
                   Forgot Password?
-                </a>
+                </Link>
               </div>
             </div>
 
