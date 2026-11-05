@@ -158,7 +158,6 @@ export class NotificationsService {
       community_name: community?.name ?? '',
       post_title: payload.postTitle,
       post_excerpt: payload.postExcerpt,
-      frontend_url: env.frontendUrl,
     })
     return this.fanOutCommunity({
       communityId: payload.communityId,
@@ -249,7 +248,6 @@ export class NotificationsService {
       phone: payload.phone,
       community_name: payload.communityName,
       valid_till: formatEmailDate(payload.validTill),
-      frontend_url: env.frontendUrl,
     })
     await sendMail({ to: payload.toEmail, subject, html })
   }
@@ -261,7 +259,6 @@ export class NotificationsService {
       valid_till: formatEmailDate(payload.validTill),
       amount: formatEmailAmount(payload.amount),
       paid_on: formatEmailDate(payload.paidOn),
-      frontend_url: env.frontendUrl,
     })
     await sendMail({ to: payload.toEmail, subject, html, ...(await this.receiptAttachments(payload.receiptId)) })
   }
@@ -293,7 +290,6 @@ export class NotificationsService {
       invoice_number: invoice.number,
       amount: Number(invoice.total).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
       paid_on: formatEmailDate(invoice.issuedAt),
-      frontend_url: env.frontendUrl,
     })
     await sendMail({
       to: payload.toEmail,
@@ -308,7 +304,6 @@ export class NotificationsService {
       first_name: firstNameOf(payload.name),
       community_name: payload.communityName,
       valid_till: formatEmailDate(payload.validTill),
-      frontend_url: env.frontendUrl,
     })
     await sendMail({ to: payload.toEmail, subject, html, ...(await this.receiptAttachments(payload.receiptId)) })
   }
@@ -344,7 +339,6 @@ export class NotificationsService {
   async sendMemberReinstatedEmail(payload: MemberReinstatedEmailJobPayload): Promise<void> {
     const { subject, html } = renderEmail('member-reinstated', {
       first_name: firstNameOf(payload.name),
-      frontend_url: env.frontendUrl,
     })
     await sendMail({ to: payload.toEmail, subject, html })
   }
