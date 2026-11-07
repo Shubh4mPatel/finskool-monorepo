@@ -20,6 +20,7 @@ import Modal from "@/components/ui/Modal";
 import DatePicker from "@/components/ui/DatePicker";
 import Select from "@/components/ui/Select";
 import { FormField, inputCls, primaryBtn, secondaryBtn } from "@/components/admin/members/memberUi";
+import StockPicker from "./StockPicker";
 
 type Errors = Partial<Record<string, string>>;
 
@@ -82,6 +83,8 @@ export default function TradeModal({
   const [form, setForm] = useState<Form>(() => initialForm(trade));
   const [errors, setErrors] = useState<Errors>({});
   const [busy, setBusy] = useState(false);
+  // The stock chosen from the suggestions (or, when editing, the one the trade already shows), for the logo in the Stock field.
+  const [picked, setPicked] = useState<{ name: string; logoUrl: string | null } | null>(() => (trade?.logoUrl ? { name: trade.name, logoUrl: trade.logoUrl } : null));
 
   const set = <K extends keyof Form>(key: K, value: Form[K]) => {
     setForm(f => ({ ...f, [key]: value }));
@@ -210,7 +213,23 @@ export default function TradeModal({
           <DatePicker value={form.tradeDate} onChange={v => set("tradeDate", v)} triggerClassName={inputCls(errors["tradeDate"])} ariaLabel="Trade date" />
         </FormField>
         <FormField label={intraday ? "Stock" : "Trade name"} error={errors["name"]}>
-          {text("name", intraday ? "Ambuja Cement" : "BLS International")}
+          {intraday ? (
+            <StockPicker
+              value={form.name}
+              onChange={v => set("name", v)}
+              onPick={stock => {
+                set("name", stock.name);
+                setPicked({ name: stock.name, logoUrl: stock.logoUrl });
+              }}
+              selected={picked}
+              error={errors["name"]}
+              disabled={busy}
+              placeholder="Search a stock, e.g. Ambuja"
+              ariaLabel="Stock"
+            />
+          ) : (
+            text("name", "BLS International")
+          )}
         </FormField>
 
         {!intraday && (

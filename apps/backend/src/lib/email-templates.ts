@@ -137,50 +137,32 @@ export function truncateText(raw: string, maxLen = 160): string {
 }
 
 // Builds the `{cta_html}` slot for the subscription-expiring-7-days / -1-day
-// templates. Without a payment link the output is byte-identical to the
-// button those templates used to hardcode, so communities that haven't set
-// one see no change. With a payment link, it becomes the primary action and
-// the mailto fallback drops to a smaller link underneath it.
-export function buildRenewalCta(paymentLink: string | null | undefined, mailtoHref: string): string {
-  const supportButtonRow = `
-    <tr>
-      <td class="px" align="center" style="padding:30px 32px 0 32px;">
-        <table role="presentation" border="0" cellpadding="0" cellspacing="0">
-          <tr>
-            <td align="center" bgcolor="#1D9E75" style="border-radius:28px; background-image:linear-gradient(90deg, #C1F26E 0%, #1D9E75 55%, #108B8B 100%); background-color:#1D9E75;">
-              <a class="btn btn-a" href="${mailtoHref}" target="_blank" style="display:inline-block; padding:15px 42px; font-family:'Poppins', Arial, Helvetica, sans-serif; font-size:15px; font-weight:600; color:#FFFFFF; border-radius:28px; text-decoration:none;">
-                Email support to renew
-              </a>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>`
-
-  if (!paymentLink) return supportButtonRow
-
-  const safeLink = escapeHtml(paymentLink)
+// templates: the button row(s) of the Finskool21 email layout. Without a
+// payment link the one button is "Email support to renew". With a payment link,
+// that becomes the primary action and the mailto fallback drops to a smaller
+// link underneath it.
+function renewalButtonRow(href: string, label: string): string {
   return `
-    <tr>
-      <td class="px" align="center" style="padding:30px 32px 0 32px;">
-        <table role="presentation" border="0" cellpadding="0" cellspacing="0">
-          <tr>
-            <td align="center" bgcolor="#1D9E75" style="border-radius:28px; background-image:linear-gradient(90deg, #C1F26E 0%, #1D9E75 55%, #108B8B 100%); background-color:#1D9E75;">
-              <a class="btn btn-a" href="${safeLink}" target="_blank" style="display:inline-block; padding:15px 42px; font-family:'Poppins', Arial, Helvetica, sans-serif; font-size:15px; font-weight:600; color:#FFFFFF; border-radius:28px; text-decoration:none;">
-                Pay now to continue
-              </a>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-    <tr>
-      <td class="px" align="center" style="padding:12px 32px 0 32px;">
-        <a href="${mailtoHref}" target="_blank" style="font-family:'Nunito', Arial, Helvetica, sans-serif; font-size:12px; font-weight:700; color:#108B8B;">
-          Or email support to renew
-        </a>
-      </td>
-    </tr>`
+                <tr>
+                  <td class="px" style="padding:24px 40px 8px;">
+                    <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+                      <td style="background:#108B8B; border-radius:10px;">
+                        <a href="${href}" target="_blank" style="display:inline-block; padding:13px 26px; font-family:Inter, Helvetica, Arial, sans-serif; font-size:14px; font-weight:600; color:#FFFFFF; text-decoration:none;">${label}</a>
+                      </td>
+                    </tr></table>
+                  </td>
+                </tr>`
+}
+
+export function buildRenewalCta(paymentLink: string | null | undefined, mailtoHref: string): string {
+  if (!paymentLink) return renewalButtonRow(mailtoHref, 'Email support to renew')
+
+  return `${renewalButtonRow(escapeHtml(paymentLink), 'Pay now to continue')}
+                <tr>
+                  <td class="px" style="padding:12px 40px 0; font-family:Inter, Helvetica, Arial, sans-serif; font-size:13px;">
+                    <a href="${mailtoHref}" target="_blank" style="color:#108B8B; font-weight:600; text-decoration:none;">Or email support to renew</a>
+                  </td>
+                </tr>`
 }
 
 // Row-template convention for the `{rows_html}` slot in email templates that list label/value rows.
