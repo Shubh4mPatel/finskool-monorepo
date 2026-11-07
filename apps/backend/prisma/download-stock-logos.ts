@@ -1,15 +1,18 @@
 // One-time download of stock logos. For every active stock that has no logo it looks for one by two routes, stopping at the
 // first that finds it:
-//   1. the company's website (Finedge company profile) -> the logo for that website at logo.dev;
-//   2. the company's ISIN (from NSE's public list of listed companies) -> the logo for that ISIN at logo.dev. An ISIN names
-//      exactly one company, so this never returns another company's logo.
-// It keeps a copy of the logo in our own storage (not hotlinked) and stores the copy's address in `stocks.logo_url`. Nothing
-// else is written: no name, symbol, sector or price.
+//   1. the company's website (`stocks.website`, loaded from the stock sheet) -> the logo for that website at logo.dev;
+//   2. the company's ISIN (`stocks.isin`, from the same sheet) -> the logo for that ISIN at logo.dev. An ISIN names exactly one
+//      company, so this never returns another company's logo.
+// It keeps a copy of the logo in our own storage (MinIO, not hotlinked) and stores the copy's address in `stocks.logo_url`.
+// Nothing else is written: no name, symbol, sector or price.
+//
+// Load the stock sheet first (npm run db:load-stocks -- --apply): that is where the websites and ISINs come from. A stock without
+// either (stocks that are not in the sheet) is reported as having no logo to be had.
 //
 //   npm run db:download-stock-logos                          every stock that has no logo
 //   npm run db:download-stock-logos -- --limit=20            a trial run on the first 20 (alphabetically)
 //   npm run db:download-stock-logos -- --symbols=TCS,INFY    just these
-//   npm run db:download-stock-logos -- --exchange=nse        only NSE stocks (BSE-only stocks seldom have a website or an ISIN on file)
+//   npm run db:download-stock-logos -- --exchange=nse        only stocks whose exchange is NSE
 //   npm run db:download-stock-logos -- --no-isin             the website route only
 //   npm run db:download-stock-logos -- --logo-per-minute=80  how often logo.dev is asked (default 80, see below)
 //
@@ -18,13 +21,9 @@
 //
 // Speed: logo.dev's free plan limits requests per minute and answers 429 beyond that; paid plans have no such limit. So logo.dev
 // is asked at most 80 times a minute (raise it with --logo-per-minute on a paid plan), and if it says to slow down anyway the
-// command waits, as long as logo.dev says or 15 to 60 seconds, and tries again. That makes the NSE stocks take about 40 minutes.
-// The summary says how many logos each route found.
-//
-// If NSE's list cannot be downloaded (their site sometimes refuses servers) it says so and carries on with the website route.
-//
-// The stock list itself (name and symbol) comes from `npm run db:import-stocks`, or by itself the first time the backend
-// starts with an empty stocks table. See docs/stock-logos.md.
+// command waits, as long as logo.dev says or 15 to 60 seconds, and tries again. The summary says how many logos each route found.
+// The free plan also has a monthly allowance of requests and every request counts, "no logo" answers included: the start of the
+// run says how many stocks are to be looked up, which is the least number of requests it will make.
 //
 // Self-contained: the production image ships prisma/ and src/generated but not the rest of src/, so this reads process.env
 // directly and talks to MinIO itself, the same way prisma/seed.ts does.
@@ -34,19 +33,18 @@ import * as Minio from 'minio'
 import { randomUUID } from 'crypto'
 import {
   DEFAULT_LOGO_REQUESTS_PER_MINUTE,
+  TEST_SYMBOL_SUFFIX,
   createPacer,
   downloadStockLogos,
-  parseNseList,
+  extractDomain,
   publicUrlFor,
   requestPaced,
   type FetchedLogo,
-  type ListedCompany,
   type LogoDeps,
 } from './stock-logos-core.js'
 
 const env = (name: string): string => process.env[name] ?? ''
 const MAX_LOGO_BYTES = 1024 * 1024
-const NSE_LIST_URL = 'https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv'
 
 function arg(name: string): string | undefined {
   return process.argv.slice(2).find(a => a.startsWith(`--${name}=`))?.slice(name.length + 3)
@@ -69,7 +67,7 @@ const perMinuteArg = arg('logo-per-minute')
 const logoPerMinute = perMinuteArg === undefined ? DEFAULT_LOGO_REQUESTS_PER_MINUTE : Number(perMinuteArg)
 if (!Number.isFinite(logoPerMinute) || logoPerMinute < 1 || logoPerMinute > 6000) fail('--logo-per-minute must be a number from 1 to 6000, for example --logo-per-minute=80')
 
-const missing = ['DATABASE_URL', 'STOCK_QUOTE_API_BASE_URL', 'STOCK_QUOTE_API_KEY', 'LOGO_DEV_TOKEN', 'MINIO_ACCESS_KEY', 'MINIO_SECRET_KEY'].filter(n => !env(n))
+const missing = ['DATABASE_URL', 'LOGO_DEV_TOKEN', 'MINIO_ACCESS_KEY', 'MINIO_SECRET_KEY'].filter(n => !env(n))
 if (missing.length > 0) fail(`These are not set: ${missing.join(', ')}`)
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: env('DATABASE_URL') }) })
@@ -94,7 +92,8 @@ const pacer = createPacer({ minIntervalMs: Math.ceil(60_000 / logoPerMinute), sl
  */
 async function logoDevImage(path: string): Promise<FetchedLogo | null> {
   const res = await requestPaced(
-    () => fetch(`https://img.logo.dev/${path}?token=${env('LOGO_DEV_TOKEN')}&format=png&size=256&fallback=404`),
+    // LOGO_DEV_BASE_URL is only for pointing a test at a stand-in server; leave it unset for the real thing.
+    () => fetch(`${env('LOGO_DEV_BASE_URL') || 'https://img.logo.dev'}/${path}?token=${env('LOGO_DEV_TOKEN')}&format=png&size=256&fallback=404`),
     pacer,
     line => console.log(`[download-stock-logos] ${line}`),
   )
@@ -106,39 +105,64 @@ async function logoDevImage(path: string): Promise<FetchedLogo | null> {
   return buffer.length === 0 || buffer.length > MAX_LOGO_BYTES ? null : { buffer, contentType }
 }
 
-/** NSE's list of listed companies, with each one's ISIN. Null (with the reason printed) when it cannot be had. */
-async function loadNseList(): Promise<Map<string, ListedCompany> | null> {
-  try {
-    const res = await fetch(NSE_LIST_URL, { headers: { 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36', Accept: 'text/csv,*/*' } })
-    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
-    return parseNseList(await res.text())
-  } catch (err) {
-    console.warn(`[download-stock-logos] Could not get NSE's list of ISINs (${err instanceof Error ? err.message : err}). Carrying on with the website route only.`)
-    return null
-  }
+/** What the sheet says of each stock that is still to get a logo: its website and its ISIN. */
+const todo = await prisma.stock.findMany({
+  where: { isActive: true, logoUrl: null, ...(exchange ? { exchange } : {}), NOT: { symbol: { endsWith: TEST_SYMBOL_SUFFIX } } },
+  select: { symbol: true, website: true, isin: true },
+})
+const known = new Map(todo.map(s => [s.symbol, s]))
+
+// How big the job is. Every stock with something to look up costs at least one logo.dev request ("no logo" answers count too),
+// and a stock that the website route finds nothing for is asked again by its ISIN, so the real number is higher.
+if (!limit && !symbols) {
+  const withSite = todo.filter(s => s.website).length
+  const onlyIsin = todo.filter(s => !s.website && s.isin).length
+  const neither = todo.length - withSite - onlyIsin
+  const requests = flag('no-isin') ? withSite : withSite + onlyIsin
+  console.log(`[download-stock-logos] ${todo.length} stocks without a logo: ${withSite} with a website, ${onlyIsin} with only an ISIN, ${neither} with neither.`)
+  console.log(`[download-stock-logos] At least ${requests} logo.dev requests, so at least ${Math.ceil(requests / logoPerMinute)} min at ${logoPerMinute} a minute. Check the usage in the logo.dev dashboard against your plan's monthly allowance.`)
 }
 
-const nseList = flag('no-isin') ? null : await loadNseList()
-if (nseList) console.log(`[download-stock-logos] NSE's list has an ISIN for ${nseList.size} companies`)
+// Companies of one group share a website, so several stocks can need the same logo: ask logo.dev for it once, even when the
+// stocks are in the same batch (the request in flight is shared). Only a logo that was found is kept for the next stock, not a
+// "none" or an error: logo.dev answers "none" the first time it hears of a domain and may have it later.
+const domainCount = new Map<string, number>()
+for (const s of todo) {
+  if (!s.website) continue
+  const domain = extractDomain(s.website).toLowerCase()
+  domainCount.set(domain, (domainCount.get(domain) ?? 0) + 1)
+}
+const logoByDomain = new Map<string, Promise<FetchedLogo | null>>()
 
 const deps: LogoDeps = {
-  ...(nseList
-    ? {
-        findIsin: (symbol: string) => nseList.get(symbol.trim().toUpperCase())?.isin ?? null,
+  ...(flag('no-isin')
+    ? {}
+    : {
+        findIsin: (symbol: string) => known.get(symbol)?.isin ?? null,
         fetchLogoByIsin: (isin: string) => logoDevImage(`isin/${isin}`),
-      }
-    : {}),
+      }),
 
   async findWebsite(symbol) {
-    const url = `${env('STOCK_QUOTE_API_BASE_URL')}/api/v1/company-profile/${encodeURIComponent(symbol)}?token=${env('STOCK_QUOTE_API_KEY')}`
-    const res = await fetch(url, { headers: { 'Content-Type': 'application/json' } })
-    if (res.status === 404) return null
-    if (!res.ok) throw new Error(`Finedge company-profile: ${res.status} ${res.statusText}`)
-    const profile = (await res.json()) as { website?: string | null }
-    return profile.website || null
+    return known.get(symbol)?.website ?? null
   },
 
-  fetchLogo: (domain): Promise<FetchedLogo | null> => logoDevImage(domain),
+  async fetchLogo(domain): Promise<FetchedLogo | null> {
+    const key = domain.toLowerCase()
+    if ((domainCount.get(key) ?? 0) < 2) return logoDevImage(domain)
+    let pending = logoByDomain.get(key)
+    if (!pending) {
+      pending = logoDevImage(domain)
+      logoByDomain.set(key, pending)
+    }
+    try {
+      const logo = await pending
+      if (!logo) logoByDomain.delete(key)
+      return logo
+    } catch (err) {
+      logoByDomain.delete(key)
+      throw err
+    }
+  },
 
   async storeLogo({ buffer, contentType }) {
     const objectName = `stock-logos/${randomUUID()}.png`

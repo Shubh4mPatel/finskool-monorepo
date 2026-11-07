@@ -80,6 +80,14 @@ enum StockExchange {
   bse
 }
 
+// Where a company is listed, as the stock sheet (prisma/seed-assets/India_NSE_BSE_Equity_Stocks.xlsx) says. `StockExchange`
+// above is a different thing: the one exchange the live-price token resolves against.
+enum StockListing {
+  nse_bse
+  nse
+  bse
+}
+
 model User {
   id           String    @id @default(uuid()) @db.Uuid
   name         String    @map("full_name") @db.VarChar(100)
@@ -461,6 +469,19 @@ model Stock {
   isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // From the stock sheet (npm run db:load-stocks). All optional: stocks that are not in the sheet have none of them.
+  // `isin` identifies exactly one company, which is what makes the logo.dev ISIN lookup safe.
+  isin           String?       @unique @db.VarChar(12)
+  bseCode        String?       @map("bse_code") @db.VarChar(10)
+  bseSymbol      String?       @map("bse_symbol") @db.VarChar(50)
+  listedOn       StockListing? @map("listed_on")
+  nseBoard       String?       @map("nse_board") @db.VarChar(30)
+  nseSeries      String?       @map("nse_series") @db.VarChar(10)
+  industry       String?       @db.VarChar(100)
+  website        String?       @db.VarChar(255)
+  nseListingDate DateTime?     @map("nse_listing_date") @db.Date
+  faceValue      Decimal?      @map("face_value") @db.Decimal(10, 2)
 
   recommendations StockRecommendation[]
 
