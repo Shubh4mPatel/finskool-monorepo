@@ -6,25 +6,40 @@ import {
   RETRY_PAUSE_MS,
   downloadStockLogos,
   extractDomain,
+  parseCsv,
+  parseNseList,
   publicUrlFor,
   type FetchedLogo,
   type LogoDeps,
 } from '../../prisma/stock-logos-core.js'
 import { prisma, resetDb, createAdmin, createCommunity, daysFromNow } from '../helpers/fixtures.js'
 
-// The one-time download of stock logos (npm run db:download-stock-logos). For every stock without a logo it finds the
-// company's website, fetches the logo for it, keeps a copy in our storage and stores its address, and writes nothing else.
-// Finedge, logo.dev and the file store are replaced by fakes here: nothing in this file calls them.
+// The one-time download of stock logos (npm run db:download-stock-logos). For every stock without a logo it looks for one
+// by the company's website and then by its ISIN, keeps a copy in our storage and stores its address, and writes nothing
+// else. Finedge, logo.dev and the file store are replaced by fakes here: nothing in this file calls them.
 
 const app = createApp()
 
 type Site = string | null | 'error'
 type Logo = 'none' | 'error' | 'later'
 
-/** By default every symbol has a website (`www.<symbol>.com`) and every site has a logo. */
-function fakeDeps(opts: { websites?: Record<string, Site>; logos?: Record<string, Logo>; failEverything?: boolean } = {}) {
-  const calls = { websites: [] as string[], logos: [] as string[], stored: 0, pauses: [] as number[] }
+/**
+ * By default every symbol has a website (`www.<symbol>.com`) and every site has a logo. Give `isins` (symbol -> ISIN) to switch
+ * on the ISIN route; an ISIN has a logo unless `isinLogos` says otherwise.
+ */
+function fakeDeps(opts: { websites?: Record<string, Site>; logos?: Record<string, Logo>; isins?: Record<string, string>; isinLogos?: Record<string, Logo>; failEverything?: boolean } = {}) {
+  const calls = { websites: [] as string[], logos: [] as string[], isinLogos: [] as string[], stored: 0, pauses: [] as number[] }
   const laterSeen = new Set<string>()
+  /** The answer for a logo lookup, with the "only just heard of it" case: nothing the first time, the logo the second. */
+  const answer = (state: Logo | undefined, key: string): FetchedLogo | null => {
+    if (state === 'none') return null
+    if (state === 'error') throw new Error('logo.dev is having a bad day')
+    if (state === 'later' && !laterSeen.has(key)) {
+      laterSeen.add(key)
+      return null
+    }
+    return { buffer: Buffer.from('png-bytes'), contentType: 'image/png' }
+  }
   const deps: LogoDeps = {
     async findWebsite(symbol) {
       calls.websites.push(symbol)
@@ -35,18 +50,17 @@ function fakeDeps(opts: { websites?: Record<string, Site>; logos?: Record<string
     },
     async fetchLogo(domain): Promise<FetchedLogo | null> {
       calls.logos.push(domain)
-      const l = opts.logos?.[domain]
-      if (l === 'none') return null
-      if (l === 'error') throw new Error('logo.dev is having a bad day')
-      if (l === 'later') {
-        // logo.dev has only just heard of this domain: nothing the first time, the logo the second.
-        if (!laterSeen.has(domain)) {
-          laterSeen.add(domain)
-          return null
-        }
-      }
-      return { buffer: Buffer.from('png-bytes'), contentType: 'image/png' }
+      return answer(opts.logos?.[domain], `site:${domain}`)
     },
+    ...(opts.isins
+      ? {
+          findIsin: (symbol: string) => opts.isins?.[symbol] ?? null,
+          fetchLogoByIsin: async (isin: string): Promise<FetchedLogo | null> => {
+            calls.isinLogos.push(isin)
+            return answer(opts.isinLogos?.[isin], `isin:${isin}`)
+          },
+        }
+      : {}),
     async storeLogo() {
       calls.stored += 1
       return `https://files.test/assets/finskool/stock-logos/${calls.stored}.png`
@@ -78,7 +92,7 @@ describe('downloading a stock\'s logo', () => {
     const { deps, calls } = fakeDeps()
     const result = await downloadStockLogos(prisma, deps)
 
-    expect(result).toEqual({ considered: 1, downloaded: 1, noLogo: [], failed: [], stoppedEarly: false })
+    expect(result).toEqual({ considered: 1, downloaded: 1, bySource: { website: 1, isin: 0 }, noLogo: [], failed: [], stoppedEarly: false })
     const after = await reload('RELIANCE')
     expect(after.logoUrl).toBe('https://files.test/assets/finskool/stock-logos/1.png')
     // Only the logo moved. Name, symbol, sector, prices, token and exchange are as they were.
@@ -229,6 +243,155 @@ describe('the websites it is given', () => {
     ['  https://hdfcbank.com/#top  ', 'hdfcbank.com'],
   ])('%s -> %s', (website, domain) => {
     expect(extractDomain(website)).toBe(domain)
+  })
+})
+
+describe('the ISIN route', () => {
+  const INFY = 'INE009A01021'
+
+  it('finds the logo by ISIN when the company has no website on record', async () => {
+    await stock('INFY')
+    const { deps, calls } = fakeDeps({ websites: { INFY: null }, isins: { INFY } })
+    const result = await downloadStockLogos(prisma, deps)
+
+    expect(result).toMatchObject({ considered: 1, downloaded: 1, bySource: { website: 0, isin: 1 }, noLogo: [], failed: [] })
+    expect(calls.logos).toEqual([]) // there was no website to ask about
+    expect(calls.isinLogos).toEqual([INFY])
+    expect((await reload('INFY')).logoUrl).not.toBeNull()
+  })
+
+  it('is tried when the website has no logo at logo.dev, and finds it on the first pass', async () => {
+    await stock('INFY')
+    const { deps, calls } = fakeDeps({ logos: { 'infy.com': 'none' }, isins: { INFY } })
+    const result = await downloadStockLogos(prisma, deps)
+
+    expect(result.bySource).toEqual({ website: 0, isin: 1 })
+    expect(calls.logos).toEqual(['infy.com']) // no second look needed: the ISIN had it
+    expect(calls.pauses).not.toContain(RETRY_PAUSE_MS)
+  })
+
+  it('is left alone when the website route already worked', async () => {
+    await stock('INFY')
+    const { deps, calls } = fakeDeps({ isins: { INFY } })
+    const result = await downloadStockLogos(prisma, deps)
+    expect(result.bySource).toEqual({ website: 1, isin: 0 })
+    expect(calls.isinLogos).toEqual([])
+  })
+
+  it('a company with neither a website nor a known ISIN is reported, and nobody is asked for a logo', async () => {
+    await stock('MYSTERY')
+    const { deps, calls } = fakeDeps({ websites: { MYSTERY: null }, isins: { OTHER: 'INE000A01011' } })
+    const result = await downloadStockLogos(prisma, deps)
+    expect(result).toMatchObject({ downloaded: 0, noLogo: ['MYSTERY'] })
+    expect(calls.logos).toEqual([])
+    expect(calls.isinLogos).toEqual([])
+  })
+
+  it('an ISIN logo.dev has no logo for is reported after a second look', async () => {
+    await stock('INFY')
+    const { deps, calls } = fakeDeps({ websites: { INFY: null }, isins: { INFY }, isinLogos: { [INFY]: 'none' } })
+    const result = await downloadStockLogos(prisma, deps)
+    expect(result).toMatchObject({ downloaded: 0, noLogo: ['INFY'], failed: [] })
+    expect(calls.isinLogos).toEqual([INFY, INFY])
+    expect(calls.pauses).toContain(RETRY_PAUSE_MS)
+  })
+
+  it('an ISIN logo.dev has only just heard of gets its second look, and the logo is kept', async () => {
+    await stock('INFY')
+    const { deps, calls } = fakeDeps({ websites: { INFY: null }, isins: { INFY }, isinLogos: { [INFY]: 'later' } })
+    const result = await downloadStockLogos(prisma, deps)
+    expect(result).toMatchObject({ downloaded: 1, bySource: { website: 0, isin: 1 }, noLogo: [] })
+    expect(calls.isinLogos).toEqual([INFY, INFY])
+  })
+
+  it('an error from the ISIN lookup is a failure to retry, not "no logo"', async () => {
+    await stock('INFY')
+    const { deps } = fakeDeps({ websites: { INFY: null }, isins: { INFY }, isinLogos: { [INFY]: 'error' } })
+    expect(await downloadStockLogos(prisma, deps)).toMatchObject({ downloaded: 0, noLogo: [], failed: ['INFY'] })
+  })
+
+  it('counts what each route found', async () => {
+    await stock('AAA') // has a website with a logo
+    await stock('BBB') // no website, but an ISIN with a logo
+    await stock('CCC') // neither
+    await stock('DDD') // a website with no logo, and an ISIN with one
+    const { deps } = fakeDeps({
+      websites: { BBB: null, CCC: null },
+      logos: { 'ddd.com': 'none' },
+      isins: { BBB: 'INE111A01011', DDD: 'INE222A01011' },
+    })
+    const result = await downloadStockLogos(prisma, deps)
+    expect(result).toMatchObject({ considered: 4, downloaded: 3, bySource: { website: 1, isin: 2 }, noLogo: ['CCC'], failed: [] })
+  })
+
+  it('without the ISIN steps only the website route is used', async () => {
+    await stock('INFY')
+    const { deps, calls } = fakeDeps({ websites: { INFY: null } })
+    expect(deps.findIsin).toBeUndefined()
+    expect(await downloadStockLogos(prisma, deps)).toMatchObject({ downloaded: 0, noLogo: ['INFY'] })
+    expect(calls.isinLogos).toEqual([])
+  })
+})
+
+describe('limiting a run to one exchange', () => {
+  it('--exchange looks only at stocks on that exchange', async () => {
+    await stock('AAA', { exchange: 'nse' })
+    await stock('BBB', { exchange: 'bse' })
+    await stock('CCC', { exchange: 'nse' })
+    const { deps, calls } = fakeDeps()
+    const result = await downloadStockLogos(prisma, deps, { exchange: 'nse' })
+    expect(result.considered).toBe(2)
+    expect(calls.websites).toEqual(['AAA', 'CCC'])
+    expect((await reload('BBB')).logoUrl).toBeNull()
+  })
+})
+
+describe('NSE\'s list of companies', () => {
+  const LIST = [
+    'SYMBOL,NAME OF COMPANY, SERIES, DATE OF LISTING, PAID UP VALUE, MARKET LOT, ISIN NUMBER, FACE VALUE',
+    'TATASTEEL,Tata Steel Limited,EQ,18-NOV-1998,1,1,INE081A01020,1',
+    '"M&M","Mahindra & Mahindra Limited",EQ,03-JAN-1996,5,1,INE101A01026,5',
+    'ODDCO,"Odd, Co ""Quoted"" Limited",EQ,01-JAN-2000,10,1,INE000A01011,10',
+    'BADISIN,Bad Co Limited,EQ,01-JAN-2000,10,1,NOTANISIN,10',
+    'noisin,No Isin Limited,EQ,01-JAN-2000,10,1,,10',
+    '',
+  ].join('\r\n')
+
+  it('maps each symbol to its company name and ISIN, reading the padded headings and quoted names', () => {
+    const list = parseNseList(LIST)
+    expect([...list.keys()]).toEqual(['TATASTEEL', 'M&M', 'ODDCO'])
+    expect(list.get('TATASTEEL')).toEqual({ name: 'Tata Steel Limited', isin: 'INE081A01020' })
+    expect(list.get('M&M')).toEqual({ name: 'Mahindra & Mahindra Limited', isin: 'INE101A01026' })
+    expect(list.get('ODDCO')).toEqual({ name: 'Odd, Co "Quoted" Limited', isin: 'INE000A01011' })
+  })
+
+  it('skips a row whose ISIN is missing or not an ISIN, rather than passing a bad one on to logo.dev', () => {
+    const list = parseNseList(LIST)
+    expect(list.has('BADISIN')).toBe(false)
+    expect(list.has('NOISIN')).toBe(false)
+  })
+
+  it('upper-cases symbols, keeps the first of a repeated symbol, and ignores a leading byte-order mark', () => {
+    const list = parseNseList('﻿SYMBOL,ISIN NUMBER\nabc,INE111A01011\nABC,INE222A01011\n')
+    expect(list.get('ABC')).toEqual({ name: '', isin: 'INE111A01011' }) // no name column is fine
+  })
+
+  it('refuses something that is not the list, such as an error page, so it is noticed', () => {
+    expect(() => parseNseList('<HTML><HEAD><TITLE>Access Denied</TITLE></HEAD></HTML>')).toThrow(/not in the expected format/)
+    expect(() => parseNseList('')).toThrow(/not in the expected format/)
+  })
+})
+
+describe('reading CSV', () => {
+  it('handles quotes, commas and line breaks inside a field, both line endings, and a missing final newline', () => {
+    expect(parseCsv('a,"b,c","say ""hi""","line\nbreak"\r\n1,2,3,4')).toEqual([
+      ['a', 'b,c', 'say "hi"', 'line\nbreak'],
+      ['1', '2', '3', '4'],
+    ])
+  })
+
+  it('skips blank lines but keeps a row whose only field is empty between commas', () => {
+    expect(parseCsv('a,b\n\n,\n')).toEqual([['a', 'b'], ['', '']])
   })
 })
 

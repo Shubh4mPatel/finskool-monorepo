@@ -19,32 +19,38 @@ The NSE and BSE equity list is read from AngelOne's public scrip master (`src/li
 
 ```
 npm run db:download-stock-logos                          every stock that has no logo
-npm run db:download-stock-logos -- --limit=20            a trial run on the first 20 (alphabetically)
+npm run db:download-stock-logos -- --limit=40            a trial run on the first 40 (alphabetically)
 npm run db:download-stock-logos -- --symbols=TCS,INFY    just these
+npm run db:download-stock-logos -- --exchange=nse        only NSE stocks (recommended, see below)
+npm run db:download-stock-logos -- --no-isin             the website route only
 ```
 
 In production run it inside the backend container, starting with a trial:
 
 ```
-docker exec -it finskool-backend npm run db:download-stock-logos -- --limit=20
-docker exec -it finskool-backend npm run db:download-stock-logos
+docker exec -it finskool-backend npm run db:download-stock-logos -- --exchange=nse --limit=40
+docker exec -it finskool-backend npm run db:download-stock-logos -- --exchange=nse
 ```
 
-For each stock without a logo it:
+For each stock without a logo it looks for one by two routes, and stops at the first that finds it:
 
-1. asks Finedge for the company's website;
-2. fetches the logo for that website from logo.dev (a transparent 256 px PNG);
-3. keeps a copy in our own storage (`stock-logos/…`, not hotlinked);
-4. stores the copy's address in `stocks.logo_url`.
+1. **Its website.** Finedge gives the company's website, and logo.dev gives the logo for that website.
+2. **Its ISIN.** If the website gave nothing (no website on record, or no logo for it), the stock's ISIN is tried at logo.dev. An ISIN is the official identifier of exactly one company, so this cannot return another company's logo. The ISINs come from NSE's public list of listed companies, which the command downloads each time it runs; it covers the NSE stocks and not the BSE-only ones.
+
+Either way the logo is a transparent 256 px PNG. The command then keeps a copy in our own storage (`stock-logos/…`, not hotlinked) and stores the copy's address in `stocks.logo_url`. The summary at the end says how many logos each route found, which is also how you can judge how well the ISIN route works.
+
+I deliberately do **not** look logos up by company name. A name search can match the wrong company, and a wrong logo beside a trade is worse than initials.
 
 It changes nothing else on the stock. It needs these set in the environment: `STOCK_QUOTE_API_BASE_URL`, `STOCK_QUOTE_API_KEY` (Finedge, used here only to find the company's website), `LOGO_DEV_TOKEN`, and the storage settings the app already uses (`MINIO_*`). If any is missing it says which and stops before doing anything.
 
 - **It is safe to run again.** It only looks at stocks that still have no logo, so a run that was stopped carries on where it left off, and a logo that is there is never replaced.
-- **How long:** five stocks a second (Finedge's limit), so a full list of about five thousand stocks takes roughly 20 to 30 minutes. It prints progress as it goes and a summary at the end.
+- **How long:** five stocks a second (Finedge's limit): about 10 minutes for the roughly 2,800 NSE stocks, about 20 for the whole list. It prints progress as it goes and a summary at the end.
+- **Why `--exchange=nse`:** a sample of Finedge showed a website for about 80% of NSE stocks but for only about 2% of the BSE-only ones, and there is no ISIN list for BSE-only stocks (BSE's own list refuses automated downloads). Including them costs about ten more minutes for very few logos. Leave the flag off to try them anyway.
+- **If NSE's list cannot be downloaded** (their site sometimes refuses servers) the command says so and carries on with the website route only.
 - **When something goes wrong** (an API is down) it gives up after three failed batches in a row instead of hammering it, says so, and exits with an error. Run it again later.
 - **The summary lists** the symbols with no logo to be had (no website on record, or none at logo.dev) and the ones that failed and are worth running again.
 
-Some stocks will never get a logo: small companies with no website at Finedge, or no logo at logo.dev. They show their initials, which is what the screens are built to do.
+Not every stock will get a logo, and the BSE-only ones mostly will not: small companies with no website at Finedge and no ISIN on file, or no logo at logo.dev. They show their initials, which is what the screens are built to do. NSE's list also contains some things that are not companies (exchange test symbols such as `011NSETEST`, and ETFs and funds such as `ABSLLIQUID`); they have no website and will simply be reported as having no logo.
 
 ### Two things that matter about logo.dev
 
