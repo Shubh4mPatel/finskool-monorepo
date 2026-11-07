@@ -281,7 +281,7 @@ function SidebarContent({ data, onNav, collapsed = false, onToggleCollapsed }: {
       <div className="relative mx-4 h-px bg-divider" aria-hidden />
 
       {/* Nav */}
-      <nav aria-label="Admin" className="relative flex flex-1 flex-col overflow-y-auto overflow-x-hidden px-3 pb-4 scrollbar-slim">
+      <nav aria-label="Admin" className="relative flex flex-1 flex-col overflow-y-auto overscroll-y-contain overflow-x-hidden px-3 pb-4 scrollbar-slim">
         {groups.map((group, gi) => (
           <div key={group.label} className="flex flex-col gap-0.5">
             {collapsed ? (
