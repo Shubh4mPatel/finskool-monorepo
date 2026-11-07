@@ -1,13 +1,13 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { ArrowLeft, Newspaper, Plus } from "lucide-react";
 import MarketTodayWidget from "@/components/MarketTodayWidget";
 import CommunityRulesWidget from "@/components/CommunityRulesWidget";
 import EditPostModal from "@/components/admin/posts/EditPostModal";
-import PostsList, { Pagination } from "@/components/admin/posts/PostsList";
+import PostsList from "@/components/admin/posts/PostsList";
 import PostsToolbar from "@/components/admin/posts/PostsToolbar";
 import type { CommunityOption } from "@/components/admin/posts/types";
 import { useAdminPosts } from "@/components/admin/posts/useAdminPosts";
@@ -27,18 +27,12 @@ function FeedView() {
   const focusedPostId = useSearchParams().get("post") ?? undefined;
   const feed = useAdminPosts(focusedPostId);
   const [communities, setCommunities] = useState<CommunityOption[]>([]);
-  const topRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     api.get<CommunityOption[]>("/api/v1/admin/communities")
       .then(setCommunities)
       .catch(() => {});
   }, []);
-
-  function goToPage(next: number) {
-    feed.setPage(next);
-    topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
 
   const communityName = communities.find(c => c.id === feed.communityId)?.name;
 
@@ -49,7 +43,7 @@ function FeedView() {
       )}
 
       {/* Header — spans full width, sits above both the post column and the aside so the aside can start level with the posts below */}
-      <div ref={topRef} className="animate-enter mb-5 flex max-w-4xl scroll-mt-4 flex-wrap items-end justify-between gap-4">
+      <div className="animate-enter mb-5 flex max-w-4xl flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-xs font-semibold text-accent">Dashboard &rsaquo; Live Feed</p>
           <h1 className="font-display text-2xl font-bold text-primary">Live Feed</h1>
@@ -105,7 +99,11 @@ function FeedView() {
           <PostsList
             loading={feed.loading}
             refreshing={feed.refreshing}
-            posts={feed.displayed}
+            posts={feed.posts}
+            hasMore={feed.hasMore}
+            loadingMore={feed.loadingMore}
+            loadMoreFailed={feed.loadMoreFailed}
+            onLoadMore={feed.loadMore}
             hasFilters={feed.hasFilters}
             onClearFilters={feed.clearFilters}
             deletingId={feed.deletingId}
@@ -115,7 +113,6 @@ function FeedView() {
             onPin={feed.pin}
           />
           )}
-          {!focusedPostId && <Pagination page={feed.page} totalPages={feed.totalPages} onPage={goToPage} />}
         </div>
 
         {/* Right sidebar — same as user feed */}

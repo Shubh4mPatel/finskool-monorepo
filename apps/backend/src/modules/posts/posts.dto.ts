@@ -112,10 +112,13 @@ export interface PostFeedItemDTO extends PostMediaShapeDTO {
 
 export interface ListPostsResponseDTO {
   posts: PostFeedItemDTO[]
-  total: number
-  page: number
   pageSize: number
-  totalPages: number
+  /** Pass as `cursor` to get the posts after these; null when there are none. Present in both paging modes. */
+  nextCursor: string | null
+  // Absent when paging by `cursor` — the count is skipped then (the first page already gave it).
+  total?: number
+  page?: number
+  totalPages?: number
 }
 
 export interface CommentedPostItemDTO extends PostMediaShapeDTO {

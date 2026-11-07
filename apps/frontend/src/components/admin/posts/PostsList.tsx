@@ -1,7 +1,8 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, Newspaper, Plus, SearchX } from "lucide-react";
+import { Newspaper, Plus, SearchX } from "lucide-react";
 import FeedPostCard from "@/components/feed/FeedPostCard";
 import { Skeleton, stagger } from "@/components/admin/dashboard/Panel";
 import { formatTimestamp, type AdminPost } from "./types";
@@ -25,11 +26,75 @@ function PostSkeleton() {
   );
 }
 
-/** The admin post list: placeholders, empty states, and cards with their ⋯ actions. */
+/** The nearest ancestor that scrolls — the admin pages scroll inside <main>, not the window. */
+function scrollParent(el: HTMLElement): HTMLElement | null {
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    const { overflowY } = getComputedStyle(p);
+    if (overflowY === "auto" || overflowY === "scroll") return p;
+  }
+  return null;
+}
+
+/**
+ * The end of the list. The next batch loads when this comes within a screen of view, so it is usually there
+ * before the reader reaches it. The observer is set up afresh after every batch, so if the new posts still do
+ * not fill the screen it fires again. After a failure it waits for Retry rather than hammering the server.
+ */
+function LoadMore({
+  hasMore,
+  loading,
+  failed,
+  onLoadMore,
+}: {
+  hasMore: boolean;
+  loading: boolean;
+  failed: boolean;
+  onLoadMore: () => void;
+}) {
+  const endRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const end = endRef.current;
+    if (!end || !hasMore || loading || failed) return;
+    const observer = new IntersectionObserver(
+      entries => {
+        if (entries.some(e => e.isIntersecting)) onLoadMore();
+      },
+      { root: scrollParent(end), rootMargin: "0px 0px 400px 0px" },
+    );
+    observer.observe(end);
+    return () => observer.disconnect();
+  }, [hasMore, loading, failed, onLoadMore]);
+
+  return (
+    <>
+      {loading && <PostSkeleton />}
+      <div ref={endRef} aria-hidden className="h-px" />
+      {failed && (
+        <div className="flex items-center justify-center gap-3 text-sm text-muted" role="status">
+          Couldn&apos;t load more posts.
+          <button
+            type="button"
+            onClick={onLoadMore}
+            className="rounded-full border border-divider px-4 py-1.5 text-sm font-semibold text-primary transition-colors hover:border-accent"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
+
+/** The admin post list: placeholders, empty states, and cards with their ⋯ actions. More posts load as the end scrolls into view. */
 export default function PostsList({
   loading,
   refreshing,
   posts,
+  hasMore,
+  loadingMore,
+  loadMoreFailed,
+  onLoadMore,
   hasFilters,
   onClearFilters,
   deletingId,
@@ -41,6 +106,10 @@ export default function PostsList({
   loading: boolean;
   refreshing: boolean;
   posts: AdminPost[];
+  hasMore: boolean;
+  loadingMore: boolean;
+  loadMoreFailed: boolean;
+  onLoadMore: () => void;
   hasFilters: boolean;
   onClearFilters: () => void;
   deletingId: string | null;
@@ -88,7 +157,8 @@ export default function PostsList({
         return (
           <div
             key={post.id}
-            style={stagger(Math.min(i, 6), 0, 60)}
+            // Cycles rather than caps, so posts that load in later batches don't all wait out the longest delay.
+            style={stagger(i % 6, 0, 60)}
             className={`animate-enter transition-opacity duration-200 ${busy ? "pointer-events-none opacity-50" : ""}`}
           >
             <FeedPostCard
@@ -122,25 +192,7 @@ export default function PostsList({
           </div>
         );
       })}
+      <LoadMore hasMore={hasMore} loading={loadingMore} failed={loadMoreFailed} onLoadMore={onLoadMore} />
     </div>
-  );
-}
-
-export function Pagination({ page, totalPages, onPage }: { page: number; totalPages: number; onPage: (page: number) => void }) {
-  if (totalPages <= 1) return null;
-  const btn =
-    "flex items-center gap-1 rounded-full border border-divider bg-white px-4 py-2 text-sm font-semibold text-muted transition-colors hover:border-accent hover:text-primary disabled:opacity-40";
-  return (
-    <nav aria-label="Pages" className="flex items-center justify-center gap-3 pt-2">
-      <button onClick={() => onPage(Math.max(1, page - 1))} disabled={page === 1} className={btn}>
-        <ChevronLeft size={15} /> Previous
-      </button>
-      <span className="rounded-full bg-white px-4 py-2 text-sm font-semibold tabular-nums text-primary shadow-card">
-        {page} <span className="text-subtle">of</span> {totalPages}
-      </span>
-      <button onClick={() => onPage(Math.min(totalPages, page + 1))} disabled={page === totalPages} className={btn}>
-        Next <ChevronRight size={15} />
-      </button>
-    </nav>
   );
 }

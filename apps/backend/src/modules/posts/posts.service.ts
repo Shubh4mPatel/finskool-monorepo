@@ -19,6 +19,7 @@ import { notificationsQueue, COMMUNITY_POST_JOB } from '../../lib/queue.js'
 import { assertCommunityAccessFromToken } from '../../lib/community-access.js'
 import { truncateText } from '../../lib/email-templates.js'
 import { NotFoundError, BadRequestError, ForbiddenError } from '../../shared/errors/index.js'
+import { isUuid } from '../tickets/tickets.shared.js'
 import { logger } from '../../shared/logger.js'
 import type {
   CreatePostDTO,
@@ -114,6 +115,52 @@ export function toVideoDTO(v: VideoRow): PostVideoDTO {
   }
 }
 
+const escapeLike = (s: string): string => s.replace(/[\\%_]/g, '\\$&')
+
+// ─── List cursor ────────────────────────────────────────────────────────────
+// Opaque "<pinOrder or empty>|<iso publishedAt>|<id>" — keyset pagination on the feed's own order
+// (pinned first by pinOrder, then publishedAt, then id), so a page boundary stays put while posts are
+// published or deleted around it.
+
+interface PostCursor {
+  pinOrder: number | null
+  at: Date
+  id: string
+}
+
+function encodePostCursor(post: { pinOrder: number | null; publishedAt: Date; id: string }): string {
+  return Buffer.from(`${post.pinOrder ?? ''}|${post.publishedAt.toISOString()}|${post.id}`).toString('base64url')
+}
+
+function decodePostCursor(cursor: string): PostCursor {
+  const [pin, iso, id] = Buffer.from(cursor, 'base64url').toString().split('|')
+  const pinOrder = pin === undefined || pin === '' ? null : Number(pin)
+  const at = new Date(iso ?? '')
+  // The id goes straight into a uuid-column comparison: anything else would surface as a 500.
+  if (
+    !id ||
+    !isUuid(id) ||
+    Number.isNaN(at.getTime()) ||
+    (pinOrder !== null && !Number.isInteger(pinOrder))
+  ) {
+    throw new BadRequestError('Invalid cursor', 'INVALID_CURSOR')
+  }
+  return { pinOrder, at, id }
+}
+
+/** Everything that comes after `c` in the feed order: pinOrder asc (nulls last), publishedAt `order`, id `order`. */
+function postsAfter(c: PostCursor, order: 'asc' | 'desc'): Prisma.PostWhereInput {
+  const later = (d: Date) => (order === 'desc' ? { lt: d } : { gt: d })
+  const laterId = (id: string) => (order === 'desc' ? { lt: id } : { gt: id })
+  const thenByDate: Prisma.PostWhereInput = {
+    OR: [{ publishedAt: later(c.at) }, { publishedAt: c.at, id: laterId(c.id) }],
+  }
+  // Unpinned posts sort after every pinned one, so a pinned cursor is followed by the rest of the pins, then all unpinned.
+  return c.pinOrder === null
+    ? { pinOrder: null, ...thenByDate }
+    : { OR: [{ pinOrder: { gt: c.pinOrder } }, { pinOrder: c.pinOrder, ...thenByDate }, { pinOrder: null }] }
+}
+
 export class PostsService {
   constructor(private readonly db: PrismaClient) {}
 
@@ -191,18 +238,25 @@ export class PostsService {
     communityIds?: string[]
     date?: string
     order?: 'asc' | 'desc'
+    // Title or tag contains this (case-insensitive). A leading # is ignored.
+    search?: string
+    // "The posts after this one" (from a previous response's nextCursor). When given, `page` is ignored and no
+    // totals are computed; without it the list pages by `page` as before. Either way the response has nextCursor.
+    cursor?: string
     // Admin web only — adds groupReactionCounts/groupSize to each item (see PostFeedItemDTO).
     // `accessibleCommunityIds` is the admin's grant (null = every community).
     groupReactions?: { accessibleCommunityIds: string[] | null }
   }): Promise<ListPostsResponseDTO> {
-    const { userId, page, pageSize, postId, communityId, communityIds, date, order = 'desc', groupReactions } = params
+    const { userId, page, pageSize, postId, communityId, communityIds, date, search, cursor, order = 'desc', groupReactions } = params
+    const after = cursor ? decodePostCursor(cursor) : null
+    const term = search?.trim().replace(/^#/, '')
     // Anchored to IST (+05:30), not UTC — the frontend displays/labels dates in
     // en-IN local time, so a "day" here must match what the user sees on a post
     // card, not the UTC calendar day the timestamp happens to fall on.
     const dayStart = date ? new Date(`${date}T00:00:00.000+05:30`) : undefined
     const dayEnd = dayStart ? new Date(dayStart.getTime() + 24 * 60 * 60 * 1000) : undefined
 
-    const where = {
+    const where: Prisma.PostWhereInput = {
       status: 'published' as const,
       deletedAt: null,
       // Combined with the community scoping below, so a scoped admin can't fetch a post outside their grant.
@@ -213,11 +267,21 @@ export class PostsService {
           ? { communityId: { in: communityIds } }
           : {}),
       ...(dayStart && dayEnd ? { publishedAt: { gte: dayStart, lt: dayEnd } } : {}),
+      // Tags are matched whole (as typed, with or without the #), the title by substring.
+      ...(term
+        ? {
+            OR: [
+              { title: { contains: escapeLike(term), mode: 'insensitive' } },
+              { tags: { hasSome: [...new Set([term, `#${term}`, term.toLowerCase(), `#${term.toLowerCase()}`])] } },
+            ],
+          }
+        : {}),
     }
 
-    const [posts, total] = await Promise.all([
+    // One extra row tells us whether anything follows, without counting. A cursor page skips the count too.
+    const [fetched, total] = await Promise.all([
       this.db.post.findMany({
-        where,
+        where: after ? { AND: [where, postsAfter(after, order)] } : where,
         include: {
           ...VIDEO_INCLUDE,
           community: { select: { name: true, slug: true, badgeUrl: true } },
@@ -225,12 +289,20 @@ export class PostsService {
           _count: { select: { comments: { where: { deletedAt: null } } } },
           reactions: { where: { userId }, select: { reactionType: { select: { name: true } } }, take: 1 },
         },
-        orderBy: [{ pinOrder: { sort: 'asc', nulls: 'last' } }, { publishedAt: order }],
-        skip: (page - 1) * pageSize,
-        take: pageSize,
+        // id last, so the order is total — posts published in the same instant can't swap places between pages.
+        orderBy: [{ pinOrder: { sort: 'asc', nulls: 'last' } }, { publishedAt: order }, { id: order }],
+        ...(after ? {} : { skip: (page - 1) * pageSize }),
+        take: pageSize + 1,
       }),
-      this.db.post.count({ where }),
+      after ? Promise.resolve(null) : this.db.post.count({ where }),
     ])
+
+    const posts = fetched.slice(0, pageSize)
+    const last = posts[posts.length - 1]
+    const nextCursor =
+      fetched.length > pageSize && last?.publishedAt
+        ? encodePostCursor({ pinOrder: last.pinOrder, publishedAt: last.publishedAt, id: last.id })
+        : null
 
     const groups = groupReactions ? await this.sumGroupReactions(posts, groupReactions.accessibleCommunityIds) : null
 
@@ -264,10 +336,9 @@ export class PostsService {
           }),
         }
       }),
-      total,
-      page,
       pageSize,
-      totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      nextCursor,
+      ...(total === null ? {} : { total, page, totalPages: Math.max(1, Math.ceil(total / pageSize)) }),
     }
   }
 

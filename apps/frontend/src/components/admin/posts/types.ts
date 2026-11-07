@@ -30,10 +30,11 @@ export interface AdminPost {
 
 export interface ListPostsResponse {
   posts: AdminPost[];
-  total: number;
-  page: number;
   pageSize: number;
-  totalPages: number;
+  // Send as `cursor` to get the posts after these; null once there are none.
+  nextCursor: string | null;
+  // Only the first page (no cursor sent) is counted.
+  total?: number;
 }
 
 export interface CommunityOption {

@@ -24,6 +24,12 @@ const listQuerySchema = z.object({
   order: z.enum(['asc', 'desc']).default('desc'),
 })
 
+// GET /posts only (the admin lists): scroll by cursor instead of page number, and search title / tags.
+const adminListQuerySchema = listQuerySchema.extend({
+  cursor: z.string().min(1).max(512).optional(),
+  search: z.string().trim().max(100).optional(),
+})
+
 // Express 5 types params as string | string[] — route params are always strings
 function getParam(req: Request, name: string): string {
   const val = req.params[name]
@@ -35,7 +41,7 @@ export class PostsController {
 
   list = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const { page, pageSize, communityId, postId, date, order } = listQuerySchema.parse(req.query)
+      const { page, pageSize, communityId, postId, date, order, cursor, search } = adminListQuerySchema.parse(req.query)
       const user = req.user!
 
       let listParams: {
@@ -46,6 +52,8 @@ export class PostsController {
         communityId?: string
         communityIds?: string[]
         date?: string
+        search?: string
+        cursor?: string
         order: 'asc' | 'desc'
         groupReactions?: { accessibleCommunityIds: string[] | null }
       }
@@ -84,6 +92,8 @@ export class PostsController {
       }
 
       if (postId !== undefined) listParams.postId = postId
+      if (search) listParams.search = search
+      if (cursor !== undefined) listParams.cursor = cursor
       if (user.role === 'admin') listParams.groupReactions = { accessibleCommunityIds: user.accessibleCommunityIds }
 
       const result = await this.service.listPosts(listParams)
@@ -101,7 +111,7 @@ export class PostsController {
       const communityId = res.locals['feedCommunityId'] as string | null
 
       if (communityId === null) {
-        res.json({ success: true, data: { posts: [], total: 0, page, pageSize, totalPages: 1 } })
+        res.json({ success: true, data: { posts: [], total: 0, page, pageSize, totalPages: 1, nextCursor: null } })
         return
       }
 

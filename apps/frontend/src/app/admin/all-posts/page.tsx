@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Plus } from "lucide-react";
 import EditPostModal from "@/components/admin/posts/EditPostModal";
-import PostsList, { Pagination } from "@/components/admin/posts/PostsList";
+import PostsList from "@/components/admin/posts/PostsList";
 import PostsToolbar from "@/components/admin/posts/PostsToolbar";
 import type { CommunityOption } from "@/components/admin/posts/types";
 import { useAdminPosts } from "@/components/admin/posts/useAdminPosts";
@@ -13,7 +13,6 @@ import { api } from "@/lib/api";
 export default function AllPostsPage() {
   const list = useAdminPosts();
   const [adminCommunities, setAdminCommunities] = useState<CommunityOption[]>([]);
-  const topRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     api.get<CommunityOption[]>("/api/v1/admin/communities")
@@ -31,11 +30,6 @@ export default function AllPostsPage() {
     return Array.from(merged.values());
   }, [adminCommunities, list.posts]);
 
-  function goToPage(next: number) {
-    list.setPage(next);
-    topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
-
   const communityName = communities.find(c => c.id === list.communityId)?.name;
 
   return (
@@ -45,7 +39,7 @@ export default function AllPostsPage() {
       )}
 
       <div className="flex max-w-4xl flex-col gap-5">
-        <div ref={topRef} className="animate-enter flex scroll-mt-4 flex-wrap items-end justify-between gap-4">
+        <div className="animate-enter flex flex-wrap items-end justify-between gap-4">
           <div>
             <p className="text-xs font-semibold text-accent">Dashboard &rsaquo; All Posts</p>
             <h1 className="font-display text-2xl font-bold text-primary">All Posts</h1>
@@ -80,7 +74,11 @@ export default function AllPostsPage() {
         <PostsList
           loading={list.loading}
           refreshing={list.refreshing}
-          posts={list.displayed}
+          posts={list.posts}
+          hasMore={list.hasMore}
+          loadingMore={list.loadingMore}
+          loadMoreFailed={list.loadMoreFailed}
+          onLoadMore={list.loadMore}
           hasFilters={list.hasFilters}
           onClearFilters={list.clearFilters}
           deletingId={list.deletingId}
@@ -89,7 +87,6 @@ export default function AllPostsPage() {
           onDelete={list.remove}
           onPin={list.pin}
         />
-        <Pagination page={list.page} totalPages={list.totalPages} onPage={goToPage} />
       </div>
     </>
   );

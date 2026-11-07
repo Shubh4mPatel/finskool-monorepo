@@ -42,7 +42,9 @@ export default function CommunitiesPage() {
       .get<Community[]>("/api/v1/admin/communities")
       .then((list) => {
         if (cancelled) return;
-        setCommunities(list);
+        // The free community (the open feed every member gets) isn't managed here. The API still lists it because
+        // other pages need it — the post filters, create post, members — so it is left out of this page only.
+        setCommunities(list.filter((c) => !c.isFree));
         setStatus("ready");
       })
       .catch(() => {
@@ -217,11 +219,7 @@ export default function CommunitiesPage() {
                     )}
                     {!c.coverImageUrl && <Building2 size={30} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-white/30" aria-hidden />}
                     {/* A soft shade only behind the top-corner controls, so they stay readable on any photo. */}
-                    {(c.isFree || isSuperAdmin) && <span aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-14 bg-gradient-to-b from-black/25 to-transparent" />}
-
-                    {c.isFree && (
-                      <span className="absolute left-3 top-3 rounded-full bg-lime px-2.5 py-1 text-[11px] font-bold text-primary">Open feed</span>
-                    )}
+                    {isSuperAdmin && <span aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-14 bg-gradient-to-b from-black/25 to-transparent" />}
 
                     {isSuperAdmin && (
                       <div className="absolute right-3 top-3 flex gap-1.5">

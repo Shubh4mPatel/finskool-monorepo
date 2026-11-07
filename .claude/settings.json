@@ -253,7 +253,14 @@
       "Read(//usr/lib/postgresql/**)",
       "Bash(systemctl is-active *)",
       "Read(//var/run/**)",
-      "Bash(grep -v \"^\\\\s*$\")"
+      "Bash(grep -v \"^\\\\s*$\")",
+      "Bash(systemctl --user list-unit-files)",
+      "Bash(systemctl list-unit-files *)",
+      "Bash(npx vitest *)",
+      "Bash(python3 -I -)",
+      "Bash(grep -c '^\\\\s*```' mobile-performance-integration.md)",
+      "Bash(echo \"fences: $\\(grep -c '^\\\\s*```' mobile-performance-integration.md\\)\")",
+      "Bash(git push *)"
     ],
     "additionalDirectories": [
       "/tmp/claude-1000/-home-shubh4m-projects-finskool-monorepo/8750fbd9-1edb-4d3f-b623-da0dec31a255/scratchpad/node_modules",
