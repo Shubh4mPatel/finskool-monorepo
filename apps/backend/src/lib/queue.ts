@@ -96,6 +96,24 @@ export interface NewMemberRegisteredEmailJobPayload {
   registeredDate: string
 }
 
+export const ADMIN_PAYMENT_EMAIL_JOB = 'admin-payment-email'
+
+/** Tells one admin that a member paid (a plan or a service), or that a service payment needs a look. */
+export interface AdminPaymentEmailJobPayload {
+  adminEmail: string
+  adminName: string
+  /** `paid`: a normal payment. `review`: the money came in but could not be applied, so an admin has to step in. */
+  kind: 'paid' | 'review'
+  memberName: string
+  /** What was bought, ready to print: "Swing Alpha · 3 Months (renewal)" or "Portfolio Review (SR-12)". */
+  item: string
+  /** The amount, ready to print: "₹4,999". */
+  amount: string
+  paidOn: string // ISO string
+  /** Page on the website the button opens, e.g. /admin/members/<id>. */
+  path: string
+}
+
 export const MEMBER_SUSPENDED_EMAIL_JOB = 'member-suspended-email'
 
 export interface MemberSuspendedEmailJobPayload {
@@ -168,6 +186,7 @@ export type NotificationJobPayload =
   | CommunityAddedEmailJobPayload
   | CommunityAccessRemovedEmailJobPayload
   | NewMemberRegisteredEmailJobPayload
+  | AdminPaymentEmailJobPayload
   | MemberSuspendedEmailJobPayload
   | MemberReinstatedEmailJobPayload
   | OtpEmailJobPayload

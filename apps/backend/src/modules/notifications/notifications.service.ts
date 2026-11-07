@@ -18,6 +18,7 @@ import type {
   CommunityAddedEmailJobPayload,
   CommunityAccessRemovedEmailJobPayload,
   NewMemberRegisteredEmailJobPayload,
+  AdminPaymentEmailJobPayload,
   MemberSuspendedEmailJobPayload,
   MemberReinstatedEmailJobPayload,
   OtpEmailJobPayload,
@@ -324,6 +325,28 @@ export class NotificationsService {
       community_name: payload.communityName,
       registered_date: formatEmailDate(payload.registeredDate),
       frontend_url: env.frontendUrl,
+    })
+    await sendMail({ to: payload.adminEmail, subject, html })
+  }
+
+  async sendAdminPaymentEmail(payload: AdminPaymentEmailJobPayload): Promise<void> {
+    const review = payload.kind === 'review'
+    const { subject, html } = renderEmail('admin-payment', {
+      admin_name: firstNameOf(payload.adminName),
+      headline: review ? `Payment needs review: ${payload.memberName} paid ${payload.amount}` : `${payload.memberName} paid ${payload.amount}`,
+      badge_text: review ? 'Needs review' : 'Payment received',
+      badge_bg: review ? '#FFF1D6' : '#E3F6D0',
+      badge_color: review ? '#8A5A00' : '#2F6B12',
+      intro: review
+        ? `${payload.memberName} paid ${payload.amount} for ${payload.item}, but the payment could not be applied automatically. Please open it and refund or resolve it.`
+        : `${payload.memberName} just paid ${payload.amount} for ${payload.item}.`,
+      member_name: payload.memberName,
+      item: payload.item,
+      amount: payload.amount,
+      paid_on: formatEmailDate(payload.paidOn),
+      button_label: review ? 'Review payment' : 'View details',
+      frontend_url: env.frontendUrl,
+      path: payload.path,
     })
     await sendMail({ to: payload.adminEmail, subject, html })
   }

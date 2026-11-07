@@ -11,6 +11,7 @@ import {
   LifeBuoy,
   Briefcase,
   AlertTriangle,
+  CreditCard,
 } from "lucide-react";
 
 export interface Notification {
@@ -60,6 +61,7 @@ const ICONS: Record<string, typeof Megaphone> = {
   "admin-service-message": Briefcase,
   "admin-service-paid": Briefcase,
   "admin-payment-flagged": AlertTriangle,
+  "admin-subscription-paid": CreditCard,
 };
 
 export function NotificationCard({

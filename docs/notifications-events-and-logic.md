@@ -126,10 +126,13 @@ None of these send a push; admins get the inbox row and the live event (the web 
 | `admin-ticket-reply` | A member sends a message on a ticket **nobody has claimed yet** | Same as above | ➖ | `/admin/tickets/<id>` |
 | `admin-new-service-request` | A member requests a service | **Every admin** (services are global) | ➖ | `/admin/services/<id>` |
 | `admin-service-message` | A member sends a message on a request **nobody has claimed yet** | Every admin | ➖ | `/admin/services/<id>` |
-| `admin-service-paid` | A member pays a quote (verify or webhook) | Every admin | ➖ | `/admin/services/<id>` |
-| `admin-payment-flagged` | A payment could not be applied (amount mismatch, quote replaced, no invoice) | Every admin | ➖ | `/admin/payment-flags?request=<id>` |
+| `admin-subscription-paid` | A member buys or renews a plan (`PaymentsService.settlePlanOrder`: the app's verify, web checkout and the Razorpay webhook all end there, once per grant). Not sent when an admin adds or extends a member. | Super admins + admins of the plan's community | ✅ (`admin-payment`) | `/admin/members/<id>` |
+| `admin-service-paid` | A member pays a quote (verify or webhook) | Every admin | ✅ (`admin-payment`) | `/admin/services/<id>` |
+| `admin-payment-flagged` | A payment could not be applied (amount mismatch, quote replaced, no invoice) | Every admin | ✅ (`admin-payment`, "needs review") | `/admin/payment-flags?request=<id>` |
 | `new-member-registered` | A member finishes mobile registration (a member added by an admin who registers on the web still notifies the admin who added them) | Super admins + admins of a community the member is in (the free community for new sign-ups), because only they can open the profile | ✅ (web path only: `admin-new-member`) | `/admin/members/<id>` |
 | `import-complete` | Bulk member import finished | The admin who ran the import | ➖ | `/admin/import-csv` |
+
+**Payment emails to admins.** The three payment types above are sent by `notifyAdminsOfPayment` (`lib/admin-payment-notify.ts`): the inbox row and live event first (`notifyAdmins`), then one `admin-payment-email` job per admin **who was just told**. `notifyAdmins` returns those admins, so the same payment seen twice (verify and webhook) adds no second row and no second email. An admin with no email address gets the inbox row only. A failure to queue an email is logged and never fails the payment or removes the inbox row.
 
 "Claimed" means the ticket / request has an assigned admin. That admin is already in the chat and sees the live message there, so a claimed chat does not notify anyone again.
 
@@ -146,6 +149,7 @@ Sent through `notificationsQueue` email jobs. Subject lines come from `lib/email
 | `member-suspended-email` | Your Finskool21 access has been suspended | Admin suspends a member |
 | `community-access-removed-email` | Your {community} access has been removed | Admin removes a community from a member |
 | `service-invoice-email` | Payment received - invoice {number} | Service request paid; GST invoice PDF is rendered and attached |
+| `admin-payment-email` | `{member} paid {amount}` (or `Payment needs review: {member} paid {amount}`) | To admins: a member bought or renewed a plan, paid a service quote, or paid and the payment needs review. Template `admin-payment`. See 4.2. |
 | `otp-whatsapp` | (WhatsApp message) | Mobile registration OTP. Falls back to the `otp-email` job only on the final attempt, and only if `WHATSAPP_EMAIL_FALLBACK_ENABLED`. |
 | `otp-email` | Your Finskool21 verification code is {code} | Fallback for the above |
 | `password-reset-otp-email` | Your Finskool21 password reset code is {code} | Mobile forgot-password |
@@ -203,6 +207,7 @@ Sent through `notificationsQueue` email jobs. Subject lines come from `lib/email
 | `admin-ticket-reply` | `New message on {subject}` | `{member}: {preview}` | `{... event:'reply'}` |
 | `admin-new-service-request` | `New service request` | `{member} requested {service title}.` | `{type:'service', id:requestId, event:'new'}` |
 | `admin-service-message` | `New message on {service title}` | `{member}: {preview}` | `{... event:'message'}` |
+| `admin-subscription-paid` | `New subscription` (or `Subscription renewed`) | `{member} bought {plan} in {community} for {amount}.` (or `renewed`) | `{type:'member', id:userId, communityId, event:'paid'}` |
 | `admin-service-paid` | `Quote paid` | `{member} paid {amount} for {service} (SR-n).` | `{... event:'paid'}` |
 | `admin-payment-flagged` | `Payment needs review` | `{member}'s {amount} payment for SR-n could not be applied. Refund it or resolve it.` | `{type:'payment-flags', id:requestId, event:'flagged'}` |
 | `import-complete` | `Import complete — {n} members added` | `{n} rows skipped. Review the error list.` | `{type:'members', id:communityId, communityId}` |
@@ -225,7 +230,7 @@ Sent through `notificationsQueue` email jobs. Subject lines come from `lib/email
 | `subscription` | community id | membership events; `event` is `community-added`, `extended`, `expiring-7`, `expiring-1`, `expired` |
 | `ticket` | ticket id | ticket-update (`event` is `reply`, `resolved`); admin-new-ticket / admin-ticket-reply (`new`, `reply`) |
 | `service` | request id | service-update; `event` is `reply`, `quote`, `paid`, `closed`, `quote-expired` |
-| `member` | user id | new-member-registered (admin member profile) |
+| `member` | user id | new-member-registered, admin-subscription-paid (admin member profile) |
 | `members` | community id | import-complete |
 | `payment-flags` | service request id | admin-payment-flagged: the admin page listing flagged payments (`/admin/payment-flags`) |
 | `threads`, `subscriptions` | community id | older digest rows only (no longer sent) |

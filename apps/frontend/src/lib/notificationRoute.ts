@@ -21,6 +21,7 @@ const ROUTE_BY_TYPE: Record<string, string> = {
   "admin-new-service-request": "/admin/services",
   "admin-service-message": "/admin/services",
   "admin-service-paid": "/admin/services",
+  "admin-subscription-paid": "/admin/members",
 };
 
 export function notificationRoute(n: RoutableNotification): string | null {

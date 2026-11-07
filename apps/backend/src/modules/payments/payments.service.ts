@@ -1,5 +1,7 @@
-import type { PrismaClient } from '../../generated/prisma/client.js'
+import type { PrismaClient, Prisma } from '../../generated/prisma/client.js'
 import { queuePushFor } from '../../lib/push.js'
+import { getCommunityAdminIds } from '../../lib/community-access.js'
+import { notifyAdminsOfPayment, rupeesLabel } from '../../lib/admin-payment-notify.js'
 import { env } from '../../config/env.js'
 import { getRazorpayClient, verifyPaymentSignature } from '../../lib/razorpay.js'
 import { recomputeActiveSubCount } from '../../lib/community-stats.js'
@@ -15,7 +17,7 @@ import type { LiveNotificationEvent } from '../../lib/queue.js'
 import redis from '../../lib/redis.js'
 import { AppError, BadRequestError, NotFoundError, ConflictError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
-import { subscriptionRouting } from '../../lib/notification-routing.js'
+import { subscriptionRouting, routingData, RoutingModule } from '../../lib/notification-routing.js'
 import { issuePlanReceipt, renderReceiptInBackground } from '../../lib/plan-receipt.js'
 import { loadGstRules, planListItem, priceWithGst } from '../../lib/plan-gst.js'
 import { paiseToDecimal } from '../services/services.billing.js'
@@ -324,6 +326,18 @@ export class PaymentsService {
       data: subscriptionRouting(order.communityId, isNewGrant ? 'community-added' : 'extended'),
     })
 
+    await this.tellAdmins({
+      userId,
+      memberName: user.name,
+      communityId: order.communityId,
+      communityName: community.name,
+      planName: plan.name,
+      isNewGrant,
+      subscriptionId: subscription.id,
+      amount: subscription.payment,
+      paidOn: now,
+    })
+
     logger.info(
       { userId, subscriptionId: subscription.id, communityId: order.communityId, isNewGrant },
       'payments.settlePlanOrder: success',
@@ -336,6 +350,50 @@ export class PaymentsService {
       payment: Number(subscription.payment),
       validUntil: subscription.validUntil.toISOString().split('T')[0]!,
       isActive: subscription.isActive,
+    }
+  }
+
+  /**
+   * Tells the admins who manage the community (every super admin, and each admin granted that community) that a
+   * member bought or renewed a plan: an inbox row and live event, and an email. Never throws: the member has
+   * paid and been granted access, and a failure here must not turn that into an error.
+   */
+  private async tellAdmins(p: {
+    userId: string
+    memberName: string
+    communityId: string
+    communityName: string
+    planName: string
+    isNewGrant: boolean
+    subscriptionId: string
+    amount: Prisma.Decimal
+    paidOn: Date
+  }): Promise<void> {
+    try {
+      const adminIds = await getCommunityAdminIds(this.db, p.communityId)
+      const amount = rupeesLabel(p.amount)
+      await notifyAdminsOfPayment(
+        {
+          db: this.db,
+          adminIds,
+          type: NotificationType.AdminSubscriptionPaid,
+          sourceId: p.subscriptionId,
+          communityId: p.communityId,
+          title: p.isNewGrant ? 'New subscription' : 'Subscription renewed',
+          message: `${p.memberName} ${p.isNewGrant ? 'bought' : 'renewed'} ${p.planName} in ${p.communityName} for ${amount}.`,
+          data: routingData({ module: RoutingModule.Member, id: p.userId, communityId: p.communityId, event: 'paid' }),
+        },
+        {
+          kind: 'paid',
+          memberName: p.memberName,
+          item: `${p.communityName} · ${p.planName}${p.isNewGrant ? '' : ' (renewal)'}`,
+          amount,
+          paidOn: p.paidOn.toISOString(),
+          path: `/admin/members/${p.userId}`,
+        },
+      )
+    } catch (err) {
+      logger.error({ err, subscriptionId: p.subscriptionId }, 'payments.settlePlanOrder: failed to notify admins')
     }
   }
 

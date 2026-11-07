@@ -23,6 +23,8 @@ export const NotificationType = {
   AdminServiceMessage: 'admin-service-message',
   AdminServicePaid: 'admin-service-paid',
   AdminPaymentFlagged: 'admin-payment-flagged',
+  // A member bought or renewed a community plan.
+  AdminSubscriptionPaid: 'admin-subscription-paid',
 } as const
 
 export interface NotificationItemDTO {

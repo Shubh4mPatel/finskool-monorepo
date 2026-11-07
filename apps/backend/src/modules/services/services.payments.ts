@@ -3,7 +3,7 @@ import { notifyMemberThread, messagePreview } from '../../lib/member-notify.js'
 import type { Prisma, PrismaClient } from '../../generated/prisma/client.js'
 import { env } from '../../config/env.js'
 import { getAllAdminIds } from '../../lib/community-access.js'
-import { notifyAdmins } from '../../lib/admin-notify.js'
+import { notifyAdminsOfPayment, rupeesLabel } from '../../lib/admin-payment-notify.js'
 import { routingData, RoutingModule } from '../../lib/notification-routing.js'
 import { NotificationType } from '../notifications/notifications.dto.js'
 import { publishServiceEvent } from '../../lib/live-tickets-feed.js'
@@ -423,7 +423,11 @@ export class ServicePaymentsService {
     return { outcome: result.outcome, requestId }
   }
 
-  /** Tells every admin about the payment: a normal one, or one that needs a manual look (the payment-flags page). */
+  /**
+   * Tells every admin about the payment, by inbox row and email: a normal one, or one that needs a manual look
+   * (the payment-flags page). The email goes to an admin only when the inbox row is new to them, so the same
+   * payment arriving twice (the app's verify and the webhook) is not mailed twice.
+   */
   private async tellAdmins(requestId: string, eventId: string, ok: boolean, amountPaise: number): Promise<void> {
     try {
       const [request, adminIds] = await Promise.all([
@@ -433,9 +437,15 @@ export class ServicePaymentsService {
         }),
         getAllAdminIds(this.db),
       ])
-      const amount = `₹${(amountPaise / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
+      const amount = rupeesLabel(amountPaise / 100)
       const ref = `SR-${request.number}`
-      await notifyAdmins(
+      const email = {
+        memberName: request.user.name,
+        item: `${request.service.title} (${ref})`,
+        amount,
+        paidOn: new Date().toISOString(),
+      }
+      await notifyAdminsOfPayment(
         ok
           ? {
               db: this.db,
@@ -457,6 +467,9 @@ export class ServicePaymentsService {
               message: `${request.user.name}'s ${amount} payment for ${ref} could not be applied. Refund it or resolve it.`,
               data: routingData({ module: RoutingModule.PaymentFlags, id: requestId, communityId: null, event: 'flagged' }),
             },
+        ok
+          ? { ...email, kind: 'paid', path: `/admin/services/${requestId}` }
+          : { ...email, kind: 'review', path: `/admin/payment-flags?request=${requestId}` },
       )
     } catch (err) {
       logger.error({ err, requestId }, 'services.payments: failed to notify admins')

@@ -13,6 +13,7 @@ export type EmailTemplateId =
   | 'community-access-removed'
   | 'new-announcement'
   | 'admin-new-member'
+  | 'admin-payment'
   | 'member-suspended'
   | 'member-reinstated'
   | 'otp-verification'
@@ -36,6 +37,7 @@ const TEMPLATE_REGISTRY: Record<EmailTemplateId, TemplateDef> = {
   'community-access-removed': { file: 'community-access-removed.html', subject: 'Your {community_name} access has been removed' },
   'new-announcement': { file: 'new-announcement.html', subject: 'New announcement in {community_name}' },
   'admin-new-member': { file: 'admin-new-member.html', subject: '{member_name} has registered' },
+  'admin-payment': { file: 'admin-payment.html', subject: '{headline}' },
   'member-suspended': { file: 'member-suspended.html', subject: 'Your Finskool21 access has been suspended' },
   'member-reinstated': { file: 'member-reinstated.html', subject: 'Your Finskool21 access has been restored' },
   'otp-verification': { file: 'otp-verification.html', subject: 'Your Finskool21 verification code is {otp_code}' },
