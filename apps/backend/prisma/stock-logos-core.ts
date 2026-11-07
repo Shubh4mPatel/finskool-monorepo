@@ -18,6 +18,77 @@ export const RETRY_PAUSE_MS = 5000
 /** Stop when this many batches in a row failed completely: that is an outage of an API, not bad stocks. */
 export const MAX_DEAD_BATCHES = 3
 
+/**
+ * logo.dev's free (Community) plan limits requests per minute, per account and per IP, and answers 429 beyond it; paid plans
+ * have no per-minute limit. The numbers are not published, and an unpaced run hit the limit after about 100 stocks. So logo.dev
+ * is asked at most 80 times a minute by default, which the command can change with --logo-per-minute.
+ */
+export const DEFAULT_LOGO_REQUESTS_PER_MINUTE = 80
+/** How many times a 429 is waited out and the request retried before the stock is counted as failed (to be retried next run). */
+export const MAX_RATE_LIMIT_RETRIES = 4
+/** The longest the command waits for logo.dev to say it is ready again. */
+const MAX_RATE_LIMIT_WAIT_MS = 120_000
+
+/** Exchange test symbols (011NSETEST...) are listed as stocks but are not companies, so they are never looked up. */
+export const TEST_SYMBOL_SUFFIX = 'NSETEST'
+
+/**
+ * How long to wait after logo.dev answered 429. If it said how long (a `Retry-After` of seconds) that is used, up to two minutes;
+ * if not (logo.dev says it does not always send one) the wait doubles each time: 15, 30, then 60 seconds.
+ */
+export function rateLimitWaitMs(attempt: number, retryAfter: string | null): number {
+  const seconds = retryAfter === null ? Number.NaN : Number(retryAfter)
+  if (Number.isFinite(seconds) && seconds > 0) return Math.min(seconds * 1000, MAX_RATE_LIMIT_WAIT_MS)
+  return Math.min(15_000 * 2 ** attempt, 60_000)
+}
+
+/**
+ * Spaces requests out: however many are waiting, one starts every `minIntervalMs`, in the order they asked. `holdOff` is for a
+ * rate-limit answer: nothing starts for that long, for everyone, so the requests already queued do not all hit the limit again.
+ */
+export function createPacer(opts: { minIntervalMs: number; sleep: (ms: number) => Promise<void>; now: () => number }) {
+  let nextStart = 0
+  let heldUntil = 0
+  return {
+    async wait(): Promise<void> {
+      const now = opts.now()
+      const start = Math.max(now, nextStart, heldUntil)
+      nextStart = start + opts.minIntervalMs
+      if (start > now) await opts.sleep(start - now)
+      // A hold-off may have been set while this request was waiting its turn.
+      for (let left = heldUntil - opts.now(); left > 0; left = heldUntil - opts.now()) await opts.sleep(left)
+    },
+    holdOff(ms: number): void {
+      heldUntil = Math.max(heldUntil, opts.now() + ms)
+    },
+  }
+}
+
+export type Pacer = ReturnType<typeof createPacer>
+
+/** What `requestPaced` needs of an HTTP response (a `fetch` Response has it). */
+export interface PacedResponse {
+  status: number
+  headers: { get(name: string): string | null }
+}
+
+/**
+ * Sends a request in its turn. If the answer is 429 (asked too often) everyone is held back for a while, as long as the server
+ * said or longer each time it happens, and the request is sent again; after MAX_RATE_LIMIT_RETRIES such answers it throws, so the
+ * stock counts as failed and the next run tries it again. Any other answer, good or bad, is handed back for the caller to read.
+ */
+export async function requestPaced<R extends PacedResponse>(send: () => Promise<R>, pacer: Pacer, log: (line: string) => void = () => {}): Promise<R> {
+  for (let attempt = 0; ; attempt++) {
+    await pacer.wait()
+    const res = await send()
+    if (res.status !== 429) return res
+    if (attempt >= MAX_RATE_LIMIT_RETRIES) throw new Error('logo.dev: 429 Too Many Requests, still after waiting. Check the usage in the logo.dev dashboard.')
+    const waitMs = rateLimitWaitMs(attempt, res.headers.get('retry-after'))
+    pacer.holdOff(waitMs)
+    log(`logo.dev asked us to slow down: waiting ${Math.round(waitMs / 1000)}s`)
+  }
+}
+
 export interface FetchedLogo {
   buffer: Buffer
   contentType: string
@@ -158,7 +229,8 @@ export async function downloadStockLogos(db: PrismaClient, deps: LogoDeps, opts:
     where: {
       isActive: true,
       logoUrl: null,
-      ...(symbols && symbols.length > 0 ? { symbol: { in: symbols } } : {}),
+      // Asking for a symbol by name is honoured; otherwise the exchange's test symbols are left out.
+      ...(symbols && symbols.length > 0 ? { symbol: { in: symbols } } : { NOT: { symbol: { endsWith: TEST_SYMBOL_SUFFIX } } }),
       ...(opts.exchange ? { exchange: opts.exchange } : {}),
     },
     orderBy: { symbol: 'asc' },

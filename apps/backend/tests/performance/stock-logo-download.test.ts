@@ -3,12 +3,17 @@ import request from 'supertest'
 import { createApp } from '../../src/app.js'
 import {
   BATCH_PAUSE_MS,
+  DEFAULT_LOGO_REQUESTS_PER_MINUTE,
+  MAX_RATE_LIMIT_RETRIES,
   RETRY_PAUSE_MS,
+  createPacer,
   downloadStockLogos,
   extractDomain,
   parseCsv,
   parseNseList,
   publicUrlFor,
+  rateLimitWaitMs,
+  requestPaced,
   type FetchedLogo,
   type LogoDeps,
 } from '../../prisma/stock-logos-core.js'
@@ -392,6 +397,180 @@ describe('reading CSV', () => {
 
   it('skips blank lines but keeps a row whose only field is empty between commas', () => {
     expect(parseCsv('a,b\n\n,\n')).toEqual([['a', 'b'], ['', '']])
+  })
+})
+
+describe('exchange test symbols', () => {
+  it('are left out of a run: they are listed as stocks but are not companies', async () => {
+    await stock('011NSETEST')
+    await stock('11NSETEST')
+    await stock('REALCO')
+    const { deps, calls } = fakeDeps()
+    const result = await downloadStockLogos(prisma, deps)
+    expect(result.considered).toBe(1)
+    expect(calls.websites).toEqual(['REALCO'])
+    expect((await reload('011NSETEST')).logoUrl).toBeNull()
+  })
+
+  it('are looked up when asked for by name', async () => {
+    await stock('011NSETEST')
+    const { deps, calls } = fakeDeps()
+    await downloadStockLogos(prisma, deps, { symbols: ['011NSETEST'] })
+    expect(calls.websites).toEqual(['011NSETEST'])
+  })
+})
+
+// logo.dev's free plan limits requests per minute and answers 429 beyond it, so the command spaces its requests out and, when
+// it is told to slow down anyway, waits and tries again. These cover the pieces of that which do not need the network.
+describe('how long to wait after logo.dev says to slow down', () => {
+  it('waits as long as logo.dev says, in seconds, up to two minutes', () => {
+    expect(rateLimitWaitMs(0, '7')).toBe(7000)
+    expect(rateLimitWaitMs(3, '45')).toBe(45_000)
+    expect(rateLimitWaitMs(0, '600')).toBe(120_000)
+  })
+
+  it('doubles the wait, up to a minute, when it does not say', () => {
+    expect([0, 1, 2, 3, 4].map(attempt => rateLimitWaitMs(attempt, null))).toEqual([15_000, 30_000, 60_000, 60_000, 60_000])
+  })
+
+  it('does not trust a header it cannot read as a number of seconds', () => {
+    for (const junk of ['', 'soon', '0', '-5', 'Wed, 21 Oct 2026 07:28:00 GMT']) expect(rateLimitWaitMs(1, junk)).toBe(30_000)
+  })
+})
+
+describe('spacing the requests out', () => {
+  /** A clock the test moves by hand: sleeping moves it on by that long. */
+  function clock() {
+    const t = { now: 0, sleeps: [] as number[], onSleep: (_ms: number) => {} }
+    const sleep = async (ms: number) => {
+      t.sleeps.push(ms)
+      t.now += ms
+      t.onSleep(ms)
+    }
+    return { t, sleep, read: () => t.now }
+  }
+
+  it('lets one request start every interval, however many are waiting', async () => {
+    const c = clock()
+    const pacer = createPacer({ minIntervalMs: 750, sleep: c.sleep, now: c.read })
+    await Promise.all(Array.from({ length: 4 }, () => pacer.wait()))
+    // The first starts at once; each of the other three waits one more interval than the one before: 3 x 750 in all.
+    expect(c.t.sleeps).toEqual([750, 750, 750])
+    expect(c.read()).toBe(2250)
+  })
+
+  it('does not hold up a request that arrives after a quiet spell', async () => {
+    const c = clock()
+    const pacer = createPacer({ minIntervalMs: 750, sleep: c.sleep, now: c.read })
+    await pacer.wait()
+    c.t.now = 10_000 // nothing for a while
+    await pacer.wait()
+    expect(c.t.sleeps).toEqual([]) // neither had to wait
+  })
+
+  it('holds everyone back when told to, for the time given', async () => {
+    const c = clock()
+    const pacer = createPacer({ minIntervalMs: 750, sleep: c.sleep, now: c.read })
+    pacer.holdOff(30_000)
+    await pacer.wait()
+    expect(c.read()).toBe(30_000)
+    await pacer.wait()
+    expect(c.read()).toBe(30_750) // and then back to the normal spacing
+  })
+
+  it('a hold-off set while a request is already waiting its turn still holds that request back', async () => {
+    const c = clock()
+    const pacer = createPacer({ minIntervalMs: 750, sleep: c.sleep, now: c.read })
+    await pacer.wait() // takes the first slot
+    c.t.onSleep = ms => { if (ms === 750) pacer.holdOff(5_000) } // a 429 arrives while the next one sleeps
+    await pacer.wait()
+    expect(c.t.sleeps).toEqual([750, 5_000]) // woke at 750, found the hold-off, and waited that out too
+    expect(c.read()).toBe(5_750)
+  })
+
+  it('a longer hold-off is never shortened by a shorter one', async () => {
+    const c = clock()
+    const pacer = createPacer({ minIntervalMs: 100, sleep: c.sleep, now: c.read })
+    pacer.holdOff(60_000)
+    pacer.holdOff(5_000)
+    await pacer.wait()
+    expect(c.read()).toBe(60_000)
+  })
+
+  it('the default pace keeps well under a hundred requests a minute', () => {
+    expect(DEFAULT_LOGO_REQUESTS_PER_MINUTE).toBeLessThan(100)
+    expect(Math.ceil(60_000 / DEFAULT_LOGO_REQUESTS_PER_MINUTE) * DEFAULT_LOGO_REQUESTS_PER_MINUTE).toBeGreaterThanOrEqual(60_000)
+  })
+})
+
+describe('sending a request when logo.dev may say to slow down', () => {
+  /** A hand-moved clock and the pacer on it, plus a request that answers from a script, one answer per send. */
+  function setup(script: { status: number; retryAfter?: string }[], minIntervalMs = 750) {
+    let now = 0
+    const sleeps: number[] = []
+    const sleep = async (ms: number) => {
+      sleeps.push(ms)
+      now += ms
+    }
+    const pacer = createPacer({ minIntervalMs, sleep, now: () => now })
+    const logged: string[] = []
+    let sent = 0
+    const send = async () => {
+      const answer = script[Math.min(sent, script.length - 1)]!
+      sent++
+      return { status: answer.status, headers: { get: (name: string) => (name.toLowerCase() === 'retry-after' ? (answer.retryAfter ?? null) : null) } }
+    }
+    return { run: () => requestPaced(send, pacer, line => logged.push(line)), logged, sleeps, sent: () => sent, clock: () => now }
+  }
+
+  it('hands a good answer straight back, having waited only its turn', async () => {
+    const t = setup([{ status: 200 }])
+    expect((await t.run()).status).toBe(200)
+    expect(t.sent()).toBe(1)
+    expect(t.logged).toEqual([])
+  })
+
+  it('waits out a 429 and sends the request again, and says so', async () => {
+    const t = setup([{ status: 429 }, { status: 200 }])
+    expect((await t.run()).status).toBe(200)
+    expect(t.sent()).toBe(2)
+    expect(t.logged).toEqual(['logo.dev asked us to slow down: waiting 15s'])
+    expect(t.clock()).toBeGreaterThanOrEqual(15_000) // it really did hold off that long
+  })
+
+  it('waits as long as logo.dev said when it sends a Retry-After', async () => {
+    const t = setup([{ status: 429, retryAfter: '9' }, { status: 200 }])
+    await t.run()
+    expect(t.logged).toEqual(['logo.dev asked us to slow down: waiting 9s'])
+    expect(t.clock()).toBeGreaterThanOrEqual(9_000)
+  })
+
+  it('waits longer each time it is told again', async () => {
+    const t = setup([{ status: 429 }, { status: 429 }, { status: 429 }, { status: 200 }])
+    await t.run()
+    expect(t.logged).toEqual([
+      'logo.dev asked us to slow down: waiting 15s',
+      'logo.dev asked us to slow down: waiting 30s',
+      'logo.dev asked us to slow down: waiting 60s',
+    ])
+  })
+
+  it('gives up when it is still being told to slow down after the allowed retries, so the stock counts as failed', async () => {
+    const t = setup([{ status: 429 }])
+    await expect(t.run()).rejects.toThrow(/429 Too Many Requests, still after waiting/)
+    expect(t.sent()).toBe(MAX_RATE_LIMIT_RETRIES + 1)
+  })
+
+  it('hands back any other answer, good or bad, for the caller to read', async () => {
+    for (const status of [202, 404, 500]) expect((await setup([{ status }]).run()).status).toBe(status)
+  })
+
+  it('a 429 for one request holds the next request back too, not only itself', async () => {
+    const t = setup([{ status: 429 }, { status: 200 }, { status: 200 }])
+    await t.run() // told to slow down, waits 15s, then succeeds
+    const before = t.clock()
+    await t.run() // the next request is simply spaced after it
+    expect(t.clock() - before).toBeLessThanOrEqual(750)
   })
 })
 

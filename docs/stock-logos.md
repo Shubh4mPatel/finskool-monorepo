@@ -23,6 +23,7 @@ npm run db:download-stock-logos -- --limit=40            a trial run on the firs
 npm run db:download-stock-logos -- --symbols=TCS,INFY    just these
 npm run db:download-stock-logos -- --exchange=nse        only NSE stocks (recommended, see below)
 npm run db:download-stock-logos -- --no-isin             the website route only
+npm run db:download-stock-logos -- --logo-per-minute=80  how often logo.dev is asked (default 80)
 ```
 
 In production run it inside the backend container, starting with a trial:
@@ -44,13 +45,26 @@ I deliberately do **not** look logos up by company name. A name search can match
 It changes nothing else on the stock. It needs these set in the environment: `STOCK_QUOTE_API_BASE_URL`, `STOCK_QUOTE_API_KEY` (Finedge, used here only to find the company's website), `LOGO_DEV_TOKEN`, and the storage settings the app already uses (`MINIO_*`). If any is missing it says which and stops before doing anything.
 
 - **It is safe to run again.** It only looks at stocks that still have no logo, so a run that was stopped carries on where it left off, and a logo that is there is never replaced.
-- **How long:** five stocks a second (Finedge's limit): about 10 minutes for the roughly 2,800 NSE stocks, about 20 for the whole list. It prints progress as it goes and a summary at the end.
+- **How long:** about 40 minutes for the roughly 2,800 NSE stocks. The pace is set by logo.dev, not by Finedge (see "Going slowly on purpose" below). It prints progress as it goes and a summary at the end.
 - **Why `--exchange=nse`:** a sample of Finedge showed a website for about 80% of NSE stocks but for only about 2% of the BSE-only ones, and there is no ISIN list for BSE-only stocks (BSE's own list refuses automated downloads). Including them costs about ten more minutes for very few logos. Leave the flag off to try them anyway.
+- **Exchange test symbols** (`011NSETEST` and the like) are skipped: they are listed as stocks but are not companies. Name one with `--symbols=` and it is looked up anyway.
 - **If NSE's list cannot be downloaded** (their site sometimes refuses servers) the command says so and carries on with the website route only.
 - **When something goes wrong** (an API is down) it gives up after three failed batches in a row instead of hammering it, says so, and exits with an error. Run it again later.
 - **The summary lists** the symbols with no logo to be had (no website on record, or none at logo.dev) and the ones that failed and are worth running again.
 
 Not every stock will get a logo, and the BSE-only ones mostly will not: small companies with no website at Finedge and no ISIN on file, or no logo at logo.dev. They show their initials, which is what the screens are built to do. NSE's list also contains some things that are not companies (exchange test symbols such as `011NSETEST`, and ETFs and funds such as `ABSLLIQUID`); they have no website and will simply be reported as having no logo.
+
+### Going slowly on purpose
+
+logo.dev's free (Community) plan limits how many requests an account, and an IP address, may make **per minute**, and answers `429 Too Many Requests` beyond it. Paid plans have no per-minute limit. The first version of the command did not pace itself, and after about 100 stocks logo.dev started refusing, so the run stopped with a long list of "429" failures. Those stocks had not been judged, only refused, and nothing wrong was saved.
+
+Now:
+
+- logo.dev is asked **80 times a minute at most**, however the requests come (the website route and the ISIN route share that budget).
+- If logo.dev says to slow down anyway, the command **waits** (as long as logo.dev says, or 15, then 30, then 60 seconds) and **tries the same request again**, and prints `logo.dev asked us to slow down: waiting 30s`. A few of these are normal and harmless.
+- If it is still refused after four waits, that stock counts as failed and the next run tries it again. If whole batches keep failing, the run stops, as before.
+- On a **paid logo.dev plan** you can go faster: `--logo-per-minute=300` is a fifth of the time. Do not go above what your plan allows.
+- **Monthly cap.** The free plan also has a hard monthly allowance of requests, and every request counts, including "no logo". A full NSE run uses roughly 3,000. Check **Usage in the logo.dev dashboard** before a big run. If the cap is reached the command keeps being refused and stops with the message to check the dashboard; run it again next month or upgrade.
 
 ### Two things that matter about logo.dev
 

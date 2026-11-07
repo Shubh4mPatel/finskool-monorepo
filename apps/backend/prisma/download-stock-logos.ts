@@ -11,10 +11,15 @@
 //   npm run db:download-stock-logos -- --symbols=TCS,INFY    just these
 //   npm run db:download-stock-logos -- --exchange=nse        only NSE stocks (BSE-only stocks seldom have a website or an ISIN on file)
 //   npm run db:download-stock-logos -- --no-isin             the website route only
+//   npm run db:download-stock-logos -- --logo-per-minute=80  how often logo.dev is asked (default 80, see below)
 //
 // Safe to run again: it only ever looks at stocks that still have no logo, so a run that was stopped carries on where it
-// left off, and a stock that already has a logo is never touched. It takes about 10 minutes for the NSE stocks and about 20
-// for the full list (five a second, the Finedge limit). The summary says how many logos each route found.
+// left off, and a stock that already has a logo is never touched. The exchange's test symbols (011NSETEST...) are skipped.
+//
+// Speed: logo.dev's free plan limits requests per minute and answers 429 beyond that; paid plans have no such limit. So logo.dev
+// is asked at most 80 times a minute (raise it with --logo-per-minute on a paid plan), and if it says to slow down anyway the
+// command waits, as long as logo.dev says or 15 to 60 seconds, and tries again. That makes the NSE stocks take about 40 minutes.
+// The summary says how many logos each route found.
 //
 // If NSE's list cannot be downloaded (their site sometimes refuses servers) it says so and carries on with the website route.
 //
@@ -27,7 +32,17 @@ import { PrismaClient } from '../src/generated/prisma/client.js'
 import { PrismaPg } from '@prisma/adapter-pg'
 import * as Minio from 'minio'
 import { randomUUID } from 'crypto'
-import { downloadStockLogos, parseNseList, publicUrlFor, type FetchedLogo, type ListedCompany, type LogoDeps } from './stock-logos-core.js'
+import {
+  DEFAULT_LOGO_REQUESTS_PER_MINUTE,
+  createPacer,
+  downloadStockLogos,
+  parseNseList,
+  publicUrlFor,
+  requestPaced,
+  type FetchedLogo,
+  type ListedCompany,
+  type LogoDeps,
+} from './stock-logos-core.js'
 
 const env = (name: string): string => process.env[name] ?? ''
 const MAX_LOGO_BYTES = 1024 * 1024
@@ -50,6 +65,9 @@ const symbols = arg('symbols')?.split(',')
 const exchangeArg = arg('exchange')?.toLowerCase()
 if (exchangeArg !== undefined && exchangeArg !== 'nse' && exchangeArg !== 'bse') fail('--exchange must be nse or bse')
 const exchange = exchangeArg as 'nse' | 'bse' | undefined
+const perMinuteArg = arg('logo-per-minute')
+const logoPerMinute = perMinuteArg === undefined ? DEFAULT_LOGO_REQUESTS_PER_MINUTE : Number(perMinuteArg)
+if (!Number.isFinite(logoPerMinute) || logoPerMinute < 1 || logoPerMinute > 6000) fail('--logo-per-minute must be a number from 1 to 6000, for example --logo-per-minute=80')
 
 const missing = ['DATABASE_URL', 'STOCK_QUOTE_API_BASE_URL', 'STOCK_QUOTE_API_KEY', 'LOGO_DEV_TOKEN', 'MINIO_ACCESS_KEY', 'MINIO_SECRET_KEY'].filter(n => !env(n))
 if (missing.length > 0) fail(`These are not set: ${missing.join(', ')}`)
@@ -65,13 +83,21 @@ const minio = new Minio.Client({
 })
 const bucket = env('MINIO_BUCKET') || 'finskool'
 
+const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms))
+/** Every logo.dev request, whichever route it is for, goes through this, so together they stay under the per-minute limit. */
+const pacer = createPacer({ minIntervalMs: Math.ceil(60_000 / logoPerMinute), sleep, now: Date.now })
+
 /**
  * One logo from logo.dev, for a path such as `tatasteel.com` or `isin/INE081A01020`. `fallback=404`: without it logo.dev answers
  * something it has no logo for with a generated letter placeholder and a success status, which would be saved as if it were
  * the company's logo. PNG keeps the background transparent.
  */
 async function logoDevImage(path: string): Promise<FetchedLogo | null> {
-  const res = await fetch(`https://img.logo.dev/${path}?token=${env('LOGO_DEV_TOKEN')}&format=png&size=256&fallback=404`)
+  const res = await requestPaced(
+    () => fetch(`https://img.logo.dev/${path}?token=${env('LOGO_DEV_TOKEN')}&format=png&size=256&fallback=404`),
+    pacer,
+    line => console.log(`[download-stock-logos] ${line}`),
+  )
   if (res.status === 404 || res.status === 202) return null // no logo, or logo.dev has only just heard of this one
   if (!res.ok) throw new Error(`logo.dev: ${res.status} ${res.statusText}`)
   const contentType = (res.headers.get('content-type') ?? '').split(';')[0]!.trim().toLowerCase()
@@ -129,7 +155,7 @@ const deps: LogoDeps = {
     })
   },
 
-  pause: ms => new Promise(resolve => setTimeout(resolve, ms)),
+  pause: sleep,
 }
 
 async function main() {
