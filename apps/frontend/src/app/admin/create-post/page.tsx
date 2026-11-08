@@ -114,9 +114,16 @@ export default function CreatePostPage() {
     },
   });
 
+  // Each step opens at the top. The page scrolls inside <main>, not the window, so scroll the page header into view.
+  const topRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    topRef.current?.scrollIntoView({ block: "start" });
+  }, [step]);
+
   useEffect(() => {
     if (step === 2 && editor) {
-      setTimeout(() => editor.commands.focus("start"), 50);
+      // scrollIntoView: false, or focusing the editor drags the page down to it.
+      setTimeout(() => editor.commands.focus("start", { scrollIntoView: false }), 50);
     }
   }, [step, editor]);
 
@@ -201,7 +208,7 @@ export default function CreatePostPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="animate-enter">
+      <div ref={topRef} className="animate-enter scroll-mt-14 lg:scroll-mt-3">
         <p className="text-xs font-semibold text-accent">Dashboard &rsaquo; Create Post</p>
         <h1 className="font-display text-2xl font-bold text-primary">Create New Post</h1>
         <p className="mt-1 text-sm text-muted">Follow the steps to publish a post to your community.</p>
