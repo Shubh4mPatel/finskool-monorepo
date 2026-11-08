@@ -1,4 +1,5 @@
 import type { Prisma } from '../generated/prisma/client.js'
+import { notExpired } from './subscription-expiry.js'
 
 /**
  * Recompute-from-scratch, same self-healing pattern as
@@ -13,7 +14,7 @@ export async function recomputeActiveSubCount(tx: Prisma.TransactionClient, comm
 
   const rows = await tx.subscription.groupBy({
     by: ['userId'],
-    where: { communityId, isActive: true, validUntil: { gte: today } },
+    where: { communityId, isActive: true, ...notExpired(today) },
   })
   const count = rows.length
 

@@ -6,8 +6,9 @@ export interface AddMemberDTO {
   name: string
   email?: string | undefined
   communityId: string
-  payment: number
-  validUntil: string   // ISO date string YYYY-MM-DD
+  // Both are required for every community except the free one, which has no price and no expiry.
+  payment?: number | undefined
+  validUntil?: string | undefined   // ISO date string YYYY-MM-DD
 }
 
 export interface AddMemberResultDTO {
@@ -16,7 +17,7 @@ export interface AddMemberResultDTO {
   name: string
   email: string | null
   communityId: string
-  validUntil: string
+  validUntil: string | null   // null for the free community
 }
 
 export interface ExtendSubscriptionDTO {
@@ -232,7 +233,7 @@ export interface MemberSubscriptionDTO {
   communityName: string
   payment: number
   paidOn: string | null
-  validUntil: string
+  validUntil: string | null   // null = no expiry (the free community)
   isActive: boolean
 }
 
@@ -259,9 +260,9 @@ export interface UpdateMemberDTO {
   email?: string | undefined
   newCommunity?: {
     communityId: string
-    payment: number
-    paidOn?: string | undefined   // YYYY-MM-DD, defaults to today
-    validUntil: string            // YYYY-MM-DD
+    payment?: number | undefined      // required unless the community is the free one
+    paidOn?: string | undefined       // YYYY-MM-DD, defaults to today
+    validUntil?: string | undefined   // YYYY-MM-DD, required unless the community is the free one
   } | undefined
 }
 

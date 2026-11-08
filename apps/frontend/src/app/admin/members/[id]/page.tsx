@@ -23,8 +23,8 @@ function daysRemaining(validUntil: string): number {
 }
 
 /** Where "+1 month" etc. count from: the later of today and the current expiry. */
-function extendFrom(validUntil: string): Date {
-  const end = parseDateParam(validUntil);
+function extendFrom(validUntil: string | null): Date {
+  const end = validUntil ? parseDateParam(validUntil) : null;
   const today = startOfToday();
   return end && end > today ? end : today;
 }
@@ -117,6 +117,10 @@ export default function MemberDetailPage() {
   function openExtendModal() {
     if (!member?.subscription) {
       toast.error("This member has no subscription to extend");
+      return;
+    }
+    if (!member.subscription.validUntil) {
+      toast.error(`${member.subscription.communityName} has no expiry to extend`);
       return;
     }
     setExtendPayment(String(member.subscription.payment));
@@ -335,12 +339,14 @@ export default function MemberDetailPage() {
                         <span className="h-2 w-2 rounded-full bg-[#4caf50]" />
                         Active Subscription
                       </p>
-                      <p className="text-xs text-[#5a7a50]">Expires: {formatDate(sub.validUntil)}</p>
+                      <p className="text-xs text-[#5a7a50]">{sub.validUntil ? `Expires: ${formatDate(sub.validUntil)}` : "No expiry"}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm font-bold text-accent">{daysRemaining(sub.validUntil)} days remaining</span>
-                  </div>
+                  {sub.validUntil && (
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm font-bold text-accent">{daysRemaining(sub.validUntil)} days remaining</span>
+                    </div>
+                  )}
                 </>
               ) : (
                 <p className="text-sm text-muted">No active subscription</p>
@@ -350,7 +356,8 @@ export default function MemberDetailPage() {
                 <button
                   type="button"
                   onClick={openExtendModal}
-                  disabled={!sub}
+                  disabled={!sub || !sub.validUntil}
+                  title={sub && !sub.validUntil ? `${sub.communityName} has no expiry` : undefined}
                   className="rounded-full border border-accent bg-white px-3 py-1.5 text-xs font-bold text-accent transition-colors hover:bg-accent/5 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   + Extend

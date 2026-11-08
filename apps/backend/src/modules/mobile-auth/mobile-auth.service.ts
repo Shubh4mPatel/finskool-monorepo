@@ -28,6 +28,7 @@ import { ensureFreeSubscription } from '../../lib/free-community.js'
 import { decryptPan, encryptPan, isPanKeyConfigured } from '../../lib/pan-crypto.js'
 import { latestInvoiceByCommunity } from '../../lib/plan-receipt.js'
 import type { SocialProvider } from '../../lib/social-token.js'
+import { notExpired } from '../../lib/subscription-expiry.js'
 import {
   ConflictError,
   AppError,
@@ -801,7 +802,7 @@ export class MobileAuthService {
 
   private async fetchUserCommunities(userId: string): Promise<CommunityInfoDTO[]> {
     const subscriptions = await this.db.subscription.findMany({
-      where: { userId, isActive: true, validUntil: { gte: startOfToday() } },
+      where: { userId, isActive: true, ...notExpired(startOfToday()) },
       select: {
         community: {
           select: {
@@ -825,7 +826,7 @@ export class MobileAuthService {
 
   private async hasActiveSubscription(userId: string): Promise<boolean> {
     const count = await this.db.subscription.count({
-      where: { userId, isActive: true, validUntil: { gte: startOfToday() } },
+      where: { userId, isActive: true, ...notExpired(startOfToday()) },
     })
     return count > 0
   }

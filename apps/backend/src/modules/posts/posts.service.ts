@@ -21,6 +21,7 @@ import { truncateText } from '../../lib/email-templates.js'
 import { NotFoundError, BadRequestError, ForbiddenError } from '../../shared/errors/index.js'
 import { isUuid } from '../tickets/tickets.shared.js'
 import { logger } from '../../shared/logger.js'
+import { notExpired } from '../../lib/subscription-expiry.js'
 import type {
   CreatePostDTO,
   UpdatePostDTO,
@@ -177,7 +178,7 @@ export class PostsService {
     const today = new Date()
     today.setHours(0, 0, 0, 0)
     const count = await this.db.subscription.count({
-      where: { userId, communityId, isActive: true, validUntil: { gte: today } },
+      where: { userId, communityId, isActive: true, ...notExpired(today) },
     })
     if (count === 0) {
       throw new ForbiddenError(

@@ -47,6 +47,8 @@ export async function runSubscriptionLifecycleSweep(
 
   let notified = 0
   for (const sub of subs) {
+    // The query only matches dated subscriptions (the free community has none); this narrows the type.
+    if (!sub.validUntil) continue
     const daysUntilExpiry = Math.ceil((sub.validUntil.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
     const bucket = bucketFor(daysUntilExpiry)
     if (!bucket) continue
@@ -146,6 +148,8 @@ export async function expireLapsedSubscriptions(
   let expired = 0
   let failed = 0
   for (const sub of subs) {
+    // The query only matches dated subscriptions (the free community has none); this narrows the type.
+    if (!sub.validUntil) continue
     // One member's failure must not stop the others, so each subscription is handled on its own.
     try {
       // A suspended or deleted member is not told, but their subscription is still closed.

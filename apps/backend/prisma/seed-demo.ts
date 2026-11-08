@@ -424,7 +424,7 @@ async function main() {
   ]
   for (const m of members) {
     const hasFree = await prisma.subscription.findFirst({ where: { userId: m.id, communityId: free.id } })
-    if (!hasFree) await prisma.subscription.create({ data: { userId: m.id, communityId: free.id, payment: 0, validUntil: daysFromNow(36500), source: 'free-signup' } })
+    if (!hasFree) await prisma.subscription.create({ data: { userId: m.id, communityId: free.id, payment: 0, validUntil: null, source: 'free-signup' } })
   }
   for (const s of subs) {
     const communityId = communityIds.get(s.slug)!

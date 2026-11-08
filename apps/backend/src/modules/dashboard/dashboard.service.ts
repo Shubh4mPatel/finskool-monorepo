@@ -172,7 +172,7 @@ export class DashboardService {
     const where: Prisma.SubscriptionWhereInput = {
       isActive: true,
       validUntil: { gte: todayDate, lte: calendarDate(end.year, end.month, end.day) },
-      // The free tier expires in ~100 years, but never belongs on a renewals list regardless.
+      // The free community has no expiry and never belongs on a renewals list.
       community: { isFree: false },
       user: { role: 'member', status: 'active', deletedAt: null },
       ...(ids === null ? {} : { communityId: { in: ids } }),
@@ -197,7 +197,7 @@ export class DashboardService {
     return {
       windowDays: EXPIRING_WINDOW_DAYS,
       total,
-      items: rows.map(s => ({
+      items: rows.flatMap(s => (s.validUntil ? [{ ...s, validUntil: s.validUntil }] : [])).map(s => ({
         subscriptionId: s.id,
         userId: s.user.id,
         name: s.user.name,

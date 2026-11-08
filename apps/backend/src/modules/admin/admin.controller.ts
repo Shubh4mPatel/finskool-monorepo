@@ -42,8 +42,9 @@ const addMemberSchema = z.object({
   name: nameSchema(),
   email: optionalEmailSchema,
   communityId: z.string().uuid('Invalid community'),
-  payment: moneySchema,
-  validUntil: isoDateSchema('Valid until must be YYYY-MM-DD'),
+  // Optional here: the free community has neither. The service requires both for any other community.
+  payment: moneySchema.optional(),
+  validUntil: isoDateSchema('Valid until must be YYYY-MM-DD').optional(),
 })
 
 const extendSubscriptionSchema = z.object({
@@ -175,9 +176,9 @@ const updateMemberSchema = z.object({
   email: optionalEmailSchema,
   newCommunity: z.object({
     communityId: z.string().uuid('Invalid community'),
-    payment: moneySchema,
+    payment: moneySchema.optional(),
     paidOn: isoDateSchema('Paid on must be YYYY-MM-DD').optional(),
-    validUntil: isoDateSchema('Valid until must be YYYY-MM-DD'),
+    validUntil: isoDateSchema('Valid until must be YYYY-MM-DD').optional(),
   }).optional(),
 })
 

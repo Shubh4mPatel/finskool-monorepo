@@ -173,7 +173,8 @@ model Subscription {
   planId          String?   @map("plan_id") @db.Uuid
   payment         Decimal   @db.Decimal(10, 2)
   paidOn          DateTime? @map("paid_on") @db.Date
-  validUntil      DateTime  @map("valid_until") @db.Date
+  // Null = no expiry. Only the free community's subscriptions are null; every paid one has a date.
+  validUntil      DateTime? @map("valid_until") @db.Date
   isActive        Boolean   @default(true) @map("is_active")
   // Why this subscription was created/extended — see SubscriptionSource in
   // notifications.dto.ts-style "as const" object. Nullable: existing rows

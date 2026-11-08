@@ -1,5 +1,6 @@
 import type { PrismaClient } from '../generated/prisma/client.js'
 import { ForbiddenError } from '../shared/errors/index.js'
+import { notExpired } from './subscription-expiry.js'
 
 export async function isSuperAdmin(db: PrismaClient, adminId: string): Promise<boolean> {
   const admin = await db.user.findUnique({ where: { id: adminId }, select: { isSuperAdmin: true } })
@@ -126,7 +127,7 @@ function subscriptionCutoff(): Date {
  */
 export async function isPaidMemberOfCommunity(db: PrismaClient, userId: string, communityId: string): Promise<boolean> {
   const count = await db.subscription.count({
-    where: { userId, communityId, isActive: true, validUntil: { gte: subscriptionCutoff() } },
+    where: { userId, communityId, isActive: true, ...notExpired(subscriptionCutoff()) },
   })
   return count > 0
 }
@@ -134,7 +135,7 @@ export async function isPaidMemberOfCommunity(db: PrismaClient, userId: string, 
 /** Every community a member currently holds an active, unexpired subscription to (the free community included). */
 export async function getPaidCommunityIds(db: PrismaClient, userId: string): Promise<Set<string>> {
   const rows = await db.subscription.findMany({
-    where: { userId, isActive: true, validUntil: { gte: subscriptionCutoff() } },
+    where: { userId, isActive: true, ...notExpired(subscriptionCutoff()) },
     select: { communityId: true },
   })
   return new Set(rows.map(r => r.communityId))

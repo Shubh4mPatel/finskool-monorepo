@@ -39,7 +39,7 @@ export default function ExtendModal({
   const [errors, setErrors] = useState<Errors>({});
   const [extending, setExtending] = useState(false);
   // Shortcuts count from whichever is later — an already-lapsed subscription restarts from today.
-  const currentEnd = parseDateParam(subscription.validUntil);
+  const currentEnd = subscription.validUntil ? parseDateParam(subscription.validUntil) : null;
   const today = startOfToday();
   const extendFrom = currentEnd && currentEnd > today ? currentEnd : today;
 

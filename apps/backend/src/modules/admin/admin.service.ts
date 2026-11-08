@@ -34,6 +34,7 @@ import { formatEmailDate } from '../../lib/email-templates.js'
 import { routingData, RoutingModule, subscriptionRouting } from '../../lib/notification-routing.js'
 import { NotificationType } from '../notifications/notifications.dto.js'
 import redis from '../../lib/redis.js'
+import { notExpired } from '../../lib/subscription-expiry.js'
 import type {
   DuplicateStrategy,
   ImportSummaryDTO,
@@ -110,6 +111,27 @@ function parseDate(raw: string): Date | null {
   return d
 }
 
+const FREE_COMMUNITY_IMPORT_REASON = (name: string): string =>
+  `"${name}" is the free community. Every member joins it automatically, so remove this row`
+
+/**
+ * The payment and expiry to store for a new subscription. The free community has no expiry and no price, so a date and
+ * an amount are neither required nor stored for it; every other community needs both.
+ */
+function subscriptionTerms(
+  community: { isFree: boolean },
+  input: { payment?: number | undefined; validUntil?: string | undefined },
+): { payment: number; validUntil: Date | null } {
+  if (community.isFree) return { payment: 0, validUntil: null }
+  if (input.payment === undefined) throw new BadRequestError('Payment is required')
+  if (!input.validUntil) throw new BadRequestError('Valid until is required')
+  return { payment: input.payment, validUntil: new Date(input.validUntil) }
+}
+
+/** `Active until <date>.`, or a plain line for the free community, which never expires. */
+const activeUntilLine = (validUntil: Date | null, prefix = ''): string =>
+  validUntil ? `${prefix}Active until ${formatEmailDate(validUntil)}.` : `${prefix}You now have access.`
+
 export class AdminService {
   constructor(private readonly db: PrismaClient) {}
 
@@ -145,7 +167,7 @@ export class AdminService {
 
     const communities = await this.db.community.findMany({
       where: { deletedAt: null },
-      select: { id: true, name: true },
+      select: { id: true, name: true, isFree: true },
     })
     let notifyCommunityId: string | null = null
 
@@ -175,6 +197,11 @@ export class AdminService {
       }
       if (!hasCommunityAccess(accessibleCommunityIds, community.id)) {
         summary.errors.push({ row: rowNum, phone, reason: `You do not have access to community "${community.name}"` })
+        continue
+      }
+      // The sheet carries a payment and a valid-until date per row; the free community has neither.
+      if (community.isFree) {
+        summary.errors.push({ row: rowNum, phone, reason: FREE_COMMUNITY_IMPORT_REASON(community.name) })
         continue
       }
 
@@ -374,7 +401,7 @@ export class AdminService {
     const reviveRowNumSet = new Set(reviveRowNums)
     const summary: ImportSummaryDTO = { total: rows.length, created: 0, updated: 0, skipped: 0, errors: [] }
 
-    const communities = await this.db.community.findMany({ where: { deletedAt: null }, select: { id: true, name: true } })
+    const communities = await this.db.community.findMany({ where: { deletedAt: null }, select: { id: true, name: true, isFree: true } })
     let notifyCommunityId: string | null = null
 
     for (const [i, row] of rows.entries()) {
@@ -389,6 +416,10 @@ export class AdminService {
       }
       if (!hasCommunityAccess(accessibleCommunityIds, community.id)) {
         summary.errors.push({ row: rowNum, phone, reason: `You do not have access to community "${community.name}"` })
+        continue
+      }
+      if (community.isFree) {
+        summary.errors.push({ row: rowNum, phone, reason: FREE_COMMUNITY_IMPORT_REASON(community.name) })
         continue
       }
       const payment = row.payment
@@ -776,9 +807,10 @@ export class AdminService {
   ): Promise<ValidateImportDTO> {
     const communities = await this.db.community.findMany({
       where: { deletedAt: null },
-      select: { id: true, name: true },
+      select: { id: true, name: true, isFree: true },
     })
     const communityIdByName = new Map(communities.map(c => [c.name.toLowerCase(), c.id]))
+    const freeCommunityIds = new Set(communities.filter(c => c.isFree).map(c => c.id))
 
     // Batch-fetch existing phones and emails from the DB
     const phones = rows.map(r => r.phone).filter(Boolean)
@@ -828,6 +860,8 @@ export class AdminService {
         if (!communityId) errors.push(`Community "${row.service}" not found`)
         else if (!hasCommunityAccess(accessibleCommunityIds, communityId)) {
           errors.push(`You do not have access to community "${row.service}"`)
+        } else if (freeCommunityIds.has(communityId)) {
+          errors.push(FREE_COMMUNITY_IMPORT_REASON(row.service))
         }
       }
 
@@ -1351,6 +1385,8 @@ export class AdminService {
       }
     }
 
+    const terms = subscriptionTerms(community, data)
+
     const result = await this.db.$transaction(async tx => {
       // Create User without password — user will set it when they register
       const user = await tx.user.create({
@@ -1367,9 +1403,9 @@ export class AdminService {
         data: {
           userId: user.id,
           communityId: data.communityId,
-          payment: data.payment,
-          paidOn: new Date(),
-          validUntil: new Date(data.validUntil),
+          payment: terms.payment,
+          paidOn: terms.validUntil ? new Date() : null,
+          validUntil: terms.validUntil,
         },
       })
       return { approvedPhoneId: ap.id }
@@ -1379,11 +1415,12 @@ export class AdminService {
 
     // No email on file yet — nothing to send to; the member gets a welcome email
     // once they self-register with a real address.
-    if (data.email) {
+    // The welcome email states when access ends, so it is only sent for a community that has an expiry.
+    if (data.email && terms.validUntil) {
       try {
         await notificationsQueue.add(
           WELCOME_EMAIL_JOB,
-          { toEmail: data.email, name: data.name, phone, communityName: community.name, validTill: new Date(data.validUntil).toISOString() },
+          { toEmail: data.email, name: data.name, phone, communityName: community.name, validTill: terms.validUntil.toISOString() },
           { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
         )
       } catch (err) {
@@ -1397,7 +1434,7 @@ export class AdminService {
       name: data.name,
       email: data.email ?? null,
       communityId: data.communityId,
-      validUntil: data.validUntil,
+      validUntil: terms.validUntil ? terms.validUntil.toISOString().split('T')[0]! : null,
     }
   }
 
@@ -1432,6 +1469,8 @@ export class AdminService {
       }
     }
 
+    const terms = subscriptionTerms(community, data)
+
     const result = await this.db.$transaction(async tx => {
       const revived = await this.reviveMember(tx, existingUser, phone, data.name, data.email ?? null, adminId)
       await ensureFreeSubscription(tx, revived.userId)
@@ -1439,9 +1478,9 @@ export class AdminService {
         data: {
           userId: revived.userId,
           communityId: data.communityId,
-          payment: data.payment,
-          paidOn: new Date(),
-          validUntil: new Date(data.validUntil),
+          payment: terms.payment,
+          paidOn: terms.validUntil ? new Date() : null,
+          validUntil: terms.validUntil,
         },
       })
       return { approvedPhoneId: revived.approvedPhoneId, wasAlreadyRegistered: revived.wasAlreadyRegistered }
@@ -1449,13 +1488,17 @@ export class AdminService {
 
     logger.info({ phone, adminId, previousStatus: existingUser.status }, 'admin.reviveAndAddMember: revived')
 
-    if (data.email) {
+    // A returning member is told they are reinstated; a new one gets the welcome email, which needs an expiry date.
+    const reviveJobData = result.wasAlreadyRegistered
+      ? { toEmail: data.email ?? '', name: data.name }
+      : terms.validUntil
+        ? { toEmail: data.email ?? '', name: data.name, phone, communityName: community.name, validTill: terms.validUntil.toISOString() }
+        : null
+    if (data.email && reviveJobData) {
       try {
         await notificationsQueue.add(
           result.wasAlreadyRegistered ? MEMBER_REINSTATED_EMAIL_JOB : WELCOME_EMAIL_JOB,
-          result.wasAlreadyRegistered
-            ? { toEmail: data.email, name: data.name }
-            : { toEmail: data.email, name: data.name, phone, communityName: community.name, validTill: new Date(data.validUntil).toISOString() },
+          reviveJobData,
           { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
         )
       } catch (err) {
@@ -1469,7 +1512,7 @@ export class AdminService {
       name: data.name,
       email: data.email ?? null,
       communityId: data.communityId,
-      validUntil: data.validUntil,
+      validUntil: terms.validUntil ? terms.validUntil.toISOString().split('T')[0]! : null,
     }
   }
 
@@ -1480,9 +1523,10 @@ export class AdminService {
   ): Promise<ExtendSubscriptionResultDTO> {
     const current = await this.db.subscription.findUnique({
       where: { id: subscriptionId },
-      include: { user: { select: { name: true, email: true } }, community: { select: { name: true } } },
+      include: { user: { select: { name: true, email: true } }, community: { select: { name: true, isFree: true } } },
     })
     if (!current) throw new NotFoundError('Subscription not found')
+    if (current.community.isFree) throw new BadRequestError('The free community has no expiry to extend', 'FREE_COMMUNITY')
     assertCommunityAccessFromToken(accessibleCommunityIds, current.communityId)
     const owner = await this.db.user.findUnique({ where: { id: current.userId }, select: { status: true, role: true } })
     if (!owner || owner.role === 'admin') throw new NotFoundError('Subscription not found')
@@ -1519,7 +1563,7 @@ export class AdminService {
           sourceId: sub.id,
           pushPending: true,
           title: 'Access extended',
-          message: `You're active until ${formatEmailDate(sub.validUntil)}.`,
+          message: `You're active until ${formatEmailDate(validUntil)}.`,
           data: subscriptionRouting(current.communityId, 'extended'),
         },
       })
@@ -1544,7 +1588,7 @@ export class AdminService {
             toEmail: current.user.email,
             name: current.user.name,
             communityName: current.community.name,
-            validTill: created.validUntil.toISOString(),
+            validTill: validUntil.toISOString(),
             amount: Number(created.payment),
             paidOn: (created.paidOn ?? paidOn).toISOString(),
           },
@@ -1562,7 +1606,7 @@ export class AdminService {
           userId: current.userId,
           type: NotificationType.SubscriptionExtended,
           communityId: current.communityId,
-          message: `You're active until ${formatEmailDate(created.validUntil)}.`,
+          message: `You're active until ${formatEmailDate(validUntil)}.`,
           sourceId: created.id,
         } satisfies LiveNotificationEvent),
       )
@@ -1573,7 +1617,7 @@ export class AdminService {
     await queuePushFor(this.db, { userId: current.userId, type: NotificationType.SubscriptionExtended, sourceId: created.id }, {
       userIds: [current.userId],
       title: 'Access extended',
-      body: `You're active until ${formatEmailDate(created.validUntil)}.`,
+      body: `You're active until ${formatEmailDate(validUntil)}.`,
       data: subscriptionRouting(current.communityId, 'extended'),
     })
 
@@ -1583,7 +1627,7 @@ export class AdminService {
       communityId: created.communityId,
       payment: Number(created.payment),
       paidOn: created.paidOn ? created.paidOn.toISOString().split('T')[0]! : null,
-      validUntil: created.validUntil.toISOString().split('T')[0]!,
+      validUntil: validUntil.toISOString().split('T')[0]!,
       isActive: created.isActive,
     }
   }
@@ -1778,7 +1822,7 @@ export class AdminService {
       const ap = apByPhone.get(u.phone) ?? null
       const allSubs = u.subscriptions
       const sub = allSubs[0] ?? null
-      const hasActiveSubscription = !!sub && sub.isActive && sub.validUntil >= today
+      const hasActiveSubscription = !!sub && sub.isActive && (sub.validUntil === null || sub.validUntil >= today)
 
       return {
         id: u.id,
@@ -1937,7 +1981,8 @@ export class AdminService {
     }
     if (hasActiveSubscription !== undefined) {
       subWhere['isActive'] = true
-      subWhere['validUntil'] = { ...((subWhere['validUntil'] as object) ?? {}), gte: today }
+      // The free community has no expiry date and counts as running.
+      subWhere['OR'] = notExpired(today).OR
       hasSubFilter = true
       subscriptionMode = hasActiveSubscription ? 'some' : 'none'
     }
@@ -2016,7 +2061,7 @@ export class AdminService {
     community: { name: string }
     payment: { toNumber(): number } | number
     paidOn: Date | null
-    validUntil: Date
+    validUntil: Date | null
     isActive: boolean
   }): MemberSubscriptionDTO {
     return {
@@ -2025,7 +2070,7 @@ export class AdminService {
       communityName: s.community.name,
       payment: typeof s.payment === 'number' ? s.payment : s.payment.toNumber(),
       paidOn: s.paidOn ? s.paidOn.toISOString().split('T')[0]! : null,
-      validUntil: s.validUntil.toISOString().split('T')[0]!,
+      validUntil: s.validUntil ? s.validUntil.toISOString().split('T')[0]! : null,
       isActive: s.isActive,
     }
   }
@@ -2093,7 +2138,7 @@ export class AdminService {
     const sub = allSubs[0] ?? null
     const today = new Date()
     today.setHours(0, 0, 0, 0)
-    const hasActiveSubscription = !!sub && sub.isActive && sub.validUntil >= today
+    const hasActiveSubscription = !!sub && sub.isActive && (sub.validUntil === null || sub.validUntil >= today)
 
     return {
       id: user.id,
@@ -2148,12 +2193,14 @@ export class AdminService {
     }
 
     let addedCommunityName: string | null = null
+    let newTerms: { payment: number; validUntil: Date | null } | null = null
     if (data.newCommunity) {
       const community = await this.db.community.findUnique({
         where: { id: data.newCommunity.communityId, deletedAt: null },
       })
       if (!community) throw new NotFoundError('Community not found')
       addedCommunityName = community.name
+      newTerms = subscriptionTerms(community, data.newCommunity)
       const alreadyIn = await this.db.subscription.findFirst({
         where: { userId: user.id, communityId: data.newCommunity.communityId, isActive: true },
       })
@@ -2171,7 +2218,7 @@ export class AdminService {
           data: { name: data.name, phone: normalizedPhone, email },
         })
       }
-      if (data.newCommunity && addedCommunityName) {
+      if (data.newCommunity && addedCommunityName && newTerms) {
         // Lazily create an ApprovedPhone if this was a self-registered member.
         // Subscription no longer requires one (see schema.prisma's own comment on
         // the model) — this is purely to make them a first-class member of the
@@ -2186,13 +2233,13 @@ export class AdminService {
             data: { phone: normalizedPhone, name: data.name, email, status: 'registered', addedBy: adminId },
           })
         }
-        const paidOn = data.newCommunity.paidOn ? new Date(data.newCommunity.paidOn) : new Date()
-        const validUntil = new Date(data.newCommunity.validUntil)
+        const { validUntil } = newTerms
+        const paidOn = validUntil ? (data.newCommunity.paidOn ? new Date(data.newCommunity.paidOn) : new Date()) : null
         const sub = await tx.subscription.create({
           data: {
             userId: user.id,
             communityId: data.newCommunity.communityId,
-            payment: data.newCommunity.payment,
+            payment: newTerms.payment,
             paidOn,
             validUntil,
             isActive: true,
@@ -2206,7 +2253,7 @@ export class AdminService {
             sourceId: sub.id,
             pushPending: true,
             title: `You've been added to ${addedCommunityName}`,
-            message: `Active until ${formatEmailDate(validUntil)}.`,
+            message: activeUntilLine(validUntil),
             data: subscriptionRouting(data.newCommunity.communityId, 'community-added'),
           },
         })
@@ -2215,8 +2262,9 @@ export class AdminService {
       return null
     })
 
-    if (data.newCommunity && addedCommunityName) {
-      if (email) {
+    if (data.newCommunity && addedCommunityName && newTerms) {
+      // The email states when access ends, so it is only sent for a community that has an expiry.
+      if (email && newTerms.validUntil) {
         try {
           await notificationsQueue.add(
             COMMUNITY_ADDED_EMAIL_JOB,
@@ -2224,7 +2272,7 @@ export class AdminService {
               toEmail: email,
               name: data.name,
               communityName: addedCommunityName,
-              validTill: new Date(data.newCommunity.validUntil).toISOString(),
+              validTill: newTerms.validUntil.toISOString(),
             },
             { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
           )
@@ -2241,7 +2289,7 @@ export class AdminService {
               userId: user.id,
               type: NotificationType.CommunityAdded,
               communityId: data.newCommunity.communityId,
-              message: `Active until ${formatEmailDate(new Date(data.newCommunity.validUntil))}.`,
+              message: activeUntilLine(newTerms.validUntil),
               sourceId: newSubscriptionId,
             } satisfies LiveNotificationEvent),
           )
@@ -2251,7 +2299,7 @@ export class AdminService {
         await queuePushFor(this.db, { userId: user.id, type: NotificationType.CommunityAdded, sourceId: newSubscriptionId }, {
           userIds: [user.id],
           title: `You've been added to ${addedCommunityName}`,
-          body: `Active until ${formatEmailDate(new Date(data.newCommunity.validUntil))}.`,
+          body: activeUntilLine(newTerms.validUntil),
           data: subscriptionRouting(data.newCommunity.communityId, 'community-added'),
         })
       }

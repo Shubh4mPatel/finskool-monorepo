@@ -39,6 +39,7 @@ import type {
   ChangePasswordDTO,
   UpdateNotificationsDTO,} from "./auth.dto.js";
 import type { JwtPayload } from "../../middlewares/auth.middleware.js";
+import { notExpired } from '../../lib/subscription-expiry.js'
 
 const BCRYPT_ROUNDS = 12;
 
@@ -161,7 +162,7 @@ export class AuthService {
 
     if (addedByAdmin) {
       const activeSubscriptions = await this.db.subscription.findMany({
-        where: { userId: updated.id, isActive: true, validUntil: { gte: startOfToday() } },
+        where: { userId: updated.id, isActive: true, ...notExpired(startOfToday()) },
         select: { id: true, communityId: true },
       });
 
@@ -382,7 +383,7 @@ export class AuthService {
     userId: string,
   ): Promise<CommunityInfoDTO[]> {
     const subscriptions = await this.db.subscription.findMany({
-      where: { userId, isActive: true, validUntil: { gte: startOfToday() } },
+      where: { userId, isActive: true, ...notExpired(startOfToday()) },
       select: {
         community: {
           select: {

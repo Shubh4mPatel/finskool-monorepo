@@ -35,6 +35,8 @@ export default function EditMemberModal({
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Partial<Record<string, string>>>({});
 
+  const newIsFree = communities.find((c) => c.id === newCom.communityId)?.isFree === true;
+
   function validate() {
     const errs: Partial<Record<string, string>> = {};
     if (form.name.trim().length < 2) errs.name = "Name must be at least 2 characters";
@@ -43,9 +45,12 @@ export default function EditMemberModal({
     if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) errs.email = "Invalid email address";
     if (showAddCom) {
       if (!newCom.communityId) errs.newCommunityId = "Select a community";
-      const amt = parseFloat(newCom.payment);
-      if (!newCom.payment || isNaN(amt) || amt <= 0) errs.newPayment = "Enter a valid payment amount";
-      if (!newCom.validUntil) errs.newValidUntil = "Valid till date is required";
+      // The free community has no price and no expiry, so neither is asked for.
+      if (!newIsFree) {
+        const amt = parseFloat(newCom.payment);
+        if (!newCom.payment || isNaN(amt) || amt <= 0) errs.newPayment = "Enter a valid payment amount";
+        if (!newCom.validUntil) errs.newValidUntil = "Valid till date is required";
+      }
     }
     return errs;
   }
@@ -60,14 +65,13 @@ export default function EditMemberModal({
     try {
       const body: {
         name: string; phone: string; email: string;
-        newCommunity?: { communityId: string; payment: number; paidOn?: string; validUntil: string };
+        newCommunity?: { communityId: string; payment?: number; paidOn?: string; validUntil?: string };
       } = { name: form.name, phone: form.phone, email: form.email };
       if (showAddCom && newCom.communityId) {
         body.newCommunity = {
           communityId: newCom.communityId,
-          payment: parseFloat(newCom.payment),
-          validUntil: newCom.validUntil,
-          ...(newCom.paidOn ? { paidOn: newCom.paidOn } : {}),
+          ...(newIsFree ? {} : { payment: parseFloat(newCom.payment), validUntil: newCom.validUntil }),
+          ...(!newIsFree && newCom.paidOn ? { paidOn: newCom.paidOn } : {}),
         };
       }
       const updated = await api.patch<MemberItem>(`/api/v1/admin/members/${member.id}`, body);
@@ -148,35 +152,44 @@ export default function EditMemberModal({
                   className="w-full"
                   triggerClassName={`relative text-left ${inputCls(errors.newCommunityId)}`}
                   options={communityOptions(available)}
-                  onChange={(v) => setNewCom((c) => ({ ...c, communityId: v }))}
+                  onChange={(v) => {
+                    setNewCom((c) => ({ ...c, communityId: v }));
+                    setErrors((e) => ({ ...e, newCommunityId: undefined, newPayment: undefined, newValidUntil: undefined }));
+                  }}
                 />
               </FormField>
-              <div className="grid grid-cols-2 gap-3">
-                <FormField small label="Payment (₹)" error={errors.newPayment}>
-                  <input type="number" placeholder="4000" value={newCom.payment}
-                    onChange={(e) => setNewCom((c) => ({ ...c, payment: e.target.value }))} className={inputCls(errors.newPayment)} />
-                </FormField>
-                <FormField small label="Valid Till" error={errors.newValidUntil}>
-                  <DatePicker
-                    value={newCom.validUntil}
-                    ariaLabel="Valid till"
-                    presets={durationPresets()}
-                    triggerClassName={inputCls(errors.newValidUntil)}
-                    onChange={(v) => setNewCom((c) => ({ ...c, validUntil: v }))}
-                  />
-                </FormField>
-              </div>
-              <FormField small label="Paid On (optional)">
-                <DatePicker
-                  value={newCom.paidOn}
-                  ariaLabel="Paid on"
-                  placeholder="Today, if left empty"
-                  clearable
-                  presets={paidOnPresets()}
-                  triggerClassName={inputCls()}
-                  onChange={(v) => setNewCom((c) => ({ ...c, paidOn: v }))}
-                />
-              </FormField>
+              {newIsFree ? (
+                <p className="rounded-xl bg-white px-3 py-2 text-xs text-muted">The free community has no payment and no expiry.</p>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <FormField small label="Payment (₹)" error={errors.newPayment}>
+                      <input type="number" placeholder="4000" value={newCom.payment}
+                        onChange={(e) => setNewCom((c) => ({ ...c, payment: e.target.value }))} className={inputCls(errors.newPayment)} />
+                    </FormField>
+                    <FormField small label="Valid Till" error={errors.newValidUntil}>
+                      <DatePicker
+                        value={newCom.validUntil}
+                        ariaLabel="Valid till"
+                        presets={durationPresets()}
+                        triggerClassName={inputCls(errors.newValidUntil)}
+                        onChange={(v) => setNewCom((c) => ({ ...c, validUntil: v }))}
+                      />
+                    </FormField>
+                  </div>
+                  <FormField small label="Paid On (optional)">
+                    <DatePicker
+                      value={newCom.paidOn}
+                      ariaLabel="Paid on"
+                      placeholder="Today, if left empty"
+                      clearable
+                      presets={paidOnPresets()}
+                      triggerClassName={inputCls()}
+                      onChange={(v) => setNewCom((c) => ({ ...c, paidOn: v }))}
+                    />
+                  </FormField>
+                </>
+              )}
             </div>
           </div>
         )}

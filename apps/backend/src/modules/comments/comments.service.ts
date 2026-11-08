@@ -8,6 +8,7 @@ import { logger } from '../../shared/logger.js'
 import { routingData, RoutingModule } from '../../lib/notification-routing.js'
 import { NotificationType } from '../notifications/notifications.dto.js'
 import type { CreateCommentDTO, CommentTreeDTO, CommentListDTO } from './comments.dto.js'
+import { notExpired } from '../../lib/subscription-expiry.js'
 
 export class CommentsService {
   constructor(private readonly db: PrismaClient) {}
@@ -33,7 +34,7 @@ export class CommentsService {
       const today = new Date()
       today.setHours(0, 0, 0, 0)
       const subscription = await this.db.subscription.findFirst({
-        where: { userId, communityId: post.communityId, isActive: true, validUntil: { gte: today } },
+        where: { userId, communityId: post.communityId, isActive: true, ...notExpired(today) },
       })
       if (!subscription) throw new ForbiddenError('You must be a community member to comment')
     }

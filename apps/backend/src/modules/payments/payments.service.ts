@@ -205,7 +205,8 @@ export class PaymentsService {
         where: { userId, communityId: order.communityId, isActive: true },
       })
       const isNewGrant = !current
-      const base = current && current.validUntil >= today ? current.validUntil : today
+      // A free-community row has no date; plans are never sold for it, so a null here just means a fresh grant.
+      const base = current?.validUntil && current.validUntil >= today ? current.validUntil : today
       const validUntil = addMonths(base, plan.durationMonths)
 
       if (current) {
@@ -252,7 +253,7 @@ export class PaymentsService {
         },
       })
 
-      return { subscription, isNewGrant, period: { start: base, end: validUntil } }
+      return { subscription: { ...subscription, validUntil }, isNewGrant, period: { start: base, end: validUntil } }
     })
     if (!granted) {
       const fresh = await this.db.planOrder.findUniqueOrThrow({ where: { id: order.id } })
@@ -409,7 +410,7 @@ export class PaymentsService {
       throw new ConflictError('This order has already been processed', 'ORDER_ALREADY_PAID')
     }
     const subscription = await this.db.subscription.findUnique({ where: { id: order.subscriptionId } })
-    if (!subscription) throw new NotFoundError('Subscription no longer exists')
+    if (!subscription?.validUntil) throw new NotFoundError('Subscription no longer exists')
     return {
       subscriptionId: subscription.id,
       communityId: order.communityId,

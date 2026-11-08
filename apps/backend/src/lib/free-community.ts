@@ -35,10 +35,8 @@ export async function ensureFreeSubscription(
       communityId: free.id,
       payment: 0,
       paidOn: null,
-      // validUntil is a required column with no "never expires"
-      // representation — 100 years out is the free tier's way of
-      // saying "doesn't really expire."
-      validUntil: new Date(new Date().setFullYear(new Date().getFullYear() + 100)),
+      // The free community has no expiry.
+      validUntil: null,
       source: SubscriptionSource.FreeSignup,
     },
   })

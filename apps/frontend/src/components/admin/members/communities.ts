@@ -7,6 +7,7 @@ export interface MemberCommunity {
   name: string;
   slug: string;
   badgeUrl?: string | null;
+  isFree?: boolean;
 }
 
 /** Dropdown options for a community picker, each with its badge. */

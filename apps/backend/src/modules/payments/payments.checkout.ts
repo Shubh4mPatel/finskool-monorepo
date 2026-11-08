@@ -5,6 +5,7 @@ import { env } from '../../config/env.js'
 import { BadRequestError, TooManyRequestsError, UnauthorizedError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
 import type { PaymentsService } from './payments.service.js'
+import { notExpired } from '../../lib/subscription-expiry.js'
 import type {
   CheckoutExchangeResultDTO,
   CheckoutSessionResultDTO,
@@ -99,7 +100,7 @@ export class PaymentsCheckoutService {
     today.setHours(0, 0, 0, 0)
     const members = await this.db.subscription.groupBy({
       by: ['userId'],
-      where: { communityId: order.communityId, isActive: true, validUntil: { gte: today } },
+      where: { communityId: order.communityId, isActive: true, ...notExpired(today) },
     })
 
     const sessionToken = newToken()

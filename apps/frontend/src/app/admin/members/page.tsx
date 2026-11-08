@@ -104,6 +104,7 @@ function daysUntil(date: string, now: number): number {
 
 function ValidTill({ sub, now }: { sub: MemberSubscription | null; now: number }) {
   if (!sub) return <span className="text-muted">—</span>;
+  if (!sub.validUntil) return <span className="text-muted">No expiry</span>;
   const days = daysUntil(sub.validUntil, now);
   if (days < 0) return <span className="font-medium text-red-500">{formatDate(sub.validUntil)}</span>;
   return (
@@ -485,8 +486,8 @@ function MembersContent() {
     <div className="flex items-center gap-1">
       <button
         onClick={() => sub && setModal({ type: "extend", member: { ...m, subscription: sub }, subscription: sub })}
-        disabled={!sub}
-        title={sub ? `Extend ${sub.communityName} subscription` : "No subscription to extend"}
+        disabled={!sub || !sub.validUntil}
+        title={!sub ? "No subscription to extend" : !sub.validUntil ? `${sub.communityName} has no expiry` : `Extend ${sub.communityName} subscription`}
         aria-label={sub ? `Extend ${m.name}'s ${sub.communityName} subscription` : `${m.name} has no subscription to extend`}
         className={
           labelled

@@ -5,6 +5,7 @@ import { parseVideoLink } from '../../lib/video-links.js'
 import { BadRequestError, ForbiddenError, NotFoundError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
 import type { KitListStatus } from './welcome-kits.validator.js'
+import { notExpired } from '../../lib/subscription-expiry.js'
 import type {
   CapitalAllocation,
   MobileWelcomeKitDTO,
@@ -188,7 +189,7 @@ export class WelcomeKitsService {
       const today = new Date()
       today.setHours(0, 0, 0, 0)
       const subscriptions = await this.db.subscription.count({
-        where: { userId: user.id, communityId, isActive: true, validUntil: { gte: today } },
+        where: { userId: user.id, communityId, isActive: true, ...notExpired(today) },
       })
       if (subscriptions === 0) {
         throw new ForbiddenError('You do not have an active subscription to this community.', 'SUBSCRIPTION_REQUIRED')

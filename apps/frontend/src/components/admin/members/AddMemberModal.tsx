@@ -19,16 +19,19 @@ type MemberForm = typeof EMPTY_MEMBER;
 type MemberField = keyof MemberForm;
 type MemberErrors = Partial<Record<MemberField, string>>;
 
-function validateMember(m: MemberForm): MemberErrors {
+function validateMember(m: MemberForm, isFree: boolean): MemberErrors {
   const e: MemberErrors = {};
   if (m.name.trim().length < 2) e.name = "Name must be at least 2 characters";
   if (!m.phone) e.phone = "Phone is required";
   else if (!isValidPhoneNumber(m.phone)) e.phone = "Enter a valid phone number";
   if (m.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(m.email)) e.email = "Invalid email address";
   if (!m.communityId) e.communityId = "Select a community";
-  const amt = parseFloat(m.payment);
-  if (!m.payment || isNaN(amt) || amt <= 0) e.payment = "Enter a valid payment amount";
-  if (!m.validUntil) e.validUntil = "Valid till date is required";
+  // The free community has no price and no expiry, so neither is asked for.
+  if (!isFree) {
+    const amt = parseFloat(m.payment);
+    if (!m.payment || isNaN(amt) || amt <= 0) e.payment = "Enter a valid payment amount";
+    if (!m.validUntil) e.validUntil = "Valid till date is required";
+  }
   return e;
 }
 
@@ -47,16 +50,17 @@ export default function AddMemberModal({
   const [errors, setErrors] = useState<MemberErrors>({});
   const [touched, setTouched] = useState<Partial<Record<MemberField, boolean>>>({});
   const [adding, setAdding] = useState(false);
+  const isFree = communities.find((c) => c.id === member.communityId)?.isFree === true;
 
   function blurField(field: MemberField) {
     setTouched((t) => ({ ...t, [field]: true }));
-    setErrors((e) => ({ ...e, [field]: validateMember({ ...member })[field] }));
+    setErrors((e) => ({ ...e, [field]: validateMember({ ...member }, isFree)[field] }));
   }
 
   function changeField(field: MemberField, value: string) {
     const updated = { ...member, [field]: value };
     setMember(updated);
-    if (touched[field]) setErrors((e) => ({ ...e, [field]: validateMember(updated)[field] }));
+    if (touched[field]) setErrors((e) => ({ ...e, [field]: validateMember(updated, isFree)[field] }));
   }
 
   function payload() {
@@ -65,13 +69,12 @@ export default function AddMemberModal({
       name: member.name,
       email: member.email,
       communityId: member.communityId,
-      payment: parseFloat(member.payment),
-      validUntil: member.validUntil,
+      ...(isFree ? {} : { payment: parseFloat(member.payment), validUntil: member.validUntil }),
     };
   }
 
   async function handleAdd() {
-    const errs = validateMember(member);
+    const errs = validateMember(member, isFree);
     setTouched({ name: true, phone: true, email: true, communityId: true, payment: true, validUntil: true });
     setErrors(errs);
     if (Object.values(errs).some(Boolean)) return;
@@ -156,30 +159,35 @@ export default function AddMemberModal({
           onChange={(v) => {
             setMember((m) => ({ ...m, communityId: v }));
             setTouched((t) => ({ ...t, communityId: true }));
-            setErrors((e) => ({ ...e, communityId: v ? undefined : "Select a community" }));
+            // Picking the free community drops any payment / date errors, since it has neither.
+            setErrors((e) => ({ ...e, communityId: v ? undefined : "Select a community", payment: undefined, validUntil: undefined }));
           }}
         />
       </FormField>
-      <div className="grid grid-cols-2 gap-4">
-        <FormField label="Payment (₹)" error={errors.payment}>
-          <input type="number" placeholder="4000" value={member.payment}
-            onChange={(e) => changeField("payment", e.target.value)} onBlur={() => blurField("payment")}
-            className={inputCls(errors.payment)} />
-        </FormField>
-        <FormField label="Valid Till" error={errors.validUntil}>
-          <DatePicker
-            value={member.validUntil}
-            ariaLabel="Valid till"
-            presets={durationPresets()}
-            triggerClassName={inputCls(errors.validUntil)}
-            onChange={(v) => {
-              setMember((m) => ({ ...m, validUntil: v }));
-              setTouched((t) => ({ ...t, validUntil: true }));
-              setErrors((e) => ({ ...e, validUntil: v ? undefined : "Valid till date is required" }));
-            }}
-          />
-        </FormField>
-      </div>
+      {isFree ? (
+        <p className="rounded-xl bg-background px-3.5 py-2.5 text-xs text-muted">The free community has no payment and no expiry.</p>
+      ) : (
+        <div className="grid grid-cols-2 gap-4">
+          <FormField label="Payment (₹)" error={errors.payment}>
+            <input type="number" placeholder="4000" value={member.payment}
+              onChange={(e) => changeField("payment", e.target.value)} onBlur={() => blurField("payment")}
+              className={inputCls(errors.payment)} />
+          </FormField>
+          <FormField label="Valid Till" error={errors.validUntil}>
+            <DatePicker
+              value={member.validUntil}
+              ariaLabel="Valid till"
+              presets={durationPresets()}
+              triggerClassName={inputCls(errors.validUntil)}
+              onChange={(v) => {
+                setMember((m) => ({ ...m, validUntil: v }));
+                setTouched((t) => ({ ...t, validUntil: true }));
+                setErrors((e) => ({ ...e, validUntil: v ? undefined : "Valid till date is required" }));
+              }}
+            />
+          </FormField>
+        </div>
+      )}
       <p className="rounded-xl bg-background px-3.5 py-2.5 text-xs text-muted">
         The member will be whitelisted. They can then sign up at <span className="font-semibold text-accent">/signup</span> and set their own password.
       </p>

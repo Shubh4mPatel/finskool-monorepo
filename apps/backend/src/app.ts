@@ -30,6 +30,7 @@ import type { PlanListItemDTO } from './modules/payments/payments.dto.js'
 import { loadGstRules, planListItem } from './lib/plan-gst.js'
 import prisma from './lib/prisma.js'
 import { authenticate, requireMobileAuth } from './middlewares/auth.middleware.js'
+import { notExpired } from './lib/subscription-expiry.js'
 
 function buildCorsOptions(): CorsOptions {
   const { origin, credentials } = env.cors
@@ -207,7 +208,7 @@ export function createApp() {
         where: {
           communityId: { in: communities.map(c => c.id) },
           isActive: true,
-          validUntil: { gte: today },
+          ...notExpired(today),
         },
       })
       const memberCountByCommunity = new Map<string, number>()

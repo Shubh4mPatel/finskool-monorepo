@@ -4,7 +4,8 @@ export interface MemberSubscription {
   communityName: string;
   payment: number;
   paidOn: string | null;
-  validUntil: string;
+  /** null = no expiry (the free community). */
+  validUntil: string | null;
   isActive: boolean;
 }
 

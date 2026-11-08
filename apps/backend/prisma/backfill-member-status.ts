@@ -23,14 +23,14 @@ function computeMemberStatus(params: {
   approvedPhoneActive: boolean
   registered: boolean
   suspended: boolean
-  currentSubscription: { isActive: boolean; validUntil: Date } | null
+  currentSubscription: { isActive: boolean; validUntil: Date | null } | null
   today: Date
 }): MemberStatus {
   const { approvedPhoneActive, registered, suspended, currentSubscription, today } = params
   if (!approvedPhoneActive) return 'deleted'
   if (suspended) return 'suspended'
   if (!registered) return 'pending'
-  if (currentSubscription && (!currentSubscription.isActive || currentSubscription.validUntil < today)) return 'expired'
+  if (currentSubscription && (!currentSubscription.isActive || currentSubscription.validUntil !== null && currentSubscription.validUntil < today)) return 'expired'
   return 'registered'
 }
 
@@ -54,7 +54,7 @@ async function main() {
     orderBy: { createdAt: 'desc' },
     select: { approvedPhoneId: true, isActive: true, validUntil: true },
   })
-  const currentSubByApprovedPhoneId = new Map<string, { isActive: boolean; validUntil: Date }>()
+  const currentSubByApprovedPhoneId = new Map<string, { isActive: boolean; validUntil: Date | null }>()
   for (const sub of subscriptions) {
     if (!currentSubByApprovedPhoneId.has(sub.approvedPhoneId)) {
       currentSubByApprovedPhoneId.set(sub.approvedPhoneId, { isActive: sub.isActive, validUntil: sub.validUntil })

@@ -58,7 +58,7 @@ export async function issuePlanReceipt(db: PrismaClient, planOrderId: string, pe
   // The days of access this payment bought. The caller knows them exactly (a renewal starts when the old access ends);
   // failing that, the subscription it created says when it started and when it runs out.
   const subscription = period || !order.subscriptionId ? null : await db.subscription.findUnique({ where: { id: order.subscriptionId }, select: { paidOn: true, validUntil: true } })
-  const access: ReceiptPeriod | null = period ?? (subscription ? { start: subscription.paidOn ?? subscription.validUntil, end: subscription.validUntil } : null)
+  const access: ReceiptPeriod | null = period ?? (subscription?.validUntil ? { start: subscription.paidOn ?? subscription.validUntil, end: subscription.validUntil } : null)
   // How it was paid, asked of Razorpay before the database transaction so a slow answer never holds a lock. If it
   // cannot be had the invoice just has fewer details: the order id we already hold is kept.
   const looked = order.razorpayPaymentId ? await fetchPaymentSnapshot(order.razorpayPaymentId) : null

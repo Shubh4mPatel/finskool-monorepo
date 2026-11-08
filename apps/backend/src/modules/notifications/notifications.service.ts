@@ -38,6 +38,7 @@ import { routingData, RoutingModule } from '../../lib/notification-routing.js'
 import type { RoutingData } from '../../lib/notification-routing.js'
 import { NotificationType, toNotificationItem } from './notifications.dto.js'
 import type { ListNotificationsResponseDTO } from './notifications.dto.js'
+import { notExpired } from '../../lib/subscription-expiry.js'
 
 const FAN_OUT_CHUNK_SIZE = 500
 
@@ -189,7 +190,7 @@ export class NotificationsService {
 
     const subs = await this.db.subscription.findMany({
       // Only members who can use the app: a suspended or deleted member gets no inbox row, email or push.
-      where: { communityId, isActive: true, validUntil: { gte: startOfToday() }, user: { status: 'active', deletedAt: null } },
+      where: { communityId, isActive: true, ...notExpired(startOfToday()), user: { status: 'active', deletedAt: null } },
       select: { userId: true, user: { select: { email: true, postNotificationsEnabled: true } } },
       distinct: ['userId'],
     })
