@@ -1,15 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { Bold, Code, Italic, Save, X } from "lucide-react";
+import { Save, X } from "lucide-react";
 import { useEditor, EditorContent } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
 import PostMediaPicker from "@/components/admin/PostMediaPicker";
 import { toVideoInput, type PostVideo } from "@/lib/post-videos";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 import type { AdminPost } from "./types";
 import { useEscape } from "./useEscape";
+import { TipTapToolbar, postEditorContentCls, postEditorExtensions } from "./PostEditorToolbar";
 
 export const fieldClass =
   "w-full rounded-xl border border-divider bg-background px-4 py-2.5 text-sm text-primary transition-all focus:border-accent focus:bg-white focus:outline-none focus:ring-4 focus:ring-accent/10";
@@ -23,7 +23,7 @@ export default function EditPostModal({ post, onClose, onSaved }: { post: AdminP
   const [imageUrls, setImageUrls] = useState<string[]>(post.imageUrls);
   const [videos, setVideos] = useState<PostVideo[]>(post.videos ?? []);
 
-  const editor = useEditor({ extensions: [StarterKit], content: post.content });
+  const editor = useEditor({ extensions: postEditorExtensions, content: post.content });
   useEscape(!saving, onClose);
 
   async function handleSave() {
@@ -70,15 +70,10 @@ export default function EditPostModal({ post, onClose, onSaved }: { post: AdminP
           <div className="flex flex-col gap-1.5">
             <p className="text-xs font-semibold text-muted">Content</p>
             <div className="rounded-xl border border-divider bg-background p-3 transition-all focus-within:border-accent focus-within:bg-white focus-within:ring-4 focus-within:ring-accent/10">
-              <div className="mb-2 flex items-center gap-1 border-b border-divider pb-2">
-                {[{ icon: Bold, a: () => editor?.chain().focus().toggleBold().run(), act: () => editor?.isActive("bold") ?? false, l: "Bold" },
-                  { icon: Italic, a: () => editor?.chain().focus().toggleItalic().run(), act: () => editor?.isActive("italic") ?? false, l: "Italic" },
-                  { icon: Code, a: () => editor?.chain().focus().toggleCode().run(), act: () => editor?.isActive("code") ?? false, l: "Code" },
-                ].map(({ icon: Icon, a, act, l }) => (
-                  <button key={l} type="button" onClick={a} title={l} aria-label={l} aria-pressed={act()} className={`flex h-7 w-7 items-center justify-center rounded-lg text-sm transition-colors ${act() ? "bg-primary text-white" : "text-muted hover:bg-divider/60"}`}><Icon size={13} /></button>
-                ))}
+              <div className="mb-2 border-b border-divider pb-2">
+                <TipTapToolbar editor={editor} />
               </div>
-              <EditorContent editor={editor} className="min-h-30 text-sm text-primary [&_.ProseMirror]:outline-none [&_.ProseMirror_p]:my-1" />
+              <EditorContent editor={editor} className={`min-h-30 text-sm text-primary [&_.ProseMirror_p]:my-1 ${postEditorContentCls}`} />
             </div>
           </div>
           <div className="flex flex-col gap-1.5">

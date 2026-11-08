@@ -2,11 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
-import TextAlign from "@tiptap/extension-text-align";
-import TiptapLink from "@tiptap/extension-link";
-import { ArrowRight, Bold, Check, ChevronLeft, Code, Italic, LayoutGrid, Link, List, ListOrdered, Pencil, Users, X } from "lucide-react";
+import { ArrowRight, Check, ChevronLeft, LayoutGrid, Pencil, Users, X } from "lucide-react";
 
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
@@ -17,6 +14,7 @@ import FeedPostCard from "@/components/feed/FeedPostCard";
 import CommunityBadgeIcon from "@/components/CommunityBadgeIcon";
 import { Skeleton, stagger } from "@/components/admin/dashboard/Panel";
 import Stepper from "@/components/admin/Stepper";
+import { TipTapToolbar, postEditorExtensions } from "@/components/admin/posts/PostEditorToolbar";
 
 type Step = 1 | 2 | 3;
 
@@ -58,40 +56,6 @@ const steps = [
 
 const defaultTags: string[] = [];
 
-function TipTapToolbar({ editor }: { editor: ReturnType<typeof useEditor> }) {
-  if (!editor) return null;
-
-  const setLink = () => {
-    const prev = (editor.getAttributes("link").href as string) ?? "";
-    const url = window.prompt("Enter URL", prev);
-    if (url === null) return;
-    if (url === "") {
-      editor.chain().focus().unsetLink().run();
-    } else {
-      editor.chain().focus().setLink({ href: url }).run();
-    }
-  };
-
-  const tools = [
-    { icon: Bold,        action: () => editor.chain().focus().toggleBold().run(),             active: editor.isActive("bold"),                  label: "Bold" },
-    { icon: Italic,      action: () => editor.chain().focus().toggleItalic().run(),           active: editor.isActive("italic"),                label: "Italic" },
-    { icon: List,        action: () => editor.chain().focus().toggleBulletList().run(),       active: editor.isActive("bulletList"),             label: "Bullet List" },
-    { icon: ListOrdered, action: () => editor.chain().focus().toggleOrderedList().run(),      active: editor.isActive("orderedList"),            label: "Numbered List" },
-    { icon: Link,        action: setLink,                                                     active: editor.isActive("link"),                   label: "Link" },
-    { icon: Code,        action: () => editor.chain().focus().toggleCode().run(),             active: editor.isActive("code"),                   label: "Code" },
-  ];
-  return (
-    <div className="flex items-center gap-0.5 rounded-lg bg-background px-2 py-1.5">
-      {tools.map(({ icon: Icon, action, active, label }) => (
-        <button key={label} type="button" onClick={action} title={label}
-          className={`flex h-8 w-8 items-center justify-center rounded-lg text-sm transition-colors ${active ? "bg-primary/10 text-primary" : "text-muted hover:bg-divider/60 hover:text-primary"}`}>
-          <Icon size={15} />
-        </button>
-      ))}
-    </div>
-  );
-}
-
 export default function CreatePostPage() {
   const toast = useToast();
   const session = useSession();
@@ -126,10 +90,8 @@ export default function CreatePostPage() {
 
   const editor = useEditor({
     extensions: [
-      StarterKit,
+      ...postEditorExtensions,
       Placeholder.configure({ placeholder: "Add Description e.g. Tip: Include entry price, target, stop loss and reasoning for stock calls." }),
-      TextAlign.configure({ types: ["heading", "paragraph"] }),
-      TiptapLink.configure({ openOnClick: false }),
     ],
     editorProps: {
       attributes: { class: "outline-none" },
