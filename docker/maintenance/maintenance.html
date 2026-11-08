@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex" />
+  <!-- Try again on its own: the page is replaced by the site as soon as the update is finished. -->
+  <meta http-equiv="refresh" content="30" />
+  <title>Under maintenance | Finskool21</title>
+  <style>
+    :root {
+      --bg: #f3f1ea;
+      --card: #ffffff;
+      --primary: #0f3d3a;
+      --muted: #5a6a60;
+      --accent: #108b8b;
+      --lime: #c1f26e;
+      --divider: #e4e0d4;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0c1f1e;
+        --card: #12302e;
+        --primary: #f1f5ee;
+        --muted: #a7b8ae;
+        --divider: #24433f;
+      }
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+      background: var(--bg);
+      color: var(--primary);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      line-height: 1.5;
+    }
+    main {
+      width: 100%;
+      max-width: 460px;
+      padding: 40px 28px 32px;
+      text-align: center;
+      background: var(--card);
+      border: 1px solid var(--divider);
+      border-radius: 24px;
+      box-shadow: 0 10px 40px rgba(15, 61, 58, 0.08);
+    }
+    .icon {
+      width: 64px;
+      height: 64px;
+      margin: 0 auto 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--lime), var(--accent));
+    }
+    .icon svg { width: 30px; height: 30px; animation: spin 6s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { .icon svg { animation: none; } }
+    .brand { margin: 0 0 6px; font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+    h1 { margin: 0 0 12px; font-size: 26px; line-height: 1.25; }
+    p { margin: 0; color: var(--muted); font-size: 15px; }
+    .note { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--divider); font-size: 13px; }
+  </style>
+</head>
+<body>
+  <main role="main">
+    <div class="icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#0f3d3a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+      </svg>
+    </div>
+    <p class="brand">Finskool21</p>
+    <h1>We're updating the site</h1>
+    <p>We are rolling out a new version. This takes a few minutes, and we will be back soon.</p>
+    <p class="note">You don't need to do anything. This page checks again every 30 seconds.</p>
+  </main>
+</body>
+</html>

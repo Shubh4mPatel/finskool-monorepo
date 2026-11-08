@@ -67,6 +67,46 @@ fi
 
 echo "[deploy] backend=$BACKEND frontend=$FRONTEND nginx=$NGINX stack=$STACK"
 
+# ── Maintenance page ─────────────────────────────────────────────────────────
+# From here until the new backend and frontend are built and running, nginx answers every request with the "under
+# maintenance, back soon" page (docker/nginx.conf looks for this flag file on each request, no reload needed).
+MAINT_FLAG="$REPO_ROOT/docker/maintenance/ON"
+RECREATED=0 # becomes 1 once the running app containers start being replaced
+
+maintenance_on() {
+  date -u +%Y-%m-%dT%H:%M:%SZ > "$MAINT_FLAG"
+  echo "[deploy] Maintenance mode ON — visitors see the maintenance page."
+}
+
+maintenance_off() {
+  rm -f "$MAINT_FLAG"
+  echo "[deploy] Maintenance mode OFF — the site is live."
+}
+
+on_exit() {
+  local code=$?
+  if [ "$code" -eq 0 ]; then
+    maintenance_off
+  elif [ "$RECREATED" = "0" ]; then
+    # The build failed before anything running was touched, so the old version is still serving: put it back.
+    echo "[deploy] Deploy failed before the running containers were replaced; the old version is live again." >&2
+    maintenance_off
+  else
+    # The running containers were already replaced, so the site is not in a state worth showing. Stay on the
+    # maintenance page rather than serve errors; a person has to look.
+    echo "[deploy] Deploy FAILED after the containers were replaced. The maintenance page stays on." >&2
+    echo "[deploy] Fix it, then run: bash docker/maintenance.sh off" >&2
+  fi
+}
+trap on_exit EXIT
+
+# A new nginx.conf or a changed compose file (the maintenance mount) must reach nginx BEFORE the long build, or it
+# cannot show the page during it. --no-deps leaves the backend and frontend alone.
+if [ "$STACK" = "1" ] || [ "$NGINX" = "1" ]; then
+  compose up -d --no-deps --force-recreate nginx
+fi
+maintenance_on
+
 # Build first, while the old containers keep serving — a failed build aborts
 # here (set -e) without taking the running site down.
 BUILD_TARGETS=()
@@ -77,6 +117,7 @@ if [ "${#BUILD_TARGETS[@]}" -gt 0 ]; then
   compose build "${BUILD_TARGETS[@]}"
 fi
 
+RECREATED=1
 if [ "$STACK" = "1" ]; then
   # Compose file changed (or full deploy) — let compose reconcile everything.
   compose up -d --remove-orphans
@@ -112,6 +153,24 @@ if [ "$BACKEND" = "1" ] || [ "$STACK" = "1" ]; then
     if [ "$i" = "40" ]; then
       echo "[deploy] ERROR: finskool-backend did not become healthy (last status: $STATUS)." >&2
       docker logs --tail 100 finskool-backend >&2 || true
+      exit 1
+    fi
+    sleep 5
+  done
+fi
+
+# The frontend has no healthcheck: ask it, through nginx's own network, until it answers. Going live before then
+# would show visitors 502s.
+if [ "$FRONTEND" = "1" ] || [ "$STACK" = "1" ]; then
+  echo "[deploy] Waiting for finskool-frontend to answer..."
+  for i in $(seq 1 24); do
+    if docker exec finskool-nginx wget -q -T 3 -O /dev/null http://finskool-frontend:3000/ 2>/dev/null; then
+      echo "[deploy] finskool-frontend is up."
+      break
+    fi
+    if [ "$i" = "24" ]; then
+      echo "[deploy] ERROR: finskool-frontend did not answer." >&2
+      docker logs --tail 100 finskool-frontend >&2 || true
       exit 1
     fi
     sleep 5

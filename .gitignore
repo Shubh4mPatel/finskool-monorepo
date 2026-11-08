@@ -7,3 +7,5 @@ apps/backend/docs/
 # local dev server logs
 *.log
 .claude/
+# maintenance-mode flag, created by docker/deploy.sh during a deploy
+docker/maintenance/ON
