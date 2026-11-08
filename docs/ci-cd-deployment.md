@@ -50,7 +50,7 @@ Builds happen **before** any container is replaced, so a failed build never take
 While a deploy runs, visitors see an "under maintenance, we will be back soon" page instead of the site.
 
 1. `deploy.sh` creates the flag file `docker/maintenance/ON` as soon as it knows something has to be deployed (a no-op deploy does not touch it).
-2. `docker/nginx.conf` checks for that file on **every request**. While it exists, every request gets **HTTP 503** with `docker/maintenance/maintenance.html` (`Retry-After: 60`, `no-store`). The API and WebSocket routes (`/api/`, `/ws/`) get `maintenance.json` instead, so the mobile app receives a JSON error rather than HTML. The page refreshes itself every 30 seconds.
+2. `docker/nginx.conf` checks for that file on **every request**. While it exists, every request gets **HTTP 503** with `docker/maintenance/maintenance.html` (`Retry-After: 60`, `no-store`). The API and WebSocket routes (`/api/`, `/ws/`) get `maintenance.json` instead, so the mobile app receives a JSON error rather than HTML. The page asks the site every 8 seconds whether it is live (a 503 means not yet) and reloads the moment it is, so visitors are taken back without waiting; there is also a *Check now* button, and a 30-second refresh as the fallback when JavaScript is off.
 3. The new backend and frontend are built, the containers replaced, the backend reports healthy and the frontend answers. Only then is the flag removed and the site goes live.
 
 If the **build fails**, nothing running was touched, so the flag is removed and the old version keeps serving. If the deploy fails **after** the containers were replaced, the maintenance page stays on instead of showing errors; fix the problem, then run `bash docker/maintenance.sh off`.
