@@ -35,6 +35,11 @@ export const resendOtpSchema = z.object({
   userId: z.string().uuid('Invalid user ID'),
 })
 
+// What the app tells us about the phone and where it is, for the "new login" email ("Pixel 8 from Mumbai, India").
+// Both optional and only ever displayed (HTML-escaped in the email), never used for any decision.
+const deviceNameField = z.string().trim().max(100).optional()
+const locationField = z.string().trim().max(120).optional()
+
 // Same shape/rules as auth.validator.ts's loginSchema (kept as its own schema —
 // see mobile-auth.service.ts's login() for why the whole flow is duplicated).
 export const mobileLoginSchema = z.object({
@@ -42,6 +47,8 @@ export const mobileLoginSchema = z.object({
   password: z.string().min(1, 'Password is required'),
   deviceId: z.string().max(255).optional(),
   deviceType: z.enum(['ios', 'android']).optional(),
+  deviceName: deviceNameField,
+  location: locationField,
   // Lets the first push work right after login without a second call.
   fcmToken: fcmTokenSchema.optional(),
   appVersion: z.string().trim().max(32).optional(),
@@ -102,6 +109,8 @@ export const updateKycSchema = z
 const socialDevice = {
   deviceId: z.string().max(255).optional(),
   deviceType: z.enum(['ios', 'android']).optional(),
+  deviceName: deviceNameField,
+  location: locationField,
   fcmToken: fcmTokenSchema.optional(),
   appVersion: z.string().trim().max(32).optional(),
 }

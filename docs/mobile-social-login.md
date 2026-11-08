@@ -28,7 +28,8 @@ Every path that finishes returns the **same body as password login** (`user`, `c
 
 ```json
 { "provider": "google", "idToken": "<ID token>", "nonce": "<random value>",
-  "deviceId": "…", "deviceType": "android", "fcmToken": "…", "appVersion": "1.4.0" }
+  "deviceId": "…", "deviceType": "android", "deviceName": "Pixel 8", "location": "Mumbai, India",
+  "fcmToken": "…", "appVersion": "1.4.0" }
 ```
 
 Only `provider` and `idToken` are required. Apple: also send `fullName` the first time (Apple gives the name to the app once, and not inside the token).

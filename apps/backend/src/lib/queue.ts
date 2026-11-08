@@ -175,6 +175,8 @@ export interface MobileNewLoginEmailJobPayload {
   toEmail: string
   name: string
   deviceName: string
+  // Where the app said the login came from; absent when it did not say.
+  location?: string
   loginAt: string // ISO string
 }
 

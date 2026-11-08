@@ -662,6 +662,8 @@ model MobileSession {
   deviceId      String?           @map("device_id") @db.VarChar(255)
   deviceType    MobileDeviceType? @map("device_type")
   deviceName    String?           @map("device_name") @db.VarChar(255)
+  // Where the login came from, as the app described it ("Mumbai, India"). Client-supplied, optional, display only.
+  location      String?           @db.VarChar(255)
   ip            String?           @db.VarChar(45)
 
   communityIds        String[] @map("community_ids")

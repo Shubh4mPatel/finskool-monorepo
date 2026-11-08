@@ -165,15 +165,16 @@ export function buildRenewalCta(paymentLink: string | null | undefined, mailtoHr
                 </tr>`
 }
 
-// Row-template convention for the `{rows_html}` slot in email templates that list label/value rows.
+// The `{rows_html}` slot of a template whose label/value rows depend on the data (an optional row, say): the rows of the grey
+// details box in the Finskool21 email layout. Labels and values are HTML-escaped here. The first and last rows carry the
+// box's top and bottom padding, so the template only supplies the <table> around the slot.
 export function buildEmailRows(rows: { label: string; value: string }[]): string {
+  const last = rows.length - 1
   return rows
-    .map(
-      r => `
-    <tr>
-      <td style="font-family:'Nunito', Arial, Helvetica, sans-serif; font-size:13px; color:#153D3A; padding:8px 0; border-bottom:1px solid #E6E3DA;">${escapeHtml(r.label)}</td>
-      <td align="right" style="font-family:'Nunito', Arial, Helvetica, sans-serif; font-size:13px; font-weight:700; color:#153D3A; padding:8px 0; border-bottom:1px solid #E6E3DA;">${escapeHtml(r.value)}</td>
-    </tr>`,
-    )
+    .map((r, i) => {
+      const pad = last === 0 ? '16px 20px' : i === 0 ? '16px 20px 6px' : i === last ? '6px 20px 16px' : '6px 20px'
+      return `
+                      <tr><td style="padding:${pad}; font-size:13px; color:#8A8F8C;">${escapeHtml(r.label)}</td><td align="right" style="padding:${pad}; font-size:13px; color:#1A1F1E; font-weight:600;">${escapeHtml(r.value)}</td></tr>`
+    })
     .join('')
 }

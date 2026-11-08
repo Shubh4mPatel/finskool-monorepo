@@ -268,7 +268,14 @@ export class MobileAuthService {
    */
   async completeLogin(
     user: DbUser,
-    data: { deviceId?: string | undefined; deviceType?: 'ios' | 'android' | undefined; fcmToken?: string | undefined; appVersion?: string | undefined },
+    data: {
+      deviceId?: string | undefined
+      deviceType?: 'ios' | 'android' | undefined
+      deviceName?: string | undefined
+      location?: string | undefined
+      fcmToken?: string | undefined
+      appVersion?: string | undefined
+    },
     meta: { userAgent: string | undefined; ip: string | undefined },
   ): Promise<MobileLoginResultInternal> {
     // Accounts created before the free community existed (or added/imported by
@@ -291,13 +298,16 @@ export class MobileAuthService {
 
     const rawSessionId = randomBytes(32).toString('hex')
     const sessionIdHash = hashSessionId(rawSessionId)
-    const deviceName = parseDeviceName(meta.userAgent)
+    // What the app says the phone is, else what the request's user agent says. A blank string counts as not sent.
+    const deviceName = data.deviceName?.trim() || parseDeviceName(meta.userAgent)
+    const location = data.location?.trim() || null
 
     const sessionData = {
       sessionIdHash,
       deviceId: data.deviceId ?? null,
       deviceType: data.deviceType ?? null,
       deviceName,
+      location,
       ip: meta.ip ?? null,
       communityIds,
       selectedCommunityId,
@@ -327,7 +337,7 @@ export class MobileAuthService {
     try {
       await notificationsQueue.add(
         MOBILE_NEW_LOGIN_EMAIL_JOB,
-        { toEmail: user.email!, name: user.name, deviceName, loginAt: new Date().toISOString() },
+        { toEmail: user.email!, name: user.name, deviceName, ...(location ? { location } : {}), loginAt: new Date().toISOString() },
         { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
       )
     } catch (err) {

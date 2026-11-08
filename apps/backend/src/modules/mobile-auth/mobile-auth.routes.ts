@@ -208,6 +208,8 @@ router.post('/resend-otp', controller.resendOtp)
  *               password: { type: string, format: password, example: SecurePass123 }
  *               deviceId: { type: string, example: "device-uuid-from-client" }
  *               deviceType: { type: string, enum: [ios, android] }
+ *               deviceName: { type: string, description: "Optional. What the phone is, e.g. Pixel 8. Shown in the new-login email; defaults to what the user agent says." }
+ *               location: { type: string, description: "Optional. Where the login is from, e.g. Mumbai, India. Shown in the new-login email." }
  *               fcmToken: { type: string, description: FCM device token for push notifications }
  *               appVersion: { type: string }
  *     responses:
@@ -621,6 +623,8 @@ router.put('/me/kyc', authenticate, requireMobileAuth, controller.updateKyc)
  *               fullName: { type: string, description: "Apple only: the name Apple gave the app on the first sign-in." }
  *               deviceId: { type: string }
  *               deviceType: { type: string, enum: [ios, android] }
+ *               deviceName: { type: string, description: "Optional. What the phone is, e.g. Pixel 8. Shown in the new-login email; defaults to what the user agent says." }
+ *               location: { type: string, description: "Optional. Where the login is from, e.g. Mumbai, India. Shown in the new-login email." }
  *               fcmToken: { type: string }
  *               appVersion: { type: string }
  *     responses:
@@ -650,6 +654,8 @@ router.post('/social/login', social.login)
  *               password: { type: string }
  *               deviceId: { type: string }
  *               deviceType: { type: string, enum: [ios, android] }
+ *               deviceName: { type: string, description: "Optional. What the phone is, e.g. Pixel 8. Shown in the new-login email; defaults to what the user agent says." }
+ *               location: { type: string, description: "Optional. Where the login is from, e.g. Mumbai, India. Shown in the new-login email." }
  *               fcmToken: { type: string }
  *               appVersion: { type: string }
  *     responses:
@@ -708,6 +714,8 @@ router.post('/social/phone', social.phone)
  *               otp: { type: string, pattern: '^\d{6}$' }
  *               deviceId: { type: string }
  *               deviceType: { type: string, enum: [ios, android] }
+ *               deviceName: { type: string, description: "Optional. What the phone is, e.g. Pixel 8. Shown in the new-login email; defaults to what the user agent says." }
+ *               location: { type: string, description: "Optional. Where the login is from, e.g. Mumbai, India. Shown in the new-login email." }
  *               fcmToken: { type: string }
  *               appVersion: { type: string }
  *     responses:

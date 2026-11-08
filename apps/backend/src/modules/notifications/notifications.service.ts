@@ -472,7 +472,13 @@ export class NotificationsService {
     const { subject, html } = renderEmail('mobile-new-login', {
       first_name: firstNameOf(payload.name),
       device_name: payload.deviceName,
-      login_time: formatEmailDateTime(payload.loginAt),
+      // " from Mumbai, India" in the sentence; nothing at all when the app did not say where.
+      location_phrase: payload.location ? ` from ${payload.location}` : '',
+      rows_html: buildEmailRows([
+        { label: 'Device', value: payload.deviceName },
+        ...(payload.location ? [{ label: 'Location', value: payload.location }] : []),
+        { label: 'Time', value: formatEmailDateTime(payload.loginAt) },
+      ]),
     })
     await sendMail({ to: payload.toEmail, subject, html })
   }

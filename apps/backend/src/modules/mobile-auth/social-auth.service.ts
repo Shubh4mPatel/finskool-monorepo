@@ -21,6 +21,8 @@ const OTP_TTL_SECONDS = 10 * 60
 export interface DeviceFields {
   deviceId?: string | undefined
   deviceType?: 'ios' | 'android' | undefined
+  deviceName?: string | undefined
+  location?: string | undefined
   fcmToken?: string | undefined
   appVersion?: string | undefined
 }

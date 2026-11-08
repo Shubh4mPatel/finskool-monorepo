@@ -33,6 +33,10 @@ export interface MobileLoginDTO {
   // display/support purposes only, never used for auth decisions.
   deviceId?: string | undefined
   deviceType?: 'ios' | 'android' | undefined
+  // What the phone is ("Pixel 8") and where it is ("Mumbai, India"), for the new-login email. Both optional;
+  // without a device name the one read from the request's user agent is used.
+  deviceName?: string | undefined
+  location?: string | undefined
   // FCM device token for push notifications (optional; can also be sent later via PUT /mobile/push-token).
   fcmToken?: string | undefined
   appVersion?: string | undefined

@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   Ban,
   CalendarClock,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock,
@@ -276,6 +277,16 @@ function MembersContent() {
   const totalPages = result?.totalPages ?? 1;
   const rows = useMemo(() => toRows(members), [members]);
 
+  // A member in several communities is one row; the other communities stay folded away until the admin opens them.
+  const [openIds, setOpenIds] = useState<Set<string>>(new Set());
+  const toggleOpen = (id: string) =>
+    setOpenIds((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  const visibleRows = useMemo(() => rows.filter((r) => r.first || openIds.has(r.m.id)), [rows, openIds]);
+
   const hasFilters = !!(debouncedSearch || search || filterCommunity || filterAccountStatus || filterRegistrationStatus ||
     filterHasActiveSubscription || filterSource || validDate || paidDate || expiringSoon);
 
@@ -521,12 +532,29 @@ function MembersContent() {
     </button>
   );
 
-  const communityCell = (sub: MemberSubscription | null) =>
-    sub ? (
-      <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold ${communityBadge(sub.communityName)}`}>{sub.communityName}</span>
-    ) : (
-      <span className="text-muted">—</span>
+  /** The community badge; on a member's first row, also the "+N" button that folds out their other communities. */
+  const communityCell = (sub: MemberSubscription | null, m?: MemberItem, first = false) => {
+    if (!sub) return <span className="text-muted">—</span>;
+    const extra = m ? m.allSubscriptions.length - 1 : 0;
+    const open = m ? openIds.has(m.id) : false;
+    return (
+      <span className="inline-flex items-center gap-2">
+        <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold ${communityBadge(sub.communityName)}`}>{sub.communityName}</span>
+        {m && first && extra > 0 && (
+          <button
+            type="button"
+            onClick={() => toggleOpen(m.id)}
+            aria-expanded={open}
+            aria-label={`${open ? "Hide" : "Show"} ${extra} more ${extra === 1 ? "community" : "communities"} of ${m.name}`}
+            className="inline-flex items-center gap-1 rounded-full border border-divider px-2 py-0.5 text-[11px] font-bold text-muted transition-colors hover:border-accent hover:text-accent"
+          >
+            +{extra}
+            <ChevronDown size={12} aria-hidden className={`transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
+          </button>
+        )}
+      </span>
     );
+  };
 
   const checkbox = (m: MemberItem) => (
     <input
@@ -717,7 +745,7 @@ function MembersContent() {
           <div aria-busy={refreshing} className={`transition-opacity duration-300 ${refreshing ? "pointer-events-none opacity-50" : "opacity-100"}`}>
             {/* Mobile cards */}
             <div className="flex flex-col gap-3 p-4 lg:hidden">
-              {rows.map(({ m, sub }, i) => (
+              {visibleRows.map(({ m, sub, first }, i) => (
                 <div
                   key={`${m.id}-${sub?.id ?? "none"}`}
                   style={stagger(Math.min(i, 6), 0, 50)}
@@ -733,7 +761,7 @@ function MembersContent() {
                   <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
                     <div><p className="text-xs text-subtle">Payment</p><p className="font-bold text-primary">{sub ? formatCurrency(sub.payment) : "—"}</p></div>
                     <div><p className="text-xs text-subtle">Valid Till</p><p className="font-semibold text-primary"><ValidTill sub={sub} now={now} /></p></div>
-                    <div><p className="text-xs text-subtle">Community</p>{communityCell(sub)}</div>
+                    <div><p className="text-xs text-subtle">Community</p>{communityCell(sub, m, first)}</div>
                     <div><p className="text-xs text-subtle">Added</p><p className="text-primary">{formatDate(m.createdAt)}</p></div>
                   </div>
                   <div className="mt-3 border-t border-divider pt-3">{rowActions(m, sub, true)}</div>
@@ -770,11 +798,11 @@ function MembersContent() {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map(({ m, sub, n, first }, i) => (
+                  {visibleRows.map(({ m, sub, n, first }, i) => (
                     <tr
                       key={`${m.id}-${sub?.id ?? "none"}`}
                       style={stagger(Math.min(i, 8), 0, 40)}
-                      className={`animate-fade border-b border-divider/70 transition-colors last:border-0 ${selectedIds.has(m.id) ? "bg-accent/5" : "hover:bg-background/60"}`}
+                      className={`animate-fade border-b border-divider/70 transition-colors last:border-0 ${selectedIds.has(m.id) ? "bg-accent/5" : first ? "hover:bg-background/60" : "bg-background/40 hover:bg-background/70"}`}
                     >
                       {selectMode && <td className="px-3 py-3">{first ? checkbox(m) : null}</td>}
                       <td className="px-3 py-3 text-xs tabular-nums text-subtle">{first ? (page - 1) * PAGE_SIZE + n : ""}</td>
@@ -782,7 +810,7 @@ function MembersContent() {
                         {first ? memberCell(m, "h-9 w-9") : <span className="ml-4 text-xs text-subtle">↳ also in</span>}
                       </td>
                       <td className="max-w-[14rem] truncate px-3 py-3 text-muted">{first ? m.email || "—" : ""}</td>
-                      <td className="px-3 py-3">{communityCell(sub)}</td>
+                      <td className="px-3 py-3">{communityCell(sub, m, first)}</td>
                       <td className="px-3 py-3 font-bold tabular-nums text-primary">{sub ? formatCurrency(sub.payment) : "—"}</td>
                       <td className="whitespace-nowrap px-3 py-3 text-muted">{formatDate(sub?.paidOn)}</td>
                       <td className="px-3 py-3"><ValidTill sub={sub} now={now} /></td>
