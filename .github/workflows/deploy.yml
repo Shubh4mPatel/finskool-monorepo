@@ -52,22 +52,33 @@ jobs:
           done
           exit $missing
 
+      # Plain OpenSSH, not a marketplace action: appleboy/ssh-action downloads its drone-ssh binary from GitHub
+      # Releases on every run, and a GitHub 504 there failed the deploy before it even connected.
       - name: Deploy over SSH
-        uses: appleboy/ssh-action@v1
         env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
           DEPLOY_SHA: ${{ github.sha }}
           FORCE_ALL: ${{ github.event.inputs.force_all == 'true' && '1' || '0' }}
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          port: ${{ secrets.SSH_PORT || 22 }}
-          envs: DEPLOY_PATH,DEPLOY_SHA,FORCE_ALL
-          command_timeout: 30m
-          script: |
-            set -euo pipefail
-            cd "$DEPLOY_PATH"
-            git fetch --prune origin main
-            git reset --hard "$DEPLOY_SHA"
-            FORCE_ALL="$FORCE_ALL" bash docker/deploy.sh
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+          # The long docker build prints nothing for minutes: keep-alives stop the connection being dropped.
+          # accept-new trusts the server's key on first contact and refuses it if it later changes.
+          ssh -i ~/.ssh/deploy_key -p "$SSH_PORT" \
+            -o BatchMode=yes -o StrictHostKeyChecking=accept-new \
+            -o ConnectTimeout=20 -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
+            "$SSH_USER@$SSH_HOST" \
+            "DEPLOY_PATH=$(printf '%q' "$DEPLOY_PATH") DEPLOY_SHA=$(printf '%q' "$DEPLOY_SHA") FORCE_ALL=$(printf '%q' "$FORCE_ALL") bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd "$DEPLOY_PATH"
+          git fetch --prune origin main
+          git reset --hard "$DEPLOY_SHA"
+          FORCE_ALL="$FORCE_ALL" bash docker/deploy.sh
+          REMOTE

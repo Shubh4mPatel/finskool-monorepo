@@ -175,3 +175,9 @@ If `eqlion-nginx` ever fails to start after an EqLion change, EqLion **and** fin
 - Confirm `apps/backend/.env` uses `https://community.finskool21.in` for the frontend URL, `CORS_ORIGIN` and `MINIO_PUBLIC_ENDPOINT`.
 - Consider pinning the `pgsty/*` MinIO image versions.
 - The server reports "System restart required" — reboot in a quiet window; all containers use `restart: unless-stopped`.
+
+### 7. `Downloading drone-ssh ... curl: (22) The requested URL returned error: 504`
+
+- **Symptom:** the *Deploy over SSH* step failed in about 40 seconds, before connecting to the server, with repeated `504` errors.
+- **Cause:** `appleboy/ssh-action` downloads its `drone-ssh` binary from GitHub Releases on every run. When GitHub's release downloads were down, the download failed and so did the deploy. Nothing was wrong with the server or the code.
+- **Fix:** the workflow no longer uses the action. It calls the `ssh` client already installed on the runner, with the same four secrets and the same remote commands, so there is nothing to download. Re-running the old workflow would also have worked once GitHub recovered.
