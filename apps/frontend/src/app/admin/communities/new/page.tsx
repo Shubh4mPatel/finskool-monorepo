@@ -142,7 +142,12 @@ export default function AddCommunityPage() {
         badgeUrl: badgeUrl ?? undefined,
       });
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to create community");
+      if (err instanceof ApiError && err.code === "COMMUNITY_NAME_EXISTS") {
+        setErrors((x) => ({ ...x, name: err.message }));
+        setStep(1);
+      } else {
+        toast.error(err instanceof ApiError ? err.message : "Failed to create community");
+      }
       setSaving(false);
       return;
     }

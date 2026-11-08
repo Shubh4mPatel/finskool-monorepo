@@ -102,7 +102,8 @@ export default function CommunityFormModal({
       }
       onClose();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : `Failed to ${editing ? "update" : "create"} community`);
+      if (err instanceof ApiError && err.code === "COMMUNITY_NAME_EXISTS") setNameError(err.message);
+      else toast.error(err instanceof ApiError ? err.message : `Failed to ${editing ? "update" : "create"} community`);
     } finally {
       setSaving(false);
     }

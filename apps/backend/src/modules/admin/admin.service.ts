@@ -892,11 +892,23 @@ export class AdminService {
     })
   }
 
+  /**
+   * Two live communities may not share a name (compared case-insensitively, ignoring outer spaces): the admin pickers
+   * could not tell them apart and the member CSV import looks a community up by its name.
+   */
+  private async assertCommunityNameFree(name: string, excludeId?: string): Promise<void> {
+    const wanted = name.trim().toLowerCase()
+    const live = await this.db.community.findMany({ where: { deletedAt: null }, select: { id: true, name: true } })
+    const clash = live.find(c => c.id !== excludeId && c.name.trim().toLowerCase() === wanted)
+    if (clash) throw new ConflictError('A community with this name already exists', 'COMMUNITY_NAME_EXISTS')
+  }
+
   async createCommunity(adminId: string, data: CreateCommunityDTO): Promise<CommunityDTO> {
     await assertSuperAdmin(this.db, adminId)
 
     const base = slugify(data.slug ?? data.name)
     if (!base) throw new BadRequestError('Name must contain at least one letter or number')
+    await this.assertCommunityNameFree(data.name)
 
     if (data.coverImageUrl) await assertBannerImage(data.coverImageUrl, 'communities', 'cover image')
 
@@ -947,6 +959,7 @@ export class AdminService {
 
     const existing = await this.db.community.findUnique({ where: { id: communityId } })
     if (!existing || existing.deletedAt) throw new NotFoundError('Community not found')
+    await this.assertCommunityNameFree(data.name, communityId)
     // Only a new cover is checked: an existing one that predates the 5:2 rule must not block other edits.
     if (data.coverImageUrl && data.coverImageUrl !== existing.coverImageUrl) {
       await assertBannerImage(data.coverImageUrl, 'communities', 'cover image')
