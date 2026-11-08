@@ -14,6 +14,7 @@ import FeedPostCard from "@/components/feed/FeedPostCard";
 import CommunityBadgeIcon from "@/components/CommunityBadgeIcon";
 import { Skeleton, stagger } from "@/components/admin/dashboard/Panel";
 import Stepper from "@/components/admin/Stepper";
+import { FormField } from "@/components/admin/members/memberUi";
 import { TipTapToolbar, postEditorExtensions } from "@/components/admin/posts/PostEditorToolbar";
 
 type Step = 1 | 2 | 3;
@@ -56,6 +57,15 @@ const steps = [
 
 const defaultTags: string[] = [];
 
+const HEADLINE_MAX = 300;
+
+function headlineError(headline: string): string | undefined {
+  const h = headline.trim();
+  if (!h) return "Headline is required";
+  if (h.length > HEADLINE_MAX) return `Headline can be at most ${HEADLINE_MAX} characters`;
+  return undefined;
+}
+
 export default function CreatePostPage() {
   const toast = useToast();
   const session = useSession();
@@ -70,6 +80,9 @@ export default function CreatePostPage() {
   const groupIdRef = useRef<string | null>(null);
   const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [videos, setVideos] = useState<PostVideo[]>([]);
+  // Step 2 problems, shown under the field they belong to.
+  const [headlineErr, setHeadlineErr] = useState<string | undefined>();
+  const [bodyErr, setBodyErr] = useState<string | undefined>();
 
   const [communities, setCommunities] = useState<Community[]>([]);
   const feed = communities.find((c) => c.isFree);
@@ -96,6 +109,9 @@ export default function CreatePostPage() {
     editorProps: {
       attributes: { class: "outline-none" },
     },
+    onUpdate: ({ editor: e }) => {
+      if (e.getText().trim()) setBodyErr(undefined);
+    },
   });
 
   useEffect(() => {
@@ -109,15 +125,22 @@ export default function CreatePostPage() {
     : "<p>Strong breakout above ₹1,400 resistance with high delivery volumes. Swing setup with defined risk. Enter...</p>";
 
   function handleContinueToReview() {
-    if (!headline.trim() || !editor?.getText().trim()) {
-      toast.error("Please add a headline and description before continuing.");
+    const h = headlineError(headline);
+    const b = editor?.getText().trim() ? undefined : "Post body is required";
+    setHeadlineErr(h);
+    setBodyErr(b);
+    if (h || b) {
+      // Put the cursor on the first problem so the admin sees it.
+      if (h) document.getElementById("post-headline")?.focus();
+      else editor?.commands.focus();
       return;
     }
     setStep(3);
   }
 
   async function handlePublish() {
-    if (targets.length === 0 || !headline.trim() || !editor?.getText().trim()) {
+    if (targets.length === 0 || headlineError(headline) || !editor?.getText().trim()) {
+      // Step 2 already blocks these; this only fires if the state was changed behind it.
       toast.error("Please fill in where to post, headline and content before publishing.");
       return;
     }
@@ -160,6 +183,8 @@ export default function CreatePostPage() {
     setStep(1);
     setSelectedIds([]);
     setHeadline("");
+    setHeadlineErr(undefined);
+    setBodyErr(undefined);
     setTags(defaultTags);
     setImageUrls([]);
     setVideos([]);
@@ -357,29 +382,42 @@ export default function CreatePostPage() {
                 </div>
 
             {/* Headline */}
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="post-headline" className="text-sm font-bold text-primary">Headline</label>
+            <FormField label="Headline" error={headlineErr}>
               <input
                 id="post-headline"
+                aria-label="Headline"
                 type="text"
                 placeholder="Add a headline e.g. TATASTEEL breakout confirmed, target ₹175"
                 value={headline}
-                onChange={(e) => setHeadline(e.target.value)}
-                className="w-full rounded-xl border border-divider bg-background px-4 py-3 text-sm text-primary placeholder:text-subtle transition-all focus:border-accent focus:bg-white focus:outline-none focus:ring-4 focus:ring-accent/10"
+                maxLength={HEADLINE_MAX + 50}
+                aria-invalid={headlineErr ? true : undefined}
+                onChange={(e) => {
+                  setHeadline(e.target.value);
+                  if (headlineErr) setHeadlineErr(headlineError(e.target.value));
+                }}
+                onBlur={() => setHeadlineErr(headlineError(headline))}
+                className={`w-full rounded-xl border px-4 py-3 text-sm text-primary placeholder:text-subtle transition-all focus:outline-none focus:ring-4 ${
+                  headlineErr
+                    ? "border-red-300 bg-red-50/40 focus:border-red-400 focus:ring-red-100"
+                    : "border-divider bg-background focus:border-accent focus:bg-white focus:ring-accent/10"
+                }`}
               />
-            </div>
+            </FormField>
 
             {/* Editor */}
-            <div className="flex flex-col gap-1.5">
-              <p className="text-sm font-bold text-primary">Post Body</p>
-              <div className="rounded-xl border border-divider bg-white px-3 pt-3 pb-2 transition-all focus-within:border-accent focus-within:ring-4 focus-within:ring-accent/10">
+            <FormField label="Post Body" error={bodyErr}>
+              <div className={`rounded-xl border bg-white px-3 pt-3 pb-2 transition-all focus-within:ring-4 ${
+                bodyErr
+                  ? "border-red-300 focus-within:border-red-400 focus-within:ring-red-100"
+                  : "border-divider focus-within:border-accent focus-within:ring-accent/10"
+              }`}>
                 <TipTapToolbar editor={editor} />
                 <EditorContent
                   editor={editor}
                   className="mt-3 min-h-32 px-1 text-sm text-primary [&_.ProseMirror]:outline-none [&_.ProseMirror]:min-h-32 [&_.ProseMirror_ul]:list-disc [&_.ProseMirror_ul]:pl-5 [&_.ProseMirror_ol]:list-decimal [&_.ProseMirror_ol]:pl-5 [&_.ProseMirror_li]:my-0.5 [&_.ProseMirror_a]:text-accent [&_.ProseMirror_a]:underline [&_.ProseMirror_p.is-editor-empty:first-child::before]:text-subtle [&_.ProseMirror_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.ProseMirror_p.is-editor-empty:first-child::before]:float-none [&_.ProseMirror_p.is-editor-empty:first-child::before]:pointer-events-none"
                 />
               </div>
-            </div>
+            </FormField>
 
             {/* Media / Video */}
             <PostMediaPicker imageUrls={imageUrls} onImageUrlsChange={setImageUrls} videos={videos} onVideosChange={setVideos} />
