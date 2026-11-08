@@ -672,6 +672,21 @@ export class PerformanceService {
     if (board.kind === 'intraday') throw new BadRequestError('Intraday boards have no period cards', 'NOT_SWING')
   }
 
+  /** A segment cannot show the same from/to range twice; `excludeId` skips the period being edited. */
+  private async assertPeriodUnique(
+    boardId: string,
+    segment: PerformanceSegment,
+    fromMonth: Date,
+    toMonth: Date,
+    excludeId?: string,
+  ): Promise<void> {
+    const dupe = await this.db.performancePeriod.findFirst({
+      where: { boardId, segment, fromMonth, toMonth, ...(excludeId ? { id: { not: excludeId } } : {}) },
+      select: { id: true },
+    })
+    if (dupe) throw new ConflictError('This period already exists', 'PERIOD_EXISTS')
+  }
+
   async createPeriod(
     accessible: string[] | null,
     communityId: string,
@@ -682,12 +697,16 @@ export class PerformanceService {
     const segment = resolveSegment(board.kind, input.segment)
     if (input.fromMonth > input.toMonth) throw new BadRequestError('The period cannot end before it starts', 'INVALID_PERIOD')
 
+    const fromMonth = parseIsoMonth(input.fromMonth)
+    const toMonth = parseIsoMonth(input.toMonth)
+    await this.assertPeriodUnique(board.id, segment, fromMonth, toMonth)
+
     const count = await this.db.performancePeriod.count({ where: { boardId: board.id, segment } })
     if (count >= MAX_PERIODS_PER_SEGMENT) {
       throw new BadRequestError(`A segment can have at most ${MAX_PERIODS_PER_SEGMENT} periods`, 'TOO_MANY_PERIODS')
     }
     return this.db.performancePeriod.create({
-      data: { boardId: board.id, segment, fromMonth: parseIsoMonth(input.fromMonth), toMonth: parseIsoMonth(input.toMonth) },
+      data: { boardId: board.id, segment, fromMonth, toMonth },
       select: { id: true },
     })
   }
@@ -706,9 +725,13 @@ export class PerformanceService {
     const to = input.toMonth ?? isoMonth(period.toMonth)
     if (from > to) throw new BadRequestError('The period cannot end before it starts', 'INVALID_PERIOD')
 
+    const fromMonth = parseIsoMonth(from)
+    const toMonth = parseIsoMonth(to)
+    await this.assertPeriodUnique(board.id, period.segment, fromMonth, toMonth, period.id)
+
     await this.db.performancePeriod.update({
       where: { id: period.id },
-      data: { fromMonth: parseIsoMonth(from), toMonth: parseIsoMonth(to) },
+      data: { fromMonth, toMonth },
     })
     return { id: period.id }
   }

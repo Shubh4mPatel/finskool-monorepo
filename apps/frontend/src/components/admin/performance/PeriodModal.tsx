@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { CalendarRange, Trash2 } from "lucide-react";
 import { ApiError } from "@/lib/api";
 import { formatMonth, performanceApi, recentMonths, type BoardRef, type PerformanceSegment, type Period } from "@/lib/performance";
+import { usePanel } from "@/components/admin/dashboard/usePanel";
 import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import Modal from "@/components/ui/Modal";
@@ -42,7 +43,17 @@ export default function PeriodModal({
   const [from, setFrom] = useState(period?.fromMonth ?? months[Math.min(5, months.length - 1)]!);
   const [to, setTo] = useState(period?.toMonth ?? months[0]!);
   const [busy, setBusy] = useState(false);
-  const invalid = from > to;
+  const reversed = from > to;
+
+  // The cards already on this segment, so a repeat range is caught before the server is asked.
+  const overview = usePanel(`period-modal:${board.communityId}:${segment}`, () => performanceApi.overview(board.communityId, segment));
+  const summary = overview.data?.summary;
+  const duplicate =
+    !reversed &&
+    summary !== undefined &&
+    summary.kind !== "intraday" &&
+    summary.periods.some(p => p.id !== period?.id && p.fromMonth === from && p.toMonth === to);
+  const invalid = reversed || duplicate;
 
   async function save() {
     if (invalid) return;
@@ -125,7 +136,10 @@ export default function PeriodModal({
           triggerClassName={`${inputCls()} relative flex items-center text-left disabled:cursor-not-allowed disabled:opacity-60`}
         />
       </FormField>
-      <FormField label="To" error={invalid ? "The period cannot end before it starts" : undefined}>
+      <FormField
+        label="To"
+        error={reversed ? "The period cannot end before it starts" : duplicate ? "This period already exists. Pick a different range." : undefined}
+      >
         <Select
           value={to}
           onChange={setTo}

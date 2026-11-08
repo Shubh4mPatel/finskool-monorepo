@@ -1,6 +1,12 @@
 {
   "version": 1,
   "skills": {
+    "adversarial-reviewer": {
+      "source": "alirezarezvani/claude-skills",
+      "sourceType": "github",
+      "skillPath": "engineering-team/skills/adversarial-reviewer/SKILL.md",
+      "computedHash": "26ebe40c2b5a362c021b6e16098d824f96a765573bdfff8e34c7956c420fe78c"
+    },
     "ask-matt": {
       "source": "mattpocock/skills",
       "sourceType": "github",
