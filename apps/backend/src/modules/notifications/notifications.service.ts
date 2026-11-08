@@ -20,6 +20,7 @@ import type {
   NewMemberRegisteredEmailJobPayload,
   AdminPaymentEmailJobPayload,
   MemberSuspendedEmailJobPayload,
+  MemberPasswordResetEmailJobPayload,
   MemberReinstatedEmailJobPayload,
   OtpEmailJobPayload,
   OtpWhatsappJobPayload,
@@ -355,6 +356,15 @@ export class NotificationsService {
     const { subject, html } = renderEmail('member-suspended', {
       first_name: firstNameOf(payload.name),
       reason: payload.reason,
+    })
+    await sendMail({ to: payload.toEmail, subject, html })
+  }
+
+  /** The new password an admin set, so the member can sign in and change it. */
+  async sendMemberPasswordResetEmail(payload: MemberPasswordResetEmailJobPayload): Promise<void> {
+    const { subject, html } = renderEmail('member-password-reset', {
+      first_name: firstNameOf(payload.name),
+      new_password: payload.newPassword,
     })
     await sendMail({ to: payload.toEmail, subject, html })
   }

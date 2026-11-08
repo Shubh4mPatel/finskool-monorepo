@@ -8,6 +8,7 @@ import {
   COMMUNITY_ADDED_EMAIL_JOB,
   COMMUNITY_ACCESS_REMOVED_EMAIL_JOB,
   SUBSCRIPTION_EXTENDED_EMAIL_JOB,
+  MEMBER_PASSWORD_RESET_EMAIL_JOB,
 } from '../../src/lib/queue.js'
 import { NotificationType } from '../../src/modules/notifications/notifications.dto.js'
 import {
@@ -560,6 +561,41 @@ describe('PATCH /admin/members/:id/password', () => {
     const login = await mobileLogin('reset@example.com', 'Brand-New-1')
     expect(login.status).toBe(200)
     expect(login.headers['set-cookie']?.[0]).toMatch(/^mobile_session_id=/)
+  })
+
+  it('signs the member out at once: their session is gone and their cookie stops working', async () => {
+    const member = await createMobileMember({
+      email: 'signedin@example.com',
+      subscriptions: [{ communityId: swing.id, validUntil: daysFromNow(30) }],
+    })
+    expect((await mobileProbe(member)).status).toBe(200)
+
+    const res = await request(app)
+      .patch(`/api/v1/admin/members/${member.id}/password`)
+      .set('Authorization', superAdmin.auth)
+      .send({ newPassword: 'Brand-New-1' })
+    expect(res.status).toBe(200)
+
+    expect(await prisma.mobileSession.count({ where: { userId: member.id } })).toBe(0)
+    expect((await mobileProbe(member)).status).toBe(401)
+  })
+
+  it('emails the member the new password, and keeps it out of the subject', async () => {
+    const member = await createMobileMember({ name: 'Riya Shah', email: 'riya@example.com', subscriptions: [{ communityId: swing.id, validUntil: daysFromNow(30) }] })
+
+    await request(app).patch(`/api/v1/admin/members/${member.id}/password`).set('Authorization', superAdmin.auth).send({ newPassword: 'Brand-New-1' })
+
+    expect(jobsNamed(MEMBER_PASSWORD_RESET_EMAIL_JOB)).toEqual([{ toEmail: 'riya@example.com', name: 'Riya Shah', newPassword: 'Brand-New-1' }])
+    // The job holds the password, so a failed one is not kept in Redis.
+    const jobOpts = queueAdd.mock.calls.find(([jobName]) => jobName === MEMBER_PASSWORD_RESET_EMAIL_JOB)?.[2]
+    expect(jobOpts).toMatchObject({ removeOnComplete: true, removeOnFail: true })
+  })
+
+  it('still resets the password when the member has no email on file (nothing is sent)', async () => {
+    const member = await createMobileMember({ email: null, subscriptions: [{ communityId: swing.id, validUntil: daysFromNow(30) }] })
+    const res = await request(app).patch(`/api/v1/admin/members/${member.id}/password`).set('Authorization', superAdmin.auth).send({ newPassword: 'Brand-New-1' })
+    expect(res.status).toBe(200)
+    expect(jobsNamed(MEMBER_PASSWORD_RESET_EMAIL_JOB)).toEqual([])
   })
 
   it('requires at least 8 characters', async () => {

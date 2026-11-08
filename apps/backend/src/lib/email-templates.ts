@@ -16,6 +16,7 @@ export type EmailTemplateId =
   | 'admin-payment'
   | 'member-suspended'
   | 'member-reinstated'
+  | 'member-password-reset'
   | 'otp-verification'
   | 'password-reset-otp'
   | 'mobile-new-login'
@@ -40,6 +41,8 @@ const TEMPLATE_REGISTRY: Record<EmailTemplateId, TemplateDef> = {
   'admin-payment': { file: 'admin-payment.html', subject: '{headline}' },
   'member-suspended': { file: 'member-suspended.html', subject: 'Your Finskool21 access has been suspended' },
   'member-reinstated': { file: 'member-reinstated.html', subject: 'Your Finskool21 access has been restored' },
+  // The subject never carries the password.
+  'member-password-reset': { file: 'member-password-reset.html', subject: 'Your Finskool21 password has been reset' },
   'otp-verification': { file: 'otp-verification.html', subject: 'Your Finskool21 verification code is {otp_code}' },
   'password-reset-otp': { file: 'password-reset-otp.html', subject: 'Your Finskool21 password reset code is {otp_code}' },
   'mobile-new-login': { file: 'mobile-new-login.html', subject: 'New login to your Finskool21 account' },

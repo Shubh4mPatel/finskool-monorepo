@@ -19,6 +19,7 @@ import {
   COMMUNITY_ADDED_EMAIL_JOB,
   COMMUNITY_ACCESS_REMOVED_EMAIL_JOB,
   MEMBER_SUSPENDED_EMAIL_JOB,
+  MEMBER_PASSWORD_RESET_EMAIL_JOB,
   MEMBER_REINSTATED_EMAIL_JOB,
   NOTIFICATIONS_PUBSUB_CHANNEL,
 } from '../../lib/queue.js'
@@ -2033,9 +2034,29 @@ export class AdminService {
     await assertMemberAccess(this.db, accessibleCommunityIds, user.id)
 
     const passwordHash = await bcrypt.hash(newPassword, 12)
-    await this.db.user.update({ where: { id: user.id }, data: { passwordHash } })
+    // The new password and the end of every existing session happen together: a phone that was signed in with the old
+    // password (or a stolen session) is signed out on its very next request.
+    const [, sessions] = await this.db.$transaction([
+      this.db.user.update({ where: { id: user.id }, data: { passwordHash } }),
+      this.db.mobileSession.deleteMany({ where: { userId: user.id } }),
+    ])
 
-    logger.info({ userId }, 'admin.resetMemberPassword: password reset')
+    logger.info({ userId, sessionsEnded: sessions.count }, 'admin.resetMemberPassword: password reset')
+
+    // Email the member the password so they can sign in and change it. Never blocks or fails the reset. removeOnFail: the
+    // job holds the password, so it is not kept around once its last attempt has failed.
+    if (user.email) {
+      try {
+        await notificationsQueue.add(
+          MEMBER_PASSWORD_RESET_EMAIL_JOB,
+          { toEmail: user.email, name: user.name, newPassword },
+          { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: true },
+        )
+      } catch (err) {
+        logger.error({ err, userId }, 'admin.resetMemberPassword: failed to enqueue password email job')
+      }
+    }
+
     return this.fetchMemberDTO(userId)
   }
 

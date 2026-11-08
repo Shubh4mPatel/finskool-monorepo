@@ -122,6 +122,16 @@ export interface MemberSuspendedEmailJobPayload {
   reason: string
 }
 
+// An admin reset the member's password: the email carries the new password so they can sign in and change it.
+// Queued with removeOnFail: true (see admin.service.ts) so the password never lingers in Redis after the last attempt.
+export const MEMBER_PASSWORD_RESET_EMAIL_JOB = 'member-password-reset-email'
+
+export interface MemberPasswordResetEmailJobPayload {
+  toEmail: string
+  name: string
+  newPassword: string
+}
+
 export const MEMBER_REINSTATED_EMAIL_JOB = 'member-reinstated-email'
 
 export interface MemberReinstatedEmailJobPayload {
@@ -190,6 +200,7 @@ export type NotificationJobPayload =
   | NewMemberRegisteredEmailJobPayload
   | AdminPaymentEmailJobPayload
   | MemberSuspendedEmailJobPayload
+  | MemberPasswordResetEmailJobPayload
   | MemberReinstatedEmailJobPayload
   | OtpEmailJobPayload
   | OtpWhatsappJobPayload

@@ -230,7 +230,12 @@ export default function MemberDetailPage() {
     setResettingPassword(true);
     try {
       await api.patch(`/api/v1/admin/members/${member.id}/password`, { newPassword });
-      toast.success({ title: "Password updated", message: `${member.name}'s password has been reset.` });
+      toast.success({
+        title: "Password updated",
+        message: member.email
+          ? `${member.name} was signed out and the new password was emailed to ${member.email}.`
+          : `${member.name} was signed out. There is no email on file, so give them the new password yourself.`,
+      });
       setPasswordModalOpen(false);
       setNewPassword("");
       setConfirmPassword("");

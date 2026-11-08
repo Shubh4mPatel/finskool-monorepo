@@ -12,6 +12,7 @@ import {
   NEW_MEMBER_REGISTERED_EMAIL_JOB,
   ADMIN_PAYMENT_EMAIL_JOB,
   MEMBER_SUSPENDED_EMAIL_JOB,
+  MEMBER_PASSWORD_RESET_EMAIL_JOB,
   MEMBER_REINSTATED_EMAIL_JOB,
   OTP_EMAIL_JOB,
   OTP_WHATSAPP_JOB,
@@ -38,6 +39,7 @@ const worker = new Worker(
     if (job.name === NEW_MEMBER_REGISTERED_EMAIL_JOB) return service.sendNewMemberRegisteredEmail(job.data)
     if (job.name === ADMIN_PAYMENT_EMAIL_JOB) return service.sendAdminPaymentEmail(job.data)
     if (job.name === MEMBER_SUSPENDED_EMAIL_JOB) return service.sendMemberSuspendedEmail(job.data)
+    if (job.name === MEMBER_PASSWORD_RESET_EMAIL_JOB) return service.sendMemberPasswordResetEmail(job.data)
     if (job.name === MEMBER_REINSTATED_EMAIL_JOB) return service.sendMemberReinstatedEmail(job.data)
     if (job.name === OTP_EMAIL_JOB) return service.sendOtpEmail(job.data)
     if (job.name === OTP_WHATSAPP_JOB) return service.sendOtpWhatsapp(job.data, job.attemptsMade + 1 >= (job.opts.attempts ?? 1))
