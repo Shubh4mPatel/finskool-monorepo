@@ -9,7 +9,7 @@ import { useConfirm } from "@/components/ui/ConfirmDialog";
 import CommunityBadgeIcon from "@/components/CommunityBadgeIcon";
 import { EmptyState, Skeleton, stagger } from "@/components/admin/dashboard/Panel";
 import type { KitListItem, KitListResponse, KitListStatus } from "@/lib/welcome-kit";
-import { timeAgo } from "@/lib/tickets";
+import { formatDate } from "@/lib/memberFormat";
 import { useClientPage } from "@/lib/useClientPage";
 import Pagination from "@/components/ui/Pagination";
 
@@ -22,8 +22,6 @@ export default function WelcomeKitListPage() {
   const confirm = useConfirm();
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [filter, setFilter] = useState<KitListStatus>("all");
-  // Captured once so render stays pure; "Updated 2 days ago" doesn't need to tick.
-  const [now] = useState(() => Date.now());
 
   // The server filters by tab and returns totals for every tab. The last response remembers which
   // tab it answered, so switching tabs keeps the current cards up (dimmed) until the new ones land.
@@ -230,7 +228,7 @@ export default function WelcomeKitListPage() {
                           <span className="mt-1 block truncate text-[11px] font-medium text-white/75">
                             {c.hasKit
                               ? c.updatedAt
-                                ? `Updated ${timeAgo(c.updatedAt, now).toLowerCase()}`
+                                ? `Updated ${formatDate(c.updatedAt)}`
                                 : "Kit added"
                               : "Members get no welcome kit yet"}
                           </span>

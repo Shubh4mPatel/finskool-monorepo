@@ -30,7 +30,7 @@ import PriorityList from "@/components/admin/welcome-kit/PriorityList";
 import YoutubeLinkList from "@/components/admin/welcome-kit/YoutubeLinkList";
 import MarkdownField from "@/components/admin/welcome-kit/MarkdownField";
 import WelcomeKitPreview from "@/components/admin/welcome-kit/WelcomeKitPreview";
-import { timeAgo } from "@/lib/tickets";
+import { formatDate } from "@/lib/memberFormat";
 import {
   MAX_NOTICES,
   MAX_POINTERS,
@@ -290,7 +290,6 @@ export default function WelcomeKitEditorPage() {
   // Set once "Continue to Preview" has been blocked, so empty required boxes show up red.
   const [showInvalid, setShowInvalid] = useState(false);
   const [open, setOpen] = useState<Record<SectionKey, boolean>>({ watch: true, capital: true, notice: true, what: true });
-  const [now] = useState(() => Date.now());
 
   useEffect(() => {
     let alive = true;
@@ -457,7 +456,7 @@ export default function WelcomeKitEditorPage() {
               <p className="mt-0.5 text-xs text-white/75">
                 {community.hasKit
                   ? community.updatedAt
-                    ? `Welcome kit · updated ${timeAgo(community.updatedAt, now).toLowerCase()}`
+                    ? `Welcome kit · Updated ${formatDate(community.updatedAt)}`
                     : "Welcome kit"
                   : "New welcome kit — members don't have one yet"}
               </p>
