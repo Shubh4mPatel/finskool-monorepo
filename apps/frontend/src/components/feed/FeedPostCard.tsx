@@ -6,6 +6,10 @@ import PostMediaCarousel from "./PostMediaCarousel";
 import type { PostVideo } from "@/lib/post-videos";
 import { initials } from "@/lib/session";
 import CommunityBadgeIcon from "@/components/CommunityBadgeIcon";
+import MarkdownView from "@/components/admin/welcome-kit/MarkdownView";
+
+/** The admin editor saves HTML, but other posts hold markdown (`**bold**`, `- item`); tell them apart by a leading block tag. */
+const looksLikeHtml = (s: string) => /^\s*<(p|h[1-6]|ul|ol|blockquote|pre|div|hr)\b/i.test(s);
 
 type FeedPostCardProps = {
   postId?: string;
@@ -106,9 +110,11 @@ export default function FeedPostCard({
         </h3>
 
         {/* Body */}
-        {bodyHtml ? (
+        {bodyHtml && !looksLikeHtml(bodyHtml) ? (
+          <MarkdownView markdown={bodyHtml} className="mt-2" />
+        ) : bodyHtml ? (
           <div
-            className="mt-2 text-sm leading-relaxed text-[#5a6a60] [&_p]:my-0.5 [&_strong]:text-primary [&_code]:rounded [&_code]:bg-divider [&_code]:px-1"
+            className="mt-2 text-sm leading-relaxed text-[#5a6a60] [&_p]:my-0.5 [&_strong]:text-primary [&_ul]:my-1 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_code]:rounded [&_code]:bg-divider [&_code]:px-1"
             dangerouslySetInnerHTML={{ __html: bodyHtml }}
           />
         ) : body ? (
