@@ -6,3 +6,4 @@ apps/backend/src/generated/
 apps/backend/docs/
 # local dev server logs
 *.log
+.claude/
