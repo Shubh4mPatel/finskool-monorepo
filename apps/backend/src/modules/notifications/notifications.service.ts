@@ -73,19 +73,43 @@ export class NotificationsService {
    *    shift anything, so no item repeats or is skipped. Totals are not computed.
    *  - page numbers (the website): `skip` + `take`, with totals. Kept as it was.
    * Both return `nextCursor`, so a client can start with page 1 and continue by cursor.
+   *
+   * `unreadFirst` (the admin page asks for it) puts every unread notification before the read ones, each group newest
+   * first, so what sits under "New" is exactly the unread count. Its cursor remembers which group the last item was
+   * in (a `u.` / `r.` prefix), because the next page continues after it inside that group, or starts the read group.
    */
-  async listForUser(userId: string, page: number, pageSize: number, communityId?: string, cursor?: string): Promise<ListNotificationsResponseDTO> {
+  async listForUser(
+    userId: string,
+    page: number,
+    pageSize: number,
+    communityId?: string,
+    cursor?: string,
+    unreadFirst = false,
+  ): Promise<ListNotificationsResponseDTO> {
     const base = communityId ? { userId, communityId } : { userId }
-    const after = cursor ? decodeCursor(cursor) : null
+    const afterRead = unreadFirst && cursor !== undefined && cursor.startsWith('r.')
+    const after = cursor ? decodeCursor(unreadFirst ? cursor.slice(2) : cursor) : null
+    const olderThanCursor = after
+      ? { OR: [{ createdAt: { lt: after.at } }, { createdAt: after.at, id: { lt: after.id } }] }
+      : null
     // Never shows what belongs to a community the member is blocked from, including rows from before the block.
     const where: Prisma.NotificationWhereInput = {
       AND: [
         base,
         visibleNotifications(userId),
-        ...(after ? [{ OR: [{ createdAt: { lt: after.at } }, { createdAt: after.at, id: { lt: after.id } }] }] : []),
+        ...(olderThanCursor
+          ? [
+              unreadFirst
+                ? // After an unread item: the rest of the unread ones, then all the read ones. After a read item: older read ones.
+                  { OR: [...(afterRead ? [] : [{ isRead: true }]), { isRead: afterRead, ...olderThanCursor }] }
+                : olderThanCursor,
+            ]
+          : []),
       ],
     }
-    const orderBy = [{ createdAt: 'desc' as const }, { id: 'desc' as const }]
+    const orderBy = unreadFirst
+      ? [{ isRead: 'asc' as const }, { createdAt: 'desc' as const }, { id: 'desc' as const }]
+      : [{ createdAt: 'desc' as const }, { id: 'desc' as const }]
 
     // One extra row tells us whether anything older exists, without counting.
     const [fetched, total] = await Promise.all([
@@ -100,7 +124,8 @@ export class NotificationsService {
     ])
     const notifications = fetched.slice(0, pageSize)
     const last = notifications[notifications.length - 1]
-    const nextCursor = fetched.length > pageSize && last ? encodeCursor(last.createdAt, last.id) : null
+    const plainCursor = last ? encodeCursor(last.createdAt, last.id) : null
+    const nextCursor = fetched.length > pageSize && last && plainCursor ? (unreadFirst ? `${last.isRead ? 'r' : 'u'}.${plainCursor}` : plainCursor) : null
 
     const postIds = await this.postIdsFor(notifications)
 

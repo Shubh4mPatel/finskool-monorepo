@@ -15,7 +15,8 @@ import { EmptyState, Skeleton, stagger } from "@/components/admin/dashboard/Pane
 
 /** Notifications fetched at a time: the first screen, then another batch each time the end of the list nears. */
 const BATCH_SIZE = 20;
-const listUrl = (cursor?: string) => `/api/v1/notifications?pageSize=${BATCH_SIZE}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
+// unreadFirst: every unread notification before the read ones, each group newest to oldest, so "New" is the whole unread list.
+const listUrl = (cursor?: string) => `/api/v1/notifications?pageSize=${BATCH_SIZE}&unreadFirst=true${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
 
 /** The first `count` batches, newest first. Paging is by cursor, which stays correct while new notifications arrive. */
 async function fetchBatches(count: number): Promise<{ items: Notification[]; cursor: string | null }> {
@@ -240,7 +241,7 @@ export default function AdminNotificationsPage() {
         <div className="flex flex-col gap-6">
           {/* New / unread */}
           <section className="flex flex-col gap-3">
-            <SectionTitle title="New" count={unread.length} highlight />
+            <SectionTitle title="New" count={Math.max(unread.length, unreadTotal)} highlight />
             {unread.length === 0 ? (
               <div className="flex rounded-2xl border border-dashed border-divider bg-white/60">
                 <EmptyState icon={<Inbox size={20} />}>No new notifications.</EmptyState>

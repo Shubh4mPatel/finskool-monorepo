@@ -13,8 +13,8 @@ export class NotificationsController {
 
   list = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const { page, pageSize, communityId, cursor } = listNotificationsSchema.parse(req.query)
-      const result = await this.service.listForUser(req.user!.id, page, pageSize, communityId, cursor)
+      const { page, pageSize, communityId, cursor, unreadFirst } = listNotificationsSchema.parse(req.query)
+      const result = await this.service.listForUser(req.user!.id, page, pageSize, communityId, cursor, unreadFirst)
       res.json({ success: true, data: result })
     } catch (err) {
       next(err)
