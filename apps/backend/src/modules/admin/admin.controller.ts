@@ -92,8 +92,9 @@ const importRowSchema = z.object({
   phone: phoneInput,
   email: optionalEmailSchema,
   service: z.string().min(1),
-  payment: z.coerce.number().positive().max(99_999_999),
-  valid: z.string().min(1),
+  // 0 and an empty valid date are fine for the free community; AdminService checks a paid row has both.
+  payment: z.coerce.number().min(0).max(99_999_999),
+  valid: z.string(),
   paidOn: z.string().optional(),
 })
 

@@ -11,6 +11,7 @@ import Select from "@/components/ui/Select";
 import DatePicker from "@/components/ui/DatePicker";
 import { communityBadge, type MemberItem } from "@/lib/memberFormat";
 import { communityOptions, type MemberCommunity } from "./communities";
+import { addDays, startOfToday } from "@/lib/dates";
 import { durationPresets, paidOnPresets } from "./datePresets";
 import { FormField, inputCls, primaryBtn, secondaryBtn } from "./memberUi";
 
@@ -181,6 +182,7 @@ export default function EditMemberModal({
                       <DatePicker
                         value={newCom.validUntil}
                         ariaLabel="Valid till"
+                        minDate={addDays(startOfToday(), 1)}
                         presets={durationPresets()}
                         triggerClassName={inputCls(errors.newValidUntil)}
                         onChange={(v) => setNewCom((c) => ({ ...c, validUntil: v }))}
@@ -193,6 +195,7 @@ export default function EditMemberModal({
                       ariaLabel="Paid on"
                       placeholder="Today, if left empty"
                       clearable
+                      maxDate={startOfToday()}
                       presets={paidOnPresets()}
                       triggerClassName={inputCls()}
                       onChange={(v) => setNewCom((c) => ({ ...c, paidOn: v }))}

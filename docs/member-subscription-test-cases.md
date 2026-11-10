@@ -118,16 +118,16 @@ unclear and should be tested first. Nothing here is built yet.
 | E1 | New phone, community, payment, valid date | User + approved phone + free + paid subscription; welcome email if email; admin gets the import summary |
 | E2 | The imported member then registers | Claims that row, sees the imported community (this is A1 through a sheet) |
 | E3 | Same phone on two rows, two communities | One user, two subscriptions |
-| E4 | Same phone twice for the same community | Second row skipped (or updates, by strategy) |
+| E4 | Same phone twice for the same community | The **(phone, community) pair is the duplicate**: the second row is skipped (or updates, by strategy); the preview flags it. The same phone in another community is not a duplicate |
 | E5 | Existing registered member, new community | Subscription added, free ensured, member untouched |
 | E6 | Existing member, same community, `skip` / `overwrite` | Untouched / dates and payment updated, active row count stays one |
 | E7 | **CHECK** `overwrite` edits the active row in place instead of writing a new period | No history is kept; revenue and "paid on" change retroactively. Decide if intended |
 | E8 | Suspended / deleted member in the sheet | Skipped unless the admin ticked "revive"; a revived deleted member returns with the new plan only |
-| E9 | **CHECK** Date `30/06/2026` (Indian day-first) | Today `new Date('30/06/2026')` is invalid, row fails; make sure the preview says so |
-| E10 | **CHECK** Date `06/07/2026` (6 July in India) | JavaScript reads it as 7 June: a silently wrong expiry. Must be read day-first or refused |
-| E11 | **CHECK** Date without a year (`9 June`) | JavaScript assumes 2001: the subscription is instantly expired (the CSV path guards years before 2000, the JSON path does not) |
-| E12 | Excel date cells (serial numbers, formatted cells, text cells) | Same date as shown in Excel, for `.xlsx` and `.csv` |
-| E13 | **CHECK** Preview (`validate-import`) does not check the date at all, only that it is non-empty | A row can pass the preview and fail at save; preview should flag bad dates, payments over the limit, names over 100 characters |
+| E9 | Date `30/06/2026` (Indian day-first) | Refused with `Valid must be YYYY-MM-DD (got "30/06/2026")`, in the preview and at save |
+| E10 | Date `06/07/2026` (6 July in India) | Refused, never guessed: dates are exactly `YYYY-MM-DD` and a real day (`2026-02-31`, `2026-2-3` are refused too) |
+| E11 | Date without a year (`9 June`) | Refused (not `YYYY-MM-DD`), on the file, the preview and the reviewed-rows import alike |
+| E12 | Excel date cells (serial numbers, formatted cells, text cells) | A cell Excel holds as a date (`.xlsx`) is read as that calendar day in any server timezone; text must be `YYYY-MM-DD`. A CSV is read as written (no serial numbers) |
+| E13 | Preview (`validate-import`) checks `Valid` and `Paid on` with the same strict rule as the save | A bad date shows in the preview, not only at save. **Still open:** payments over the limit and names over 100 characters are only caught at save |
 | E14 | `valid` earlier than `paidOn`, `valid` in the past | Refused or imported as already expired, by decision (see C21) |
 | E15 | Payment with currency symbol, commas, decimals, `-5`, `1e3`, `10+5` | `1,000` ok; expressions and minus refused (the page and the server must agree) |
 | E16 | Phone formats (`98111 22222`, `+91-...`, `0...`, with country code, 11 or 9 digits, letters) | Normalised or a row error |
@@ -143,6 +143,11 @@ unclear and should be tested first. Nothing here is built yet.
 | E26 | A community admin imports | Only their communities; rows for others are errors (covered) |
 | E27 | Imported subscription gets `paid_on` empty | Roster, revenue and CSV export show a sensible value (falls back to creation date) |
 | E28 | After import, reminders and expiry apply to these rows | Same rules as any row (sweep, expiry) |
+| E29 | Export CSV, then import that same file | Same column names (`Name, Contact Number, Payment, Paid on, Valid, Service, Email`, plus the extra `Status, Added On`), plain payment, `YYYY-MM-DD` dates: no row errors, nothing duplicated |
+| E30 | Free community row: payment `0` or blank, `Valid` blank | Accepted. A new member gets the free community once; a member who has it is skipped; no welcome email (no expiry to state) |
+| E31 | Free community row with a price above 0, or a paid community with payment `0` or blank | Row error (`The free community has no price...` / `Invalid payment amount`) |
+| E32 | `Paid on` in another format | Row error (it used to be dropped silently) |
+| E33 | CSV exported before this change (headers `Phone`, `Community`, `Valid Till`, `₹12,500`) | Not accepted: one set of column names; rename the headings |
 
 ## F. Other connections to keep in mind
 

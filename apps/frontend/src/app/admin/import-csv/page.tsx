@@ -75,9 +75,9 @@ const COLUMNS: { name: string; required: boolean; hint: string }[] = [
   { name: "Name", required: true, hint: "Full name" },
   { name: "Contact Number", required: true, hint: "Mobile number, +91 optional" },
   { name: "Service", required: true, hint: "Exact community name" },
-  { name: "Payment", required: true, hint: "A plain number, e.g. 4000" },
-  { name: "Valid", required: true, hint: "Valid-till date" },
-  { name: "Paid on", required: false, hint: "Date the payment was made" },
+  { name: "Payment", required: true, hint: "A plain number, e.g. 4000 (blank or 0 for the free community)" },
+  { name: "Valid", required: true, hint: "Valid-till date as YYYY-MM-DD, after today and after Paid on (blank for the free community)" },
+  { name: "Paid on", required: false, hint: "Date the payment was made, as YYYY-MM-DD; today or earlier, not in the future" },
   { name: "Email", required: false, hint: "Can be left blank" },
 ];
 const REQUIRED_COLUMNS = COLUMNS.filter((c) => c.required).map((c) => c.name);
@@ -86,6 +86,41 @@ function normalizePhone(raw: string): string {
   const phone = parsePhoneNumberFromString(raw, "IN");
   return phone?.isValid() ? phone.number : raw.trim();
 }
+
+/**
+ * One sheet cell as text, exactly as written. Only a cell the spreadsheet itself holds as a date (an .xlsx date cell)
+ * is converted, to YYYY-MM-DD; it has no text format to misread. Everything else is judged as written.
+ */
+function cellText(v: unknown): string {
+  if (v instanceof Date) return Number.isNaN(v.getTime()) ? "" : v.toISOString().slice(0, 10);
+  return String(v ?? "").trim();
+}
+
+/** Exactly YYYY-MM-DD, a real calendar day, from 2000 on. The server applies the same rule; nothing is guessed or converted. */
+function isIsoDate(value: string): boolean {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!m) return false;
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const date = new Date(Date.UTC(y, mo - 1, d));
+  return y >= 2000 && date.getUTCFullYear() === y && date.getUTCMonth() === mo - 1 && date.getUTCDate() === d;
+}
+
+/** Today in India as YYYY-MM-DD, the day the rows are being added (the server uses the same day). */
+const todayInIndia = (): string => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+
+/**
+ * Same rule as the server: Paid on is today or earlier, never in the future; Valid is after today (which also puts it
+ * after Paid on). Both are YYYY-MM-DD, so comparing them as text compares the days.
+ */
+function datesProblem(paidOn: string, valid: string): string | null {
+  const today = todayInIndia();
+  if (paidOn && paidOn > today) return `Paid on cannot be in the future (got ${paidOn}); use today or an earlier day`;
+  if (valid && valid <= today) return `Valid must be after today (got ${valid})`;
+  return null;
+}
+
+const dateError = (label: string, value: string): string =>
+  `${label} must be YYYY-MM-DD${value ? ` (got "${value.slice(0, 30)}")` : " (it is empty)"}`;
 
 const formatSize = (bytes: number): string =>
   bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -218,11 +253,14 @@ export default function ImportCSVPage() {
   // Loaded on first use rather than on mount: a file can only be dropped once it's known which
   // communities are valid, and the lookup is lowercase for matching but proper-case for display.
   const communitiesLoaded = useRef<Promise<string[]> | null>(null);
+  // Lower-cased names of the free community: it has no price and no expiry, so its rows are checked differently.
+  const freeNames = useRef<Set<string>>(new Set());
   function loadCommunities(): Promise<string[]> {
     communitiesLoaded.current ??= api
-      .get<{ id: string; name: string }[]>("/api/v1/admin/communities")
+      .get<{ id: string; name: string; isFree?: boolean }[]>("/api/v1/admin/communities")
       .then((cs) => {
         const names = cs.map((c) => c.name);
+        freeNames.current = new Set(cs.filter((c) => c.isFree).map((c) => c.name.toLowerCase()));
         setCommunityNames(names);
         return names;
       })
@@ -260,12 +298,14 @@ export default function ImportCSVPage() {
     reader.onload = (e) => {
       try {
         const data = new Uint8Array(e.target?.result as ArrayBuffer);
-        const wb = XLSX.read(data, { type: "array", raw: false, cellDates: true });
+        // raw: true keeps CSV text exactly as written (the default turns "2027-02-08" into a date before it can be
+        // checked); cellDates: true makes real .xlsx date cells Dates, which cellText writes out as YYYY-MM-DD.
+        const wb = XLSX.read(data, { type: "array", raw: true, cellDates: true });
         const sheet = wb.Sheets[wb.SheetNames[0]!];
         const rawRows = XLSX.utils.sheet_to_json<Record<string, string>>(sheet, { defval: "" });
         // Normalize header keys — trim whitespace so "Valid " matches "Valid"
         const jsonRows = rawRows.map((r) =>
-          Object.fromEntries(Object.entries(r).map(([k, v]) => [k.trim(), String(v ?? "").trim()])),
+          Object.fromEntries(Object.entries(r).map(([k, v]) => [k.trim(), cellText(v)])),
         );
 
         const headers = new Set(Object.keys(jsonRows[0] ?? {}));
@@ -292,9 +332,20 @@ export default function ImportCSVPage() {
           if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.push("Invalid email");
           if (!service) errors.push("Service required");
           else if (!lower.includes(service.toLowerCase())) errors.push(`Community not found`);
+          const isFree = freeNames.current.has(service.toLowerCase());
           if (/[+\-*/]/.test(rawPayment)) errors.push(`Payment contains expression "${rawPayment}" — enter a plain number`);
-          else if (!payment || isNaN(parseFloat(payment))) errors.push("Invalid payment amount");
-          if (!valid) errors.push("Valid date required");
+          else if (isFree) {
+            // The free community has no price; blank or 0 only.
+            if (payment && parseFloat(payment) > 0) errors.push("The free community has no price: leave Payment blank or 0");
+          } else if (!payment || isNaN(parseFloat(payment)) || parseFloat(payment) <= 0) errors.push("Invalid payment amount");
+          // The free community has no expiry, so Valid is only required (and checked) for a paid one.
+          if (!isFree && !isIsoDate(valid)) errors.push(dateError("Valid", valid));
+          if (paidOn && !isIsoDate(paidOn)) errors.push(dateError("Paid on", paidOn));
+          // Only once both are well-formed dates; the free community has no Valid to compare.
+          else if (isFree || isIsoDate(valid)) {
+            const problem = datesProblem(paidOn, isFree ? "" : valid);
+            if (problem) errors.push(problem);
+          }
 
           return {
             rowNum: i + 2,
@@ -469,14 +520,16 @@ export default function ImportCSVPage() {
     // just fail the importer's own "Service" validation against actual community names.
     const names = communityNames.length > 0 ? communityNames : await loadCommunities();
     const header = ["Name", "Contact Number", "Payment", "Paid on", "Valid", "Service", "Email"];
+    const isFreeName = (n: string) => freeNames.current.has(n.toLowerCase());
     const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
     const sources = names.length > 0 ? names : ["Your Community Name"];
     const sampleRows = sources.map((name, i) => [
       `Sample Member ${i + 1}`,
       `98765432${String(i).padStart(2, "0")}`,
-      "999",
-      "2026-01-05",
-      "2026-12-31",
+      // The free community has no price and no expiry.
+      isFreeName(name) ? "0" : "999",
+      isFreeName(name) ? "" : "2026-01-05",
+      isFreeName(name) ? "" : "2026-12-31",
       name,
       `sample${i + 1}@example.com`,
     ]);

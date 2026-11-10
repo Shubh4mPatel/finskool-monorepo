@@ -33,6 +33,7 @@ export default function DatePicker({
   ariaLabel,
   triggerClassName = "",
   minDate,
+  maxDate,
   presets,
   clearable = variant === "pill",
   autoFocus = false,
@@ -49,6 +50,8 @@ export default function DatePicker({
   triggerClassName?: string;
   /** Earlier days are shown but can't be picked. */
   minDate?: Date;
+  /** Later days are shown but can't be picked. */
+  maxDate?: Date;
   /** Quick picks shown under the calendar. */
   presets?: DatePreset[];
   clearable?: boolean;
@@ -192,7 +195,7 @@ export default function DatePicker({
               captionLayout="dropdown"
               startMonth={startMonth}
               endMonth={endMonth}
-              {...(minDate ? { disabled: { before: minDate } } : {})}
+              {...(minDate || maxDate ? { disabled: [...(minDate ? [{ before: minDate }] : []), ...(maxDate ? [{ after: maxDate }] : [])] } : {})}
               autoFocus
             />
             {(presets?.length || (clearable && value)) && (

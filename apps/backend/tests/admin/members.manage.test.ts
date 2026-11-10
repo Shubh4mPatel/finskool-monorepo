@@ -291,18 +291,22 @@ describe('GET /admin/members/export', () => {
     expect(res.status).toBe(200)
     expect(res.headers['content-type']).toBe('text/csv; charset=utf-8')
     expect(res.headers['content-disposition']).toMatch(/^attachment; filename="members-export-\d{4}-\d{2}-\d{2}\.csv"$/)
-    expect(res.text.startsWith('﻿')).toBe(true) // Excel needs the BOM for ₹ to render
+    expect(res.text.startsWith('﻿')).toBe(true) // Excel needs the BOM for non-ASCII names
 
     const lines = res.text.slice(1).split('\n')
-    expect(lines[0]).toBe('"Name","Phone","Email","Community","Payment","Paid On","Valid Till","Status","Added On"')
+    // The first seven are exactly Import CSV's columns; Status and Added On are the two extras.
+    expect(lines[0]).toBe('"Name","Contact Number","Payment","Paid on","Valid","Service","Email","Status","Added On"')
     expect(lines).toHaveLength(1 + 5)
 
     const asha = lines.filter(l => l.startsWith('"Asha'))
     expect(asha).toHaveLength(2)
+    // Plain payment (no ₹, no thousands separator), YYYY-MM-DD dates.
     expect(asha.find(l => l.includes('Swing Traders'))).toContain(
-      '"Asha ""Ace"" Nair","+919811100002","asha@example.com","Swing Traders","₹12,500","15 Jan 2026","31 Mar 2030","Registered"',
+      '"Asha ""Ace"" Nair","+919811100002","12500","2026-01-15","2030-03-31","Swing Traders","asha@example.com","Registered"',
     )
-    expect(lines.find(l => l.startsWith('"Bhavesh'))).toContain('"","—","—","—","—","Pending Sign"')
+    expect(res.text).not.toContain('₹')
+    // A member with no subscription: blank cells, not a dash.
+    expect(lines.find(l => l.startsWith('"Bhavesh'))).toContain('"","","","","","Pending Sign"')
     expect(lines.find(l => l.startsWith('"Chitra'))).toContain('"Suspended"')
     expect(lines.find(l => l.startsWith('"Dinesh'))).toContain('"Expired"')
   })

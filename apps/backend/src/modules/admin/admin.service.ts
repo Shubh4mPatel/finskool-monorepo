@@ -111,15 +111,86 @@ function rowFailureReason(err: unknown): string {
   return 'This row could not be saved'
 }
 
-function parseDate(raw: string): Date | null {
-  if (!raw.trim()) return null
-  const d = new Date(raw.trim())
-  if (isNaN(d.getTime()) || d.getFullYear() < 2000) return null
+/**
+ * A sheet date. Exactly `YYYY-MM-DD` and a real calendar day, from the year 2000 on; anything else is null. There is no
+ * fallback to `new Date(text)`: it would quietly read `02/08/2027` as 8 Feb or 2 Aug and `15 Jan 2026` in the server's
+ * timezone, so a format that does not match is refused instead of converted. Returned as UTC midnight, which is what
+ * the `@db.Date` columns store.
+ */
+export function parseStrictDate(raw: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw.trim())
+  if (!m) return null
+  const [year, month, day] = [Number(m[1]), Number(m[2]), Number(m[3])]
+  const d = new Date(Date.UTC(year, month - 1, day))
+  if (year < 2000 || d.getUTCFullYear() !== year || d.getUTCMonth() !== month - 1 || d.getUTCDate() !== day) return null
   return d
 }
 
-const FREE_COMMUNITY_IMPORT_REASON = (name: string): string =>
-  `"${name}" is the free community. Every member joins it automatically, so remove this row`
+/** Today's calendar day in India (the day an admin is adding people, as the emails use), as UTC midnight to compare with sheet dates. */
+export function todayInIndia(now: Date = new Date()): Date {
+  const [y, m, d] = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }).split('-').map(Number) as [number, number, number]
+  return new Date(Date.UTC(y, m - 1, d))
+}
+
+const isoDay = (d: Date): string => d.toISOString().slice(0, 10)
+
+/**
+ * The rule for the dates of a subscription an admin adds: Paid on may be today or any day in the past, never the future;
+ * Valid must be after today. Together that also puts Valid after Paid on, so there is no separate check for it.
+ * Returns the reason, or null when the dates are fine. `validUntil` is null for the free community, which has no expiry.
+ */
+export function subscriptionDatesProblem(paidOn: Date | null, validUntil: Date | null, today: Date = todayInIndia()): string | null {
+  if (paidOn && paidOn > today) return `Paid on cannot be in the future (got ${isoDay(paidOn)}); use today or an earlier day`
+  if (validUntil && validUntil <= today) return `Valid must be after today (got ${isoDay(validUntil)})`
+  return null
+}
+
+const badDateReason = (label: string, raw: string): string =>
+  `${label} must be YYYY-MM-DD${raw.trim() ? ` (got "${raw.trim().slice(0, 30)}")` : ' (it is empty)'}`
+
+/**
+ * One sheet cell as text, exactly as written. The only thing converted is a cell the spreadsheet itself holds as a date
+ * (an .xlsx date cell), which has no text format to misread and is written out as `YYYY-MM-DD`.
+ */
+function sheetCellText(v: unknown): string {
+  if (v instanceof Date) return isNaN(v.getTime()) ? '' : v.toISOString().slice(0, 10)
+  return String(v ?? '').trim()
+}
+
+const FREE_COMMUNITY_PRICE_REASON = 'The free community has no price: leave Payment blank or 0'
+
+interface ImportTerms {
+  payment: number
+  paidOn: Date | null
+  /** null for the free community, which has no expiry. */
+  validUntil: Date | null
+}
+
+/**
+ * What a sheet row asks for, checked the same way by the file import, the reviewed-rows import and the preview.
+ * Paid community: a payment above 0 and a `Valid` date. Free community: payment blank/0, no `Valid`. `Paid on` is
+ * optional but must match the format when it is there. `payment` is NaN when the cell could not be read as a number.
+ */
+function resolveImportTerms(
+  isFree: boolean,
+  payment: number,
+  validRaw: string,
+  paidOnRaw: string,
+): { terms: ImportTerms } | { error: string } {
+  const paidOn = paidOnRaw.trim() ? parseStrictDate(paidOnRaw) : null
+  if (paidOnRaw.trim() && !paidOn) return { error: badDateReason('Paid on', paidOnRaw) }
+  if (isFree) {
+    if (payment > 0) return { error: FREE_COMMUNITY_PRICE_REASON }
+    const problem = subscriptionDatesProblem(paidOn, null)
+    return problem ? { error: problem } : { terms: { payment: 0, paidOn: null, validUntil: null } }
+  }
+  if (isNaN(payment) || payment <= 0 || payment > MAX_IMPORT_PAYMENT) return { error: 'Invalid payment amount' }
+  const validUntil = parseStrictDate(validRaw)
+  if (!validUntil) return { error: badDateReason('Valid', validRaw) }
+  const problem = subscriptionDatesProblem(paidOn, validUntil)
+  if (problem) return { error: problem }
+  return { terms: { payment, paidOn, validUntil } }
+}
 
 /**
  * The payment and expiry to store for a new subscription. The free community has no expiry and no price, so a date and
@@ -127,12 +198,16 @@ const FREE_COMMUNITY_IMPORT_REASON = (name: string): string =>
  */
 function subscriptionTerms(
   community: { isFree: boolean },
-  input: { payment?: number | undefined; validUntil?: string | undefined },
+  input: { payment?: number | undefined; validUntil?: string | undefined; paidOn?: string | undefined },
 ): { payment: number; validUntil: Date | null } {
   if (community.isFree) return { payment: 0, validUntil: null }
   if (input.payment === undefined) throw new BadRequestError('Payment is required')
   if (!input.validUntil) throw new BadRequestError('Valid until is required')
-  return { payment: input.payment, validUntil: new Date(input.validUntil) }
+  const validUntil = new Date(input.validUntil)
+  // Same rule as an import: Valid is after today (and after Paid on), and Paid on is never in the future.
+  const problem = subscriptionDatesProblem(input.paidOn ? new Date(input.paidOn) : null, validUntil)
+  if (problem) throw new BadRequestError(problem)
+  return { payment: input.payment, validUntil }
 }
 
 /** `Active until <date>.`, or a plain line for the free community, which never expires. */
@@ -148,7 +223,9 @@ export class AdminService {
     strategy: DuplicateStrategy,
     accessibleCommunityIds: string[] | null,
   ): Promise<ImportSummaryDTO> {
-    const workbook = XLSX.read(buffer, { type: 'buffer', raw: false })
+    // raw: true keeps CSV text exactly as written (the default turns `2027-02-08` into a serial number and `+91…` into
+    // a number before it can be checked); cellDates: true makes real .xlsx date cells Dates, written out by sheetCellText.
+    const workbook = XLSX.read(buffer, { type: 'buffer', raw: true, cellDates: true })
 
     // SheetNames[0] is string | undefined with noUncheckedIndexedAccess
     const sheetName = workbook.SheetNames[0]
@@ -160,7 +237,7 @@ export class AdminService {
     // normalize header keys (trim whitespace — CSV has "Valid " with trailing space)
     const rows: Record<string, string>[] = rawRows.map(rawRow =>
       Object.fromEntries(
-        Object.entries(rawRow).map(([k, v]) => [k.trim(), String(v ?? '').trim()]),
+        Object.entries(rawRow).map(([k, v]) => [k.trim(), sheetCellText(v)]),
       ),
     )
 
@@ -206,28 +283,18 @@ export class AdminService {
         summary.errors.push({ row: rowNum, phone, reason: `You do not have access to community "${community.name}"` })
         continue
       }
-      // The sheet carries a payment and a valid-until date per row; the free community has neither.
-      if (community.isFree) {
-        summary.errors.push({ row: rowNum, phone, reason: FREE_COMMUNITY_IMPORT_REASON(community.name) })
-        continue
-      }
-
       // "₹1,000" and "1000.50" are fine; a minus sign is not (stripping it would turn -5 into 5).
+      // A blank Payment is only meant for the free community (it means 0).
       const rawPaymentCell = row['Payment'] ?? ''
       const rawPayment = rawPaymentCell.replace(/[^0-9.]/g, '')
-      const payment = /-/.test(rawPaymentCell) ? NaN : parseFloat(rawPayment)
-      if (isNaN(payment) || payment <= 0 || payment > MAX_IMPORT_PAYMENT) {
-        summary.errors.push({ row: rowNum, phone, reason: 'Invalid payment amount' })
+      const payment = /-/.test(rawPaymentCell) ? NaN : rawPayment === '' ? (community.isFree ? 0 : NaN) : parseFloat(rawPayment)
+      // The free community has no price and no expiry; a paid one needs both. Dates must be exactly YYYY-MM-DD.
+      const resolved = resolveImportTerms(community.isFree, payment, row['Valid'] ?? '', row['Paid on'] ?? '')
+      if ('error' in resolved) {
+        summary.errors.push({ row: rowNum, phone, reason: resolved.error })
         continue
       }
-
-      const validUntil = parseDate(row['Valid'] ?? '')
-      if (!validUntil) {
-        summary.errors.push({ row: rowNum, phone, reason: 'Invalid or missing valid-until date' })
-        continue
-      }
-
-      const paidOn = parseDate(row['Paid on'] ?? '') // nullable — "9 June" without year → null
+      const { paidOn, validUntil } = resolved.terms
       const name = row['Name'] ?? ''
       if (name.length < 1 || name.length > 100) {
         summary.errors.push({ row: rowNum, phone, reason: 'Name is required and can be at most 100 characters' })
@@ -289,6 +356,12 @@ export class AdminService {
           continue
         }
 
+        // The free community: members already have it (ensureFreeSubscription below), with no dates or price to overwrite.
+        if (existingSub && community.isFree) {
+          summary.skipped++
+          continue
+        }
+
         if (existingSub) {
           // This (user + community) combo has an active subscription — skip or overwrite based on strategy
           if (strategy === 'skip') {
@@ -322,17 +395,15 @@ export class AdminService {
             await ensureFreeSubscription(tx, existingUser.id)
             return r
           })
-          await this.db.subscription.create({
-            data: { userId: existingUser.id, communityId: community.id, payment, paidOn, validUntil },
-          })
+          await this.createImportedSubscription(this.db, existingUser.id, community.id, { payment, paidOn, validUntil })
           summary.created++
           if (!notifyCommunityId) notifyCommunityId = community.id
 
-          if (email) {
+          if (email && (revived.wasAlreadyRegistered || validUntil)) {
             try {
               await notificationsQueue.add(
                 revived.wasAlreadyRegistered ? MEMBER_REINSTATED_EMAIL_JOB : WELCOME_EMAIL_JOB,
-                revived.wasAlreadyRegistered
+                revived.wasAlreadyRegistered || !validUntil
                   ? { toEmail: email, name }
                   : { toEmail: email, name, phone, communityName: community.name, validTill: validUntil.toISOString() },
                 { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
@@ -345,15 +416,7 @@ export class AdminService {
           // User exists (admin-added or self-registered) but NOT subscribed to this
           // community yet — add subscription only.
           await ensureFreeSubscription(this.db, existingUser.id)
-          await this.db.subscription.create({
-            data: {
-              userId: existingUser.id,
-              communityId: community.id,
-              payment,
-              paidOn,
-              validUntil,
-            },
-          })
+          await this.createImportedSubscription(this.db, existingUser.id, community.id, { payment, paidOn, validUntil })
           summary.created++
           if (!notifyCommunityId) notifyCommunityId = community.id
         } else {
@@ -362,14 +425,12 @@ export class AdminService {
             const user = await tx.user.create({ data: { phone, name, email } })
             await tx.approvedPhone.create({ data: { phone, name, email, addedBy: adminId } })
             await ensureFreeSubscription(tx, user.id)
-            await tx.subscription.create({
-              data: { userId: user.id, communityId: community.id, payment, paidOn, validUntil },
-            })
+            await this.createImportedSubscription(tx, user.id, community.id, { payment, paidOn, validUntil })
           })
           summary.created++
           if (!notifyCommunityId) notifyCommunityId = community.id
 
-          if (email) {
+          if (email && validUntil) {
             try {
               await notificationsQueue.add(
                 WELCOME_EMAIL_JOB,
@@ -431,19 +492,13 @@ export class AdminService {
         summary.errors.push({ row: rowNum, phone, reason: `You do not have access to community "${community.name}"` })
         continue
       }
-      if (community.isFree) {
-        summary.errors.push({ row: rowNum, phone, reason: FREE_COMMUNITY_IMPORT_REASON(community.name) })
+      const resolved = resolveImportTerms(community.isFree, row.payment, row.valid ?? '', row.paidOn ?? '')
+      if ('error' in resolved) {
+        summary.errors.push({ row: rowNum, phone, reason: resolved.error })
         continue
       }
-      const payment = row.payment
-      const validUntil = new Date(row.valid)
-      const paidOn = row.paidOn ? new Date(row.paidOn) : null
+      const { payment, paidOn, validUntil } = resolved.terms
       const email = row.email ?? null
-
-      if (isNaN(validUntil.getTime())) {
-        summary.errors.push({ row: rowNum, phone, reason: 'Invalid valid-until date' })
-        continue
-      }
 
       try {
         const existingUser = await this.db.user.findUnique({ where: { phone } })
@@ -470,6 +525,8 @@ export class AdminService {
           summary.errors.push({ row: rowNum, phone, reason: `Member is ${existingUser.status} and belongs to another community` })
           continue
         }
+
+        if (existingSub && community.isFree) { summary.skipped++; continue }
 
         if (existingSub) {
           if (strategy === 'skip') { summary.skipped++; continue }
@@ -501,17 +558,15 @@ export class AdminService {
             await ensureFreeSubscription(tx, existingUser.id)
             return r
           })
-          await this.db.subscription.create({
-            data: { userId: existingUser.id, communityId: community.id, payment, paidOn, validUntil },
-          })
+          await this.createImportedSubscription(this.db, existingUser.id, community.id, { payment, paidOn, validUntil })
           summary.created++
           if (!notifyCommunityId) notifyCommunityId = community.id
 
-          if (email) {
+          if (email && (revived.wasAlreadyRegistered || validUntil)) {
             try {
               await notificationsQueue.add(
                 revived.wasAlreadyRegistered ? MEMBER_REINSTATED_EMAIL_JOB : WELCOME_EMAIL_JOB,
-                revived.wasAlreadyRegistered
+                revived.wasAlreadyRegistered || !validUntil
                   ? { toEmail: email, name: row.name }
                   : { toEmail: email, name: row.name, phone, communityName: community.name, validTill: validUntil.toISOString() },
                 { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
@@ -524,9 +579,7 @@ export class AdminService {
           // User exists (admin-added or self-registered) but NOT subscribed to this
           // community yet — add subscription only.
           await ensureFreeSubscription(this.db, existingUser.id)
-          await this.db.subscription.create({
-            data: { userId: existingUser.id, communityId: community.id, payment, paidOn, validUntil },
-          })
+          await this.createImportedSubscription(this.db, existingUser.id, community.id, { payment, paidOn, validUntil })
           summary.created++
           if (!notifyCommunityId) notifyCommunityId = community.id
         } else {
@@ -534,14 +587,12 @@ export class AdminService {
             const user = await tx.user.create({ data: { phone, name: row.name, email } })
             await tx.approvedPhone.create({ data: { phone, name: row.name, email, addedBy: adminId } })
             await ensureFreeSubscription(tx, user.id)
-            await tx.subscription.create({
-              data: { userId: user.id, communityId: community.id, payment, paidOn, validUntil },
-            })
+            await this.createImportedSubscription(tx, user.id, community.id, { payment, paidOn, validUntil })
           })
           summary.created++
           if (!notifyCommunityId) notifyCommunityId = community.id
 
-          if (email) {
+          if (email && validUntil) {
             try {
               await notificationsQueue.add(
                 WELCOME_EMAIL_JOB,
@@ -846,13 +897,26 @@ export class AdminService {
       }),
       this.db.user.findMany({
         where: { phone: { in: phones } },
-        select: { phone: true, status: true },
+        select: { id: true, phone: true, status: true },
       }),
     ])
 
     const existingPhoneSet = new Set(existingByPhone.map(r => r.phone))
     const existingEmailMap = new Map(existingByEmail.map(r => [r.email, r]))
     const userStatusByPhone = new Map(existingUsersByPhone.map(u => [u.phone, u.status]))
+
+    // A duplicate is a (phone, community) pair: one phone is one member, who can be in each community once. So a row
+    // is a duplicate only if that phone already has an active subscription in that community, or an earlier row of this
+    // same file is for the same phone and community. A known phone in another community is just being added.
+    const phoneByUserId = new Map(existingUsersByPhone.map(u => [u.id, u.phone]))
+    const activeSubs = existingUsersByPhone.length
+      ? await this.db.subscription.findMany({
+          where: { userId: { in: existingUsersByPhone.map(u => u.id) }, isActive: true },
+          select: { userId: true, communityId: true },
+        })
+      : []
+    const memberKeys = new Set(activeSubs.map(sub => `${phoneByUserId.get(sub.userId)}|${sub.communityId}`))
+    const keysInFile = new Set<string>()
 
     const results: ValidateImportRowResult[] = rows.map(row => {
       const errors: string[] = []
@@ -879,19 +943,27 @@ export class AdminService {
         if (!communityId) errors.push(`Community "${row.service}" not found`)
         else if (!hasCommunityAccess(accessibleCommunityIds, communityId)) {
           errors.push(`You do not have access to community "${row.service}"`)
-        } else if (freeCommunityIds.has(communityId)) {
-          errors.push(FREE_COMMUNITY_IMPORT_REASON(row.service))
         }
       }
 
-      if (!row.payment || isNaN(row.payment) || row.payment <= 0) {
-        errors.push('Invalid payment amount')
-      }
-
-      if (!row.valid?.trim()) errors.push('Valid date is required')
+      // Payment and dates: the same rules as the import itself (free: no price/expiry; paid: payment > 0 and a
+      // YYYY-MM-DD Valid date; Paid on optional but YYYY-MM-DD).
+      const rowCommunityId = communityIdByName.get(row.service?.toLowerCase() ?? '')
+      const terms = resolveImportTerms(
+        rowCommunityId !== undefined && freeCommunityIds.has(rowCommunityId),
+        row.payment,
+        row.valid ?? '',
+        row.paidOn ?? '',
+      )
+      if ('error' in terms) errors.push(terms.error)
 
       // Duplicate checks (warnings, not errors)
       const phoneExists = existingPhoneSet.has(row.phone)
+      const rowKey = rowCommunityId ? `${row.phone}|${rowCommunityId}` : null
+      const duplicateInCommunity = rowKey !== null && memberKeys.has(rowKey)
+      const repeatedInFile = rowKey !== null && keysInFile.has(rowKey)
+      if (rowKey) keysInFile.add(rowKey)
+      const memberKnown = userStatusByPhone.has(row.phone)
       const emailMatch = row.email ? existingEmailMap.get(row.email) : undefined
       const emailExistsDifferentPhone = emailMatch && emailMatch.phone !== row.phone
       const userStatus = userStatusByPhone.get(row.phone)
@@ -899,8 +971,12 @@ export class AdminService {
 
       if (existingStatus) {
         warnings.push(`Phone belongs to a ${existingStatus} member ("${existingByPhone.find(p => p.phone === row.phone)?.name ?? row.phone}") — select to revive, otherwise this row is skipped`)
-      } else if (phoneExists) {
-        warnings.push(`Phone already exists — customer "${existingByPhone.find(p => p.phone === row.phone)?.name ?? row.phone}" will be updated based on strategy`)
+      } else if (duplicateInCommunity) {
+        warnings.push(`Already a member of ${row.service} — customer "${existingByPhone.find(p => p.phone === row.phone)?.name ?? row.phone}" will be updated based on strategy`)
+      } else if (repeatedInFile) {
+        warnings.push(`Same phone and community (${row.service}) as an earlier row in this file — this row will be updated based on strategy`)
+      } else if (memberKnown && rowCommunityId) {
+        warnings.push(`Existing member — will be added to ${row.service}`)
       }
       if (emailExistsDifferentPhone) {
         warnings.push(`Email already registered under a different phone (${emailMatch!.phone})`)
@@ -910,7 +986,7 @@ export class AdminService {
         rowNum: row.rowNum,
         errors,
         warnings,
-        isDuplicate: phoneExists || !!emailExistsDifferentPhone,
+        isDuplicate: duplicateInCommunity || repeatedInFile || !!emailExistsDifferentPhone,
         existingStatus,
       }
     })
@@ -1558,6 +1634,9 @@ export class AdminService {
     if (validUntil <= paidOn) {
       throw new BadRequestError('Valid until date must be after the paid-on date')
     }
+    // An explicit Paid on cannot be in the future, and the new end date must be after today.
+    const datesProblem = subscriptionDatesProblem(data.paidOn ? paidOn : null, validUntil)
+    if (datesProblem) throw new BadRequestError(datesProblem)
 
     const { sub: created, reducedFrom } = await this.db.$transaction(async tx => {
       // Two admins extending at the same moment must not leave two active rows: take a per-(member, community)
@@ -1682,16 +1761,30 @@ export class AdminService {
     }
   }
 
+  /**
+   * Adds the paid subscription a sheet row asks for. The free community gets none here: every branch has already called
+   * ensureFreeSubscription, so a second row would duplicate it.
+   */
+  private async createImportedSubscription(
+    db: PrismaClient | Prisma.TransactionClient,
+    userId: string,
+    communityId: string,
+    terms: ImportTerms,
+  ): Promise<void> {
+    if (!terms.validUntil) return
+    await db.subscription.create({ data: { userId, communityId, payment: terms.payment, paidOn: terms.paidOn, validUntil: terms.validUntil } })
+  }
+
   /** After an import overwrote a running plan with an earlier end date, tells the member (see notifySubscriptionReduced). */
   private async notifyIfReduced(
     user: { id: string; name: string; email: string | null },
     community: { id: string; name: string },
     previousEnd: Date | null,
-    newEnd: Date,
+    newEnd: Date | null,
   ): Promise<void> {
     const today = new Date()
     today.setHours(0, 0, 0, 0)
-    if (!isReduction(previousEnd, newEnd, today)) return
+    if (!newEnd || !isReduction(previousEnd, newEnd, today)) return
     await notifySubscriptionReduced(this.db, {
       userId: user.id,
       name: user.name,
@@ -2061,24 +2154,23 @@ export class AdminService {
   }
 
   private membersToCsv(members: MemberItemDTO[]): string {
-    const formatCurrency = (n: number) => `₹${n.toLocaleString('en-IN')}`
-    const formatDate = (iso: string | null | undefined) =>
-      iso ? new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'
     const escape = (v: string) => `"${v.replace(/"/g, '""')}"`
 
-    const header = ['Name', 'Phone', 'Email', 'Community', 'Payment', 'Paid On', 'Valid Till', 'Status', 'Added On']
+    // The first seven columns are exactly the ones Import CSV reads (same names, plain payment, YYYY-MM-DD dates), so an
+    // exported file can be imported again. Status and Added On are extra; the importers ignore them.
+    const header = ['Name', 'Contact Number', 'Payment', 'Paid on', 'Valid', 'Service', 'Email', 'Status', 'Added On']
     const rows = members
       .flatMap(m => (m.allSubscriptions.length > 0 ? m.allSubscriptions.map(sub => ({ m, sub })) : [{ m, sub: null as MemberSubscriptionDTO | null }]))
       .map(({ m, sub }) => [
         m.name,
         m.phone,
+        sub ? String(sub.payment) : '',
+        sub?.paidOn ?? '',
+        sub?.validUntil ?? '',
+        sub?.communityName ?? '',
         m.email ?? '',
-        sub?.communityName ?? '—',
-        sub ? formatCurrency(sub.payment) : '—',
-        formatDate(sub?.paidOn),
-        formatDate(sub?.validUntil),
         this.memberStatusLabel(m),
-        formatDate(m.createdAt),
+        m.createdAt.slice(0, 10),
       ])
 
     return '﻿' + [header, ...rows].map(r => r.map(escape).join(',')).join('\n')

@@ -11,6 +11,7 @@ import Modal from "@/components/ui/Modal";
 import Select from "@/components/ui/Select";
 import DatePicker from "@/components/ui/DatePicker";
 import { communityOptions, type MemberCommunity } from "./communities";
+import { addDays, startOfToday } from "@/lib/dates";
 import { durationPresets } from "./datePresets";
 import { FormField, inputCls, primaryBtn, secondaryBtn } from "./memberUi";
 
@@ -177,6 +178,7 @@ export default function AddMemberModal({
             <DatePicker
               value={member.validUntil}
               ariaLabel="Valid till"
+              minDate={addDays(startOfToday(), 1)}
               presets={durationPresets()}
               triggerClassName={inputCls(errors.validUntil)}
               onChange={(v) => {

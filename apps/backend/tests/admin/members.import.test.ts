@@ -243,12 +243,19 @@ describe('POST /admin/import-json and /validate-import', () => {
     expect(await prisma.subscription.count({ where: { userId: priya.id } })).toBe(0)
   })
 
-  it('rejects an empty batch, an unknown strategy and a payment of zero with a 4xx', async () => {
+  it('rejects an empty batch, an unknown strategy and a negative payment with a 4xx', async () => {
     expect((await importJson(boss, [])).status).toBe(422)
     expect((await importJson(boss, [jrow()], { strategy: 'nuke' })).status).toBeGreaterThanOrEqual(400)
-    const zero = await importJson(boss, [jrow({ payment: 0 })])
-    expect(zero.status).toBeGreaterThanOrEqual(400)
-    expect(zero.status).toBeLessThan(500)
+    const negative = await importJson(boss, [jrow({ payment: -1 })])
+    expect(negative.status).toBeGreaterThanOrEqual(400)
+    expect(negative.status).toBeLessThan(500)
+  })
+
+  it('a payment of zero is a row error for a paid community (zero is only for the free one)', async () => {
+    const res = await importJson(boss, [jrow({ payment: 0 })])
+    expect(res.status).toBe(200)
+    expect(res.body.data.created).toBe(0)
+    expect(res.body.data.errors).toEqual([expect.objectContaining({ reason: 'Invalid payment amount' })])
   })
 
   it('does not revive a suspended or deleted member unless the admin ticked that row', async () => {
