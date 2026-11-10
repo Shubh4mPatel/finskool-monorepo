@@ -6,6 +6,7 @@ import { BadRequestError, ForbiddenError, NotFoundError } from '../../shared/err
 import { logger } from '../../shared/logger.js'
 import type { KitListStatus } from './welcome-kits.validator.js'
 import { notExpired } from '../../lib/subscription-expiry.js'
+import { assertNotBlocked } from '../../lib/community-block.js'
 import type {
   CapitalAllocation,
   MobileWelcomeKitDTO,
@@ -192,6 +193,7 @@ export class WelcomeKitsService {
         where: { userId: user.id, communityId, isActive: true, ...notExpired(today) },
       })
       if (subscriptions === 0) {
+        await assertNotBlocked(this.db, user.id, communityId, 'member')
         throw new ForbiddenError('You do not have an active subscription to this community.', 'SUBSCRIPTION_REQUIRED')
       }
     }

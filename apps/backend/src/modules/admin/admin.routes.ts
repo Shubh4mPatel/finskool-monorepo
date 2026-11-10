@@ -68,6 +68,8 @@ router.patch('/members/:id/password', authenticate, requireRole('admin'), contro
 router.post('/members/bulk-delete', authenticate, requireRole('admin'), controller.bulkDeleteMembers)
 router.delete('/members/:id', authenticate, requireRole('admin'), controller.deleteMember)
 router.delete('/members/:id/communities/:communityId', authenticate, requireRole('admin'), controller.revokeMemberCommunity)
+router.post('/members/:id/communities/:communityId/block', authenticate, requireRole('admin'), controller.blockMemberInCommunity)
+router.delete('/members/:id/communities/:communityId/block', authenticate, requireRole('admin'), controller.unblockMemberInCommunity)
 router.patch('/members/:id/suspend', authenticate, requireRole('admin'), controller.suspendMember)
 router.patch('/members/:id/revoke', authenticate, requireRole('admin'), controller.revokeSuspension)
 

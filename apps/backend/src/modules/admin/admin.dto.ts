@@ -54,6 +54,24 @@ export interface BulkDeleteMembersResultDTO {
   errors: { userId: string; reason: string }[]
 }
 
+export interface BlockMemberInCommunityDTO {
+  reason: string
+}
+
+/** A member's block in one community: their account and every other community stay usable. */
+export interface MemberCommunityBlockDTO {
+  reason: string
+  blockedAt: string   // ISO
+}
+
+export interface CommunityBlockResultDTO {
+  userId: string
+  communityId: string
+  blocked: boolean               // true after a block, false after an unblock
+  reason: string | null          // null after an unblock
+  blockedAt: string | null
+}
+
 export interface SuspendMemberDTO {
   reason: string
 }
@@ -235,6 +253,7 @@ export interface MemberSubscriptionDTO {
   paidOn: string | null
   validUntil: string | null   // null = no expiry (the free community)
   isActive: boolean
+  block: MemberCommunityBlockDTO | null   // set while an admin has blocked the member in this community
 }
 
 export interface MemberItemDTO {

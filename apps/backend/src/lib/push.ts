@@ -84,11 +84,23 @@ export async function retryPendingPushes(db: PrismaClient, now: Date = new Date(
     where: { pushPending: true, createdAt: { gte: giveUpBefore, lt: new Date(now.getTime() - RETRY_AFTER_MS) } },
     orderBy: { createdAt: 'asc' },
     take: RETRY_BATCH,
-    select: { id: true, userId: true, type: true, sourceId: true, title: true, message: true, data: true },
+    select: { id: true, userId: true, communityId: true, type: true, sourceId: true, title: true, message: true, data: true },
   })
+
+  // Rows saved before an admin blocked the member from their community are not pushed late; they are just closed.
+  const blocks = rows.length
+    ? await db.communityBlock.findMany({
+        where: { userId: { in: [...new Set(rows.map(r => r.userId))] }, communityId: { in: [...new Set(rows.flatMap(r => (r.communityId ? [r.communityId] : [])))] } },
+        select: { userId: true, communityId: true },
+      })
+    : []
+  const blocked = new Set(blocks.map(b => `${b.userId}:${b.communityId}`))
+  const suppressed = rows.filter(r => r.communityId && blocked.has(`${r.userId}:${r.communityId}`))
+  if (suppressed.length) await db.notification.updateMany({ where: { id: { in: suppressed.map(r => r.id) } }, data: { pushPending: false } })
 
   const groups = new Map<string, typeof rows>()
   for (const row of rows) {
+    if (row.communityId && blocked.has(`${row.userId}:${row.communityId}`)) continue
     const key = `${row.type}|${row.sourceId}|${row.title}|${row.message}`
     const group = groups.get(key)
     if (group) group.push(row)

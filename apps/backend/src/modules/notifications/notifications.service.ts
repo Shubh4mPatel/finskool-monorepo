@@ -1,4 +1,5 @@
-import type { PrismaClient } from '../../generated/prisma/client.js'
+import type { Prisma, PrismaClient } from '../../generated/prisma/client.js'
+import { visibleNotifications } from '../../lib/community-block.js'
 import { decodeCursor, encodeCursor } from '../tickets/tickets.shared.js'
 import { NotFoundError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
@@ -17,6 +18,8 @@ import type {
   ServiceInvoiceEmailJobPayload,
   CommunityAddedEmailJobPayload,
   CommunityAccessRemovedEmailJobPayload,
+  CommunityBlockedEmailJobPayload,
+  CommunityUnblockedEmailJobPayload,
   NewMemberRegisteredEmailJobPayload,
   AdminPaymentEmailJobPayload,
   MemberSuspendedEmailJobPayload,
@@ -72,7 +75,14 @@ export class NotificationsService {
   async listForUser(userId: string, page: number, pageSize: number, communityId?: string, cursor?: string): Promise<ListNotificationsResponseDTO> {
     const base = communityId ? { userId, communityId } : { userId }
     const after = cursor ? decodeCursor(cursor) : null
-    const where = after ? { ...base, OR: [{ createdAt: { lt: after.at } }, { createdAt: after.at, id: { lt: after.id } }] } : base
+    // Never shows what belongs to a community the member is blocked from, including rows from before the block.
+    const where: Prisma.NotificationWhereInput = {
+      AND: [
+        base,
+        visibleNotifications(userId),
+        ...(after ? [{ OR: [{ createdAt: { lt: after.at } }, { createdAt: after.at, id: { lt: after.id } }] }] : []),
+      ],
+    }
     const orderBy = [{ createdAt: 'desc' as const }, { id: 'desc' as const }]
 
     // One extra row tells us whether anything older exists, without counting.
@@ -136,7 +146,7 @@ export class NotificationsService {
   }
 
   async unreadCount(userId: string): Promise<number> {
-    return this.db.notification.count({ where: { userId, isRead: false } })
+    return this.db.notification.count({ where: { userId, isRead: false, ...visibleNotifications(userId) } })
   }
 
   async markRead(userId: string, notificationId: string): Promise<void> {
@@ -190,7 +200,7 @@ export class NotificationsService {
 
     const subs = await this.db.subscription.findMany({
       // Only members who can use the app: a suspended or deleted member gets no inbox row, email or push.
-      where: { communityId, isActive: true, ...notExpired(startOfToday()), user: { status: 'active', deletedAt: null } },
+      where: { communityId, isActive: true, ...notExpired(startOfToday()), user: { status: 'active', deletedAt: null, communityBlocks: { none: { communityId } } } },
       select: { userId: true, user: { select: { email: true, postNotificationsEnabled: true } } },
       distinct: ['userId'],
     })
@@ -313,6 +323,23 @@ export class NotificationsService {
 
   async sendCommunityAccessRemovedEmail(payload: CommunityAccessRemovedEmailJobPayload): Promise<void> {
     const { subject, html } = renderEmail('community-access-removed', {
+      first_name: firstNameOf(payload.name),
+      community_name: payload.communityName,
+    })
+    await sendMail({ to: payload.toEmail, subject, html })
+  }
+
+  async sendCommunityBlockedEmail(payload: CommunityBlockedEmailJobPayload): Promise<void> {
+    const { subject, html } = renderEmail('community-blocked', {
+      first_name: firstNameOf(payload.name),
+      community_name: payload.communityName,
+      reason: payload.reason,
+    })
+    await sendMail({ to: payload.toEmail, subject, html })
+  }
+
+  async sendCommunityUnblockedEmail(payload: CommunityUnblockedEmailJobPayload): Promise<void> {
+    const { subject, html } = renderEmail('community-unblocked', {
       first_name: firstNameOf(payload.name),
       community_name: payload.communityName,
     })

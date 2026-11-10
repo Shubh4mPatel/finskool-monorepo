@@ -41,7 +41,7 @@ export default function SuspendModal({
 
   return (
     <Modal
-      title="Suspend Member"
+      title="Suspend Account"
       subtitle={member.name}
       icon={<Ban size={18} />}
       iconClass="bg-amber-100 text-amber-600"
@@ -62,7 +62,7 @@ export default function SuspendModal({
       }
     >
       <p className="text-sm text-muted">
-        Suspending {member.name} will block them from signing in until the suspension is revoked. Please give a reason — they&apos;ll see it.
+        Suspending {member.name}&rsquo;s account blocks them from signing in to every community until it is revoked. To remove access to just one community, open their profile and use &ldquo;Block in community&rdquo; instead. Please give a reason — they&apos;ll see it.
       </p>
       <textarea
         rows={4}

@@ -507,7 +507,7 @@ function MembersContent() {
             <RotateCcw size={14} />
           </button>
         ) : (
-          <button onClick={() => setModal({ type: "suspend", member: m })} disabled={busy} title="Suspend member" aria-label={`Suspend ${m.name}`} className={`${iconBtn} hover:bg-amber-50 hover:text-amber-600`}>
+          <button onClick={() => setModal({ type: "suspend", member: m })} disabled={busy} title="Suspend account (all communities)" aria-label={`Suspend ${m.name}'s account`} className={`${iconBtn} hover:bg-amber-50 hover:text-amber-600`}>
             <Ban size={14} />
           </button>
         ))}
@@ -541,6 +541,11 @@ function MembersContent() {
     return (
       <span className="inline-flex items-center gap-2">
         <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold ${communityBadge(sub.communityName)}`}>{sub.communityName}</span>
+        {sub.block && (
+          <span title={`Blocked in ${sub.communityName}: ${sub.block.reason}`} className="inline-flex rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-bold text-red-600">
+            Blocked
+          </span>
+        )}
         {m && first && extra > 0 && (
           <button
             type="button"

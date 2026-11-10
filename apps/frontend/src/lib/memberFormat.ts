@@ -7,6 +7,8 @@ export interface MemberSubscription {
   /** null = no expiry (the free community). */
   validUntil: string | null;
   isActive: boolean;
+  /** Set while an admin has blocked the member in this community only (their account and other communities work). */
+  block: { reason: string; blockedAt: string } | null;
 }
 
 export interface MemberItem {

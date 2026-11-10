@@ -6,6 +6,7 @@ import type { LiveNotificationEvent } from './queue.js'
 import { queuePushFor } from './push.js'
 import { NotificationType } from '../modules/notifications/notifications.dto.js'
 import { logger } from '../shared/logger.js'
+import { findCommunityBlock } from './community-block.js'
 
 export interface ThreadNotification {
   db: PrismaClient
@@ -40,6 +41,8 @@ export async function notifyMemberThread(n: ThreadNotification): Promise<void> {
   const data = { type: n.kind, id: n.threadId, event: n.event, ...(n.communityId ? { communityId: n.communityId } : {}) }
   let rowId: string
   try {
+    // A ticket in a community the member is blocked from stays silent for them (the admin's reply is still saved).
+    if (n.communityId && (await findCommunityBlock(n.db, n.userId, n.communityId))) return
     // pushPending: true until the push job is queued (see queuePushFor), so a push that fails to queue is retried.
     const row = await n.db.notification.create({
       data: { userId: n.userId, communityId: n.communityId, type, sourceId: n.eventId, title: n.title, message: n.message, data, pushPending: true },

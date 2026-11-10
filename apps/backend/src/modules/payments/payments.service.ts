@@ -1,3 +1,4 @@
+import { assertNotBlocked, findCommunityBlock } from '../../lib/community-block.js'
 import type { PrismaClient, Prisma } from '../../generated/prisma/client.js'
 import { queuePushFor } from '../../lib/push.js'
 import { getCommunityAdminIds } from '../../lib/community-access.js'
@@ -68,6 +69,8 @@ export class PaymentsService {
     const community = await this.db.community.findUnique({ where: { id: communityId } })
     if (!community || community.deletedAt) throw new NotFoundError('Community not found')
     if (community.isFree) throw new BadRequestError('The free community has no purchasable plans')
+    // A member an admin blocked from this community can't buy their way back in; they have to be unblocked first.
+    await assertNotBlocked(this.db, userId, communityId, 'member')
 
     const plan = await this.db.plan.findUnique({ where: { id: planId } })
     if (!plan || !plan.isActive || plan.communityId !== communityId) {
@@ -174,6 +177,16 @@ export class PaymentsService {
       this.db.user.findUnique({ where: { id: userId }, select: { name: true, email: true } }),
     ])
     if (!plan || !community || !user) throw new NotFoundError('Plan, community, or user no longer exists')
+
+    // Paid, but an admin blocked the member in the meantime. Granting would hand back the access the block removed, so
+    // nothing is granted and the order is left unsettled; the payment id is logged so it can be refunded from Razorpay.
+    if (await findCommunityBlock(this.db, userId, order.communityId)) {
+      logger.error(
+        { userId, planOrderId: order.id, communityId: order.communityId, razorpayPaymentId },
+        'payments.settlePlanOrder: payment received for a community the member is blocked from — not granted, needs a refund or an unblock',
+      )
+      await assertNotBlocked(this.db, userId, order.communityId, 'member')
+    }
 
     const now = new Date()
     const today = startOfToday()

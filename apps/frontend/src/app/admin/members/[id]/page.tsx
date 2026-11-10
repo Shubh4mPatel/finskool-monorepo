@@ -49,6 +49,11 @@ export default function MemberDetailPage() {
   const [suspendModalOpen, setSuspendModalOpen] = useState(false);
   const [suspendReason, setSuspendReason] = useState("");
 
+  // Community-level block: `blockTarget` is the community whose reason modal is open.
+  const [blockTarget, setBlockTarget] = useState<{ communityId: string; communityName: string } | null>(null);
+  const [blockReason, setBlockReason] = useState("");
+  const [blockBusy, setBlockBusy] = useState(false);
+
   const [extendModalOpen, setExtendModalOpen] = useState(false);
   const [extendPayment, setExtendPayment] = useState("");
   const [extendDate, setExtendDate] = useState("");
@@ -176,6 +181,46 @@ export default function MemberDetailPage() {
       toast.error(err instanceof ApiError ? err.message : "Failed to suspend member");
     } finally {
       setSuspending(false);
+    }
+  }
+
+  async function handleBlockInCommunity() {
+    if (!member || !blockTarget) return;
+    if (!blockReason.trim()) {
+      toast.error("Please provide a reason for blocking");
+      return;
+    }
+    setBlockBusy(true);
+    try {
+      await api.post(`/api/v1/admin/members/${member.id}/communities/${blockTarget.communityId}/block`, { reason: blockReason.trim() });
+      toast.success({ title: "Member blocked", message: `${member.name} can no longer access ${blockTarget.communityName}. Their other communities are unaffected.` });
+      setBlockTarget(null);
+      setBlockReason("");
+      load();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to block member");
+    } finally {
+      setBlockBusy(false);
+    }
+  }
+
+  async function handleUnblockInCommunity(communityId: string, communityName: string) {
+    if (!member) return;
+    const ok = await confirm({
+      title: "Unblock in this community?",
+      message: `${member.name} will get their access to ${communityName} back and will be told by email.`,
+      confirmLabel: "Yes, Unblock",
+    });
+    if (!ok) return;
+    setBlockBusy(true);
+    try {
+      await api.delete(`/api/v1/admin/members/${member.id}/communities/${communityId}/block`);
+      toast.success({ title: "Member unblocked", message: `${member.name} can access ${communityName} again.` });
+      load();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to unblock member");
+    } finally {
+      setBlockBusy(false);
     }
   }
 
@@ -336,8 +381,8 @@ export default function MemberDetailPage() {
                     </div>
                     <div>
                       <p className="flex items-center gap-2 text-sm font-semibold text-primary">
-                        <span className="h-2 w-2 rounded-full bg-[#4caf50]" />
-                        Active Subscription
+                        <span className={`h-2 w-2 rounded-full ${sub.block ? "bg-red-500" : "bg-[#4caf50]"}`} />
+                        {sub.block ? `Blocked in ${sub.communityName}` : "Active Subscription"}
                       </p>
                       <p className="text-xs text-[#5a7a50]">{sub.validUntil ? `Expires: ${formatDate(sub.validUntil)}` : "No expiry"}</p>
                     </div>
@@ -356,8 +401,8 @@ export default function MemberDetailPage() {
                 <button
                   type="button"
                   onClick={openExtendModal}
-                  disabled={!sub || !sub.validUntil}
-                  title={sub && !sub.validUntil ? `${sub.communityName} has no expiry` : undefined}
+                  disabled={!sub || !sub.validUntil || !!sub.block}
+                  title={sub?.block ? `Blocked in ${sub.communityName} — unblock first` : sub && !sub.validUntil ? `${sub.communityName} has no expiry` : undefined}
                   className="rounded-full border border-accent bg-white px-3 py-1.5 text-xs font-bold text-accent transition-colors hover:bg-accent/5 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   + Extend
@@ -384,6 +429,65 @@ export default function MemberDetailPage() {
               </div>
             </div>
           </div>
+
+          {member.allSubscriptions.length > 0 && (
+            <>
+              <div className="h-px w-full bg-divider" />
+              <div className="p-6">
+                <p className="text-sm font-semibold text-primary">Communities</p>
+                <p className="mt-1 text-xs text-subtle">
+                  Blocking removes access to one community only. The member can still sign in and use their other communities.
+                </p>
+                <ul className="mt-3 divide-y divide-divider rounded-xl border border-divider">
+                  {member.allSubscriptions.map((s) => (
+                    <li key={s.communityId} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                      <div className="min-w-0">
+                        <p className="flex items-center gap-2 text-sm font-semibold text-primary">
+                          {s.communityName}
+                          {s.block ? (
+                            <span className="rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-bold text-red-600">Blocked</span>
+                          ) : !s.isActive ? (
+                            <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-bold text-gray-500">Inactive</span>
+                          ) : null}
+                        </p>
+                        {s.block ? (
+                          <p className="mt-0.5 text-xs text-red-600">
+                            Reason: {s.block.reason} · since {formatDate(s.block.blockedAt)}
+                          </p>
+                        ) : (
+                          <p className="mt-0.5 text-xs text-subtle">{s.validUntil ? `Valid until ${formatDate(s.validUntil)}` : "No expiry"}</p>
+                        )}
+                      </div>
+                      {member.accountStatus !== "deleted" &&
+                        (s.block ? (
+                          <button
+                            type="button"
+                            onClick={() => handleUnblockInCommunity(s.communityId, s.communityName)}
+                            disabled={blockBusy}
+                            className="rounded-full border border-accent px-4 py-1.5 text-xs font-bold text-accent transition-colors hover:bg-accent/5 disabled:opacity-60"
+                          >
+                            Unblock
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setBlockReason("");
+                              setBlockTarget({ communityId: s.communityId, communityName: s.communityName });
+                            }}
+                            disabled={blockBusy}
+                            className="flex items-center gap-1.5 rounded-full border border-red-300 px-4 py-1.5 text-xs font-bold text-red-500 transition-colors hover:bg-red-50 disabled:opacity-60"
+                          >
+                            <Ban size={12} />
+                            Block in community
+                          </button>
+                        ))}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </>
+          )}
 
           <div className="h-px w-full bg-divider" />
 
@@ -462,7 +566,7 @@ export default function MemberDetailPage() {
                   onClick={() => setSuspendModalOpen(true)}
                   className="flex items-center justify-center gap-2 rounded-full bg-red-500 px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-red-600"
                 >
-                  Suspend user
+                  Suspend account
                 </button>
               ))}
 
@@ -575,6 +679,39 @@ export default function MemberDetailPage() {
                 className="rounded-full bg-red-500 px-5 py-2.5 text-sm font-bold text-white transition-transform hover:scale-105 disabled:opacity-60"
               >
                 {suspending ? "Suspending…" : "Suspend"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {blockTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-primary/40 p-4 backdrop-blur-sm">
+          <div className="animate-rise w-full max-w-sm rounded-2xl bg-white p-6 shadow-card-hover">
+            <h3 className="font-display text-lg font-bold text-primary">Block {member.name} in {blockTarget.communityName}?</h3>
+            <p className="mt-1 text-sm text-muted">
+              They lose access to {blockTarget.communityName} and stop getting its notifications. Their account and other communities are not affected.
+              They&rsquo;ll be emailed this reason.
+            </p>
+            <label className="mt-4 block text-sm font-semibold text-primary">Reason</label>
+            <textarea
+              rows={4}
+              value={blockReason}
+              onChange={(e) => setBlockReason(e.target.value)}
+              placeholder="Enter reason..."
+              autoFocus
+              className="mt-2 w-full rounded-xl border border-divider px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent/40"
+            />
+            <div className="mt-5 flex justify-end gap-3">
+              <button onClick={() => setBlockTarget(null)} disabled={blockBusy} className="rounded-full border border-divider px-5 py-2.5 text-sm font-bold text-muted transition-colors hover:bg-divider/60">
+                Cancel
+              </button>
+              <button
+                onClick={handleBlockInCommunity}
+                disabled={blockBusy}
+                className="rounded-full bg-red-500 px-5 py-2.5 text-sm font-bold text-white transition-transform hover:scale-105 disabled:opacity-60"
+              >
+                {blockBusy ? "Blocking…" : "Block"}
               </button>
             </div>
           </div>

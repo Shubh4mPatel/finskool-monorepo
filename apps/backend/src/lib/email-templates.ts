@@ -11,6 +11,8 @@ export type EmailTemplateId =
   | 'service-invoice'
   | 'community-added'
   | 'community-access-removed'
+  | 'community-blocked'
+  | 'community-unblocked'
   | 'new-announcement'
   | 'admin-new-member'
   | 'admin-payment'
@@ -36,6 +38,8 @@ const TEMPLATE_REGISTRY: Record<EmailTemplateId, TemplateDef> = {
   'service-invoice': { file: 'service-invoice.html', subject: 'Payment received - invoice {invoice_number}' },
   'community-added': { file: 'community-added.html', subject: "You've been added to {community_name}" },
   'community-access-removed': { file: 'community-access-removed.html', subject: 'Your {community_name} access has been removed' },
+  'community-blocked': { file: 'community-blocked.html', subject: 'Your {community_name} access has been blocked' },
+  'community-unblocked': { file: 'community-unblocked.html', subject: 'Your {community_name} access has been restored' },
   'new-announcement': { file: 'new-announcement.html', subject: 'New announcement in {community_name}' },
   'admin-new-member': { file: 'admin-new-member.html', subject: '{member_name} has registered' },
   'admin-payment': { file: 'admin-payment.html', subject: '{headline}' },

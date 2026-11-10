@@ -9,6 +9,8 @@ import {
   SERVICE_INVOICE_EMAIL_JOB,
   COMMUNITY_ADDED_EMAIL_JOB,
   COMMUNITY_ACCESS_REMOVED_EMAIL_JOB,
+  COMMUNITY_BLOCKED_EMAIL_JOB,
+  COMMUNITY_UNBLOCKED_EMAIL_JOB,
   NEW_MEMBER_REGISTERED_EMAIL_JOB,
   ADMIN_PAYMENT_EMAIL_JOB,
   MEMBER_SUSPENDED_EMAIL_JOB,
@@ -36,6 +38,8 @@ const worker = new Worker(
     if (job.name === SERVICE_INVOICE_EMAIL_JOB) return service.sendServiceInvoiceEmail(job.data)
     if (job.name === COMMUNITY_ADDED_EMAIL_JOB) return service.sendCommunityAddedEmail(job.data)
     if (job.name === COMMUNITY_ACCESS_REMOVED_EMAIL_JOB) return service.sendCommunityAccessRemovedEmail(job.data)
+    if (job.name === COMMUNITY_BLOCKED_EMAIL_JOB) return service.sendCommunityBlockedEmail(job.data)
+    if (job.name === COMMUNITY_UNBLOCKED_EMAIL_JOB) return service.sendCommunityUnblockedEmail(job.data)
     if (job.name === NEW_MEMBER_REGISTERED_EMAIL_JOB) return service.sendNewMemberRegisteredEmail(job.data)
     if (job.name === ADMIN_PAYMENT_EMAIL_JOB) return service.sendAdminPaymentEmail(job.data)
     if (job.name === MEMBER_SUSPENDED_EMAIL_JOB) return service.sendMemberSuspendedEmail(job.data)

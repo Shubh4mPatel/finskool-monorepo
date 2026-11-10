@@ -12,12 +12,16 @@ import {
   hasMemberAccess,
 } from '../../lib/community-access.js'
 import { generateUploadUrl } from '../../lib/minio.js'
+import { assertNotBlocked, findCommunityBlock } from '../../lib/community-block.js'
+import { recomputeActiveSubCount } from '../../lib/community-stats.js'
 import {
   notificationsQueue,
   WELCOME_EMAIL_JOB,
   SUBSCRIPTION_EXTENDED_EMAIL_JOB,
   COMMUNITY_ADDED_EMAIL_JOB,
   COMMUNITY_ACCESS_REMOVED_EMAIL_JOB,
+  COMMUNITY_BLOCKED_EMAIL_JOB,
+  COMMUNITY_UNBLOCKED_EMAIL_JOB,
   MEMBER_SUSPENDED_EMAIL_JOB,
   MEMBER_PASSWORD_RESET_EMAIL_JOB,
   MEMBER_REINSTATED_EMAIL_JOB,
@@ -50,6 +54,8 @@ import type {
   DeleteMemberResultDTO,
   BulkDeleteMembersResultDTO,
   SuspendMemberResultDTO,
+  CommunityBlockResultDTO,
+  MemberCommunityBlockDTO,
   RevokeSuspensionResultDTO,
   CommunityDTO,
   CreateCommunityDTO,
@@ -258,6 +264,11 @@ export class AdminService {
           summary.errors.push({ row: rowNum, phone, reason: 'This phone number belongs to an admin account' })
           continue
         }
+        // Blocked from this community: the sheet can't hand the access back, an admin has to unblock them first.
+        if (existingUser && (await findCommunityBlock(this.db, existingUser.id, community.id))) {
+          summary.errors.push({ row: rowNum, phone, reason: 'Member is blocked in this community — unblock them first' })
+          continue
+        }
         // An email already used by a different account would fail the unique key halfway through the file.
         if (email && (!existingUser || existingUser.passwordHash === null)) {
           const emailOwner = await this.db.user.findUnique({ where: { email }, select: { id: true } })
@@ -436,6 +447,11 @@ export class AdminService {
         const existingUser = await this.db.user.findUnique({ where: { phone } })
         if (existingUser && existingUser.role === 'admin') {
           summary.errors.push({ row: rowNum, phone, reason: 'This phone number belongs to an admin account' })
+          continue
+        }
+        // Blocked from this community: the sheet can't hand the access back, an admin has to unblock them first.
+        if (existingUser && (await findCommunityBlock(this.db, existingUser.id, community.id))) {
+          summary.errors.push({ row: rowNum, phone, reason: 'Member is blocked in this community — unblock them first' })
           continue
         }
         const existingAp = await this.db.approvedPhone.findUnique({ where: { phone } })
@@ -1462,6 +1478,7 @@ export class AdminService {
       throw new ConflictError('This member is already active — use the regular add-member flow instead', 'PHONE_EXISTS')
     }
     await assertMemberAccess(this.db, accessibleCommunityIds, existingUser.id)
+    await assertNotBlocked(this.db, existingUser.id, data.communityId)
     if (data.email) {
       const emailOwner = await this.db.user.findUnique({ where: { email: data.email } })
       if (emailOwner && emailOwner.phone !== phone) {
@@ -1531,6 +1548,7 @@ export class AdminService {
     const owner = await this.db.user.findUnique({ where: { id: current.userId }, select: { status: true, role: true } })
     if (!owner || owner.role === 'admin') throw new NotFoundError('Subscription not found')
     if (owner.status === 'deleted') throw new ConflictError('This member was deleted. Reactivate them before extending their plan.', 'MEMBER_DELETED')
+    await assertNotBlocked(this.db, current.userId, current.communityId)
 
     const paidOn = data.paidOn ? new Date(data.paidOn) : new Date()
     const validUntil = new Date(data.validUntil)
@@ -1721,6 +1739,128 @@ export class AdminService {
     }
   }
 
+  /**
+   * Blocks a member from ONE community. Their account stays active and every other community keeps working; only
+   * this community's access is switched off, by deactivating their active subscriptions here (isActive is the gate
+   * every access check reads). Which rows were switched off is stored on the block so unblocking restores exactly
+   * those. Needs access to the community, not to the member's other communities.
+   */
+  async blockMemberInCommunity(
+    userId: string,
+    communityId: string,
+    reason: string,
+    adminId: string,
+    accessibleCommunityIds: string[] | null,
+  ): Promise<CommunityBlockResultDTO> {
+    const user = await this.db.user.findUnique({ where: { id: userId } })
+    if (!user || user.role === 'admin') throw new NotFoundError('Member not found')
+    assertCommunityAccessFromToken(accessibleCommunityIds, communityId)
+    const community = await this.db.community.findUnique({ where: { id: communityId }, select: { name: true, deletedAt: true } })
+    if (!community || community.deletedAt) throw new NotFoundError('Community not found')
+    if (user.status === 'deleted') throw new ConflictError('This member was deleted — there is nothing to block', 'MEMBER_DELETED')
+
+    const hasRow = await this.db.subscription.findFirst({ where: { userId, communityId }, select: { id: true } })
+    if (!hasRow) throw new NotFoundError('This member is not in this community')
+
+    const block = await this.db.$transaction(async tx => {
+      // Two admins blocking at the same moment must not both pass the "not blocked yet" check.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`community-block:${userId}:${communityId}`}))`
+      if (await findCommunityBlock(tx, userId, communityId)) {
+        throw new ConflictError('This member is already blocked in this community', 'ALREADY_BLOCKED')
+      }
+
+      const active = await tx.subscription.findMany({ where: { userId, communityId, isActive: true }, select: { id: true } })
+      const created = await tx.communityBlock.create({
+        data: { userId, communityId, reason, blockedBy: adminId, suspendedSubscriptionIds: active.map(a => a.id) },
+      })
+      await tx.subscription.updateMany({ where: { id: { in: active.map(a => a.id) } }, data: { isActive: false } })
+      await recomputeActiveSubCount(tx, communityId)
+
+      // The mobile session caches the member's community ids; drop this one so lists built from it stop showing it.
+      const session = await tx.mobileSession.findUnique({ where: { userId }, select: { communityIds: true, selectedCommunityId: true } })
+      if (session) {
+        await tx.mobileSession.update({
+          where: { userId },
+          data: {
+            communityIds: session.communityIds.filter(id => id !== communityId),
+            ...(session.selectedCommunityId === communityId ? { selectedCommunityId: null } : {}),
+          },
+        })
+      }
+      return created
+    })
+
+    logger.info({ userId, communityId, adminId }, 'admin.blockMemberInCommunity: blocked')
+
+    if (user.email) {
+      try {
+        await notificationsQueue.add(
+          COMMUNITY_BLOCKED_EMAIL_JOB,
+          { toEmail: user.email, name: user.name, communityName: community.name, reason },
+          { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
+        )
+      } catch (err) {
+        logger.error({ err, userId, communityId }, 'admin.blockMemberInCommunity: failed to enqueue blocked email job')
+      }
+    }
+
+    return { userId, communityId, blocked: true, reason: block.reason, blockedAt: block.createdAt.toISOString() }
+  }
+
+  /** Lifts a community block and gives back the access it took away (rows that have not expired in the meantime). */
+  async unblockMemberInCommunity(
+    userId: string,
+    communityId: string,
+    accessibleCommunityIds: string[] | null,
+  ): Promise<CommunityBlockResultDTO> {
+    const user = await this.db.user.findUnique({ where: { id: userId } })
+    if (!user || user.role === 'admin') throw new NotFoundError('Member not found')
+    assertCommunityAccessFromToken(accessibleCommunityIds, communityId)
+    const community = await this.db.community.findUnique({ where: { id: communityId }, select: { name: true } })
+
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    await this.db.$transaction(async tx => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`community-block:${userId}:${communityId}`}))`
+      const block = await findCommunityBlock(tx, userId, communityId)
+      if (!block) throw new ConflictError('This member is not blocked in this community', 'NOT_BLOCKED')
+
+      await tx.subscription.updateMany({
+        where: {
+          id: { in: block.suspendedSubscriptionIds },
+          userId,
+          communityId,
+          ...notExpired(today),
+        },
+        data: { isActive: true },
+      })
+      await tx.communityBlock.delete({ where: { id: block.id } })
+      await recomputeActiveSubCount(tx, communityId)
+
+      const session = await tx.mobileSession.findUnique({ where: { userId }, select: { communityIds: true } })
+      if (session && !session.communityIds.includes(communityId)) {
+        await tx.mobileSession.update({ where: { userId }, data: { communityIds: [...session.communityIds, communityId] } })
+      }
+    })
+
+    logger.info({ userId, communityId }, 'admin.unblockMemberInCommunity: unblocked')
+
+    if (user.email) {
+      try {
+        await notificationsQueue.add(
+          COMMUNITY_UNBLOCKED_EMAIL_JOB,
+          { toEmail: user.email, name: user.name, communityName: community?.name ?? '' },
+          { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: true, removeOnFail: { count: 500 } },
+        )
+      } catch (err) {
+        logger.error({ err, userId, communityId }, 'admin.unblockMemberInCommunity: failed to enqueue unblocked email job')
+      }
+    }
+
+    return { userId, communityId, blocked: false, reason: null, blockedAt: null }
+  }
+
   async revokeSuspension(userId: string, accessibleCommunityIds: string[] | null): Promise<RevokeSuspensionResultDTO> {
     // New guard vs. before — see this plan's §1: reachable by any userId now, not just
     // ones that happened to match an ApprovedPhone, so an admin account must be excluded
@@ -1815,6 +1955,8 @@ export class AdminService {
     })
     const apByPhone = new Map(approvedPhones.map(a => [a.phone, a]))
 
+    const blocks = await this.loadBlocks(rows.map(u => u.id))
+
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
@@ -1842,8 +1984,8 @@ export class AdminService {
         hasActiveSubscription,
         createdAt: u.createdAt.toISOString(),
         suspensionReason: u.status === 'suspended' ? (u.suspensionReason ?? null) : null,
-        subscription: sub ? this.buildSubDTO(sub) : null,
-        allSubscriptions: allSubs.map(s => this.buildSubDTO(s)),
+        subscription: sub ? this.buildSubDTO(sub, blocks.get(`${u.id}:${sub.communityId}`) ?? null) : null,
+        allSubscriptions: allSubs.map(s => this.buildSubDTO(s, blocks.get(`${u.id}:${s.communityId}`) ?? null)),
       }
     })
 
@@ -2055,6 +2197,13 @@ export class AdminService {
     return result
   }
 
+  /** Community blocks of these members, keyed `${userId}:${communityId}`. */
+  private async loadBlocks(userIds: string[]): Promise<Map<string, MemberCommunityBlockDTO>> {
+    if (userIds.length === 0) return new Map()
+    const rows = await this.db.communityBlock.findMany({ where: { userId: { in: userIds } } })
+    return new Map(rows.map(b => [`${b.userId}:${b.communityId}`, { reason: b.reason, blockedAt: b.createdAt.toISOString() }]))
+  }
+
   private buildSubDTO(s: {
     id: string
     communityId: string
@@ -2063,7 +2212,7 @@ export class AdminService {
     paidOn: Date | null
     validUntil: Date | null
     isActive: boolean
-  }): MemberSubscriptionDTO {
+  }, block: MemberCommunityBlockDTO | null = null): MemberSubscriptionDTO {
     return {
       id: s.id,
       communityId: s.communityId,
@@ -2072,6 +2221,7 @@ export class AdminService {
       paidOn: s.paidOn ? s.paidOn.toISOString().split('T')[0]! : null,
       validUntil: s.validUntil ? s.validUntil.toISOString().split('T')[0]! : null,
       isActive: s.isActive,
+      block,
     }
   }
 
@@ -2134,6 +2284,7 @@ export class AdminService {
 
     // "Current" per community = most recently created row, not isActive:true — see
     // getCurrentSubscriptionIds's comment on queryMembers for why.
+    const blocks = await this.loadBlocks([user.id])
     const allSubs = this.latestSubscriptionPerCommunity(user.subscriptions)
     const sub = allSubs[0] ?? null
     const today = new Date()
@@ -2153,8 +2304,8 @@ export class AdminService {
       hasActiveSubscription,
       createdAt: user.createdAt.toISOString(),
       suspensionReason: user.status === 'suspended' ? (user.suspensionReason ?? null) : null,
-      subscription: sub ? this.buildSubDTO(sub) : null,
-      allSubscriptions: allSubs.map(s => this.buildSubDTO(s)),
+      subscription: sub ? this.buildSubDTO(sub, blocks.get(`${user.id}:${sub.communityId}`) ?? null) : null,
+      allSubscriptions: allSubs.map(s => this.buildSubDTO(s, blocks.get(`${user.id}:${s.communityId}`) ?? null)),
     }
   }
 
@@ -2205,6 +2356,7 @@ export class AdminService {
         where: { userId: user.id, communityId: data.newCommunity.communityId, isActive: true },
       })
       if (alreadyIn) throw new ConflictError('Member is already in this community', 'ALREADY_IN_COMMUNITY')
+      await assertNotBlocked(this.db, user.id, data.newCommunity.communityId)
     }
 
     const newSubscriptionId = await this.db.$transaction(async tx => {

@@ -29,6 +29,7 @@ import { decryptPan, encryptPan, isPanKeyConfigured } from '../../lib/pan-crypto
 import { latestInvoiceByCommunity } from '../../lib/plan-receipt.js'
 import type { SocialProvider } from '../../lib/social-token.js'
 import { notExpired } from '../../lib/subscription-expiry.js'
+import { COMMUNITY_BLOCKED_CODE, blockedMessage } from '../../lib/community-block.js'
 import {
   ConflictError,
   AppError,
@@ -286,6 +287,15 @@ export class MobileAuthService {
     if (user.role !== 'admin') await ensureFreeSubscription(this.db, user.id)
 
     if (user.role !== 'admin' && !(await this.hasActiveSubscription(user.id))) {
+      // Nothing left because an admin blocked them: say where and why instead of claiming the plan expired.
+      const block = await this.db.communityBlock.findFirst({
+        where: { userId: user.id },
+        orderBy: { createdAt: 'desc' },
+        include: { community: { select: { name: true } } },
+      })
+      if (block) {
+        throw new ForbiddenError(blockedMessage(block.community.name, block.reason), COMMUNITY_BLOCKED_CODE)
+      }
       throw new UnauthorizedError(
         'Your subscription has expired. Please contact your admin to renew.',
         'SUBSCRIPTION_EXPIRED',

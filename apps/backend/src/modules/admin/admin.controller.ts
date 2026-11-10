@@ -57,6 +57,10 @@ const bulkDeleteMembersSchema = z.object({
   userIds: z.array(z.string().uuid()).min(1, 'At least one member id is required'),
 })
 
+const blockMemberInCommunitySchema = z.object({
+  reason: z.string().trim().min(1, 'A reason is required').max(1000, 'Reason is too long'),
+})
+
 const suspendMemberSchema = z.object({
   reason: z.string().trim().min(1, 'A reason is required').max(1000, 'Reason is too long'),
 })
@@ -529,6 +533,30 @@ export class AdminController {
       const parsed = suspendMemberSchema.safeParse(req.body)
       if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
       const result = await this.service.suspendMember(id, parsed.data.reason, req.user!.accessibleCommunityIds)
+      res.json({ success: true, data: result })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  blockMemberInCommunity = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = uuidParam(req, 'id')
+      const communityId = uuidParam(req, 'communityId')
+      const parsed = blockMemberInCommunitySchema.safeParse(req.body)
+      if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Validation failed')
+      const result = await this.service.blockMemberInCommunity(id, communityId, parsed.data.reason, req.user!.id, req.user!.accessibleCommunityIds)
+      res.json({ success: true, data: result })
+    } catch (err) {
+      next(err)
+    }
+  }
+
+  unblockMemberInCommunity = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = uuidParam(req, 'id')
+      const communityId = uuidParam(req, 'communityId')
+      const result = await this.service.unblockMemberInCommunity(id, communityId, req.user!.accessibleCommunityIds)
       res.json({ success: true, data: result })
     } catch (err) {
       next(err)

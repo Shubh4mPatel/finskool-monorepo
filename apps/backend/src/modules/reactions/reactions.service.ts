@@ -8,6 +8,7 @@ import { logger } from '../../shared/logger.js'
 import { routingData, RoutingModule } from '../../lib/notification-routing.js'
 import { NotificationType } from '../notifications/notifications.dto.js'
 import { notExpired } from '../../lib/subscription-expiry.js'
+import { assertNotBlocked } from '../../lib/community-block.js'
 import type {
   ReactionTypeDTO,
   UpsertReactionDTO,
@@ -250,7 +251,10 @@ export class ReactionsService {
     const subscription = await this.db.subscription.findFirst({
       where: { userId, communityId, isActive: true, ...notExpired(today) },
     })
-    if (!subscription) throw new ForbiddenError('You must be a community member to view or react to this post')
+    if (!subscription) {
+      await assertNotBlocked(this.db, userId, communityId, 'member')
+      throw new ForbiddenError('You must be a community member to view or react to this post')
+    }
   }
 
   /**

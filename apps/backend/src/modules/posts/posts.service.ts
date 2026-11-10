@@ -22,6 +22,7 @@ import { NotFoundError, BadRequestError, ForbiddenError } from '../../shared/err
 import { isUuid } from '../tickets/tickets.shared.js'
 import { logger } from '../../shared/logger.js'
 import { notExpired } from '../../lib/subscription-expiry.js'
+import { assertNotBlocked } from '../../lib/community-block.js'
 import type {
   CreatePostDTO,
   UpdatePostDTO,
@@ -181,6 +182,8 @@ export class PostsService {
       where: { userId, communityId, isActive: true, ...notExpired(today) },
     })
     if (count === 0) {
+      // Blocked by an admin is a different story from "never subscribed": say so and point them to the admin.
+      await assertNotBlocked(this.db, userId, communityId, 'member')
       throw new ForbiddenError(
         'You do not have an active subscription to this community.',
         'SUBSCRIPTION_REQUIRED',

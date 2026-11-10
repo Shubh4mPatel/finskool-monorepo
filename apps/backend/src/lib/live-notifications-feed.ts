@@ -15,6 +15,7 @@
 //    a refetch. The session is re-verified before every push, and a logged-out device is closed with
 //    code 4401 (re-authenticate), the same contract as /ws/tickets.
 
+import { visibleNotifications } from './community-block.js'
 import type { IncomingMessage, Server as HttpServer } from 'node:http'
 import type { Duplex } from 'node:stream'
 import { WebSocketServer, WebSocket } from 'ws'
@@ -174,10 +175,11 @@ class LiveNotificationsFeed {
         }
         // The row exists before the event is published; the event only carries what is needed to find it.
         const [row, unreadCount] = await Promise.all([
-          prisma.notification.findUnique({
-            where: { uq_notifications_user_type_source: { userId: event.userId, type: event.type, sourceId: event.sourceId } },
+          // visibleNotifications: a row for a community the member was blocked from in the meantime is not sent.
+          prisma.notification.findFirst({
+            where: { userId: event.userId, type: event.type, sourceId: event.sourceId, ...visibleNotifications(event.userId) },
           }),
-          prisma.notification.count({ where: { userId: event.userId, isRead: false } }),
+          prisma.notification.count({ where: { userId: event.userId, isRead: false, ...visibleNotifications(event.userId) } }),
         ])
         if (!row || ws.readyState !== WebSocket.OPEN) return
         ws.send(JSON.stringify({ event: 'notification.created', notification: toNotificationItem(row), unreadCount }))

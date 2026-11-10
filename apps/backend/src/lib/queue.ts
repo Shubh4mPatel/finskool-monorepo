@@ -85,6 +85,24 @@ export interface CommunityAccessRemovedEmailJobPayload {
   communityName: string
 }
 
+// An admin blocked / unblocked the member in ONE community (their account and other communities are untouched).
+export const COMMUNITY_BLOCKED_EMAIL_JOB = 'community-blocked-email'
+
+export interface CommunityBlockedEmailJobPayload {
+  toEmail: string
+  name: string
+  communityName: string
+  reason: string
+}
+
+export const COMMUNITY_UNBLOCKED_EMAIL_JOB = 'community-unblocked-email'
+
+export interface CommunityUnblockedEmailJobPayload {
+  toEmail: string
+  name: string
+  communityName: string
+}
+
 export const NEW_MEMBER_REGISTERED_EMAIL_JOB = 'new-member-registered-email'
 
 export interface NewMemberRegisteredEmailJobPayload {
@@ -197,6 +215,8 @@ export type NotificationJobPayload =
   | ServiceInvoiceEmailJobPayload
   | CommunityAddedEmailJobPayload
   | CommunityAccessRemovedEmailJobPayload
+  | CommunityBlockedEmailJobPayload
+  | CommunityUnblockedEmailJobPayload
   | NewMemberRegisteredEmailJobPayload
   | AdminPaymentEmailJobPayload
   | MemberSuspendedEmailJobPayload

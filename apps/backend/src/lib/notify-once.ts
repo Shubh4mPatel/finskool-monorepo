@@ -5,6 +5,7 @@ import { NOTIFICATIONS_PUBSUB_CHANNEL } from './queue.js'
 import type { LiveNotificationEvent } from './queue.js'
 import { queuePushFor } from './push.js'
 import { logger } from '../shared/logger.js'
+import { findCommunityBlock } from './community-block.js'
 
 export interface NotificationRowParams {
   db: PrismaClient
@@ -25,8 +26,10 @@ export interface NotificationRowParams {
 // bug, not an expected race) — keeps the create + live-pubsub-publish
 // behavior in one place, mirroring admin.service.ts's notifyImportComplete /
 // NotificationsService's publishLiveBatch.
-export async function createAndPublishNotification(params: NotificationRowParams): Promise<string> {
+export async function createAndPublishNotification(params: NotificationRowParams): Promise<string | null> {
   const { db, communityId, userId, type, sourceId, title, message, data, push } = params
+  // A member an admin blocked from this community hears nothing about it: no inbox row, live event or push.
+  if (communityId && (await findCommunityBlock(db, userId, communityId))) return null
   const row = await db.notification.create({
     // pushPending: true until the push job is queued (see queuePushFor), so a push that fails to queue is retried.
     data: { communityId, userId, type, sourceId, title, message, ...(data ? { data } : {}), ...(push ? { pushPending: true } : {}) },

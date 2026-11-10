@@ -119,6 +119,8 @@ model User {
   reactions          Reaction[]
   communities        Community[]
   subscriptions      Subscription[]
+  communityBlocks    CommunityBlock[]  @relation("BlockedUser")
+  communityBlocksSet CommunityBlock[]  @relation("BlockedBy")
   notifications      Notification[]
   communityAccess    CommunityAdmin[]
   stockRecommendations StockRecommendation[]
@@ -289,6 +291,7 @@ model Community {
 
   creator       User              @relation(fields: [createdBy], references: [id])
   members       CommunityMember[]
+  blocks        CommunityBlock[]
   posts         Post[]
   subscriptions Subscription[]
   notifications Notification[]
@@ -328,6 +331,31 @@ model CommunityKit {
   community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
 
   @@map("community_kits")
+}
+
+// A member's access to ONE community, switched off by an admin (the account itself stays active and can still
+// sign in; see UserStatus.suspended for the account-wide kind). Blocking deactivates the member's active
+// subscriptions in that community (Subscription.isActive is the single gate every access check reads) and
+// remembers which ones in suspendedSubscriptionIds, so unblocking restores exactly those and nothing else.
+// One row per (user, community); deleted on unblock. The reason is shown to the member.
+model CommunityBlock {
+  id                       String   @id @default(uuid()) @db.Uuid
+  userId                   String   @map("user_id") @db.Uuid
+  communityId              String   @map("community_id") @db.Uuid
+  reason                   String   @db.Text
+  // Loose reference to the admin who blocked; SetNull if that admin account is ever removed.
+  blockedBy                String?  @map("blocked_by") @db.Uuid
+  suspendedSubscriptionIds String[] @default([]) @map("suspended_subscription_ids") @db.Uuid
+  createdAt                DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  user      User      @relation("BlockedUser", fields: [userId], references: [id], onDelete: Cascade)
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  blocker   User?     @relation("BlockedBy", fields: [blockedBy], references: [id], onDelete: SetNull)
+
+  @@unique([userId, communityId], name: "uq_community_block")
+  @@index([communityId], name: "idx_community_blocks_community")
+  @@index([userId], name: "idx_community_blocks_user")
+  @@map("community_blocks")
 }
 
 model CommunityAdmin {
