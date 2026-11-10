@@ -3,6 +3,8 @@ export const NotificationType = {
   Thread: 'thread',
   Recommendation: 'recommendation',
   SubscriptionExtended: 'subscription-extended',
+  // An admin moved the end date of a running plan earlier.
+  SubscriptionReduced: 'subscription-reduced',
   CommunityAdded: 'community-added',
   NewMemberRegistered: 'new-member-registered',
   ImportComplete: 'import-complete',

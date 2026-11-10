@@ -6,6 +6,7 @@ import {
   COMMUNITY_POST_JOB,
   WELCOME_EMAIL_JOB,
   SUBSCRIPTION_EXTENDED_EMAIL_JOB,
+  SUBSCRIPTION_REDUCED_EMAIL_JOB,
   SERVICE_INVOICE_EMAIL_JOB,
   COMMUNITY_ADDED_EMAIL_JOB,
   COMMUNITY_ACCESS_REMOVED_EMAIL_JOB,
@@ -35,6 +36,7 @@ const worker = new Worker(
     if (job.name === COMMUNITY_POST_JOB) return service.fanOutCommunityPost(job.data)
     if (job.name === WELCOME_EMAIL_JOB) return service.sendWelcomeEmail(job.data)
     if (job.name === SUBSCRIPTION_EXTENDED_EMAIL_JOB) return service.sendSubscriptionExtendedEmail(job.data)
+    if (job.name === SUBSCRIPTION_REDUCED_EMAIL_JOB) return service.sendSubscriptionReducedEmail(job.data)
     if (job.name === SERVICE_INVOICE_EMAIL_JOB) return service.sendServiceInvoiceEmail(job.data)
     if (job.name === COMMUNITY_ADDED_EMAIL_JOB) return service.sendCommunityAddedEmail(job.data)
     if (job.name === COMMUNITY_ACCESS_REMOVED_EMAIL_JOB) return service.sendCommunityAccessRemovedEmail(job.data)

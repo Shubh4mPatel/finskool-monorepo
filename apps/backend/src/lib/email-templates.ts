@@ -8,6 +8,7 @@ export type EmailTemplateId =
   | 'subscription-expiring-1-day'
   | 'subscription-expired'
   | 'subscription-extended'
+  | 'subscription-reduced'
   | 'service-invoice'
   | 'community-added'
   | 'community-access-removed'
@@ -35,6 +36,7 @@ const TEMPLATE_REGISTRY: Record<EmailTemplateId, TemplateDef> = {
   'subscription-expiring-1-day': { file: 'subscription-expiring-1-day.html', subject: 'Last day of your {community_name} access' },
   'subscription-expired': { file: 'subscription-expired.html', subject: 'Your {community_name} access has ended' },
   'subscription-extended': { file: 'subscription-extended.html', subject: "You're active until {valid_till}" },
+  'subscription-reduced': { file: 'subscription-reduced.html', subject: 'Your {community_name} plan now ends on {valid_till}' },
   'service-invoice': { file: 'service-invoice.html', subject: 'Payment received - invoice {invoice_number}' },
   'community-added': { file: 'community-added.html', subject: "You've been added to {community_name}" },
   'community-access-removed': { file: 'community-access-removed.html', subject: 'Your {community_name} access has been removed' },

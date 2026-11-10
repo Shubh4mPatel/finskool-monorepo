@@ -1,3 +1,13 @@
+import { parseDateParam, startOfToday } from "@/lib/dates";
+
+/** True when `newDate` would end a plan that is still running earlier than it ends now (the member is told it was reduced). */
+export function isReducingPlan(currentEnd: string | null | undefined, newDate: string): boolean {
+  if (!currentEnd || !newDate) return false;
+  const end = parseDateParam(currentEnd);
+  const next = parseDateParam(newDate);
+  return !!end && !!next && end >= startOfToday() && next < end;
+}
+
 export interface MemberSubscription {
   id: string;
   communityId: string;

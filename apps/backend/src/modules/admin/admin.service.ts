@@ -13,6 +13,7 @@ import {
 } from '../../lib/community-access.js'
 import { generateUploadUrl } from '../../lib/minio.js'
 import { assertNotBlocked, findCommunityBlock } from '../../lib/community-block.js'
+import { isReduction, notifySubscriptionReduced } from '../../lib/subscription-reduction.js'
 import { recomputeActiveSubCount } from '../../lib/community-stats.js'
 import {
   notificationsQueue,
@@ -307,6 +308,7 @@ export class AdminService {
               await tx.approvedPhone.update({ where: { phone }, data: { name, email, addedBy: adminId } })
             }
           })
+          if (existingUser) await this.notifyIfReduced(existingUser, community, existingSub.validUntil, validUntil)
           summary.updated++
           if (!notifyCommunityId) notifyCommunityId = community.id
         } else if (existingUser && existingUser.status === 'deleted') {
@@ -480,6 +482,7 @@ export class AdminService {
               await tx.approvedPhone.update({ where: { phone }, data: { name: row.name, email, addedBy: adminId } })
             }
           })
+          if (existingUser) await this.notifyIfReduced(existingUser, community, existingSub.validUntil, validUntil)
           summary.updated++
           if (!notifyCommunityId) notifyCommunityId = community.id
         } else if (existingUser && existingUser.status !== 'active' && !reviveRowNumSet.has(rowNum)) {
@@ -1556,10 +1559,19 @@ export class AdminService {
       throw new BadRequestError('Valid until date must be after the paid-on date')
     }
 
-    const created = await this.db.$transaction(async tx => {
+    const { sub: created, reducedFrom } = await this.db.$transaction(async tx => {
       // Two admins extending at the same moment must not leave two active rows: take a per-(member, community)
       // lock, then retire every active period before the new one is written. The later request wins.
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`subscription:${current.userId}:${current.communityId}`}))`
+      // The end date of the plan that is running right now. A new date earlier than it is a reduction, not an extension.
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      const running = await tx.subscription.findMany({
+        where: { userId: current.userId, communityId: current.communityId, isActive: true, ...notExpired(today) },
+        select: { validUntil: true },
+      })
+      const previousEnd = running.reduce<Date | null>((latest, r) => (r.validUntil && (!latest || r.validUntil > latest) ? r.validUntil : latest), null)
+      const reducedFrom = isReduction(previousEnd, validUntil, today) ? previousEnd : null
       // Keep the old period as history — only the newest row is the active subscription
       await tx.subscription.updateMany({ where: { userId: current.userId, communityId: current.communityId, isActive: true }, data: { isActive: false } })
       const sub = await tx.subscription.create({
@@ -1573,24 +1585,27 @@ export class AdminService {
           createdAt: paidOn,
         },
       })
-      await tx.notification.create({
-        data: {
-          communityId: current.communityId,
-          userId: current.userId,
-          type: NotificationType.SubscriptionExtended,
-          sourceId: sub.id,
-          pushPending: true,
-          title: 'Access extended',
-          message: `You're active until ${formatEmailDate(validUntil)}.`,
-          data: subscriptionRouting(current.communityId, 'extended'),
-        },
-      })
+      // A reduction is announced as one (below) instead of as "Access extended".
+      if (!reducedFrom) {
+        await tx.notification.create({
+          data: {
+            communityId: current.communityId,
+            userId: current.userId,
+            type: NotificationType.SubscriptionExtended,
+            sourceId: sub.id,
+            pushPending: true,
+            title: 'Access extended',
+            message: `You're active until ${formatEmailDate(validUntil)}.`,
+            data: subscriptionRouting(current.communityId, 'extended'),
+          },
+        })
+      }
       // No ApprovedPhone write needed anymore: "expired" was never really a fact
       // about ApprovedPhone, and isn't stored there at all now (see
       // AdminService#deriveMemberStatus) — the admin dashboard will show this
       // member as 'registered' again the instant this new subscription's
       // validUntil/isActive make it current, purely from reading Subscription.
-      return sub
+      return { sub, reducedFrom }
     })
 
     logger.info(
@@ -1598,7 +1613,19 @@ export class AdminService {
       'admin.extendSubscription: extended',
     )
 
-    if (current.user.email) {
+    if (reducedFrom) {
+      await notifySubscriptionReduced(this.db, {
+        userId: current.userId,
+        name: current.user.name,
+        email: current.user.email,
+        communityId: current.communityId,
+        communityName: current.community.name,
+        previousValidUntil: reducedFrom,
+        newValidUntil: validUntil,
+      })
+    }
+
+    if (!reducedFrom && current.user.email) {
       try {
         await notificationsQueue.add(
           SUBSCRIPTION_EXTENDED_EMAIL_JOB,
@@ -1617,29 +1644,34 @@ export class AdminService {
       }
     }
 
-    try {
-      await redis.publish(
-        NOTIFICATIONS_PUBSUB_CHANNEL,
-        JSON.stringify({
-          userId: current.userId,
-          type: NotificationType.SubscriptionExtended,
-          communityId: current.communityId,
-          message: `You're active until ${formatEmailDate(validUntil)}.`,
-          sourceId: created.id,
-        } satisfies LiveNotificationEvent),
-      )
-    } catch (err) {
-      logger.error({ err, subscriptionId: created.id }, 'admin.extendSubscription: failed to publish live notification')
+    if (!reducedFrom) {
+      try {
+        await redis.publish(
+          NOTIFICATIONS_PUBSUB_CHANNEL,
+          JSON.stringify({
+            userId: current.userId,
+            type: NotificationType.SubscriptionExtended,
+            communityId: current.communityId,
+            message: `You're active until ${formatEmailDate(validUntil)}.`,
+            sourceId: created.id,
+          } satisfies LiveNotificationEvent),
+        )
+      } catch (err) {
+        logger.error({ err, subscriptionId: created.id }, 'admin.extendSubscription: failed to publish live notification')
+      }
     }
 
-    await queuePushFor(this.db, { userId: current.userId, type: NotificationType.SubscriptionExtended, sourceId: created.id }, {
-      userIds: [current.userId],
-      title: 'Access extended',
-      body: `You're active until ${formatEmailDate(validUntil)}.`,
-      data: subscriptionRouting(current.communityId, 'extended'),
-    })
+    if (!reducedFrom) {
+      await queuePushFor(this.db, { userId: current.userId, type: NotificationType.SubscriptionExtended, sourceId: created.id }, {
+        userIds: [current.userId],
+        title: 'Access extended',
+        body: `You're active until ${formatEmailDate(validUntil)}.`,
+        data: subscriptionRouting(current.communityId, 'extended'),
+      })
+    }
 
     return {
+      reduced: reducedFrom !== null,
       id: created.id,
       userId: created.userId,
       communityId: created.communityId,
@@ -1648,6 +1680,27 @@ export class AdminService {
       validUntil: validUntil.toISOString().split('T')[0]!,
       isActive: created.isActive,
     }
+  }
+
+  /** After an import overwrote a running plan with an earlier end date, tells the member (see notifySubscriptionReduced). */
+  private async notifyIfReduced(
+    user: { id: string; name: string; email: string | null },
+    community: { id: string; name: string },
+    previousEnd: Date | null,
+    newEnd: Date,
+  ): Promise<void> {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    if (!isReduction(previousEnd, newEnd, today)) return
+    await notifySubscriptionReduced(this.db, {
+      userId: user.id,
+      name: user.name,
+      email: user.email,
+      communityId: community.id,
+      communityName: community.name,
+      previousValidUntil: previousEnd,
+      newValidUntil: newEnd,
+    })
   }
 
   async deleteMember(userId: string, accessibleCommunityIds: string[] | null): Promise<DeleteMemberResultDTO> {

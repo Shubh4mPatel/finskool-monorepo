@@ -15,6 +15,7 @@ import type {
   CommunityPostNotificationJobPayload,
   WelcomeEmailJobPayload,
   SubscriptionExtendedEmailJobPayload,
+  SubscriptionReducedEmailJobPayload,
   ServiceInvoiceEmailJobPayload,
   CommunityAddedEmailJobPayload,
   CommunityAccessRemovedEmailJobPayload,
@@ -274,6 +275,16 @@ export class NotificationsService {
       paid_on: formatEmailDate(payload.paidOn),
     })
     await sendMail({ to: payload.toEmail, subject, html, ...(await this.receiptAttachments(payload.receiptId)) })
+  }
+
+  async sendSubscriptionReducedEmail(payload: SubscriptionReducedEmailJobPayload): Promise<void> {
+    const { subject, html } = renderEmail('subscription-reduced', {
+      first_name: firstNameOf(payload.name),
+      community_name: payload.communityName,
+      valid_till: formatEmailDate(payload.validTill),
+      previous_valid_till: formatEmailDate(payload.previousValidTill),
+    })
+    await sendMail({ to: payload.toEmail, subject, html })
   }
 
   /** The payment receipt as an email attachment; nothing when there is none (an admin grant) or it can no longer be found. */

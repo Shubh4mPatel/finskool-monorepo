@@ -7,7 +7,7 @@ import { useToast } from "@/components/ui/Toast";
 import Modal from "@/components/ui/Modal";
 import DatePicker from "@/components/ui/DatePicker";
 import { addDays, parseDateParam, startOfToday } from "@/lib/dates";
-import { formatDate, type MemberItem, type MemberSubscription } from "@/lib/memberFormat";
+import { formatDate, isReducingPlan, type MemberItem, type MemberSubscription } from "@/lib/memberFormat";
 import { durationPresets } from "./datePresets";
 import { FormField, inputCls, primaryBtn, secondaryBtn } from "./memberUi";
 
@@ -43,6 +43,8 @@ export default function ExtendModal({
   const today = startOfToday();
   const extendFrom = currentEnd && currentEnd > today ? currentEnd : today;
 
+  const reducing = isReducingPlan(subscription.validUntil, date);
+
   async function handleExtend() {
     const errs = validate(payment, date);
     setErrors(errs);
@@ -50,14 +52,15 @@ export default function ExtendModal({
 
     setExtending(true);
     try {
-      await api.post(`/api/v1/admin/subscriptions/${subscription.id}/extend`, {
+      const res = await api.post<{ reduced?: boolean }>(`/api/v1/admin/subscriptions/${subscription.id}/extend`, {
         validUntil: date,
         payment: parseFloat(payment),
       });
-      toast.success({
-        title: "Subscription extended",
-        message: `${member.name}'s subscription is now valid until ${formatDate(date)}`,
-      });
+      toast.success(
+        res?.reduced
+          ? { title: "Plan reduced", message: `${member.name}'s plan now ends on ${formatDate(date)}. They've been notified.` }
+          : { title: "Subscription extended", message: `${member.name}'s subscription is now valid until ${formatDate(date)}` },
+      );
       onDone();
       onClose();
     } catch (err) {
@@ -78,7 +81,7 @@ export default function ExtendModal({
       footer={
         <>
           <button onClick={onClose} disabled={extending} className={secondaryBtn}>Cancel</button>
-          <button onClick={handleExtend} disabled={extending} className={primaryBtn}>{extending ? "Extending…" : "Extend"}</button>
+          <button onClick={handleExtend} disabled={extending} className={primaryBtn}>{extending ? "Saving…" : reducing ? "Reduce" : "Extend"}</button>
         </>
       }
     >
@@ -104,6 +107,12 @@ export default function ExtendModal({
           autoFocus
         />
       </FormField>
+      {reducing && (
+        <p className="rounded-xl bg-amber-50 px-3.5 py-2.5 text-xs text-amber-700">
+          This is earlier than the current end date ({formatDate(subscription.validUntil)}). {member.name} will be notified that their{" "}
+          {subscription.communityName} plan was reduced to {formatDate(date)}.
+        </p>
+      )}
     </Modal>
   );
 }

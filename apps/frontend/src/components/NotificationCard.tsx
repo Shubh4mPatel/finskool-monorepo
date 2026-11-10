@@ -52,6 +52,7 @@ const ICONS: Record<string, typeof Megaphone> = {
   thread: MessagesSquare,
   recommendation: TrendingUp,
   "subscription-extended": RefreshCw,
+  "subscription-reduced": RefreshCw,
   "community-added": Users,
   "new-member-registered": UserPlus,
   "import-complete": Upload,

@@ -27,6 +27,8 @@ export interface ExtendSubscriptionDTO {
 }
 
 export interface ExtendSubscriptionResultDTO {
+  /** True when the new end date is earlier than the plan's running end date, so the member was told it was reduced. */
+  reduced: boolean
   id: string
   userId: string
   communityId: string

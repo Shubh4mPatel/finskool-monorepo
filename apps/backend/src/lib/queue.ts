@@ -103,6 +103,19 @@ export interface CommunityUnblockedEmailJobPayload {
   communityName: string
 }
 
+// An admin moved the end date of the member's running plan in one community earlier.
+export const SUBSCRIPTION_REDUCED_EMAIL_JOB = 'subscription-reduced-email'
+
+export interface SubscriptionReducedEmailJobPayload {
+  toEmail: string
+  name: string
+  communityName: string
+  /** ISO. The new end date. */
+  validTill: string
+  /** ISO. The end date it had before. */
+  previousValidTill: string
+}
+
 export const NEW_MEMBER_REGISTERED_EMAIL_JOB = 'new-member-registered-email'
 
 export interface NewMemberRegisteredEmailJobPayload {
@@ -212,6 +225,7 @@ export type NotificationJobPayload =
   | CommunityPostNotificationJobPayload
   | WelcomeEmailJobPayload
   | SubscriptionExtendedEmailJobPayload
+  | SubscriptionReducedEmailJobPayload
   | ServiceInvoiceEmailJobPayload
   | CommunityAddedEmailJobPayload
   | CommunityAccessRemovedEmailJobPayload
