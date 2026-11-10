@@ -1,8 +1,7 @@
 // Daily close-price sweep against the Finedge quote API. Runs once a day
 // (see the 'daily-close-price' job scheduler registered in index.ts) well
-// after market close, so unlike the AngelOne tick feed (live-stock-feed.ts)
-// this deliberately captures a stable price rather than whatever happened to
-// be the last tick before the feed went quiet.
+// after market close, so it captures a stable closing price. This is the only
+// source of stock prices: there is no live price feed.
 import type { PrismaClient } from '../generated/prisma/client.js'
 import { env } from '../config/env.js'
 import { logger } from '../shared/logger.js'

@@ -3,7 +3,6 @@ import { Nunito, Poppins } from "next/font/google";
 import "./globals.css";
 import { ToastProvider } from "@/components/ui/Toast";
 import { ConfirmProvider } from "@/components/ui/ConfirmDialog";
-import LiveStockPricesProvider from "@/store/liveStockPrices/LiveStockPricesProvider";
 
 const nunito = Nunito({
   variable: "--font-nunito",
@@ -36,7 +35,6 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col bg-background text-foreground">
         <ToastProvider>
           <ConfirmProvider>
-            <LiveStockPricesProvider />
             {children}
           </ConfirmProvider>
         </ToastProvider>

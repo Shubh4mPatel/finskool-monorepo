@@ -1,7 +1,5 @@
 import type { PrismaClient } from '../../generated/prisma/client.js'
 import { assertCommunityAccessFromToken } from '../../lib/community-access.js'
-import { liveStockFeed } from '../../lib/live-stock-feed.js'
-import { marketStatus } from '../../sockets/angelone/market-status.js'
 import { NotFoundError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
 import type {
@@ -97,13 +95,6 @@ export class StockRecommendationsService {
 
     logger.info({ recommendationIds: recs.map(r => r.id), count: recs.length }, 'stock-recommendations.create: success')
 
-    // Fire-and-forget: start streaming live price ticks for this stock right
-    // away rather than waiting for the next AngelOne reconnect to pick it up.
-    // Stock-level, not community-level — only needs to happen once regardless of fan-out.
-    liveStockFeed.ensureSubscribed(data.stockId).catch(err => {
-      logger.error({ err, stockId: data.stockId }, 'stock-recommendations.create: failed to subscribe live feed')
-    })
-
     // A new recommendation does not notify members (no inbox row, push or email): they see it in the recommendations list.
 
     return recs.map(rec => this.toResponse(rec))
@@ -165,13 +156,11 @@ export class StockRecommendationsService {
     stock: { symbol: string; name: string; sector: string | null; logoUrl: string | null; exchange: 'nse' | 'bse' | null; cmp: unknown; closePrice: unknown }
   }): StockRecommendationResponseDTO {
     const entryPrice = Number(rec.entryPrice)
-    // While the market's live, prefer the AngelOne tick-fed cmp; once it's
-    // closed, ticks stop and cmp just freezes on whatever it last was, so
-    // prefer the deliberately-fetched daily close instead. Either falls back
-    // to the other if the preferred one hasn't been populated yet.
+    // There is no live price feed: the price is the daily close the close-price sweep fetches. The last stored
+    // cmp (from before live ticks were removed) is only used for a stock that has no close yet.
     const rawCmp = rec.stock.cmp !== null ? Number(rec.stock.cmp) : null
     const rawClose = rec.stock.closePrice !== null ? Number(rec.stock.closePrice) : null
-    const cmp = marketStatus.isMarketLive() ? (rawCmp ?? rawClose) : (rawClose ?? rawCmp)
+    const cmp = rawClose ?? rawCmp
 
     return {
       id: rec.id,

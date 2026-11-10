@@ -8,8 +8,6 @@ import { logger } from './shared/logger.js'
 import prisma from './lib/prisma.js'
 import redis from './lib/redis.js'
 import { ensureStocksSeeded } from './lib/stock-import.js'
-import { AngelOneClient } from './sockets/angelone/angelone.client.js'
-import { liveStockFeed } from './lib/live-stock-feed.js'
 import { liveNotificationsFeed } from './lib/live-notifications-feed.js'
 import { liveTicketsFeed } from './lib/live-tickets-feed.js'
 import { TicketsService } from './modules/tickets/tickets.service.js'
@@ -23,8 +21,8 @@ async function bootstrap() {
   await redis.connect()
 
   const app = createApp()
-  // Plain http.createServer (not app.listen) so the live-stock-price
-  // WebSocket can attach via the server's 'upgrade' event.
+  // Plain http.createServer (not app.listen) so the WebSocket feeds (notifications, tickets) can attach via the
+  // server's 'upgrade' event.
   const server = http.createServer(app)
 
   server.listen(env.port, () => {
@@ -40,17 +38,6 @@ async function bootstrap() {
   void ensureStocksSeeded(prisma).catch(err => {
     logger.error({ err }, 'stock-import: automatic import failed')
   })
-
-  const angelOne = new AngelOneClient()
-  liveStockFeed.attach(server, angelOne, prisma)
-  // The feed stays attached either way (the /ws/stock-prices server and the DB
-  // cmp reads keep working) — disabling only skips the AngelOne login/socket,
-  // so no ticks flow and prices stay at their last stored value.
-  if (env.angelone.enabled) {
-    angelOne.connect()
-  } else {
-    logger.warn('AngelOne live feed disabled (ANGELONE_ENABLED=false) — not connecting')
-  }
 
   const notificationsService = new NotificationsService(prisma)
   const adminTickets = new AdminTicketsService(prisma)
@@ -79,7 +66,6 @@ async function bootstrap() {
 
   async function shutdown(signal: string) {
     logger.info(`${signal} received — shutting down`)
-    angelOne.destroy()
     server.close(async () => {
       await prisma.$disconnect()
       await redis.quit()

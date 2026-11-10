@@ -1,7 +1,6 @@
-// Per-user authenticated WebSocket channel for live notification push. Unlike
-// live-stock-feed.ts (broadcast-all, unauthenticated), each connection here is
-// tied to a specific userId (from the access_token cookie) and only receives
-// events addressed to that user.
+// Per-user authenticated WebSocket channel for live notification push. Each
+// connection here is tied to a specific userId (from the access_token cookie)
+// and only receives events addressed to that user.
 //
 // Notifications are created in the worker process (see worker.ts), not this
 // one, so this feed can't just push directly — it subscribes to a Redis

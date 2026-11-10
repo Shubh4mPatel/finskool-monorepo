@@ -94,17 +94,6 @@ export const env = {
         : 'cid:finskool-logo',
   },
 
-  angelone: {
-    // Set ANGELONE_ENABLED=false to skip the live-price login + WebSocket
-    // entirely (e.g. local dev, where a second connection on the same client
-    // code gets 429'd). Anything other than the literal 'false' keeps it on.
-    enabled: process.env['ANGELONE_ENABLED'] !== 'false',
-    apiKey: process.env['ANGELONE_API_KEY'] ?? '',
-    clientCode: process.env['ANGELONE_CLIENT_CODE'] ?? '',
-    pin: process.env['ANGELONE_PIN'] ?? '',
-    totpSecret: process.env['ANGELONE_TOTP_SECRET'] ?? '',
-  },
-
   stockQuoteApi: {
     baseUrl: process.env['STOCK_QUOTE_API_BASE_URL'] ?? '',
     apiKey: process.env['STOCK_QUOTE_API_KEY'] ?? '',
@@ -174,7 +163,6 @@ export const env = {
   minio: { endPoint: string; publicEndPoint: string; port: number; publicPort: number; useSSL: boolean; publicUseSSL: boolean; publicPathPrefix: string; accessKey: string; secretKey: string; bucket: string; ticketsBucket: string; invoicesBucket: string }
   smtp: { host: string; port: number; secure: boolean; user: string; password: string; from: string }
   email: { logoUrl: string }
-  angelone: { enabled: boolean; apiKey: string; clientCode: string; pin: string; totpSecret: string }
   stockQuoteApi: { baseUrl: string; apiKey: string; reportEmails: string[] }
   logoDevToken: string
   razorpay: { keyId: string; keySecret: string; webhookSecret: string; apiBaseUrl: string }
