@@ -247,6 +247,16 @@ export interface MemberListFilters {
 
 export type MemberExportFilters = Omit<MemberListFilters, 'page' | 'pageSize'>
 
+/** The three cards at the top of the Members page. Each equals the `total` the list returns for the matching filter. */
+export interface MemberStatsDTO {
+  /** Every member (no filter). */
+  total: number
+  /** `hasActiveSubscription=true`: a current, unexpired subscription. */
+  registered: number
+  /** `registrationStatus=pending`: added by an admin, has not signed up yet. */
+  pending: number
+}
+
 export interface MemberSubscriptionDTO {
   id: string
   communityId: string

@@ -258,16 +258,14 @@ function MembersContent() {
     return () => { cancelled = true; };
   }, [query, reloadTick, toast]);
 
-  // Summary stats (unfiltered)
+  // The three cards (unfiltered) come from one call.
   useEffect(() => {
     let cancelled = false;
-    Promise.all([
-      api.get<MemberList>("/api/v1/admin/members?page=1&pageSize=1"),
-      api.get<MemberList>("/api/v1/admin/members?page=1&pageSize=1&hasActiveSubscription=true"),
-      api.get<MemberList>("/api/v1/admin/members?page=1&pageSize=1&registrationStatus=pending"),
-    ]).then(([all, reg, pend]) => {
-      if (!cancelled) setStats({ total: all.total, registered: reg.total, pending: pend.total });
-    }).catch(() => {});
+    api.get<{ total: number; registered: number; pending: number }>("/api/v1/admin/members/stats")
+      .then((s) => {
+        if (!cancelled) setStats(s);
+      })
+      .catch(() => {});
     return () => { cancelled = true; };
   }, [reloadTick]);
 

@@ -56,6 +56,7 @@ import type {
   BulkDeleteMembersResultDTO,
   SuspendMemberResultDTO,
   CommunityBlockResultDTO,
+  MemberStatsDTO,
   MemberCommunityBlockDTO,
   RevokeSuspensionResultDTO,
   CommunityDTO,
@@ -2053,6 +2054,25 @@ export class AdminService {
     return { members, total, page, pageSize, totalPages: Math.ceil(total / pageSize) }
   }
 
+  /**
+   * The Members page cards in one call. Built from the same filters as the list, so each number is exactly the `total`
+   * the list would return for it (the free community included, a scoped admin limited to their communities).
+   * The "current subscription" lookup is the heavy part and is shared by all three, and nothing but counts is read.
+   */
+  async getMemberStats(scope: { communityIds?: string[] }): Promise<MemberStatsDTO> {
+    const currentSubIds = await this.getCurrentSubscriptionIds()
+    const count = async (filters: MemberExportFilters): Promise<number> => {
+      const { userWhere } = await this.buildMemberWhere({ ...scope, ...filters }, currentSubIds)
+      return this.db.user.count({ where: userWhere })
+    }
+    const [total, registered, pending] = await Promise.all([
+      count({}),
+      count({ hasActiveSubscription: true }),
+      count({ registrationStatus: 'pending' }),
+    ])
+    return { total, registered, pending }
+  }
+
   async exportMembersCsv(filters: MemberExportFilters): Promise<string> {
     const { userWhere, currentSubIds } = await this.buildMemberWhere(filters)
     const { members } = await this.queryMembers(userWhere, currentSubIds)
@@ -2220,6 +2240,8 @@ export class AdminService {
 
   private async buildMemberWhere(
     filters: MemberExportFilters,
+    // Pass the ids when several wheres are built together, so the table is scanned once.
+    knownCurrentSubIds?: string[],
   ): Promise<{ userWhere: Record<string, unknown>; currentSubIds: string[] }> {
     const {
       communityId, communityIds, accountStatus, registrationStatus, hasActiveSubscription, source,
@@ -2235,7 +2257,7 @@ export class AdminService {
     // filter is actually requested — a deactivated member has zero current subscriptions in
     // scope, and `some` on an always-present id-in-list would otherwise exclude them entirely
     // from queries that don't ask for one of these filters.
-    const currentSubIds = await this.getCurrentSubscriptionIds()
+    const currentSubIds = knownCurrentSubIds ?? (await this.getCurrentSubscriptionIds())
     const subWhere: Record<string, unknown> = { id: { in: currentSubIds } }
     let hasSubFilter = false
     // hasActiveSubscription: false needs "no CURRENT subscription is still valid" — the

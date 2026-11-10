@@ -270,6 +270,61 @@ describe('GET /admin/members — roster', () => {
   })
 })
 
+describe('GET /admin/members/stats (the cards on the Members page)', () => {
+  const stats = (admin: TestAdmin = superAdmin) => request(app).get('/api/v1/admin/members/stats').set('Authorization', admin.auth)
+  const totalOf = async (admin: TestAdmin, query: Record<string, string | number> = {}) =>
+    (await listMembers(admin, { pageSize: 1, ...query })).body.data.total as number
+
+  beforeEach(async () => {
+    await createMobileMember({ name: 'Active', subscriptions: [{ communityId: swing.id, validUntil: daysFromNow(60) }] })
+    await createMobileMember({ name: 'Active Too', subscriptions: [{ communityId: options.id, validUntil: daysFromNow(30) }] })
+    await createMobileMember({ name: 'Expired', subscriptions: [{ communityId: swing.id, validUntil: daysFromNow(-10), isActive: false }] })
+    await createMobileMember({ name: 'Pending', password: null })
+    await createMobileMember({ name: 'Pending Too', password: null, subscriptions: [{ communityId: swing.id, validUntil: daysFromNow(20) }] })
+    await createMobileMember({ name: 'Self', source: 'self' })
+    await createMobileMember({ name: 'Suspended', status: 'suspended', subscriptions: [{ communityId: options.id, validUntil: daysFromNow(60) }] })
+  })
+
+  it('returns the three card values in one call', async () => {
+    const res = await stats()
+
+    expect(res.status).toBe(200)
+    expect(Object.keys(res.body.data).sort()).toEqual(['pending', 'registered', 'total'])
+    expect(res.body.data.total).toBeGreaterThan(0)
+  })
+
+  it('gives each card exactly the total the list returns for the same filter', async () => {
+    const { total, registered, pending } = (await stats()).body.data
+
+    expect(total).toBe(await totalOf(superAdmin))
+    expect(registered).toBe(await totalOf(superAdmin, { hasActiveSubscription: 'true' }))
+    expect(pending).toBe(await totalOf(superAdmin, { registrationStatus: 'pending' }))
+    // Known from the data above, so a wrong filter cannot pass by matching itself.
+    expect(total).toBe(7)
+    expect(registered).toBe(4) // Active, Active Too, Pending Too and Suspended hold a running subscription
+    expect(pending).toBe(2)
+  })
+
+  it('counts only the communities a scoped admin manages, the same as their list', async () => {
+    const scoped = await createAdmin({ isSuperAdmin: false, communityIds: [swing.id] })
+    const res = await stats(scoped)
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.total).toBe(await totalOf(scoped))
+    expect(res.body.data.registered).toBe(await totalOf(scoped, { hasActiveSubscription: 'true' }))
+    expect(res.body.data.pending).toBe(await totalOf(scoped, { registrationStatus: 'pending' }))
+    expect(res.body.data.total).toBeLessThan((await stats()).body.data.total)
+  })
+
+  it('is not mistaken for a member id, and is closed to anonymous callers and members', async () => {
+    expect((await stats()).status).toBe(200) // /members/:id would answer 400 or 404
+    expect((await request(app).get('/api/v1/admin/members/stats')).status).toBe(401)
+    const member = await createMobileMember()
+    const asMember = await request(app).get('/api/v1/admin/members/stats').set('Cookie', mobileCookie(member))
+    expect([401, 403]).toContain(asMember.status)
+  })
+})
+
 describe('GET /admin/members/export', () => {
   it('downloads a CSV with one row per subscription and human-readable statuses', async () => {
     await createMobileMember({

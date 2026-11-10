@@ -279,6 +279,17 @@ export class AdminController {
     }
   }
 
+  // GET /admin/members/stats: the Members page cards (total / registered / pending) in one call. Scoped like the list.
+  memberStats = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const accessible = req.user!.accessibleCommunityIds
+      const result = await this.service.getMemberStats(accessible !== null ? { communityIds: accessible } : {})
+      res.json({ success: true, data: result })
+    } catch (err) {
+      next(err)
+    }
+  }
+
   listMembers = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const schema = memberQueryFilterSchema.extend({
