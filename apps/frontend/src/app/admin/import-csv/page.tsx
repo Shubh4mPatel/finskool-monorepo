@@ -74,10 +74,10 @@ const STEPS = ["Upload File", "Preview & Review", "Confirm Import"];
 const COLUMNS: { name: string; required: boolean; hint: string }[] = [
   { name: "Name", required: true, hint: "Full name" },
   { name: "Contact Number", required: true, hint: "Mobile number, +91 optional" },
-  { name: "Service", required: true, hint: "Exact community name" },
   { name: "Payment", required: true, hint: "A plain number, e.g. 4000 (blank or 0 for the free community)" },
-  { name: "Valid", required: true, hint: "Valid-till date as YYYY-MM-DD, after today and after Paid on (blank for the free community)" },
   { name: "Paid on", required: false, hint: "Date the payment was made, as YYYY-MM-DD; today or earlier, not in the future" },
+  { name: "Valid", required: true, hint: "Valid-till date as YYYY-MM-DD, after today and after Paid on (blank for the free community)" },
+  { name: "Service", required: true, hint: "Exact community name" },
   { name: "Email", required: false, hint: "Can be left blank" },
 ];
 const REQUIRED_COLUMNS = COLUMNS.filter((c) => c.required).map((c) => c.name);
@@ -117,6 +117,13 @@ function datesProblem(paidOn: string, valid: string): string | null {
   if (paidOn && paidOn > today) return `Paid on cannot be in the future (got ${paidOn}); use today or an earlier day`;
   if (valid && valid <= today) return `Valid must be after today (got ${valid})`;
   return null;
+}
+
+/** `iso` (YYYY-MM-DD) moved by `days`, still YYYY-MM-DD. */
+function shiftDay(iso: string, days: number): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
 }
 
 const dateError = (label: string, value: string): string =>
@@ -523,13 +530,17 @@ export default function ImportCSVPage() {
     const isFreeName = (n: string) => freeNames.current.has(n.toLowerCase());
     const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
     const sources = names.length > 0 ? names : ["Your Community Name"];
+    // Dates are worked out from today, so the sample always passes the import's own rules (Paid on is today or earlier,
+    // Valid is after today); a fixed date in the file would go stale.
+    const today = todayInIndia();
     const sampleRows = sources.map((name, i) => [
       `Sample Member ${i + 1}`,
-      `98765432${String(i).padStart(2, "0")}`,
-      // The free community has no price and no expiry.
+      // The same E.164 form the Members export writes.
+      `+91987654${String(3200 + i).padStart(4, "0")}`,
+      // The free community has no price and no expiry, so no Paid on or Valid either.
       isFreeName(name) ? "0" : "999",
-      isFreeName(name) ? "" : "2026-01-05",
-      isFreeName(name) ? "" : "2026-12-31",
+      isFreeName(name) ? "" : shiftDay(today, -7),
+      isFreeName(name) ? "" : shiftDay(today, 90),
       name,
       `sample${i + 1}@example.com`,
     ]);

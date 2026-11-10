@@ -466,3 +466,32 @@ describe('the same order of dates when an admin adds or changes one member', () 
     expect((await extend({ validUntil: day(60), paidOn: day(-4) })).status).toBe(201)
   })
 })
+
+describe('the sample file on the Import page', () => {
+  // Built the way the page's "Download sample" does: one row per community, dates counted from today, E.164 phones,
+  // and the free community at price 0 with no dates. A sample that its own importer refuses would be worse than none.
+  it('imports with no errors, whichever day it is downloaded', async () => {
+    const communities = [swing, options, free]
+    const rows = communities.map((c, i) => {
+      const isFree = c.id === free.id
+      return [
+        `Sample Member ${i + 1}`,
+        `+91987654${String(3200 + i).padStart(4, '0')}`,
+        isFree ? '0' : '999',
+        isFree ? '' : day(-7),
+        isFree ? '' : day(90),
+        c.name,
+        `sample${i + 1}@example.com`,
+      ].join(',')
+    })
+
+    const res = await upload(rows)
+
+    expect(res.body.data.errors).toEqual([])
+    expect(res.body.data).toMatchObject({ total: 3, created: 3 })
+    // Each sample member exists once, and the free-community member has no paid subscription.
+    expect(await prisma.user.count({ where: { role: 'member' } })).toBe(3)
+    const freeMember = await prisma.user.findUniqueOrThrow({ where: { phone: '+919876543202' } })
+    expect((await prisma.subscription.findMany({ where: { userId: freeMember.id } })).map(s => s.communityId)).toEqual([free.id])
+  })
+})
