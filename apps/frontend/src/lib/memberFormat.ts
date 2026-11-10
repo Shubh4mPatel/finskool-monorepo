@@ -12,6 +12,8 @@ export interface MemberSubscription {
   id: string;
   communityId: string;
   communityName: string;
+  /** The free community: part of every account, it can only be removed by suspending the whole account. */
+  isFree: boolean;
   payment: number;
   paidOn: string | null;
   /** null = no expiry (the free community). */

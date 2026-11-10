@@ -1902,8 +1902,12 @@ export class AdminService {
     const user = await this.db.user.findUnique({ where: { id: userId } })
     if (!user || user.role === 'admin') throw new NotFoundError('Member not found')
     assertCommunityAccessFromToken(accessibleCommunityIds, communityId)
-    const community = await this.db.community.findUnique({ where: { id: communityId }, select: { name: true, deletedAt: true } })
+    const community = await this.db.community.findUnique({ where: { id: communityId }, select: { name: true, deletedAt: true, isFree: true } })
     if (!community || community.deletedAt) throw new NotFoundError('Community not found')
+    // The free community comes with every account. It goes only when the whole account is suspended.
+    if (community.isFree) {
+      throw new BadRequestError('The free community cannot be suspended on its own. Suspend the whole account instead.', 'FREE_COMMUNITY')
+    }
     if (user.status === 'deleted') throw new ConflictError('This member was deleted — there is nothing to block', 'MEMBER_DELETED')
 
     const hasRow = await this.db.subscription.findFirst({ where: { userId, communityId }, select: { id: true } })
@@ -2106,7 +2110,7 @@ export class AdminService {
         include: {
           subscriptions: {
             where: { id: { in: currentSubIds } },
-            include: { community: { select: { id: true, name: true } } },
+            include: { community: { select: { id: true, name: true, isFree: true } } },
             orderBy: { createdAt: 'desc' },
           },
         },
@@ -2374,7 +2378,7 @@ export class AdminService {
   private buildSubDTO(s: {
     id: string
     communityId: string
-    community: { name: string }
+    community: { name: string; isFree: boolean }
     payment: { toNumber(): number } | number
     paidOn: Date | null
     validUntil: Date | null
@@ -2384,6 +2388,7 @@ export class AdminService {
       id: s.id,
       communityId: s.communityId,
       communityName: s.community.name,
+      isFree: s.community.isFree,
       payment: typeof s.payment === 'number' ? s.payment : s.payment.toNumber(),
       paidOn: s.paidOn ? s.paidOn.toISOString().split('T')[0]! : null,
       validUntil: s.validUntil ? s.validUntil.toISOString().split('T')[0]! : null,
@@ -2440,7 +2445,7 @@ export class AdminService {
       where: { id: userId },
       include: {
         subscriptions: {
-          include: { community: { select: { id: true, name: true } } },
+          include: { community: { select: { id: true, name: true, isFree: true } } },
           orderBy: { createdAt: 'desc' },
         },
       },

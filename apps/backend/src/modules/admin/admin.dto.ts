@@ -261,6 +261,8 @@ export interface MemberSubscriptionDTO {
   id: string
   communityId: string
   communityName: string
+  /** The free community: part of every account, it cannot be suspended on its own. */
+  isFree: boolean
   payment: number
   paidOn: string | null
   validUntil: string | null   // null = no expiry (the free community)

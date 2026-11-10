@@ -500,3 +500,43 @@ describe('extending and re-adding, suspended or not', () => {
     expect(res.body.data.errors[0].reason).toBe('Member is suspended from this community — revoke the suspension first')
   })
 })
+
+describe('the free community cannot be suspended on its own', () => {
+  let free: { id: string }
+
+  beforeEach(async () => {
+    free = await createCommunity(superAdmin.id, { name: 'Finskool Free', isFree: true })
+    await prisma.subscription.create({ data: { userId: member.id, communityId: free.id, payment: 0, validUntil: null } })
+  })
+
+  it('is refused, and nothing changes', async () => {
+    const res = await block(free.id, 'Spam')
+
+    expect(res.status).toBe(400)
+    expect(res.body.code).toBe('FREE_COMMUNITY')
+    expect(res.body.message).toContain('Suspend the whole account')
+    expect(await prisma.communityBlock.count()).toBe(0)
+    const sub = await prisma.subscription.findFirstOrThrow({ where: { userId: member.id, communityId: free.id } })
+    expect(sub.isActive).toBe(true)
+  })
+
+  it('still lets a paid community be suspended for the same member', async () => {
+    expect((await block(swing.id, 'Spam')).status).toBe(200)
+    expect((await feed(free.id)).status).toBe(200) // the free community keeps working
+  })
+
+  it('is what suspending the whole account removes', async () => {
+    await prisma.user.update({ where: { id: member.id }, data: { status: 'suspended', suspensionReason: 'Spam' } })
+    // A suspended account cannot use the app at all, free community included.
+    expect((await feed(free.id)).status).toBe(401)
+  })
+
+  it('tells the admin page which community is the free one', async () => {
+    const res = await request(app).get(`/api/v1/admin/members/${member.id}`).set('Authorization', superAdmin.auth)
+    const subs = res.body.data.allSubscriptions as { communityId: string; isFree: boolean }[]
+
+    expect(subs.find(x => x.communityId === free.id)?.isFree).toBe(true)
+    expect(subs.find(x => x.communityId === swing.id)?.isFree).toBe(false)
+    expect(subs.find(x => x.communityId === options.id)?.isFree).toBe(false)
+  })
+})

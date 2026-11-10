@@ -434,7 +434,9 @@ export default function MemberDetailPage() {
             </div>
           </div>
 
-          {member.allSubscriptions.length > 0 && (
+          {/* The free community is the default for every account, so it is not listed; it goes with the whole account.
+              (A suspension already on record for it would still show, so it can be revoked.) */}
+          {member.allSubscriptions.some((s) => !s.isFree || s.block) && (
             <>
               <div className="h-px w-full bg-divider" />
               <div className="p-6">
@@ -443,7 +445,7 @@ export default function MemberDetailPage() {
                   Suspending here removes access to one community only. The member can still sign in and use their other communities.
                 </p>
                 <ul className="mt-3 divide-y divide-divider rounded-xl border border-divider">
-                  {member.allSubscriptions.map((s) => (
+                  {member.allSubscriptions.filter((s) => !s.isFree || s.block).map((s) => (
                     <li key={s.communityId} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
                       <div className="min-w-0">
                         <p className="flex items-center gap-2 text-sm font-semibold text-primary">
