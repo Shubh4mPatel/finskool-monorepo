@@ -136,7 +136,9 @@ describe('shared dataset: KPIs and revenue', () => {
           from: '2026-10-01',
           through: '2026-10-25',
         },
-        tickets: { openTickets: 2, openEnquiries: 3, awaitingFirstReply: 2 }, // new ticket + new enquiry
+        // Open: 2 tickets (t1, t2) + 3 enquiries. Nobody has taken any of them, so all 5 are unassigned.
+        // Resolved: the resolved ticket (t3) + the closed enquiry.
+        tickets: { openTickets: 2, openEnquiries: 3, unassignedTickets: 2, unassignedEnquiries: 3, resolved: 2 },
       })
     })
 
@@ -148,8 +150,38 @@ describe('shared dataset: KPIs and revenue', () => {
         activeSubscriptions: { value: 1, pendingRegistration: 1 },
         revenue: { amount: 1000, previousAmount: 750, deltaPercent: 33.3, from: '2026-10-01', through: '2026-10-25' },
         // Tickets follow the admin's communities; service enquiries are global by design.
-        tickets: { openTickets: 1, openEnquiries: 3, awaitingFirstReply: 2 },
+        tickets: { openTickets: 1, openEnquiries: 3, unassignedTickets: 1, unassignedEnquiries: 3, resolved: 2 },
       })
+    })
+
+    it('counts a ticket or enquiry someone has taken as open, but no longer as unassigned', async () => {
+      const [t1] = await prisma.ticket.findMany({ where: { status: 'open' }, orderBy: { createdAt: 'asc' } })
+      const [r1] = await prisma.serviceRequest.findMany({ where: { status: 'requested' } })
+      await prisma.ticket.update({ where: { id: t1!.id }, data: { assignedAdminId: superAdmin.id } })
+      await prisma.serviceRequest.update({ where: { id: r1!.id }, data: { assignedAdminId: superAdmin.id } })
+
+      try {
+        const res = await get(superAdmin, '/kpis')
+
+        expect(res.body.data.tickets).toEqual({
+          openTickets: 2, // still open
+          openEnquiries: 3,
+          unassignedTickets: 1, // one fewer
+          unassignedEnquiries: 2,
+          resolved: 2,
+        })
+      } finally {
+        // The data is shared by every test in this file; put it back.
+        await prisma.ticket.update({ where: { id: t1!.id }, data: { assignedAdminId: null } })
+        await prisma.serviceRequest.update({ where: { id: r1!.id }, data: { assignedAdminId: null } })
+      }
+    })
+
+    it('counts a resolved ticket and a closed enquiry as resolved, and nothing else', async () => {
+      const res = await get(superAdmin, '/kpis')
+      // t3 is resolved and the fourth enquiry is closed; the open ones and the paid one are not.
+      expect(res.body.data.tickets.resolved).toBe(2)
+      expect(res.body.data.tickets).not.toHaveProperty('awaitingFirstReply')
     })
 
     it('shows an admin who manages no communities nothing but the global enquiries', async () => {

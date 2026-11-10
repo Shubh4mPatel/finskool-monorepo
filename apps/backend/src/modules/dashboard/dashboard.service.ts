@@ -72,8 +72,10 @@ export class DashboardService {
       previous,
       openTickets,
       openEnquiries,
-      ticketsAwaiting,
-      enquiriesAwaiting,
+      unassignedTickets,
+      unassignedEnquiries,
+      resolvedTickets,
+      closedEnquiries,
     ] = await Promise.all([
       this.db.user.count({ where: member }),
       this.db.user.count({ where: { ...member, createdAt: { gte: monthStart } } }),
@@ -93,12 +95,11 @@ export class DashboardService {
       this.db.ticket.count({ where: { status: { not: 'resolved' }, ...this.ticketScope(ids) } }),
       // Service requests aren't tied to a community: every admin sees all of them.
       this.db.serviceRequest.count({ where: { status: { not: 'closed' } } }),
-      this.db.ticket.count({
-        where: { status: { not: 'resolved' }, messages: { none: { senderRole: 'admin' } }, ...this.ticketScope(ids) },
-      }),
-      this.db.serviceRequest.count({
-        where: { status: { not: 'closed' }, messages: { none: { senderRole: 'admin' } } },
-      }),
+      // Open and nobody has taken them: the same tickets and enquiries the sidebar badges count.
+      this.db.ticket.count({ where: { status: { not: 'resolved' }, assignedAdminId: null, ...this.ticketScope(ids) } }),
+      this.db.serviceRequest.count({ where: { status: { not: 'closed' }, assignedAdminId: null } }),
+      this.db.ticket.count({ where: { status: 'resolved', ...this.ticketScope(ids) } }),
+      this.db.serviceRequest.count({ where: { status: 'closed' } }),
     ])
 
     return {
@@ -111,7 +112,14 @@ export class DashboardService {
         from: monthFrom,
         through: monthTo,
       },
-      tickets: { openTickets, openEnquiries, awaitingFirstReply: ticketsAwaiting + enquiriesAwaiting },
+      tickets: {
+        openTickets,
+        openEnquiries,
+        unassignedTickets,
+        unassignedEnquiries,
+        // Done, ever: resolved tickets plus closed enquiries.
+        resolved: resolvedTickets + closedEnquiries,
+      },
     }
   }
 

@@ -13,7 +13,7 @@ export interface DashboardKpis {
     from: string; // YYYY-MM-DD
     through: string; // YYYY-MM-DD
   };
-  tickets: { openTickets: number; openEnquiries: number; awaitingFirstReply: number };
+  tickets: { openTickets: number; openEnquiries: number; unassignedTickets: number; unassignedEnquiries: number; resolved: number };
 }
 
 export interface RevenuePoint {

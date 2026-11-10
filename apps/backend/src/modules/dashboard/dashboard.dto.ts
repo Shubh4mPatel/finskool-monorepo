@@ -13,8 +13,11 @@ export interface DashboardKpisDTO {
   tickets: {
     openTickets: number
     openEnquiries: number
-    // Support tickets + service enquiries that no admin has replied to yet.
-    awaitingFirstReply: number
+    // Open ones no admin has taken yet (the sidebar badges' numbers).
+    unassignedTickets: number
+    unassignedEnquiries: number
+    // Resolved tickets plus closed enquiries, all time.
+    resolved: number
   }
 }
 

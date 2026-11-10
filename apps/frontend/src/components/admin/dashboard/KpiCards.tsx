@@ -99,6 +99,7 @@ export function KpiCards() {
   }
 
   const { totalMembers, activeSubscriptions, revenue, tickets } = data;
+  const unassigned = tickets.unassignedTickets + tickets.unassignedEnquiries;
   const delta = revenue.deltaPercent;
 
   return (
@@ -151,27 +152,33 @@ export function KpiCards() {
         tileClass="bg-gradient-to-br from-rose-500 to-red-600 text-white"
         glowClass="bg-rose-500/10"
         badge={
-          <Pill tone="info">
-            <CountUp value={tickets.openEnquiries} /> enquiries
+          <Pill tone="success">
+            <CountUp value={tickets.resolved} /> resolved
           </Pill>
         }
-        value={<CountUp value={tickets.openTickets} />}
-        label="Open tickets"
+        // Everything still open: support tickets and service enquiries together.
+        value={<CountUp value={tickets.openTickets + tickets.openEnquiries} />}
+        label="Open tickets & enquiries"
         footer={
-          tickets.awaitingFirstReply > 0 ? (
-            <Link
-              href="/admin/tickets"
-              className="inline-flex items-center gap-2 font-bold text-red-600 transition-colors hover:text-red-700"
-            >
+          unassigned > 0 ? (
+            <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1 font-bold text-red-600">
               {/* A live "needs attention" signal — the ping stops under reduced motion (globals.css). */}
               <span className="relative flex h-2 w-2" aria-hidden>
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75 motion-reduce:hidden" />
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
               </span>
-              {tickets.awaitingFirstReply} awaiting first reply
-            </Link>
+              {unassigned} unassigned
+              <span className="font-medium text-muted" aria-hidden>·</span>
+              {/* Both pages open on their Unassigned tab. */}
+              <Link href="/admin/tickets" className="font-semibold transition-colors hover:text-red-700 hover:underline">
+                {tickets.unassignedTickets} {tickets.unassignedTickets === 1 ? "ticket" : "tickets"}
+              </Link>
+              <Link href="/admin/services" className="font-semibold transition-colors hover:text-red-700 hover:underline">
+                {tickets.unassignedEnquiries} {tickets.unassignedEnquiries === 1 ? "enquiry" : "enquiries"}
+              </Link>
+            </span>
           ) : (
-            <span className="font-medium text-emerald-700">Everyone has had a first reply</span>
+            <span className="font-medium text-emerald-700">Nothing is waiting to be picked up</span>
           )
         }
       />
