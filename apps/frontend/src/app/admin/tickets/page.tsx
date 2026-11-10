@@ -47,7 +47,8 @@ function tabParams(tab: Tab): Record<string, string> {
 const GRID = "grid grid-cols-[100px_minmax(170px,1.1fr)_minmax(210px,2fr)_120px_130px_70px_100px] items-center gap-4";
 
 export default function AdminTicketsPage() {
-  const [tab, setTab] = useState<Tab>("all");
+  // Opens on Unassigned: the same tickets the sidebar badge counts, so the number and the list agree.
+  const [tab, setTab] = useState<Tab>("unassigned");
   const [category, setCategory] = useState<TicketCategory | "">("");
   const [type, setType] = useState<TicketType | "">("");
   const [unreadOnly, setUnreadOnly] = useState(false);
@@ -340,11 +341,13 @@ export default function AdminTicketsPage() {
             </span>
           </EmptyState>
         ) : tickets.length === 0 && !refreshing ? (
-          <EmptyState icon={hasFilters || tab !== "all" ? <SearchX size={20} /> : <Inbox size={20} />}>
+          <EmptyState icon={hasFilters || (tab !== "all" && tab !== "unassigned") ? <SearchX size={20} /> : <Inbox size={20} />}>
             <span className="flex flex-col items-center gap-3">
-              {hasFilters || tab !== "all"
+              {hasFilters || (tab !== "all" && tab !== "unassigned")
                 ? "No tickets match these filters."
-                : "No tickets yet. They'll appear here when members raise an issue from the app."}
+                : tab === "unassigned"
+                  ? "No unassigned tickets. Every open ticket has been picked up."
+                  : "No tickets yet. They'll appear here when members raise an issue from the app."}
               {hasFilters && (
                 <button onClick={clearFilters} className="rounded-full border border-divider px-5 py-2 text-sm font-semibold text-primary transition-colors hover:border-accent">
                   Clear filters

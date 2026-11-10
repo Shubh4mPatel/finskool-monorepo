@@ -109,16 +109,12 @@ export class AdminTicketsService {
   }
 
   /** Numbers for the sidebar badge / inbox header. */
-  /** The sidebar badge: tickets waiting for someone to take them, plus mine with unread member messages. */
+  /**
+   * The Support Tickets sidebar badge: open tickets that no admin has taken yet, in the communities this admin can
+   * see (a scoped admin counts only their own communities' tickets).
+   */
   async badgeCount(admin: AdminActor): Promise<number> {
-    const scope = this.scope(admin)
-    const [unassigned, mineUnread] = await Promise.all([
-      this.db.ticket.count({ where: { AND: [scope, { assignedAdminId: null, status: { not: 'resolved' } }] } }),
-      this.db.ticket.count({
-        where: { AND: [scope, { assignedAdminId: admin.id, status: { not: 'resolved' }, adminUnreadCount: { gt: 0 } }] },
-      }),
-    ])
-    return unassigned + mineUnread
+    return this.db.ticket.count({ where: { AND: [this.scope(admin), { assignedAdminId: null, status: { not: 'resolved' } }] } })
   }
 
   async stats(admin: AdminActor): Promise<AdminTicketStatsDTO> {

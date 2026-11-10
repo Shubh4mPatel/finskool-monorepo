@@ -7,9 +7,9 @@ import { logger } from '../shared/logger.js'
 export interface AdminBadges {
   /** This admin's unread notifications. */
   notifications: number
-  /** Tickets waiting for someone to take them, plus this admin's tickets with unread member messages. */
+  /** Open support tickets that no admin has taken yet, in the communities this admin can see. */
   tickets: number
-  /** Service requests waiting for someone, this admin's with unread messages, and payments needing review. */
+  /** Open service requests (Enquiries) that no admin has taken yet. The same for every admin. */
   services: number
 }
 

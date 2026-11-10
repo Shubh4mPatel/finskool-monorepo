@@ -65,7 +65,9 @@ function AdminServicesInbox() {
   const serviceId = useSearchParams().get("serviceId");
   const [serviceTitle, setServiceTitle] = useState<string | null>(null);
 
-  const [tab, setTab] = useState<Tab>("all");
+  // Opens on Unassigned, the same requests the sidebar badge counts. A link for one service (from the catalog)
+  // is about all of that service's requests, so it opens on All.
+  const [tab, setTab] = useState<Tab>(serviceId ? "all" : "unassigned");
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
@@ -390,11 +392,13 @@ function AdminServicesInbox() {
             </span>
           </EmptyState>
         ) : requests.length === 0 && !refreshing ? (
-          <EmptyState icon={hasFilters || tab !== "all" || serviceId ? <SearchX size={20} /> : <Inbox size={20} />}>
+          <EmptyState icon={hasFilters || serviceId || (tab !== "all" && tab !== "unassigned") ? <SearchX size={20} /> : <Inbox size={20} />}>
             <span className="flex flex-col items-center gap-3">
-              {hasFilters || tab !== "all" || serviceId
+              {hasFilters || serviceId || (tab !== "all" && tab !== "unassigned")
                 ? "No requests match these filters."
-                : "No requests yet. They'll appear here when a member requests a service from the app."}
+                : tab === "unassigned"
+                  ? "No unassigned requests. Every open request has been picked up."
+                  : "No requests yet. They'll appear here when a member requests a service from the app."}
               {hasFilters && (
                 <button onClick={clearFilters} className="rounded-full border border-divider px-5 py-2 text-sm font-semibold text-primary transition-colors hover:border-accent">
                   Clear filters

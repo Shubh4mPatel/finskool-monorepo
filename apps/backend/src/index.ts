@@ -57,7 +57,7 @@ async function bootstrap() {
         const [notifications, tickets, services] = await Promise.all([
           notificationsService.unreadCount(viewer.id),
           adminTickets.badgeCount(viewer),
-          adminServices.badgeCount(viewer),
+          adminServices.badgeCount(),
         ])
         return { notifications, tickets, services }
       },

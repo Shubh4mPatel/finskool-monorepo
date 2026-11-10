@@ -105,7 +105,7 @@ beforeAll(async () => {
   const services = new AdminServicesService(prisma)
   server = http.createServer(app)
   computeBadges.mockImplementation(async viewer => {
-    const [n, t, s] = await Promise.all([notifications.unreadCount(viewer.id), tickets.badgeCount(viewer), services.badgeCount(viewer)])
+    const [n, t, s] = await Promise.all([notifications.unreadCount(viewer.id), tickets.badgeCount(viewer), services.badgeCount()])
     return { notifications: n, tickets: t, services: s }
   })
   liveTicketsFeed.attach(server, undefined, { subscribe: false, computeBadges })
@@ -152,24 +152,37 @@ describe('the snapshot an admin gets when the sidebar connects', () => {
     expect(counts(await b.next())).toMatchObject({ notifications: 0, tickets: 1 })
   })
 
-  it('counts "mine with unread messages" only for the admin it is assigned to', async () => {
+  it('counts only the unassigned ones, for tickets and for enquiries: what an admin has taken adds nothing', async () => {
+    // A ticket that A has taken, with unread member messages, is not "waiting for someone": it adds nothing.
     const t = await createTicket({ userId: member.id, communityId: swing.id, status: 'in_progress' })
     await prisma.ticket.update({ where: { id: t.id }, data: { assignedAdminId: superA.id, adminUnreadCount: 3 } })
-    const r = await createServiceRequest({ userId: member.id })
-    await prisma.serviceRequest.update({ where: { id: r.id }, data: { assignedAdminId: superA.id, adminUnreadCount: 1 } })
+    await createTicket({ userId: member.id, communityId: swing.id }) // nobody has taken this one
+    // An enquiry that A has taken, with an unread member message, is not "waiting for someone": it adds nothing.
+    const taken = await createServiceRequest({ userId: member.id })
+    await prisma.serviceRequest.update({ where: { id: taken.id }, data: { assignedAdminId: superA.id, adminUnreadCount: 1 } })
+    // One nobody has taken is.
+    await createServiceRequest({ userId: member.id })
 
     const [a, b] = [await connect(tokenCookie(superA)), await connect(tokenCookie(superB))]
     expect(counts(await a.next())).toMatchObject({ tickets: 1, services: 1 })
-    expect(counts(await b.next())).toMatchObject({ tickets: 0, services: 0 })
+    expect(counts(await b.next())).toMatchObject({ tickets: 1, services: 1 })
   })
 
-  it('adds payments that need review to the services number, for every admin', async () => {
+  it('does not add payments that need review to the enquiries number', async () => {
     const r = await createServiceRequest({ userId: member.id, status: 'paid' })
     await prisma.serviceRequest.update({ where: { id: r.id }, data: { assignedAdminId: superA.id, requiresReview: true } })
 
     const [a, b] = [await connect(tokenCookie(superA)), await connect(tokenCookie(superB))]
+    expect((await a.next()).services).toBe(0)
+    expect((await b.next()).services).toBe(0)
+  })
+
+  it('does not count closed enquiries, even unassigned ones', async () => {
+    await createServiceRequest({ userId: member.id, status: 'closed' })
+    await createServiceRequest({ userId: member.id })
+
+    const a = await connect(tokenCookie(superA))
     expect((await a.next()).services).toBe(1)
-    expect((await b.next()).services).toBe(1)
   })
 
   it('counts only the communities a scoped admin manages', async () => {
@@ -221,18 +234,24 @@ describe('pushes after the snapshot', () => {
     expect((await a.next(x => x.tickets === 0)).tickets).toBe(0)
   })
 
-  it('moves A\'s number up when a member writes on their ticket, and not B\'s', async () => {
-    const t = await createTicket({ userId: member.id, communityId: swing.id, status: 'in_progress' })
-    await prisma.ticket.update({ where: { id: t.id }, data: { assignedAdminId: superA.id } })
+  it('raises every admin\'s number when a new ticket arrives, and nobody\'s when a member writes on a ticket someone has taken', async () => {
+    const taken = await createTicket({ userId: member.id, communityId: swing.id, status: 'in_progress' })
+    await prisma.ticket.update({ where: { id: taken.id }, data: { assignedAdminId: superA.id } })
     const [a, b] = [await connect(tokenCookie(superA)), await connect(tokenCookie(superB))]
     expect((await a.next()).tickets).toBe(0)
     expect((await b.next()).tickets).toBe(0)
 
-    await prisma.ticket.update({ where: { id: t.id }, data: { adminUnreadCount: 1 } })
+    // A member writes on the ticket A has taken: it is A's to answer, not waiting for anyone, so no number moves.
+    await prisma.ticket.update({ where: { id: taken.id }, data: { adminUnreadCount: 1 } })
     liveTicketsFeed.refreshBadgesFor([superA.id, superB.id])
+    expect(await a.quiet()).toEqual([])
+    expect(await b.quiet(100)).toEqual([])
 
+    // A new ticket nobody has taken does move them, for every admin.
+    await createTicket({ userId: (await createMobileMember()).id, communityId: swing.id })
+    liveTicketsFeed.refreshBadgesFor([superA.id, superB.id])
     expect((await a.next(x => x.tickets === 1)).tickets).toBe(1)
-    expect(await b.quiet()).toEqual([]) // B's number did not change, so B is not bothered
+    expect((await b.next(x => x.tickets === 1)).tickets).toBe(1)
   })
 
   it('merges a burst of events into one push', async () => {
