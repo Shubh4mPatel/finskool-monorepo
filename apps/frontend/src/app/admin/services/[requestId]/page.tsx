@@ -202,7 +202,6 @@ export default function AdminServiceRequestPage() {
       .request("service.read", { requestId })
       .then(() => {
         setRequest((r) => (r ? { ...r, unreadCount: 0 } : r));
-        window.dispatchEvent(new Event("admin-services:updated"));
       })
       .catch(() => {});
   }, [requestId, assigneeId, unread, meId]);
@@ -231,7 +230,6 @@ export default function AdminServiceRequestPage() {
       await fn();
       toast.success(okMessage);
       await refreshRequest();
-      window.dispatchEvent(new Event("admin-services:updated"));
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Something went wrong. Please try again.");
       await refreshRequest();
@@ -578,7 +576,6 @@ export default function AdminServiceRequestPage() {
             setQuoteOpen(false);
             refreshRequest();
             loadLatest(false);
-            window.dispatchEvent(new Event("admin-services:updated"));
           }}
         />
       )}

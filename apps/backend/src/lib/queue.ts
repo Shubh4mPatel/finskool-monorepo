@@ -266,6 +266,14 @@ export interface LiveNotificationEvent {
 // the event is forwarded to clients.
 export const TICKETS_PUBSUB_CHANNEL = 'tickets:live'
 
+// "Recompute the sidebar badges of these admins." Published when a count changed that no ticket, service or
+// notification event already announces: an admin read their notifications, an admin's community access changed.
+export const BADGES_PUBSUB_CHANNEL = 'badges:refresh'
+
+export interface BadgesRefreshEvent {
+  userIds: string[]
+}
+
 export type LiveTicketEventName = 'ticket.created' | 'ticket.message' | 'ticket.updated' | 'ticket.read'
 
 export interface LiveTicketEvent {

@@ -149,7 +149,6 @@ export default function AdminNotificationsPage() {
       setUnreadTotal(n => Math.max(0, n - 1));
       try {
         await api.patch(`/api/v1/notifications/${notification.id}/read`, {});
-        window.dispatchEvent(new Event("notifications:updated"));
       } catch {
         // best-effort optimistic update
       }
@@ -169,7 +168,6 @@ export default function AdminNotificationsPage() {
     setUnreadTotal(0);
     try {
       await api.patch("/api/v1/notifications/mark-all-read", {});
-      window.dispatchEvent(new Event("notifications:updated"));
     } catch {
       // put the unread ones back if the server refused
       setNotifications(previous);

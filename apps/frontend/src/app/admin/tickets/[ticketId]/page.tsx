@@ -188,7 +188,6 @@ export default function AdminTicketDetailPage() {
       .request("ticket.read", { ticketId })
       .then(() => {
         setTicket((t) => (t ? { ...t, unreadCount: 0 } : t));
-        window.dispatchEvent(new Event("admin-tickets:updated"));
       })
       .catch(() => {});
   }, [ticketId, assigneeId, unread, meId]);
@@ -221,7 +220,6 @@ export default function AdminTicketDetailPage() {
       await fn();
       toast.success(okMessage);
       await refreshTicket();
-      window.dispatchEvent(new Event("admin-tickets:updated"));
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Something went wrong. Please try again.");
       await refreshTicket();

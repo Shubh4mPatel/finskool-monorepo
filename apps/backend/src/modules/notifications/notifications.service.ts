@@ -1,5 +1,6 @@
 import type { Prisma, PrismaClient } from '../../generated/prisma/client.js'
 import { visibleNotifications } from '../../lib/community-block.js'
+import { refreshAdminBadges } from '../../lib/admin-badges.js'
 import { decodeCursor, encodeCursor } from '../tickets/tickets.shared.js'
 import { NotFoundError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
@@ -156,6 +157,8 @@ export class NotificationsService {
       data: { isRead: true },
     })
     if (result.count === 0) throw new NotFoundError('Notification not found')
+    // The unread count moved: every tab and device this admin has open updates its badge.
+    await refreshAdminBadges([userId])
   }
 
   async markAllRead(userId: string): Promise<{ count: number }> {
@@ -163,6 +166,7 @@ export class NotificationsService {
       where: { userId, isRead: false },
       data: { isRead: true },
     })
+    if (result.count > 0) await refreshAdminBadges([userId])
     return { count: result.count }
   }
 

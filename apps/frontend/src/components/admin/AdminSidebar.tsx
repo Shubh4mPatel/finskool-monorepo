@@ -6,8 +6,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import type { LucideIcon } from "lucide-react";
 import { api } from "@/lib/api";
 import { clearSession, useSession, type SessionInfo } from "@/lib/session";
-import { notificationSocketStore } from "@/store/notifications/notificationSocketStore";
-import { ticketSocketStore } from "@/store/tickets/ticketSocketStore";
+import { ticketSocketStore, type AdminBadges } from "@/store/tickets/ticketSocketStore";
 import {
   LayoutDashboard,
   Pencil,
@@ -134,82 +133,21 @@ interface SidebarData {
  * mobile drawer, so polling and socket subscriptions never run twice.
  */
 function useSidebarData(): SidebarData {
-  const [unreadNotifications, setUnreadNotifications] = useState<number | undefined>(undefined);
-  const [ticketsNeedingAttention, setTicketsNeedingAttention] = useState<number | undefined>(undefined);
-  const [servicesNeedingAttention, setServicesNeedingAttention] = useState<number | undefined>(undefined);
+  const [counts, setCounts] = useState<AdminBadges | undefined>(undefined);
   const session = useSession();
 
+  // The three counts come from the server over the live socket: once when it connects, then whenever one may have
+  // changed for this admin (a ticket or service moved, a notification arrived or was read in another tab, someone
+  // else took a shared item). There is nothing to fetch or poll, and every admin's sidebar stays in step.
   useEffect(() => {
-    const load = () =>
-      api
-        .get<{ count: number }>("/api/v1/notifications/unread-count")
-        .then((d) => setUnreadNotifications(d.count))
-        .catch(() => {});
-    load();
-    const interval = setInterval(load, 45_000);
-    window.addEventListener("notifications:updated", load);
-
-    notificationSocketStore.connect();
-    const unsubscribe = notificationSocketStore.subscribe(load);
-
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener("notifications:updated", load);
-      unsubscribe();
-    };
-  }, []);
-
-  // Support-ticket badge: unassigned tickets awaiting a taker + my tickets with unread member messages.
-  useEffect(() => {
-    const load = () =>
-      api
-        .get<{ unassigned: number; mineUnread: number }>("/api/v1/admin/tickets/stats")
-        .then((s) => setTicketsNeedingAttention(s.unassigned + s.mineUnread))
-        .catch(() => {});
-    load();
-    const interval = setInterval(load, 60_000);
-    window.addEventListener("admin-tickets:updated", load);
-
     ticketSocketStore.connect();
-    const offEvents = ticketSocketStore.subscribe(load);
-    const offReconnect = ticketSocketStore.onReconnect(load);
-
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener("admin-tickets:updated", load);
-      offEvents();
-      offReconnect();
-    };
-  }, []);
-
-  // Services badge: unassigned requests awaiting a taker + my requests with unread member messages
-  // + payments that need review.
-  useEffect(() => {
-    const load = () =>
-      api
-        .get<{ unassigned: number; mineUnread: number; needsReview: number }>("/api/v1/admin/services/stats")
-        .then((s) => setServicesNeedingAttention(s.unassigned + s.mineUnread + s.needsReview))
-        .catch(() => {});
-    load();
-    const interval = setInterval(load, 60_000);
-    window.addEventListener("admin-services:updated", load);
-
-    ticketSocketStore.connect();
-    const offEvents = ticketSocketStore.subscribeServices(load);
-    const offReconnect = ticketSocketStore.onReconnect(load);
-
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener("admin-services:updated", load);
-      offEvents();
-      offReconnect();
-    };
+    return ticketSocketStore.subscribeBadges(setCounts);
   }, []);
 
   const badges: Record<BadgeKey, number | undefined> = {
-    notifications: unreadNotifications,
-    tickets: ticketsNeedingAttention,
-    services: servicesNeedingAttention,
+    notifications: counts?.notifications,
+    tickets: counts?.tickets,
+    services: counts?.services,
   };
 
   return { session, badges };

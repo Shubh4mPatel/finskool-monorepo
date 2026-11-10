@@ -17,6 +17,7 @@ import { AdminTicketsService } from './modules/tickets/admin-tickets.service.js'
 import { createTicketSocketHandler } from './modules/tickets/tickets.socket.js'
 import { ServicesService } from './modules/services/services.service.js'
 import { AdminServicesService } from './modules/services/admin-services.service.js'
+import { NotificationsService } from './modules/notifications/notifications.service.js'
 
 async function bootstrap() {
   await redis.connect()
@@ -51,15 +52,29 @@ async function bootstrap() {
     logger.warn('AngelOne live feed disabled (ANGELONE_ENABLED=false) — not connecting')
   }
 
+  const notificationsService = new NotificationsService(prisma)
+  const adminTickets = new AdminTicketsService(prisma)
+  const adminServices = new AdminServicesService(prisma)
   liveNotificationsFeed.attach(server)
   liveTicketsFeed.attach(
     server,
     createTicketSocketHandler({
       member: new TicketsService(prisma),
-      admin: new AdminTicketsService(prisma),
+      admin: adminTickets,
       serviceMember: new ServicesService(prisma),
-      serviceAdmin: new AdminServicesService(prisma),
+      serviceAdmin: adminServices,
     }),
+    {
+      // The three numbers in the admin sidebar, pushed over this socket (see live-tickets-feed.ts).
+      computeBadges: async viewer => {
+        const [notifications, tickets, services] = await Promise.all([
+          notificationsService.unreadCount(viewer.id),
+          adminTickets.badgeCount(viewer),
+          adminServices.badgeCount(viewer),
+        ])
+        return { notifications, tickets, services }
+      },
+    },
   )
 
   async function shutdown(signal: string) {

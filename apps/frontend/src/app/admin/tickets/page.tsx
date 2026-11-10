@@ -132,7 +132,6 @@ export default function AdminTicketsPage() {
           // Tickets were resolved or removed meanwhile and this page is gone: land on the last one that exists.
           if (res.page !== page) setPageState({ key, page: res.page });
           setLoadedKey(`${key}#${res.page}`);
-          window.dispatchEvent(new Event("admin-tickets:updated"));
         },
         () => {
           if (seq !== requestSeq.current) return;

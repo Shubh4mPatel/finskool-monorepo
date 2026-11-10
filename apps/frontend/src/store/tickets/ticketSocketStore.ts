@@ -10,6 +10,14 @@ const REQUEST_TIMEOUT_MS = 15000;
 // Server asks us to re-authenticate (token expired / session ended) by closing with this code.
 const WS_CLOSE_AUTH = 4401;
 
+/** The three numbers in the admin sidebar, pushed by the server (on connect and whenever one may have changed). */
+export interface AdminBadges {
+  notifications: number;
+  tickets: number;
+  services: number;
+}
+
+type BadgeListener = (badges: AdminBadges) => void;
 type Listener = (event: LiveTicketEvent) => void;
 type ServiceListener = (event: LiveServiceEvent) => void;
 
@@ -51,6 +59,9 @@ class TicketSocketStore {
   private listeners = new Set<Listener>();
   private serviceListeners = new Set<ServiceListener>();
   private reconnectListeners = new Set<() => void>();
+  private badgeListeners = new Set<BadgeListener>();
+  // The latest badges, so a component that mounts later gets them straight away (the server sent them once, on connect).
+  private latestBadges: AdminBadges | null = null;
   private openWaiters = new Set<() => void>();
   private pending = new Map<string, Pending>();
   private hasConnectedBefore = false;
@@ -71,6 +82,17 @@ class TicketSocketStore {
   subscribeServices(listener: ServiceListener): () => void {
     this.serviceListeners.add(listener);
     return () => this.serviceListeners.delete(listener);
+  }
+
+  /**
+   * The sidebar badge counts. The server sends them when the socket connects and again whenever they may have
+   * changed (for every admin, every tab), so there is nothing to fetch or poll. The listener is called right away
+   * with the latest values if they have already arrived.
+   */
+  subscribeBadges(listener: BadgeListener): () => void {
+    this.badgeListeners.add(listener);
+    if (this.latestBadges) listener(this.latestBadges);
+    return () => this.badgeListeners.delete(listener);
   }
 
   /** Fires after a *re*connect (not the first connect) — events may have been missed in the gap. */
@@ -176,6 +198,12 @@ class TicketSocketStore {
         this.pending.delete(ack.id);
         if (ack.ok) p.resolve(ack.data);
         else p.reject(new TicketSocketError(ack.error?.code ?? "ERROR", ack.error?.message ?? "Request failed", ack.error?.errors));
+        return;
+      }
+      if ((data as { event?: string }).event === "badges.updated") {
+        const { notifications, tickets, services } = data as AdminBadges;
+        this.latestBadges = { notifications, tickets, services };
+        this.badgeListeners.forEach((l) => l(this.latestBadges!));
         return;
       }
       // Service and ticket pages each hear only their own events.

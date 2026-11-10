@@ -205,6 +205,17 @@ export class AdminServicesService {
   }
 
   /** Numbers for the sidebar badge / inbox header. */
+  /** The sidebar badge: requests waiting for someone, mine with unread messages, and payments that need review. */
+  async badgeCount(admin: AdminViewer): Promise<number> {
+    const open: Prisma.ServiceRequestWhereInput = { status: { not: 'closed' } }
+    const [unassigned, mineUnread, needsReview] = await Promise.all([
+      this.db.serviceRequest.count({ where: { ...open, assignedAdminId: null } }),
+      this.db.serviceRequest.count({ where: { ...open, assignedAdminId: admin.id, adminUnreadCount: { gt: 0 } } }),
+      this.db.serviceRequest.count({ where: { requiresReview: true } }),
+    ])
+    return unassigned + mineUnread + needsReview
+  }
+
   async stats(admin: AdminViewer): Promise<AdminServiceStatsDTO> {
     const open: Prisma.ServiceRequestWhereInput = { status: { not: 'closed' } }
     const [unassigned, mine, mineUnread, requested, quoteSent, paid, closed, needsReview, ratings] = await Promise.all([

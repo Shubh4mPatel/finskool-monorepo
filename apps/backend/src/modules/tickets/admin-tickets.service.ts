@@ -109,6 +109,18 @@ export class AdminTicketsService {
   }
 
   /** Numbers for the sidebar badge / inbox header. */
+  /** The sidebar badge: tickets waiting for someone to take them, plus mine with unread member messages. */
+  async badgeCount(admin: AdminActor): Promise<number> {
+    const scope = this.scope(admin)
+    const [unassigned, mineUnread] = await Promise.all([
+      this.db.ticket.count({ where: { AND: [scope, { assignedAdminId: null, status: { not: 'resolved' } }] } }),
+      this.db.ticket.count({
+        where: { AND: [scope, { assignedAdminId: admin.id, status: { not: 'resolved' }, adminUnreadCount: { gt: 0 } }] },
+      }),
+    ])
+    return unassigned + mineUnread
+  }
+
   async stats(admin: AdminActor): Promise<AdminTicketStatsDTO> {
     const scope = this.scope(admin)
     const [unassigned, mine, mineUnread, inProgress, resolved, ratings] = await Promise.all([
