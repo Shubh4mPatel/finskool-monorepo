@@ -486,8 +486,13 @@ function MembersContent() {
     <div className="flex items-center gap-1">
       <button
         onClick={() => sub && setModal({ type: "extend", member: { ...m, subscription: sub }, subscription: sub })}
-        disabled={!sub || !sub.validUntil}
-        title={!sub ? "No subscription to extend" : !sub.validUntil ? `${sub.communityName} has no expiry` : `Extend ${sub.communityName} subscription`}
+        disabled={!sub || !sub.validUntil || !!sub.block}
+        title={
+          !sub ? "No subscription to extend"
+            : sub.block ? `Suspended in ${sub.communityName} — revoke the suspension first`
+            : !sub.validUntil ? `${sub.communityName} has no expiry`
+            : `Extend ${sub.communityName} subscription`
+        }
         aria-label={sub ? `Extend ${m.name}'s ${sub.communityName} subscription` : `${m.name} has no subscription to extend`}
         className={
           labelled
@@ -542,8 +547,8 @@ function MembersContent() {
       <span className="inline-flex items-center gap-2">
         <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold ${communityBadge(sub.communityName)}`}>{sub.communityName}</span>
         {sub.block && (
-          <span title={`Blocked in ${sub.communityName}: ${sub.block.reason}`} className="inline-flex rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-bold text-red-600">
-            Blocked
+          <span title={`Suspended in ${sub.communityName}: ${sub.block.reason}`} className="inline-flex rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-bold text-red-600">
+            Suspended
           </span>
         )}
         {m && first && extra > 0 && (

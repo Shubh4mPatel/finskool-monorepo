@@ -214,6 +214,7 @@ describe('while blocked', () => {
       .send({ validUntil: daysFromNow(90), payment: 1000 })
     expect(res.status).toBe(403)
     expect(res.body.code).toBe('COMMUNITY_BLOCKED')
+    expect(res.body.message).toBe('This member is suspended from this community. Revoke the suspension first.')
     expect(await prisma.subscription.count({ where: { userId: member.id, communityId: swing.id } })).toBe(1)
   })
 
@@ -422,5 +423,80 @@ describe('what a blocked member is told when they try to use the community', () 
   it('stops being said once they are unblocked', async () => {
     await unblock(swing.id)
     expect((await feed(swing.id)).status).toBe(200)
+  })
+})
+
+describe('extending and re-adding, suspended or not', () => {
+  const extend = (subscriptionId: string) =>
+    request(app)
+      .post(`/api/v1/admin/subscriptions/${subscriptionId}/extend`)
+      .set('Authorization', superAdmin.auth)
+      .send({ validUntil: daysFromNow(90), payment: 1000 })
+
+  it('lets an admin extend a normal member whose subscription has expired', async () => {
+    const expired = await createMobileMember({
+      subscriptions: [{ communityId: swing.id, validUntil: daysFromNow(-20), isActive: false }],
+    })
+
+    const res = await extend(expired.subscriptionIds[0]!)
+
+    expect(res.status).toBe(201)
+    const active = await prisma.subscription.findMany({ where: { userId: expired.id, communityId: swing.id, isActive: true } })
+    expect(active).toHaveLength(1)
+    expect(active[0]!.validUntil!.toISOString().slice(0, 10)).toBe(daysFromNow(90))
+  })
+
+  it('refuses the same for a member suspended in that community, until the suspension is revoked', async () => {
+    await block(swing.id, 'Chargeback')
+    const refused = await extend(member.subscriptionIds[0]!)
+    expect(refused.status).toBe(403)
+    expect(refused.body.message).toContain('Revoke the suspension first')
+
+    await unblock(swing.id)
+    expect((await extend(member.subscriptionIds[0]!)).status).toBe(201)
+  })
+
+  it('refuses adding a suspended member to that community from the edit form', async () => {
+    await block(swing.id, 'Chargeback')
+
+    const res = await request(app)
+      .patch(`/api/v1/admin/members/${member.id}`)
+      .set('Authorization', superAdmin.auth)
+      .send({ name: member.name, phone: member.phone, email: member.email, newCommunity: { communityId: swing.id, payment: 500, validUntil: daysFromNow(60) } })
+
+    expect(res.status).toBe(403)
+    expect(res.body.code).toBe('COMMUNITY_BLOCKED')
+    expect(res.body.message).toContain('Revoke the suspension first')
+  })
+
+  it('refuses reviving a member into the community they are suspended from', async () => {
+    await block(swing.id, 'Chargeback')
+    await prisma.user.update({ where: { id: member.id }, data: { status: 'suspended', suspensionReason: 'Chargeback' } })
+
+    const res = await request(app)
+      .post('/api/v1/admin/members/revive')
+      .set('Authorization', superAdmin.auth)
+      .send({ name: member.name, phone: member.phone, communityId: swing.id, payment: 500, validUntil: daysFromNow(60) })
+
+    expect(res.status).toBe(403)
+    expect(res.body.code).toBe('COMMUNITY_BLOCKED')
+    expect(res.body.message).toContain('Revoke the suspension first')
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: member.id } })).status).toBe('suspended')
+  })
+
+  it('reports an import row for a suspended member instead of re-adding them', async () => {
+    await block(swing.id, 'Chargeback')
+
+    const res = await request(app)
+      .post('/api/v1/admin/import-json')
+      .set('Authorization', superAdmin.auth)
+      .send({
+        strategy: 'overwrite',
+        rows: [{ name: member.name, phone: member.phone, email: '', service: 'Swing Traders', payment: 1000, valid: daysFromNow(90) }],
+      })
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.created).toBe(0)
+    expect(res.body.data.errors[0].reason).toBe('Member is suspended from this community — revoke the suspension first')
   })
 })

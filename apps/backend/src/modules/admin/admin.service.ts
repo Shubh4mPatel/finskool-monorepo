@@ -264,9 +264,9 @@ export class AdminService {
           summary.errors.push({ row: rowNum, phone, reason: 'This phone number belongs to an admin account' })
           continue
         }
-        // Blocked from this community: the sheet can't hand the access back, an admin has to unblock them first.
+        // Suspended from this community: the sheet can't hand the access back, the suspension has to be revoked first.
         if (existingUser && (await findCommunityBlock(this.db, existingUser.id, community.id))) {
-          summary.errors.push({ row: rowNum, phone, reason: 'Member is blocked in this community — unblock them first' })
+          summary.errors.push({ row: rowNum, phone, reason: 'Member is suspended from this community — revoke the suspension first' })
           continue
         }
         // An email already used by a different account would fail the unique key halfway through the file.
@@ -449,9 +449,9 @@ export class AdminService {
           summary.errors.push({ row: rowNum, phone, reason: 'This phone number belongs to an admin account' })
           continue
         }
-        // Blocked from this community: the sheet can't hand the access back, an admin has to unblock them first.
+        // Suspended from this community: the sheet can't hand the access back, the suspension has to be revoked first.
         if (existingUser && (await findCommunityBlock(this.db, existingUser.id, community.id))) {
-          summary.errors.push({ row: rowNum, phone, reason: 'Member is blocked in this community — unblock them first' })
+          summary.errors.push({ row: rowNum, phone, reason: 'Member is suspended from this community — revoke the suspension first' })
           continue
         }
         const existingAp = await this.db.approvedPhone.findUnique({ where: { phone } })
@@ -1766,7 +1766,7 @@ export class AdminService {
       // Two admins blocking at the same moment must not both pass the "not blocked yet" check.
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`community-block:${userId}:${communityId}`}))`
       if (await findCommunityBlock(tx, userId, communityId)) {
-        throw new ConflictError('This member is already blocked in this community', 'ALREADY_BLOCKED')
+        throw new ConflictError('This member is already suspended from this community', 'ALREADY_BLOCKED')
       }
 
       const active = await tx.subscription.findMany({ where: { userId, communityId, isActive: true }, select: { id: true } })
@@ -1824,7 +1824,7 @@ export class AdminService {
     await this.db.$transaction(async tx => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`community-block:${userId}:${communityId}`}))`
       const block = await findCommunityBlock(tx, userId, communityId)
-      if (!block) throw new ConflictError('This member is not blocked in this community', 'NOT_BLOCKED')
+      if (!block) throw new ConflictError('This member is not suspended from this community', 'NOT_BLOCKED')
 
       await tx.subscription.updateMany({
         where: {

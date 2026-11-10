@@ -125,9 +125,19 @@ export default function EditMemberModal({
             <p className="text-sm font-semibold text-primary">Current Communities</p>
             <div className="mt-2 flex flex-wrap gap-1.5">
               {member.allSubscriptions.map((s) => (
-                <span key={s.id} className={`rounded-full px-3 py-1 text-xs font-bold ${communityBadge(s.communityName)}`}>{s.communityName}</span>
+                <span
+                  key={s.id}
+                  title={s.block ? `Suspended in ${s.communityName} — revoke the suspension on the member page before adding them again` : undefined}
+                  className={`rounded-full px-3 py-1 text-xs font-bold ${communityBadge(s.communityName)} ${s.block ? "opacity-60" : ""}`}
+                >
+                  {s.communityName}
+                  {s.block && <span className="ml-1 text-red-600">(suspended)</span>}
+                </span>
               ))}
             </div>
+            {member.allSubscriptions.some((s) => s.block) && (
+              <p className="mt-2 text-xs text-red-600">Suspended communities can&rsquo;t be extended or re-added until the suspension is revoked.</p>
+            )}
           </div>
         )}
 

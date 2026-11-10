@@ -43,7 +43,7 @@ export async function assertNotBlocked(
   throw new ForbiddenError(
     audience === 'member'
       ? blockedMessage(block.community.name, block.reason)
-      : 'This member is blocked in this community. Unblock them first.',
+      : 'This member is suspended from this community. Revoke the suspension first.',
     COMMUNITY_BLOCKED_CODE,
   )
 }
