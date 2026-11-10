@@ -49,6 +49,20 @@ function SectionTitle({ title, count, highlight = false }: { title: string; coun
   );
 }
 
+/** A placeholder shaped like a notification card: shown on the first load and under the list while the next batch loads. */
+function NotificationSkeleton() {
+  return (
+    <div className="flex items-center gap-4 rounded-2xl bg-white px-5 py-4 shadow-card">
+      <Skeleton className="h-14 w-14 rounded-full" />
+      <div className="flex-1 space-y-2.5">
+        <Skeleton className="h-4 w-1/3" />
+        <Skeleton className="h-3 w-2/3" />
+        <Skeleton className="h-3 w-16" />
+      </div>
+    </div>
+  );
+}
+
 export default function AdminNotificationsPage() {
   const router = useRouter();
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -129,8 +143,10 @@ export default function AdminNotificationsPage() {
     }
   }, [nextCursor, loadingMore]);
 
-  // Load the next batch when the end of the list comes within a screen of view. The observer is set up afresh after
-  // every batch, so if the new rows still do not fill the screen it fires again. After a failure it waits for Retry.
+  // Load the next batch when the end of the list is close to coming into view: 150px, near enough that the loading
+  // placeholders below are on screen while it works, far enough that a normal scroll does not reach the end first.
+  // The observer is set up afresh after every batch, so if the new rows still do not fill the screen it fires again.
+  // After a failure it waits for Retry.
   useEffect(() => {
     const end = sentinelRef.current;
     if (!end || !nextCursor || loadingMore || loadMoreFailed) return;
@@ -138,7 +154,7 @@ export default function AdminNotificationsPage() {
       entries => {
         if (entries.some(e => e.isIntersecting)) void loadMore();
       },
-      { rootMargin: "0px 0px 400px 0px" },
+      { rootMargin: "0px 0px 150px 0px" },
     );
     observer.observe(end);
     return () => observer.disconnect();
@@ -223,14 +239,7 @@ export default function AdminNotificationsPage() {
       {loading ? (
         <div className="space-y-3">
           {[0, 1, 2].map(i => (
-            <div key={i} className="flex items-center gap-4 rounded-2xl bg-white px-5 py-4 shadow-card">
-              <Skeleton className="h-14 w-14 rounded-full" />
-              <div className="flex-1 space-y-2.5">
-                <Skeleton className="h-4 w-1/3" />
-                <Skeleton className="h-3 w-2/3" />
-                <Skeleton className="h-3 w-16" />
-              </div>
-            </div>
+            <NotificationSkeleton key={i} />
           ))}
         </div>
       ) : notifications.length === 0 ? (
@@ -282,6 +291,13 @@ export default function AdminNotificationsPage() {
 
           {/* End of the list: the next batch loads when this comes near the screen. */}
           <div ref={sentinelRef} aria-hidden className="h-px" />
+          {loadingMore && (
+            <div className="flex flex-col gap-3" aria-hidden>
+              {[0, 1].map(i => (
+                <NotificationSkeleton key={i} />
+              ))}
+            </div>
+          )}
           <div className="flex min-h-6 items-center justify-center text-sm text-muted" aria-live="polite">
             {loadingMore ? (
               <span className="flex items-center gap-2">
