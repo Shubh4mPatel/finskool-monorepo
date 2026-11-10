@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { AlertTriangle, ArrowLeft, CheckCircle2, Download, HandHelping, History, Loader2, Receipt, SearchX, Star as StarIcon, UserRoundCog, XCircle } from "lucide-react";
+import { AlertTriangle, ArrowLeft, CheckCircle2, Eye, HandHelping, History, Loader2, Receipt, SearchX, Star as StarIcon, UserRoundCog, XCircle } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { getSession } from "@/lib/session";
 import { formatInr } from "@/lib/services";
@@ -17,6 +17,7 @@ import { Stars } from "@/components/admin/tickets/TicketBadges";
 import { QuoteStatusPill, RequestStatusBadge } from "@/components/admin/services/ServiceBadges";
 import ServiceChat from "@/components/admin/services/ServiceChat";
 import SendQuoteModal from "@/components/admin/services/SendQuoteModal";
+import PdfViewerModal from "@/components/admin/PdfViewerModal";
 import Select from "@/components/ui/Select";
 import { EmptyState, Skeleton } from "@/components/admin/dashboard/Panel";
 import { DetailRow, MemberBlock, SideCard, outlineBtn, solidBtn } from "@/components/admin/chat/DetailParts";
@@ -52,6 +53,7 @@ export default function AdminServiceRequestPage() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [acting, setActing] = useState<"claim" | "close" | "reassign" | "review" | "invoice" | null>(null);
+  const [invoiceView, setInvoiceView] = useState<{ url: string; title: string } | null>(null);
   const [previous, setPrevious] = useState<AdminServiceRequest[]>([]);
   const [now, setNow] = useState(() => Date.now());
   const [admins, setAdmins] = useState<AdminOption[]>([]);
@@ -272,11 +274,12 @@ export default function AdminServiceRequestPage() {
     runAction("review", () => api.post(`${BASE}/${requestId}/review/resolve`, {}), "Payment review resolved");
   }
 
-  async function downloadInvoice() {
+  // The invoice opens in the app's PDF viewer (with Print and Download) rather than in a separate tab.
+  async function viewInvoice() {
     setActing("invoice");
     try {
       const { url } = await api.get<{ url: string }>(`${BASE}/${requestId}/invoice`);
-      window.open(url, "_blank", "noopener,noreferrer");
+      setInvoiceView({ url, title: request?.invoice ? `Invoice ${request.invoice.number}` : "Invoice" });
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Couldn't open the invoice. Please try again.");
     } finally {
@@ -490,9 +493,9 @@ export default function AdminServiceRequestPage() {
                 <p className="text-[11px] font-bold uppercase tracking-wider text-muted">GST invoice</p>
                 <p className="mt-1.5 font-mono text-sm font-bold text-primary">{request.invoice.number}</p>
                 <p className="text-[11px] text-muted">{formatLongTime(request.invoice.issuedAt)} · {formatInr(request.invoice.total)}</p>
-                <button onClick={downloadInvoice} disabled={acting !== null} className={`${outlineBtn} mt-3 w-full`}>
-                  {acting === "invoice" ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
-                  Download PDF
+                <button onClick={viewInvoice} disabled={acting !== null} className={`${outlineBtn} mt-3 w-full`}>
+                  {acting === "invoice" ? <Loader2 size={14} className="animate-spin" /> : <Eye size={14} />}
+                  View invoice
                 </button>
               </div>
             )}
@@ -579,6 +582,8 @@ export default function AdminServiceRequestPage() {
           }}
         />
       )}
+
+      {invoiceView && <PdfViewerModal title={invoiceView.title} url={invoiceView.url} onClose={() => setInvoiceView(null)} />}
     </div>
   );
 }

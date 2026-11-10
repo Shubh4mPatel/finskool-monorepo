@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Download, Loader2, Receipt } from "lucide-react";
+import { Eye, Loader2, Receipt } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { formatInr } from "@/lib/services";
 import { formatDate } from "@/lib/memberFormat";
 import { useToast } from "@/components/ui/Toast";
+import PdfViewerModal from "@/components/admin/PdfViewerModal";
 
 interface ReceiptItem {
   id: string;
@@ -15,11 +16,12 @@ interface ReceiptItem {
   amount: number;
 }
 
-// Plan-purchase receipts of one member, with a download link for each PDF.
+// Plan-purchase receipts of one member. Each opens in the app's PDF viewer, which has Print and Download.
 export default function MemberReceipts({ userId }: { userId: string }) {
   const toast = useToast();
   const [receipts, setReceipts] = useState<ReceiptItem[] | null>(null);
   const [opening, setOpening] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<{ url: string; title: string; fileName: string } | null>(null);
 
   useEffect(() => {
     api
@@ -28,11 +30,11 @@ export default function MemberReceipts({ userId }: { userId: string }) {
       .catch(() => setReceipts([]));
   }, [userId]);
 
-  async function download(id: string) {
-    setOpening(id);
+  async function view(r: ReceiptItem) {
+    setOpening(r.id);
     try {
-      const { url } = await api.get<{ url: string }>(`/api/v1/admin/receipts/${id}/download`);
-      window.open(url, "_blank", "noopener");
+      const { url } = await api.get<{ url: string }>(`/api/v1/admin/receipts/${r.id}/download`);
+      setViewing({ url, title: `Receipt ${r.number}`, fileName: `${r.number.replace(/\//g, "-")}.pdf` });
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Could not open the receipt");
     } finally {
@@ -55,16 +57,18 @@ export default function MemberReceipts({ userId }: { userId: string }) {
             <span className="w-24 text-right font-semibold tabular-nums">{formatInr(r.amount)}</span>
             <button
               type="button"
-              onClick={() => download(r.id)}
+              onClick={() => view(r)}
               disabled={opening === r.id}
-              aria-label={`Download receipt ${r.number}`}
+              title="View receipt"
+              aria-label={`View receipt ${r.number}`}
               className="flex h-8 w-8 items-center justify-center rounded-full text-muted transition-colors hover:bg-divider/60 hover:text-accent disabled:opacity-60"
             >
-              {opening === r.id ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+              {opening === r.id ? <Loader2 size={14} className="animate-spin" /> : <Eye size={14} />}
             </button>
           </li>
         ))}
       </ul>
+      {viewing && <PdfViewerModal title={viewing.title} url={viewing.url} fileName={viewing.fileName} onClose={() => setViewing(null)} />}
     </div>
   );
 }
