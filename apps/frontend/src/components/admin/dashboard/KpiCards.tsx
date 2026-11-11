@@ -1,14 +1,52 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, IndianRupee, ShieldCheck, Ticket, TrendingDown, TrendingUp, Users } from "lucide-react";
-import type { ReactNode } from "react";
+import { ArrowRight, IndianRupee, Info, ShieldCheck, Ticket, TrendingDown, TrendingUp, Users } from "lucide-react";
+import { useId, type ReactNode } from "react";
 import { dashboardApi, dayRange, rupees, shortMonth } from "@/lib/dashboard";
 import { CountUp } from "./CountUp";
 import { Card, PanelError, Pill, Skeleton } from "./Panel";
 import { usePanel } from "./usePanel";
 
 const STAGGER_MS = 70;
+
+/**
+ * Wraps its children in a keyboard-focusable trigger that explains itself in a small popover on hover or focus (and on
+ * tap, which focuses). The card it sits in does not clip, so the popover can hang over the card's edge.
+ */
+function Tip({ text, children, align = "left" }: { text: string; children: ReactNode; align?: "left" | "right" }) {
+  const id = useId();
+  return (
+    <span className="group/tip relative inline-flex items-center">
+      <span
+        tabIndex={0}
+        aria-describedby={id}
+        className="inline-flex cursor-help items-center gap-1 rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+      >
+        {children}
+      </span>
+      <span
+        id={id}
+        role="tooltip"
+        className={`pointer-events-none invisible absolute top-full z-40 mt-2 w-64 rounded-xl bg-primary px-3 py-2.5 text-left text-xs font-medium normal-case leading-relaxed tracking-normal text-white opacity-0 shadow-lg transition-opacity duration-150 group-focus-within/tip:visible group-focus-within/tip:opacity-100 group-hover/tip:visible group-hover/tip:opacity-100 ${
+          align === "right" ? "right-0" : "left-0"
+        }`}
+      >
+        {text}
+      </span>
+    </span>
+  );
+}
+
+/** A label with a small (i) after it; hovering the pair explains what the number counts. */
+function ExplainedLabel({ label, text }: { label: string; text: string }) {
+  return (
+    <Tip text={text}>
+      {label}
+      <Info size={13} className="text-subtle" aria-hidden />
+    </Tip>
+  );
+}
 
 function KpiCard({
   index,
@@ -26,16 +64,17 @@ function KpiCard({
   glowClass: string;
   badge: ReactNode;
   value: ReactNode;
-  label: string;
+  label: ReactNode;
   footer: ReactNode;
 }) {
   return (
-    <Card interactive delay={index * STAGGER_MS} className="group flex flex-col overflow-hidden">
-      {/* Soft corner glow in the card's own hue — depth without a heavy border. */}
-      <span
-        aria-hidden
-        className={`pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full blur-2xl transition-opacity duration-500 group-hover:opacity-100 opacity-70 ${glowClass}`}
-      />
+    <Card interactive delay={index * STAGGER_MS} className="group flex flex-col hover:z-30 focus-within:z-30">
+      {/* Soft corner glow in the card's own hue — depth without a heavy border. It clips itself to the card's corners. */}
+      <span aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden rounded-2xl">
+        <span
+          className={`absolute -right-10 -top-10 h-32 w-32 rounded-full blur-2xl transition-opacity duration-500 group-hover:opacity-100 opacity-70 ${glowClass}`}
+        />
+      </span>
       <div className="relative flex items-start justify-between gap-2">
         <span
           className={`flex h-11 w-11 items-center justify-center rounded-xl shadow-sm transition-transform duration-300 group-hover:scale-105 ${tileClass}`}
@@ -109,9 +148,18 @@ export function KpiCards() {
         icon={<Users size={20} />}
         tileClass="bg-gradient-to-br from-primary to-[#245a55] text-white"
         glowClass="bg-primary/10"
-        badge={<Pill tone="success">+<CountUp value={totalMembers.newThisMonth} /> this month</Pill>}
+        badge={
+          <Tip align="right" text="Members who joined since the 1st of this month. Deleted members are not counted.">
+            <Pill tone="success">+<CountUp value={totalMembers.newThisMonth} /> this month</Pill>
+          </Tip>
+        }
         value={<CountUp value={totalMembers.value} />}
-        label="Total members"
+        label={
+          <ExplainedLabel
+            label="Total members"
+            text="Every member account that has not been deleted. This includes suspended members and members who have not signed in to the app yet. A member in several communities is counted once."
+          />
+        }
         footer={<CardLink href="/admin/members">View members</CardLink>}
       />
       <KpiCard
@@ -120,12 +168,22 @@ export function KpiCards() {
         tileClass="bg-gradient-to-br from-accent to-[#0b6f6f] text-white"
         glowClass="bg-accent/15"
         badge={
-          <Pill tone="warning">
-            <CountUp value={activeSubscriptions.pendingRegistration} /> pending
-          </Pill>
+          <Tip
+            align="right"
+            text="Pending = members added by an admin who have not signed up in the app yet (no password set). They are people, not subscriptions, and are not part of the active subscriptions number."
+          >
+            <Pill tone="warning">
+              <CountUp value={activeSubscriptions.pendingRegistration} /> pending
+            </Pill>
+          </Tip>
         }
         value={<CountUp value={activeSubscriptions.value} />}
-        label="Active subscriptions"
+        label={
+          <ExplainedLabel
+            label="Active subscriptions"
+            text="Paid subscriptions that are switched on and have not expired, one per member per community (the free community is not counted). A member in two paid communities counts twice. Only members who have signed up are included."
+          />
+        }
         footer={<CardLink href="/admin/members">View subscriptions</CardLink>}
       />
       <KpiCard
@@ -135,15 +193,25 @@ export function KpiCards() {
         glowClass="bg-lime/40"
         badge={
           delta === null ? null : (
-            <Pill tone={delta >= 0 ? "success" : "danger"}>
-              {delta >= 0 ? <TrendingUp size={12} aria-hidden /> : <TrendingDown size={12} aria-hidden />}
-              {delta >= 0 ? "+" : ""}
-              {delta}% vs {previousMonthLabel(revenue.from)}
-            </Pill>
+            <Tip
+              align="right"
+              text={`How much higher or lower this is than the same days of last month (${previousMonthLabel(revenue.from)}), not the whole month.`}
+            >
+              <Pill tone={delta >= 0 ? "success" : "danger"}>
+                {delta >= 0 ? <TrendingUp size={12} aria-hidden /> : <TrendingDown size={12} aria-hidden />}
+                {delta >= 0 ? "+" : ""}
+                {delta}% vs {previousMonthLabel(revenue.from)}
+              </Pill>
+            </Tip>
           )
         }
         value={<CountUp value={revenue.amount} format={wholeRupees} />}
-        label={`Revenue, ${dayRange(revenue.from, revenue.through)}`}
+        label={
+          <ExplainedLabel
+            label={`Revenue, ${dayRange(revenue.from, revenue.through)}`}
+            text="Money collected from the 1st of this month until today: subscription payments (counted on the day they were paid) and service invoices (counted on the day they were issued). Service income is only included for super admins."
+          />
+        }
         footer={<span className="font-medium text-muted">Subscriptions and services</span>}
       />
       <KpiCard
@@ -152,13 +220,20 @@ export function KpiCards() {
         tileClass="bg-gradient-to-br from-rose-500 to-red-600 text-white"
         glowClass="bg-rose-500/10"
         badge={
-          <Pill tone="success">
-            <CountUp value={tickets.resolved} /> resolved
-          </Pill>
+          <Tip align="right" text="Everything finished so far, not just this month: resolved tickets plus closed enquiries.">
+            <Pill tone="success">
+              <CountUp value={tickets.resolved} /> resolved
+            </Pill>
+          </Tip>
         }
         // Everything still open: support tickets and service enquiries together.
         value={<CountUp value={tickets.openTickets + tickets.openEnquiries} />}
-        label="Open tickets & enquiries"
+        label={
+          <ExplainedLabel
+            label="Open tickets & enquiries"
+            text="Support tickets that are not resolved yet plus service enquiries that are not closed yet. Tickets are limited to your communities; enquiries are shared by all admins."
+          />
+        }
         footer={
           unassigned > 0 ? (
             <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1 font-bold text-red-600">
@@ -167,7 +242,7 @@ export function KpiCards() {
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75 motion-reduce:hidden" />
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
               </span>
-              {unassigned} unassigned
+              <Tip text="Unassigned means the ticket or enquiry is still open and no admin has picked it up yet.">{unassigned} unassigned</Tip>
               <span className="font-medium text-muted" aria-hidden>·</span>
               {/* Both pages open on their Unassigned tab. */}
               <Link href="/admin/tickets" className="font-semibold transition-colors hover:text-red-700 hover:underline">
