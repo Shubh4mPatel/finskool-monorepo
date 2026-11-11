@@ -410,20 +410,27 @@ function MembersContent() {
   }
 
   async function handleDeleteMember(m: MemberItem) {
+    const communities = m.allSubscriptions.length;
     const ok = await confirm({
-      title: "Deactivate Member?",
-      message: `This will revoke ${m.name}'s access — they'll be logged out and won't be able to sign in again. Their posts and comments will remain visible. This can't be undone from here.`,
-      confirmLabel: "Yes, Deactivate",
+      title: "Delete Member?",
+      message: (
+        <>
+          This will delete <span className="font-semibold text-primary">{m.name}</span>&apos;s account.{" "}
+          {communities > 1 ? `They will lose access to all ${communities} of their communities` : "They will lose access to their community"}, be logged out and
+          won&apos;t be able to sign in again. Their posts and comments will remain visible. This can&apos;t be undone from here.
+        </>
+      ),
+      confirmLabel: "Yes, Delete",
       variant: "destructive",
     });
     if (!ok) return;
     setBusy(true);
     try {
       await api.delete(`/api/v1/admin/members/${m.id}`);
-      toast.success({ title: "Member deactivated", message: `${m.name} no longer has access to the platform.` });
+      toast.success({ title: "Member deleted", message: `${m.name}'s account was deleted and they no longer have access to any community.` });
       refresh();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to deactivate member");
+      toast.error(err instanceof ApiError ? err.message : "Failed to delete member");
     } finally {
       setBusy(false);
     }
@@ -483,10 +490,11 @@ function MembersContent() {
   ];
 
   /**
-   * The Extend / Edit / Suspend / Remove buttons for one row, shared by the table and the mobile cards.
+   * The Extend / Edit / Suspend / Delete buttons for one row, shared by the table and the mobile cards.
+   * The member's first row deletes the whole account; an "also in" row only removes them from that one community.
    * In the table every button is a bare icon to save width; the cards have room, so Extend gets its label.
    */
-  const rowActions = (m: MemberItem, sub: MemberSubscription | null, labelled = false) => (
+  const rowActions = (m: MemberItem, sub: MemberSubscription | null, first: boolean, labelled = false) => (
     <div className="flex items-center gap-1">
       <button
         onClick={() => sub && setModal({ type: "extend", member: { ...m, subscription: sub }, subscription: sub })}
@@ -521,10 +529,10 @@ function MembersContent() {
           </button>
         ))}
       <button
-        onClick={() => (sub ? handleRevokeCommunity(m, sub.communityId, sub.communityName) : handleDeleteMember(m))}
+        onClick={() => (sub && !first ? handleRevokeCommunity(m, sub.communityId, sub.communityName) : handleDeleteMember(m))}
         disabled={busy}
-        title={sub ? `Remove from ${sub.communityName}` : "Deactivate member"}
-        aria-label={sub ? `Remove ${m.name} from ${sub.communityName}` : `Deactivate ${m.name}`}
+        title={sub && !first ? `Remove from ${sub.communityName} only` : "Delete member and account"}
+        aria-label={sub && !first ? `Remove ${m.name} from ${sub.communityName}` : `Delete ${m.name}`}
         className={`${iconBtn} hover:bg-red-50 hover:text-red-500`}
       >
         <Trash2 size={14} />
@@ -779,7 +787,7 @@ function MembersContent() {
                     <div><p className="text-xs text-subtle">Community</p>{communityCell(sub, m, first)}</div>
                     <div><p className="text-xs text-subtle">Added</p><p className="text-primary">{formatDate(m.createdAt)}</p></div>
                   </div>
-                  <div className="mt-3 border-t border-divider pt-3">{rowActions(m, sub, true)}</div>
+                  <div className="mt-3 border-t border-divider pt-3">{rowActions(m, sub, first, true)}</div>
                 </div>
               ))}
             </div>
@@ -831,7 +839,7 @@ function MembersContent() {
                       <td className="px-3 py-3"><ValidTill sub={sub} now={now} /></td>
                       <td className="whitespace-nowrap px-3 py-3 text-muted">{first ? formatDate(m.createdAt) : ""}</td>
                       <td className="px-3 py-3">{first ? <StatusPill member={m} /> : null}</td>
-                      <td className="px-3 py-3">{rowActions(m, sub)}</td>
+                      <td className="px-3 py-3">{rowActions(m, sub, first)}</td>
                     </tr>
                   ))}
                 </tbody>
