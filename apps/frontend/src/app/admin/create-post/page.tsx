@@ -327,7 +327,7 @@ export default function CreatePostPage() {
                           <span className="font-display text-base font-bold leading-tight">{c.name}</span>
                           <span className="flex w-fit items-center gap-1 rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-primary">
                             <Users size={10} />
-                            {c.memberCount} Member{c.memberCount === 1 ? "" : "s"}
+                            {c.memberCount} Membership{c.memberCount === 1 ? "" : "s"}
                           </span>
                         </span>
                       </button>

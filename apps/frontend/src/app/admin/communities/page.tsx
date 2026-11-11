@@ -94,7 +94,8 @@ export default function CommunitiesPage() {
     setPage(next);
     gridRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
-  const totalMembers = communities.reduce((sum, c) => sum + c.memberCount, 0);
+  // Each count is a membership (one member's subscription to one community), so a member in two communities is counted twice.
+  const totalMemberships = communities.reduce((sum, c) => sum + c.memberCount, 0);
 
   return (
     <div className="flex flex-col gap-6">
@@ -108,7 +109,9 @@ export default function CommunitiesPage() {
               <>
                 {" · "}
                 <span className="font-semibold tabular-nums text-primary">{communities.length}</span> communit{communities.length === 1 ? "y" : "ies"},{" "}
-                <span className="font-semibold tabular-nums text-primary">{totalMembers.toLocaleString("en-IN")}</span> member{totalMembers === 1 ? "" : "s"}
+                <span title="A member who is in several communities is counted once in each" className="cursor-help">
+                  <span className="font-semibold tabular-nums text-primary">{totalMemberships.toLocaleString("en-IN")}</span> membership{totalMemberships === 1 ? "" : "s"}
+                </span>
               </>
             )}
             .
@@ -273,7 +276,7 @@ export default function CommunitiesPage() {
                       <div className="flex items-center justify-between border-t border-divider pt-3">
                         <span className="inline-flex items-center gap-1.5 rounded-full bg-lime/40 px-2.5 py-1 text-[11px] font-bold text-primary">
                           <Users size={12} aria-hidden />
-                          <span className="tabular-nums">{c.memberCount.toLocaleString("en-IN")}</span> member{c.memberCount === 1 ? "" : "s"}
+                          <span className="tabular-nums">{c.memberCount.toLocaleString("en-IN")}</span> membership{c.memberCount === 1 ? "" : "s"}
                         </span>
                         {c.paymentLink && (
                           <span className="text-[11px] font-semibold text-muted" title={c.paymentLink}>Payment link set</span>
