@@ -51,7 +51,11 @@ export interface Period {
   segment: PerformanceSegment;
   fromMonth: string;
   toMonth: string;
+  /** What the admin named the card; the app shows it instead of the dates. */
+  name: string;
   label: string;
+  /** The card the app opens on. One per segment, and it is listed first. */
+  isDefault: boolean;
   given: number;
   met: number;
   metPct: number;
@@ -172,6 +176,13 @@ export interface TradeInput {
   visibility?: TradeVisibility;
 }
 
+export interface PeriodInput {
+  name: string;
+  fromMonth: string;
+  toMonth: string;
+  isDefault: boolean;
+}
+
 export interface SettingsInput {
   hideNewerThanDays?: number;
   maxFreeTrades?: number;
@@ -208,10 +219,10 @@ export const performanceApi = {
     api.post<ImportSummary>(`${BASE}/communities/${communityId}/import`, { segment, rows, dryRun }),
   updateSettings: (communityId: string, settings: SettingsInput) =>
     api.patch<Board>(`${BASE}/communities/${communityId}/settings`, settings),
-  addPeriod: (communityId: string, segment: PerformanceSegment, fromMonth: string, toMonth: string) =>
-    api.post<{ id: string }>(`${BASE}/communities/${communityId}/periods`, { segment, fromMonth, toMonth }),
-  updatePeriod: (communityId: string, periodId: string, fromMonth: string, toMonth: string) =>
-    api.patch<{ id: string }>(`${BASE}/communities/${communityId}/periods/${periodId}`, { fromMonth, toMonth }),
+  addPeriod: (communityId: string, segment: PerformanceSegment, period: PeriodInput) =>
+    api.post<{ id: string }>(`${BASE}/communities/${communityId}/periods`, { segment, ...period }),
+  updatePeriod: (communityId: string, periodId: string, period: PeriodInput) =>
+    api.patch<{ id: string }>(`${BASE}/communities/${communityId}/periods/${periodId}`, period),
   deletePeriod: (communityId: string, periodId: string) =>
     api.delete<{ deleted: true }>(`${BASE}/communities/${communityId}/periods/${periodId}`),
 };

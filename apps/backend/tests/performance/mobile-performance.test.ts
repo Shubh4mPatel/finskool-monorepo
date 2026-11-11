@@ -148,17 +148,17 @@ describe('hit-rate cards (the period cards the admin sets up)', () => {
     await add('B1', '2026-01-12', '2026-02-02')
     await add('C1', '2026-08-04', '2026-08-30')
     await add('D1', '2026-09-16', '2026-10-19')
-    await prisma.performancePeriod.create({ data: { boardId: swingBoardId, segment: 'main', fromMonth: new Date('2025-10-01'), toMonth: new Date('2026-08-01') } })
-    await prisma.performancePeriod.create({ data: { boardId: swingBoardId, segment: 'main', fromMonth: new Date('2026-01-01'), toMonth: new Date('2026-08-01') } })
+    await prisma.performancePeriod.create({ data: { boardId: swingBoardId, segment: 'main', name: 'Oct25 to Aug26', isDefault: true, fromMonth: new Date('2025-10-01'), toMonth: new Date('2026-08-01') } })
+    await prisma.performancePeriod.create({ data: { boardId: swingBoardId, segment: 'main', name: 'Jan26 to Aug26', fromMonth: new Date('2026-01-01'), toMonth: new Date('2026-08-01') } })
   }
 
-  it('the app gets both cards, with given, met and met %, in the order the admin made them', async () => {
+  it('the app gets both cards, with name, given, met and met %, the default first', async () => {
     await seedCards()
     const res = await get(paidMember, `/communities/${swing.id}`)
     expect(res.status).toBe(200)
     expect(res.body.data.summary.periods).toMatchObject([
-      { label: 'Oct25 to Aug26', fromMonth: '2025-10', toMonth: '2026-08', given: 4, met: 3, metPct: 75 },
-      { label: 'Jan26 to Aug26', fromMonth: '2026-01', toMonth: '2026-08', given: 2, met: 2, metPct: 100 },
+      { name: 'Oct25 to Aug26', label: 'Oct25 to Aug26', isDefault: true, fromMonth: '2025-10', toMonth: '2026-08', given: 4, met: 3, metPct: 75 },
+      { name: 'Jan26 to Aug26', label: 'Jan26 to Aug26', isDefault: false, fromMonth: '2026-01', toMonth: '2026-08', given: 2, met: 2, metPct: 100 },
     ])
   })
 
@@ -175,7 +175,7 @@ describe('hit-rate cards (the period cards the admin sets up)', () => {
     const filtered = await get(paidMember, `/communities/${swing.id}?month=2026-09`)
     expect(filtered.body.data.summary.periods).toHaveLength(2)
     expect((filtered.body.data.items as Item[]).map(i => i.name)).toEqual(['D1'])
-    await prisma.performancePeriod.create({ data: { boardId: swingBoardId, segment: 'main', fromMonth: new Date('2025-10-01'), toMonth: new Date('2026-10-01') } })
+    await prisma.performancePeriod.create({ data: { boardId: swingBoardId, segment: 'main', name: 'Oct25 to Oct26', fromMonth: new Date('2025-10-01'), toMonth: new Date('2026-10-01') } })
     const more = await get(paidMember, `/communities/${swing.id}`)
     expect(more.body.data.summary.periods.map((p: { label: string }) => p.label)).toEqual(['Oct25 to Aug26', 'Jan26 to Aug26', 'Oct25 to Oct26'])
     expect(more.body.data.summary.periods[2]).toMatchObject({ given: 5, met: 4, metPct: 80 })
@@ -353,7 +353,7 @@ describe('month filters on a swing board', () => {
 
   it('the admin\'s fixed period cards do not change with the filter', async () => {
     await prisma.performancePeriod.create({
-      data: { boardId: swingBoardId, segment: 'main', fromMonth: new Date('2025-07-01'), toMonth: new Date('2025-10-01') },
+      data: { boardId: swingBoardId, segment: 'main', name: 'Jul25 to Oct25', isDefault: true, fromMonth: new Date('2025-07-01'), toMonth: new Date('2025-10-01') },
     })
     const card = { label: 'Jul25 to Oct25', given: 7, met: 3, metPct: 42.86 }
     const all = await get(paidMember, `/communities/${swing.id}`)

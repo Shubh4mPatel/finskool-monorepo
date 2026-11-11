@@ -56,7 +56,6 @@ import {
   parseIsoMonth,
   rangeLabel,
   resolveSegment,
-  shortMonth,
   type MonthRange,
 } from './performance.shared.js'
 import {
@@ -301,14 +300,17 @@ export class PerformanceService {
     const scopedResults = results.filter((_, i) => inMonthRange(trades[i]!.tradeDate, range))
     const periods = await this.db.performancePeriod.findMany({
       where: { boardId: board.id, segment },
-      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      // The default card first (the app opens on it), then the rest in the order the admin made them.
+      orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }, { id: 'asc' }],
     })
     const periodDTOs: PeriodDTO[] = periods.map(p => ({
       id: p.id,
       segment: p.segment,
       fromMonth: isoMonth(p.fromMonth),
       toMonth: isoMonth(p.toMonth),
-      label: `${shortMonth(p.fromMonth)} to ${shortMonth(p.toMonth)}`,
+      name: p.name,
+      label: p.name,
+      isDefault: p.isDefault,
       ...periodStats(withStatus, p.fromMonth, p.toMonth),
     }))
     return {
@@ -719,7 +721,7 @@ export class PerformanceService {
   async createPeriod(
     accessible: string[] | null,
     communityId: string,
-    input: { segment?: PerformanceSegment | undefined; fromMonth: string; toMonth: string },
+    input: { segment?: PerformanceSegment | undefined; name: string; fromMonth: string; toMonth: string; isDefault?: boolean | undefined },
   ): Promise<{ id: string }> {
     const board = await this.adminBoard(accessible, communityId)
     const segment = resolveSegment(board.kind, input.segment)
@@ -734,9 +736,15 @@ export class PerformanceService {
     if (count >= MAX_PERIODS_PER_SEGMENT) {
       throw new BadRequestError(`A segment can have at most ${MAX_PERIODS_PER_SEGMENT} periods`, 'TOO_MANY_PERIODS')
     }
-    return this.db.performancePeriod.create({
-      data: { boardId: board.id, segment, fromMonth, toMonth },
-      select: { id: true },
+    // The first card of a segment is its default whatever was asked, so the app always has one to open on. Asking for
+    // another one moves the default to it.
+    const isDefault = input.isDefault === true || count === 0
+    return this.db.$transaction(async tx => {
+      if (isDefault) await tx.performancePeriod.updateMany({ where: { boardId: board.id, segment, isDefault: true }, data: { isDefault: false } })
+      return tx.performancePeriod.create({
+        data: { boardId: board.id, segment, name: input.name, fromMonth, toMonth, isDefault },
+        select: { id: true },
+      })
     })
   }
 
@@ -744,7 +752,7 @@ export class PerformanceService {
     accessible: string[] | null,
     communityId: string,
     periodId: string,
-    input: { fromMonth?: string | undefined; toMonth?: string | undefined },
+    input: { name?: string | undefined; fromMonth?: string | undefined; toMonth?: string | undefined; isDefault?: boolean | undefined },
   ): Promise<{ id: string }> {
     const board = await this.adminBoard(accessible, communityId)
     const period = await this.db.performancePeriod.findFirst({ where: { id: periodId, boardId: board.id } })
@@ -758,17 +766,42 @@ export class PerformanceService {
     const toMonth = parseIsoMonth(to)
     await this.assertPeriodUnique(board.id, period.segment, fromMonth, toMonth, period.id)
 
-    await this.db.performancePeriod.update({
-      where: { id: period.id },
-      data: { fromMonth, toMonth },
+    if (input.isDefault === false && period.isDefault) {
+      throw new BadRequestError('Pick another period as the default instead', 'DEFAULT_REQUIRED')
+    }
+
+    await this.db.$transaction(async tx => {
+      if (input.isDefault === true && !period.isDefault) {
+        await tx.performancePeriod.updateMany({
+          where: { boardId: board.id, segment: period.segment, isDefault: true },
+          data: { isDefault: false },
+        })
+      }
+      await tx.performancePeriod.update({
+        where: { id: period.id },
+        data: { fromMonth, toMonth, ...(input.name !== undefined && { name: input.name }), ...(input.isDefault === true && { isDefault: true }) },
+      })
     })
     return { id: period.id }
   }
 
   async deletePeriod(accessible: string[] | null, communityId: string, periodId: string): Promise<void> {
     const board = await this.adminBoard(accessible, communityId)
-    const { count } = await this.db.performancePeriod.deleteMany({ where: { id: periodId, boardId: board.id } })
-    if (count === 0) throw new NotFoundError('Period not found')
+    const period = await this.db.performancePeriod.findFirst({ where: { id: periodId, boardId: board.id } })
+    if (!period) throw new NotFoundError('Period not found')
+
+    await this.db.$transaction(async tx => {
+      await tx.performancePeriod.delete({ where: { id: period.id } })
+      // Removing the default hands it to the oldest card left, so the app still has one.
+      if (period.isDefault) {
+        const next = await tx.performancePeriod.findFirst({
+          where: { boardId: board.id, segment: period.segment },
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+          select: { id: true },
+        })
+        if (next) await tx.performancePeriod.update({ where: { id: next.id }, data: { isDefault: true } })
+      }
+    })
   }
 
   // ─── Mobile ───────────────────────────────────────────────────────────────

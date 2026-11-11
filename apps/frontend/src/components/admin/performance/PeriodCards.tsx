@@ -2,7 +2,7 @@
 
 import { Pencil } from "lucide-react";
 import { Card } from "@/components/admin/dashboard/Panel";
-import { formatPct, type Period } from "@/lib/performance";
+import { formatMonth, formatPct, type Period } from "@/lib/performance";
 
 /** The hit-rate cards: trades given, trades met and the share met, for a range of months. */
 export function PeriodCards({ periods, onEdit }: { periods: Period[]; onEdit: (period: Period) => void }) {
@@ -11,11 +11,13 @@ export function PeriodCards({ periods, onEdit }: { periods: Period[]; onEdit: (p
       {periods.map((p, i) => (
         <Card key={p.id} delay={(i + 1) * 40} className="!p-4">
           <div className="flex items-center justify-between gap-2">
-            <span className="rounded-full bg-accent/10 px-2.5 py-0.5 text-[11px] font-bold text-accent">{p.label}</span>
+            <span className="min-w-0 truncate rounded-full bg-accent/10 px-2.5 py-0.5 text-[11px] font-bold text-accent" title={p.name}>
+              {p.name}
+            </span>
             <button
               type="button"
               onClick={() => onEdit(p)}
-              aria-label={`Edit period ${p.label}`}
+              aria-label={`Edit period ${p.name}`}
               className="flex h-7 w-7 items-center justify-center rounded-full border border-divider text-accent transition-colors hover:bg-accent/10"
             >
               <Pencil size={12} />
@@ -26,7 +28,16 @@ export function PeriodCards({ periods, onEdit }: { periods: Period[]; onEdit: (p
             <Figure label="Trades Met" value={String(p.met)} />
             <Figure label="Met %" value={formatPct(p.metPct)} tone="text-emerald-600" />
           </dl>
-          <p className="mt-3 text-[11px] text-subtle">Shown on the app</p>
+          <p className="mt-3 flex items-center justify-between gap-2 text-[11px] text-subtle">
+            <span>
+              {formatMonth(p.fromMonth)} – {formatMonth(p.toMonth)}
+            </span>
+            {p.isDefault ? (
+              <span className="rounded-full bg-emerald-50 px-2 py-0.5 font-bold text-emerald-700">Default in app</span>
+            ) : (
+              <span>Shown on the app</span>
+            )}
+          </p>
         </Card>
       ))}
     </>

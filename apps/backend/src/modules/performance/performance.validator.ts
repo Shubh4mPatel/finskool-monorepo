@@ -131,8 +131,16 @@ export const settingsSchema = z.object({
   note: z.string().trim().max(500, 'Note can be at most 500 characters').nullable().optional(),
 })
 
-const periodBase = z.object({ segment: segment.optional(), fromMonth: month, toMonth: month })
-export const createPeriodSchema = periodBase
+const periodName = requiredText('Name', 60)
+const periodBase = z.object({
+  segment: segment.optional(),
+  name: periodName,
+  fromMonth: month,
+  toMonth: month,
+  isDefault: z.boolean({ error: 'Default in app must be on or off' }),
+})
+// A new card is the default only when asked to be (the first card of a segment always is); an edit may change any field.
+export const createPeriodSchema = periodBase.extend({ isDefault: periodBase.shape.isDefault.optional() })
 export const updatePeriodSchema = periodBase.partial()
 
 export const importBodySchema = z.object({

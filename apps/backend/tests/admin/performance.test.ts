@@ -125,7 +125,7 @@ describe('community scoping', () => {
       api(priya).post(`/communities/${other}/trades`, intradayRow()),
       api(priya).post(`/communities/${other}/import`, { rows: [intradayRow()] }),
       api(priya).patch(`/communities/${other}/settings`, { maxFreeTrades: 5 }),
-      api(priya).post(`/communities/${other}/periods`, { fromMonth: '2026-01', toMonth: '2026-03' }),
+      api(priya).post(`/communities/${other}/periods`, { name: 'Q1', fromMonth: '2026-01', toMonth: '2026-03' }),
     ]
     for (const res of await Promise.all(calls)) {
       expect(res.status).toBe(403)
@@ -261,16 +261,16 @@ describe('swing board', () => {
     ]
     await api(boss).post(`/communities/${swing.id}/import`, { rows })
 
-    const created = await api(boss).post(`/communities/${swing.id}/periods`, { fromMonth: '2026-01', toMonth: '2026-03' })
+    const created = await api(boss).post(`/communities/${swing.id}/periods`, { name: 'Jan26 to Mar26', fromMonth: '2026-01', toMonth: '2026-03' })
     expect(created.status).toBe(201)
 
     const overview = await api(boss).get(`/communities/${swing.id}/overview`)
     expect(overview.body.data.summary.periods).toEqual([
-      expect.objectContaining({ id: created.body.data.id, label: 'Jan26 to Mar26', fromMonth: '2026-01', toMonth: '2026-03', given: 3, met: 2, metPct: 66.67 }),
+      expect.objectContaining({ id: created.body.data.id, name: 'Jan26 to Mar26', label: 'Jan26 to Mar26', isDefault: true, fromMonth: '2026-01', toMonth: '2026-03', given: 3, met: 2, metPct: 66.67 }),
     ])
 
     // Editing the range moves the card.
-    await api(boss).patch(`/communities/${swing.id}/periods/${created.body.data.id}`, { toMonth: '2026-04' })
+    await api(boss).patch(`/communities/${swing.id}/periods/${created.body.data.id}`, { name: 'Jan26 to Apr26', toMonth: '2026-04' })
     const moved = await api(boss).get(`/communities/${swing.id}/overview`)
     expect(moved.body.data.summary.periods[0]).toMatchObject({ label: 'Jan26 to Apr26', given: 4, met: 3, metPct: 75 })
 
@@ -278,12 +278,57 @@ describe('swing board', () => {
     expect((await api(boss).get(`/communities/${swing.id}/overview`)).body.data.summary.periods).toEqual([])
   })
 
+  describe('period names and the default', () => {
+    const add = (body: Record<string, unknown>) => api(boss).post(`/communities/${swing.id}/periods`, { fromMonth: '2026-01', toMonth: '2026-03', ...body })
+    const cards = async () =>
+      ((await api(boss).get(`/communities/${swing.id}/overview`)).body.data.summary.periods as { id: string; name: string; isDefault: boolean }[]).map(p => [p.name, p.isDefault])
+
+    it('needs a name', async () => {
+      const res = await add({})
+      expect(res.status).toBe(422)
+      expect(Object.keys(res.body.errors)).toEqual(['name'])
+    })
+
+    it('the first card is the default whatever was asked', async () => {
+      await add({ name: 'First', isDefault: false })
+      expect(await cards()).toEqual([['First', true]])
+    })
+
+    it('only one card is the default: choosing another moves it, and the default is listed first', async () => {
+      await add({ name: 'First', fromMonth: '2026-01', toMonth: '2026-03' })
+      await add({ name: 'Second', fromMonth: '2026-02', toMonth: '2026-04' })
+      expect(await cards()).toEqual([['First', true], ['Second', false]])
+
+      await add({ name: 'Third', fromMonth: '2026-03', toMonth: '2026-05', isDefault: true })
+      expect(await cards()).toEqual([['Third', true], ['First', false], ['Second', false]])
+
+      const second = (await api(boss).get(`/communities/${swing.id}/overview`)).body.data.summary.periods.find((p: { name: string }) => p.name === 'Second')
+      await api(boss).patch(`/communities/${swing.id}/periods/${second.id}`, { isDefault: true }).expect(200)
+      expect(await cards()).toEqual([['Second', true], ['First', false], ['Third', false]])
+    })
+
+    it('the default cannot be switched off, only handed to another card', async () => {
+      const first = await add({ name: 'First' })
+      const res = await api(boss).patch(`/communities/${swing.id}/periods/${first.body.data.id}`, { isDefault: false })
+      expect(res.status).toBe(400)
+      expect(res.body.code).toBe('DEFAULT_REQUIRED')
+    })
+
+    it('removing the default hands it to the oldest card left', async () => {
+      const first = await add({ name: 'First', fromMonth: '2026-01', toMonth: '2026-03' })
+      await add({ name: 'Second', fromMonth: '2026-02', toMonth: '2026-04' })
+      await add({ name: 'Third', fromMonth: '2026-03', toMonth: '2026-05' })
+      await api(boss).del(`/communities/${swing.id}/periods/${first.body.data.id}`).expect(200)
+      expect(await cards()).toEqual([['Second', true], ['Third', false]])
+    })
+  })
+
   it('refuses a period that ends before it starts, and a period on an intraday board', async () => {
-    expect((await api(boss).post(`/communities/${swing.id}/periods`, { fromMonth: '2026-05', toMonth: '2026-02' })).body.code).toBe('INVALID_PERIOD')
-    expect((await api(boss).post(`/communities/${swing.id}/periods`, { fromMonth: '2026-5', toMonth: '2026-06' })).status).toBe(422)
+    expect((await api(boss).post(`/communities/${swing.id}/periods`, { name: 'Backwards', fromMonth: '2026-05', toMonth: '2026-02' })).body.code).toBe('INVALID_PERIOD')
+    expect((await api(boss).post(`/communities/${swing.id}/periods`, { name: 'Bad month', fromMonth: '2026-5', toMonth: '2026-06' })).status).toBe(422)
 
     await link(intraday.id, 'intraday')
-    expect((await api(boss).post(`/communities/${intraday.id}/periods`, { fromMonth: '2026-01', toMonth: '2026-03' })).body.code).toBe('NOT_SWING')
+    expect((await api(boss).post(`/communities/${intraday.id}/periods`, { name: 'Q1', fromMonth: '2026-01', toMonth: '2026-03' })).body.code).toBe('NOT_SWING')
   })
 
   it('refuses a second trade for the same stock on the same day, and an exit before the trade', async () => {

@@ -262,7 +262,7 @@ describe('importing the dashboards', () => {
     const created = await request(app)
       .post(`/api/v1/admin/performance/communities/${boards['swing']}/periods`)
       .set('Authorization', boss.auth)
-      .send({ segment: 'main', fromMonth: '2025-10', toMonth: '2025-12' })
+      .send({ segment: 'main', name: 'Oct25 to Dec25', fromMonth: '2025-10', toMonth: '2025-12' })
     expect(created.status).toBe(201)
     const overview = await request(app).get(`/api/v1/admin/performance/communities/${boards['swing']}/overview`).set('Authorization', boss.auth)
     expect(overview.body.data.summary.periods[0]).toMatchObject({ label: 'Oct25 to Dec25', given: 4, met: 2, metPct: 50 })

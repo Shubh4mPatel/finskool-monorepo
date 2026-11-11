@@ -77,7 +77,7 @@ describe('Long Term and US Investment rows', () => {
     const res = await request(app)
       .post(admin('/periods'))
       .set('Authorization', boss.auth)
-      .send({ segment: 'long_term', fromMonth: '2026-01', toMonth: '2026-03' })
+      .send({ segment: 'long_term', name: 'Q1', fromMonth: '2026-01', toMonth: '2026-03' })
     expect(res.status).toBe(400)
   })
 

@@ -29,8 +29,12 @@ export interface PeriodDTO {
   /** `YYYY-MM` */
   fromMonth: string
   toMonth: string
-  /** "Oct25 to Aug26" */
+  /** What the admin named the card. The app shows this instead of the dates. */
+  name: string
+  /** The same as `name`; kept for apps built before cards had names. */
   label: string
+  /** The card the app opens on. Exactly one per board and segment, and it is listed first. */
+  isDefault: boolean
   given: number
   met: number
   metPct: number

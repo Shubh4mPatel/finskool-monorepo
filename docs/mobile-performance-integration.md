@@ -110,8 +110,8 @@ The shape depends on `kind`. Check `summary.kind`.
   "averageHoldingDays": 46.3,
   "totalTrades": 48,
   "periods": [
-    { "id": "…", "segment": "main", "fromMonth": "2025-10", "toMonth": "2026-08", "label": "Oct25 to Aug26", "given": 44, "met": 34, "metPct": 77.27 },
-    { "id": "…", "segment": "main", "fromMonth": "2026-01", "toMonth": "2026-08", "label": "Jan26 to Aug26", "given": 32, "met": 23, "metPct": 71.88 }
+    { "id": "…", "segment": "main", "name": "Last 10 months", "label": "Last 10 months", "isDefault": true, "fromMonth": "2025-10", "toMonth": "2026-08", "given": 44, "met": 34, "metPct": 77.27 },
+    { "id": "…", "segment": "main", "name": "This year", "label": "This year", "isDefault": false, "fromMonth": "2026-01", "toMonth": "2026-08", "given": 32, "met": 23, "metPct": 71.88 }
   ],
   "range": null
 }
@@ -127,7 +127,7 @@ That is the Swing Alpha board as the admin sees it: **three cards in a row**, th
 
 Draw **one card per entry in `periods`**, in the order given (the admin can add or remove cards at any time, so do not assume two). The two hit-rate cards are part of the app's summary, not an admin-only extra: they come in the same call as the average, for free and paid members alike. If the app only shows Average Holding Days, the cards are being dropped by the screen, not left out by the server.
 
-- Each entry in `periods` is a hit-rate card: **Trades Given** is `given`, **Trades Met** is `met`, **Met %** is `metPct`. `label` is ready to display. `periods` can be empty, in which case show no cards. These are the cards the admin set up and **they do not change with the month filter**: each always covers its own months.
+- Each entry in `periods` is a hit-rate card: **Trades Given** is `given`, **Trades Met** is `met`, **Met %** is `metPct`. `name` (the admin's own title, e.g. "Last 10 months") is ready to display; `label` is the same text, kept for older app builds. `isDefault` marks the card the app should open on: it is always the first entry, so select `periods[0]` by default. Exactly one entry is the default whenever `periods` is not empty. `periods` can be empty, in which case show no cards. These are the cards the admin set up and **they do not change with the month filter**: each always covers its own months.
 - `range` is the same card for the months the member picked, worked out on the spot. It is `null` when no month filter was given. With a filter it looks like this:
 
   ```json

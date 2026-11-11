@@ -1430,6 +1430,10 @@ model PerformancePeriod {
   // First day of the month.
   fromMonth DateTime           @map("from_month") @db.Date
   toMonth   DateTime           @map("to_month") @db.Date
+  // What the admin calls the card ("Last 6 months"); the app and the admin show it instead of the dates.
+  name      String             @db.VarChar(60)
+  // The period the app opens on. At most one per board and segment (a partial unique index in the migration).
+  isDefault Boolean            @default(false) @map("is_default")
   createdAt DateTime           @default(now()) @map("created_at") @db.Timestamptz
 
   board PerformanceBoard @relation(fields: [boardId], references: [id], onDelete: Cascade)

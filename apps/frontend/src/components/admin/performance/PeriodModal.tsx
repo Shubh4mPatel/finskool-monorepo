@@ -40,6 +40,9 @@ export default function PeriodModal({
   }, [period]);
   const monthOptions = useMemo(() => months.map(m => ({ value: m, label: formatMonth(m) })), [months]);
 
+  const [name, setName] = useState(period?.name ?? "");
+  const [nameError, setNameError] = useState<string | undefined>();
+  const [isDefault, setIsDefault] = useState(period?.isDefault ?? false);
   const [from, setFrom] = useState(period?.fromMonth ?? months[Math.min(5, months.length - 1)]!);
   const [to, setTo] = useState(period?.toMonth ?? months[0]!);
   const [busy, setBusy] = useState(false);
@@ -55,14 +58,24 @@ export default function PeriodModal({
     summary.kind !== "holding" &&
     summary.periods.some(p => p.id !== period?.id && p.fromMonth === from && p.toMonth === to);
   const invalid = reversed || duplicate;
+  // The first card of a segment is always the default, and the default can only be handed over by choosing another card.
+  const firstCard = !editing && summary !== undefined && summary.kind !== "intraday" && summary.kind !== "holding" && summary.periods.length === 0;
+  const locked = firstCard || (editing && period.isDefault);
+  const defaultOn = locked || isDefault;
 
   async function save() {
     if (invalid) return;
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setNameError("Name is required");
+      return;
+    }
     setBusy(true);
     try {
-      if (period) await performanceApi.updatePeriod(board.communityId, period.id, from, to);
-      else await performanceApi.addPeriod(board.communityId, segment, from, to);
-      toast.success({ title: editing ? "Period updated" : "Period added", message: `${formatMonth(from)} to ${formatMonth(to)}` });
+      const body = { name: trimmed, fromMonth: from, toMonth: to, isDefault: defaultOn };
+      if (period) await performanceApi.updatePeriod(board.communityId, period.id, body);
+      else await performanceApi.addPeriod(board.communityId, segment, body);
+      toast.success({ title: editing ? "Period updated" : "Period added", message: trimmed });
       onDone();
       onClose();
     } catch (err) {
@@ -75,7 +88,7 @@ export default function PeriodModal({
     if (!period) return;
     const ok = await confirm({
       title: "Remove this period?",
-      message: `The ${period.label} card disappears from the screen and the app. No trades are deleted.`,
+      message: `The ${period.name} card disappears from the screen and the app. No trades are deleted.`,
       confirmLabel: "Remove",
       variant: "danger",
     });
@@ -83,7 +96,7 @@ export default function PeriodModal({
     setBusy(true);
     try {
       await performanceApi.deletePeriod(board.communityId, period.id);
-      toast.success({ title: "Period removed", message: period.label });
+      toast.success({ title: "Period removed", message: period.name });
       onDone();
       onClose();
     } catch (err) {
@@ -125,6 +138,20 @@ export default function PeriodModal({
       <p className="text-sm text-muted">
         The card counts the trades given between these two months, and how many of them have met their target.
       </p>
+      <FormField label="Name" error={nameError}>
+        <input
+          value={name}
+          onChange={e => {
+            setName(e.target.value);
+            setNameError(undefined);
+          }}
+          placeholder="e.g. Last 6 months"
+          maxLength={60}
+          disabled={busy}
+          aria-label="Period name"
+          className={inputCls(nameError)}
+        />
+      </FormField>
       <FormField label="From">
         <Select
           value={from}
@@ -152,6 +179,31 @@ export default function PeriodModal({
           triggerClassName={`${inputCls(invalid ? "x" : undefined)} relative flex items-center text-left disabled:cursor-not-allowed disabled:opacity-60`}
         />
       </FormField>
+      <div className="flex items-start justify-between gap-4 rounded-xl bg-background px-4 py-3">
+        <div className="min-w-0">
+          <p id="period-default-label" className="text-sm font-bold text-primary">
+            Default in app
+          </p>
+          <p className="mt-0.5 text-xs text-muted">
+            {firstCard
+              ? "The first period is always the default."
+              : editing && period.isDefault
+                ? "This is the default. Turn on another period to change it."
+                : "The app opens on this period first. Only one period is the default; this replaces the current one."}
+          </p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={defaultOn}
+          aria-labelledby="period-default-label"
+          disabled={busy || locked}
+          onClick={() => setIsDefault(v => !v)}
+          className={`relative mt-0.5 h-6 w-11 shrink-0 rounded-full transition-colors focus:outline-none focus-visible:ring-4 focus-visible:ring-accent/15 disabled:cursor-not-allowed disabled:opacity-60 ${defaultOn ? "bg-accent" : "bg-divider"}`}
+        >
+          <span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${defaultOn ? "translate-x-5" : ""}`} />
+        </button>
+      </div>
     </Modal>
   );
 }
