@@ -52,6 +52,7 @@ export default function PeriodModal({
     !reversed &&
     summary !== undefined &&
     summary.kind !== "intraday" &&
+    summary.kind !== "holding" &&
     summary.periods.some(p => p.id !== period?.id && p.fromMonth === from && p.toMonth === to);
   const invalid = reversed || duplicate;
 

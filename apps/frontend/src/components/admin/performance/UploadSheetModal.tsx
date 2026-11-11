@@ -7,9 +7,10 @@ import {
   KIND_LABEL,
   MAX_SHEET_ROWS,
   SEGMENT_LABEL,
-  SHEET_COLUMNS,
+  sheetColumns,
   SheetError,
   downloadSampleSheet,
+  isHoldingSegment,
   parseSheet,
   performanceApi,
   type BoardRef,
@@ -104,7 +105,8 @@ export default function UploadSheetModal({
   }
 
   const segmentName = board.kind === "investor" ? ` · ${SEGMENT_LABEL[segment]}` : "";
-  const columns = SHEET_COLUMNS[board.kind];
+  const columns = sheetColumns(board.kind, segment);
+  const holding = isHoldingSegment(segment);
 
   return (
     <Modal
@@ -137,12 +139,12 @@ export default function UploadSheetModal({
           {columns.join(", ")}.
         </p>
         <p className="mt-1">
-          Other columns (returns, holding days, target price, free users) are calculated by the system and ignored. A trade already on the board is updated
+          Other columns (returns, {holding ? "theme, " : "holding days, target price, "}free users) are calculated by the system or ignored. A trade already on the board is updated
           from its row, and a blank cell leaves the saved value as it is. Free-user settings are never changed by an upload.
         </p>
         <button
           type="button"
-          onClick={() => downloadSampleSheet(board.kind)}
+          onClick={() => downloadSampleSheet(board.kind, segment)}
           className="mt-2 inline-flex items-center gap-1.5 text-xs font-bold text-accent hover:underline"
         >
           <Download size={12} /> Download a sample

@@ -129,6 +129,14 @@ export function averageHoldingDays(results: SwingResult[]): number | null {
   return Math.round((days.reduce((a, b) => a + b, 0) / days.length) * 10) / 10
 }
 
+/**
+ * A Long Term or US Investment holding. The sheets for these segments carry only entry, CMP and Returns: no target,
+ * no exit date, so there is no target price, status or holding days to work out (and none are made up).
+ */
+export function holdingTrade(t: { entryPrice: number; cmp: number | null }): { returnPct: number | null } {
+  return { returnPct: t.cmp === null ? null : round2(((t.cmp - t.entryPrice) / t.entryPrice) * 100) }
+}
+
 export interface PeriodStats {
   /** Trades dated inside the period. */
   given: number

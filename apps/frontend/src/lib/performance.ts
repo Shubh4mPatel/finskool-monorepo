@@ -77,7 +77,13 @@ export interface SwingSummary {
   periods: Period[];
 }
 
-export type Summary = IntradaySummary | SwingSummary;
+/** Long Term / US Investment: no targets or exit dates, so no holding days or hit-rate cards. */
+export interface HoldingSummary {
+  kind: "holding";
+  totalTrades: number;
+}
+
+export type Summary = IntradaySummary | SwingSummary | HoldingSummary;
 
 export interface Overview {
   board: Board;
@@ -120,7 +126,18 @@ export interface SwingRow extends RowBase {
   holdingDays: number | null;
 }
 
-export type TradeRow = IntradayRow | SwingRow;
+/** A Long Term / US Investment row: the sheet has no target, exit date or holding days, so none are sent. */
+export interface HoldingRow extends RowBase {
+  symbol: string;
+  cmp: number | null;
+  returnPct: number | null;
+  analysis: string | null;
+}
+
+export type TradeRow = IntradayRow | SwingRow | HoldingRow;
+
+/** Long Term and US Investment are plain holding lists; only the Investor segment (and swing) carry a target and exit date. */
+export const isHoldingSegment = (segment: PerformanceSegment): boolean => segment === "long_term" || segment === "us_investment";
 
 export interface TradeList {
   items: TradeRow[];
@@ -292,6 +309,13 @@ export const SHEET_COLUMNS: Record<PerformanceKind, string[]> = {
   investor: ["Date", "Trade Name", "NSE Code", "Entry", "CMP", "Target %", "Analysis", "Exit Date"],
 };
 
+/** The columns Long Term / US Investment sheets carry. */
+const HOLDING_COLUMNS = ["Date", "Company Name", "NSE Code", "Entry", "CMP", "Analysis"];
+
+/** Columns a board's segment reads, for the upload help text and the sample file. */
+export const sheetColumns = (kind: PerformanceKind, segment: PerformanceSegment): string[] =>
+  isHoldingSegment(segment) ? HOLDING_COLUMNS : SHEET_COLUMNS[kind];
+
 const normalizeHeader = (h: string): string => h.toLowerCase().replace(/[^a-z0-9]/g, "");
 
 const pad = (n: number): string => String(n).padStart(2, "0");
@@ -459,6 +483,17 @@ export async function parseSheet(file: File, kind: PerformanceKind, segment: Per
   return { rows, missing, recognised, ignored, sheetName, headerRow: firstSheetRow + headerIdx + 1 };
 }
 
+const HOLDING_SAMPLE_ROWS: Record<string, string[][]> = {
+  long_term: [
+    ["2023-03-09", "Adani Ports & SEZ", "ADANIPORTS", "714", "1918.70", "Hold"],
+    ["2024-02-12", "Mazagon Dock Shipbuilders", "MAZDOCK", "1437", "1887.90", "Can Add at CMP"],
+  ],
+  us_investment: [
+    ["2026-06-03", "Eli Lilly and Company", "LLY", "1147", "1432.29", "Hold"],
+    ["2026-06-03", "Alphabet", "GOOGL", "372", "287.38", "Hold"],
+  ],
+};
+
 const SAMPLE_ROWS: Record<PerformanceKind, string[][]> = {
   intraday: [
     ["2026-10-01", "Ambuja Cement", "Buy", "368.20", "365.70"],
@@ -475,12 +510,13 @@ const SAMPLE_ROWS: Record<PerformanceKind, string[][]> = {
 };
 
 /** Downloads a small CSV with the columns the board reads, to fill in and upload. */
-export function downloadSampleSheet(kind: PerformanceKind): void {
-  const csv = [SHEET_COLUMNS[kind], ...SAMPLE_ROWS[kind]].map(r => r.join(",")).join("\n");
+export function downloadSampleSheet(kind: PerformanceKind, segment: PerformanceSegment = "main"): void {
+  const holding = isHoldingSegment(segment);
+  const csv = [sheetColumns(kind, segment), ...(holding ? HOLDING_SAMPLE_ROWS[segment]! : SAMPLE_ROWS[kind])].map(r => r.join(",")).join("\n");
   const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
   const a = document.createElement("a");
   a.href = url;
-  a.download = `performance-${kind}-sample.csv`;
+  a.download = `performance-${holding ? segment : kind}-sample.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }

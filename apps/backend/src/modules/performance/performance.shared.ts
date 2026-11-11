@@ -8,6 +8,13 @@ export const SEGMENTS_BY_KIND: Record<PerformanceKind, readonly PerformanceSegme
   investor: ['investor', 'long_term', 'us_investment'],
 }
 
+/**
+ * Long Term and US Investment are plain holding lists: entry, CMP, returns and an analysis note. Only the Investor
+ * segment (and swing boards) carry a target, exit date and holding days.
+ */
+export const HOLDING_SEGMENTS: readonly PerformanceSegment[] = ['long_term', 'us_investment']
+export const isHoldingSegment = (segment: PerformanceSegment): boolean => HOLDING_SEGMENTS.includes(segment)
+
 /** The segment to use when the caller does not pick one; a segment that does not belong to the kind is a 400. */
 export function resolveSegment(kind: PerformanceKind, segment: PerformanceSegment | undefined): PerformanceSegment {
   const allowed = SEGMENTS_BY_KIND[kind]

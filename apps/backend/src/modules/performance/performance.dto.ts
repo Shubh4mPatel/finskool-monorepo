@@ -74,7 +74,21 @@ export interface SwingRowDTO {
   holdingDays: number | null
 }
 
-export type TradeRowDTO = IntradayRowDTO | SwingRowDTO
+/** A Long Term / US Investment row: what the sheet has, and nothing computed from columns it does not have. */
+export interface HoldingRowDTO {
+  id: string
+  serialNo: number
+  tradeDate: string
+  name: string
+  symbol: string
+  logoUrl: string | null
+  entryPrice: number
+  cmp: number | null
+  returnPct: number | null
+  analysis: string | null
+}
+
+export type TradeRowDTO = IntradayRowDTO | SwingRowDTO | HoldingRowDTO
 
 /** What an admin sees for a row: the numbers plus how free members are treated. */
 export type AdminTradeRowDTO = TradeRowDTO & {
@@ -115,7 +129,13 @@ export interface SwingSummaryDTO {
   range: RangeStatsDTO | null
 }
 
-export type SummaryDTO = IntradaySummaryDTO | SwingSummaryDTO
+/** Long Term / US Investment: no targets or exit dates, so no holding days or hit-rate cards. */
+export interface HoldingSummaryDTO {
+  kind: 'holding'
+  totalTrades: number
+}
+
+export type SummaryDTO = IntradaySummaryDTO | SwingSummaryDTO | HoldingSummaryDTO
 
 export interface OverviewDTO {
   board: BoardDTO

@@ -6,6 +6,7 @@ import { ApiError } from "@/lib/api";
 import {
   performanceApi,
   type BoardRef,
+  isHoldingSegment,
   type IntradayRow,
   type PerformanceSegment,
   type SwingRow,
@@ -79,6 +80,8 @@ export default function TradeModal({
   const toast = useToast();
   const confirm = useConfirm();
   const intraday = board.kind === "intraday";
+  // Long Term / US Investment sheets have no target or exit date, so the form does not ask for them.
+  const holding = isHoldingSegment(segment);
   const editing = trade !== undefined;
   const [form, setForm] = useState<Form>(() => initialForm(trade));
   const [errors, setErrors] = useState<Errors>({});
@@ -94,14 +97,16 @@ export default function TradeModal({
   function validate(): Errors {
     const e: Errors = {};
     if (!form.tradeDate) e["tradeDate"] = "Date is required";
-    if (!form.name.trim()) e["name"] = intraday ? "Stock is required" : "Trade name is required";
+    if (!form.name.trim()) e["name"] = intraday ? "Stock is required" : holding ? "Company name is required" : "Trade name is required";
     if (!intraday && !form.symbol.trim()) e["symbol"] = "NSE code is required";
     if (!isPositive(form.entryPrice)) e["entryPrice"] = "Enter a price above 0";
     if (intraday && !isPositive(form.exitPrice)) e["exitPrice"] = "Enter a price above 0";
     if (!intraday) {
       if (form.cmp.trim() && !isPositive(form.cmp)) e["cmp"] = "Enter a price above 0";
-      if (form.targetPct.trim() && (!isPositive(form.targetPct) || num(form.targetPct) > 999.99)) e["targetPct"] = "Enter a percentage above 0";
-      if (form.exitDate && form.exitDate < form.tradeDate) e["exitDate"] = "Exit date cannot be before the trade date";
+      if (!holding) {
+        if (form.targetPct.trim() && (!isPositive(form.targetPct) || num(form.targetPct) > 999.99)) e["targetPct"] = "Enter a percentage above 0";
+        if (form.exitDate && form.exitDate < form.tradeDate) e["exitDate"] = "Exit date cannot be before the trade date";
+      }
     }
     return e;
   }
@@ -114,6 +119,9 @@ export default function TradeModal({
       visibility: form.visibility,
     };
     if (intraday) return { ...base, side: form.side, exitPrice: num(form.exitPrice) };
+    if (holding) {
+      return { ...base, symbol: form.symbol.trim(), cmp: form.cmp.trim() ? num(form.cmp) : null, analysis: form.analysis.trim() || null };
+    }
     return {
       ...base,
       symbol: form.symbol.trim(),
@@ -212,7 +220,7 @@ export default function TradeModal({
         <FormField label="Date" error={errors["tradeDate"]}>
           <DatePicker value={form.tradeDate} onChange={v => set("tradeDate", v)} triggerClassName={inputCls(errors["tradeDate"])} ariaLabel="Trade date" />
         </FormField>
-        <FormField label={intraday ? "Stock" : "Trade name"} error={errors["name"]}>
+        <FormField label={intraday ? "Stock" : holding ? "Company name" : "Trade name"} error={errors["name"]}>
           {intraday ? (
             <StockPicker
               value={form.name}
@@ -270,9 +278,11 @@ export default function TradeModal({
 
         {!intraday && (
           <>
-            <FormField label={`Target % (blank = ${board.kind === "investor" ? 10 : 5}%)`} error={errors["targetPct"]}>
-              {text("targetPct", board.kind === "investor" ? "10" : "5", "decimal")}
-            </FormField>
+            {!holding && (
+              <FormField label={`Target % (blank = ${board.kind === "investor" ? 10 : 5}%)`} error={errors["targetPct"]}>
+                {text("targetPct", board.kind === "investor" ? "10" : "5", "decimal")}
+              </FormField>
+            )}
             <FormField label="Analysis (optional)" error={errors["analysis"]}>
               <input
                 list="performance-analysis"
@@ -289,16 +299,18 @@ export default function TradeModal({
                 ))}
               </datalist>
             </FormField>
-            <FormField label="Exit date (leave empty while open)" error={errors["exitDate"]}>
-              <DatePicker
-                value={form.exitDate}
-                onChange={v => set("exitDate", v)}
-                clearable
-                placeholder="Open"
-                triggerClassName={inputCls(errors["exitDate"])}
-                ariaLabel="Exit date"
-              />
-            </FormField>
+            {!holding && (
+              <FormField label="Exit date (leave empty while open)" error={errors["exitDate"]}>
+                <DatePicker
+                  value={form.exitDate}
+                  onChange={v => set("exitDate", v)}
+                  clearable
+                  placeholder="Open"
+                  triggerClassName={inputCls(errors["exitDate"])}
+                  ariaLabel="Exit date"
+                />
+              </FormField>
+            )}
           </>
         )}
 

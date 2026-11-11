@@ -6,6 +6,7 @@ import {
   KIND_LABEL,
   KIND_ORDER,
   SEGMENT_LABEL,
+  isHoldingSegment,
   performanceApi,
   type BoardListItem,
   type PerformanceKind,
@@ -57,7 +58,8 @@ export default function PerformancePage() {
   const board = ofKind.find(b => b.communityId === communityPick) ?? ofKind[0] ?? null;
   const segment: PerformanceSegment | null = board ? (board.segments.find(s => s === segmentPick) ?? board.segments[0] ?? null) : null;
   const ref = board ? { communityId: board.communityId, communityName: board.name, kind: board.kind } : null;
-  const hasPeriods = board !== null && board.kind !== "intraday";
+  // Hit-rate period cards need targets; Long Term and US Investment have none.
+  const hasPeriods = board !== null && board.kind !== "intraday" && segment !== null && !isHoldingSegment(segment);
 
   return (
     <div className="flex flex-col gap-6">

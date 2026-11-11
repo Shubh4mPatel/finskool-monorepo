@@ -93,8 +93,20 @@ export const swingTradeSchema = z.object({
   visibility: visibility.optional(),
 })
 
+/** Long Term / US Investment: no target, no exit date. A sheet that still has those columns just has them ignored. */
+export const holdingTradeSchema = z.object({
+  tradeDate: requiredDate('Date'),
+  name: requiredText('Company name', 150),
+  symbol,
+  entryPrice: requiredPrice('Entry price'),
+  cmp: optionalPrice('CMP'),
+  analysis: optionalText('Analysis', 60),
+  visibility: visibility.optional(),
+})
+
 export const intradayPatchSchema = intradayTradeSchema.partial()
 export const swingPatchSchema = swingTradeSchema.partial()
+export const holdingPatchSchema = holdingTradeSchema.partial()
 
 export type IntradayTradeInput = z.infer<typeof intradayTradeSchema>
 export type SwingTradeInput = z.infer<typeof swingTradeSchema>

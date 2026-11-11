@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   intradayTrade,
   intradaySummary,
+  holdingTrade,
   swingTrade,
   averageHoldingDays,
   periodStats,
@@ -193,5 +194,16 @@ describe('period stats', () => {
 
   it('an empty period is 0%, not NaN', () => {
     expect(periodStats([], d('2026-01-01'), d('2026-03-01'))).toEqual({ given: 0, met: 0, metPct: 0 })
+  })
+})
+
+describe('holdings (Long Term / US Investment)', () => {
+  it('works out only the return against CMP, with no target, status or holding days', () => {
+    expect(holdingTrade({ entryPrice: 714, cmp: 1918.7 })).toEqual({ returnPct: 168.73 })
+    expect(holdingTrade({ entryPrice: 607, cmp: 458.45 })).toEqual({ returnPct: -24.47 })
+  })
+
+  it('has no return while there is no CMP', () => {
+    expect(holdingTrade({ entryPrice: 100, cmp: null })).toEqual({ returnPct: null })
   })
 })

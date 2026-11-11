@@ -10,6 +10,7 @@ import {
   formatRupees,
   formatTradeDate,
   gainClass,
+  type HoldingRow,
   type IntradayRow,
   type SwingRow,
   type TradeVisibility,
@@ -147,6 +148,58 @@ function analysisPill(text: string | null): ReactNode {
   if (/booked/i.test(text)) return pill("bg-emerald-50 text-emerald-700", text);
   if (/^can\s/i.test(text)) return pill("bg-amber-50 text-amber-700", text);
   return pill("bg-accent/10 text-accent", text);
+}
+
+/** Long Term / US Investment: the sheet has no target, exit date or holding days, so neither does the table. */
+export function HoldingTable({ rows, busyId, onVisibility, onEdit }: TableProps<HoldingRow>) {
+  return (
+    <Shell
+      headers={[
+        { label: "S.N." },
+        { label: "Date" },
+        { label: "Company Name" },
+        { label: "NSE Code" },
+        { label: "Entry", right: true },
+        { label: "CMP", right: true },
+        { label: "Returns", right: true },
+        { label: "Analysis" },
+        { label: "Free users" },
+        { label: "Edit" },
+      ]}
+    >
+      {rows.map(r => (
+        <tr key={r.id} className="transition-colors hover:bg-background/60">
+          <td className={`${TD} text-muted`}>{r.serialNo}</td>
+          <td className={TD}>{formatTradeDate(r.tradeDate)}</td>
+          <td className={`${TD} font-bold`}>
+            <span className="flex items-center gap-2">
+              <StockAvatar name={r.name} logoUrl={r.logoUrl} />
+              {r.name}
+              <VisibleIcon visible={r.visibleToFree} visibility={r.visibility} />
+            </span>
+          </td>
+          <td className={`${TD} text-muted`}>{r.symbol}</td>
+          <td className={`${TD} text-right`}>{formatNumber(r.entryPrice)}</td>
+          <td className={`${TD} text-right`}>{r.cmp === null ? <span className="text-subtle">-</span> : formatNumber(r.cmp)}</td>
+          <td className={`${TD} text-right font-semibold`}>
+            {r.returnPct === null ? <span className="text-subtle">-</span> : <span className={gainClass(r.returnPct)}>{formatPct(r.returnPct, true)}</span>}
+          </td>
+          <td className={TD}>{analysisPill(r.analysis)}</td>
+          <td className={TD}>
+            <FreeUsersSelect
+              value={r.visibility}
+              disabled={busyId === r.id}
+              ariaLabel={`Free users: ${r.name}`}
+              onChange={v => onVisibility(r, v)}
+            />
+          </td>
+          <td className={TD}>
+            <EditButton label={`Edit ${r.name}`} onClick={() => onEdit(r)} />
+          </td>
+        </tr>
+      ))}
+    </Shell>
+  );
 }
 
 export function SwingTable({ rows, busyId, onVisibility, onEdit }: TableProps<SwingRow>) {

@@ -19,6 +19,7 @@ import { calendarDate, istNow } from '../dashboard/dashboard.time.js'
 import { decodeCursor, encodeCursor } from '../tickets/tickets.shared.js'
 import {
   averageHoldingDays,
+  holdingTrade,
   intradaySummary,
   intradayTrade,
   periodStats,
@@ -30,6 +31,7 @@ import type {
   AdminTradeRowDTO,
   BoardDTO,
   BoardListDTO,
+  HoldingRowDTO,
   ImportRowErrorDTO,
   ImportSummaryDTO,
   IntradayRowDTO,
@@ -47,6 +49,7 @@ import {
   SEGMENTS_BY_KIND,
   buildTradeKey,
   inMonthRange,
+  isHoldingSegment,
   isoDate,
   isoMonth,
   monthRangeOf,
@@ -58,6 +61,8 @@ import {
   type MonthRange,
 } from './performance.shared.js'
 import {
+  holdingPatchSchema,
+  holdingTradeSchema,
   intradayPatchSchema,
   intradayTradeSchema,
   swingPatchSchema,
@@ -150,8 +155,10 @@ function noteText(b: PerformanceBoard): string | null {
 }
 
 /** Every Add trade form, edit and sheet row is validated by the schema for the board's kind. */
-const tradeSchemaFor = (kind: PerformanceKind) => (kind === 'intraday' ? intradayTradeSchema : swingTradeSchema)
-const patchSchemaFor = (kind: PerformanceKind) => (kind === 'intraday' ? intradayPatchSchema : swingPatchSchema)
+const tradeSchemaFor = (kind: PerformanceKind, segment: PerformanceSegment) =>
+  kind === 'intraday' ? intradayTradeSchema : isHoldingSegment(segment) ? holdingTradeSchema : swingTradeSchema
+const patchSchemaFor = (kind: PerformanceKind, segment: PerformanceSegment) =>
+  kind === 'intraday' ? intradayPatchSchema : isHoldingSegment(segment) ? holdingPatchSchema : swingPatchSchema
 
 export class PerformanceService {
   constructor(private readonly db: PrismaClient) {}
@@ -223,7 +230,7 @@ export class PerformanceService {
     return logos
   }
 
-  private toRow(board: PerformanceBoard, t: TradeRow, serialNo: number, logos: Map<string, string>): TradeRowDTO {
+  private toRow(board: PerformanceBoard, segment: PerformanceSegment, t: TradeRow, serialNo: number, logos: Map<string, string>): TradeRowDTO {
     const base = { id: t.id, serialNo, tradeDate: isoDate(t.tradeDate), name: t.name, logoUrl: logos.get(t.id) ?? null, entryPrice: t.entryPrice }
     if (board.kind === 'intraday') {
       const row: IntradayRowDTO = {
@@ -231,6 +238,16 @@ export class PerformanceService {
         side: t.side!,
         exitPrice: t.exitPrice!,
         ...intradayTrade({ side: t.side!, entryPrice: t.entryPrice, exitPrice: t.exitPrice! }, intradayParams(board)),
+      }
+      return row
+    }
+    if (isHoldingSegment(segment)) {
+      const row: HoldingRowDTO = {
+        ...base,
+        symbol: t.symbol ?? '',
+        cmp: t.cmp,
+        analysis: t.analysis,
+        ...holdingTrade({ entryPrice: t.entryPrice, cmp: t.cmp }),
       }
       return row
     }
@@ -265,6 +282,9 @@ export class PerformanceService {
       const results = scoped.map(t => intradayTrade({ side: t.side!, entryPrice: t.entryPrice, exitPrice: t.exitPrice! }, params))
       return { kind: 'intraday', ...intradaySummary(results, params) }
     }
+
+    // Long Term / US Investment have no targets or exit dates: just how many holdings there are.
+    if (isHoldingSegment(segment)) return { kind: 'holding', totalTrades: scoped.length }
 
     const kind = board.kind as 'swing' | 'investor'
     const results = trades.map(t =>
@@ -410,7 +430,7 @@ export class PerformanceService {
     const pageRows = filtered.slice((q.page - 1) * q.pageSize, q.page * q.pageSize)
     const logos = await this.logosFor(pageRows.map(n => n.t))
     const items: AdminTradeRowDTO[] = pageRows.map(({ t, serialNo }) => ({
-      ...this.toRow(board, t, serialNo, logos),
+      ...this.toRow(board, segment, t, serialNo, logos),
       visibility: t.visibility,
       visibleToFree: visible.has(t.id),
     }))
@@ -419,7 +439,8 @@ export class PerformanceService {
   }
 
   /** A validated body into the stored fields, or a 400 explaining which date is wrong. */
-  private toCandidate(kind: PerformanceKind, parsed: Record<string, unknown>): Candidate {
+  private toCandidate(kind: PerformanceKind, segment: PerformanceSegment, parsed: Record<string, unknown>): Candidate {
+    const holding = isHoldingSegment(segment)
     const get = <T>(key: string): T | undefined => parsed[key] as T | undefined
     const candidate: Candidate = {
       tradeDate: get<string>('tradeDate')!,
@@ -429,9 +450,9 @@ export class PerformanceService {
       entryPrice: get<number>('entryPrice')!,
       exitPrice: kind === 'intraday' ? get<number>('exitPrice')! : null,
       cmp: kind === 'intraday' ? undefined : get<number | null>('cmp'),
-      targetPct: kind === 'intraday' ? undefined : get<number | null>('targetPct'),
+      targetPct: kind === 'intraday' || holding ? undefined : get<number | null>('targetPct'),
       analysis: kind === 'intraday' ? undefined : get<string | null>('analysis'),
-      exitDate: kind === 'intraday' ? undefined : get<string | null>('exitDate'),
+      exitDate: kind === 'intraday' || holding ? undefined : get<string | null>('exitDate'),
       visibility: get<TradeVisibility>('visibility'),
     }
     if (typeof candidate.exitDate === 'string' && candidate.exitDate < candidate.tradeDate) {
@@ -452,7 +473,7 @@ export class PerformanceService {
   ): Promise<{ id: string }> {
     const board = await this.adminBoard(accessible, communityId)
     const segment = resolveSegment(board.kind, requested)
-    const c = this.toCandidate(board.kind, tradeSchemaFor(board.kind).parse(body))
+    const c = this.toCandidate(board.kind, segment, tradeSchemaFor(board.kind, segment).parse(body))
 
     try {
       const created = await this.db.performanceTrade.create({
@@ -488,11 +509,11 @@ export class PerformanceService {
     const existing = await this.db.performanceTrade.findFirst({ where: { id: tradeId, boardId: board.id } })
     if (!existing) throw new NotFoundError('Trade not found')
 
-    const parsed = patchSchemaFor(board.kind).parse(body) as Record<string, unknown>
+    const parsed = patchSchemaFor(board.kind, existing.segment).parse(body) as Record<string, unknown>
     const has = (key: string) => parsed[key] !== undefined
 
     // Merge over what is stored, so the date check and the trade key see the whole trade.
-    const merged = this.toCandidate(board.kind, {
+    const merged = this.toCandidate(board.kind, existing.segment, {
       tradeDate: has('tradeDate') ? parsed['tradeDate'] : isoDate(existing.tradeDate),
       name: has('name') ? parsed['name'] : existing.name,
       symbol: has('symbol') ? parsed['symbol'] : existing.symbol,
@@ -554,7 +575,7 @@ export class PerformanceService {
   ): Promise<ImportSummaryDTO> {
     const board = await this.adminBoard(accessible, communityId)
     const segment = resolveSegment(board.kind, input.segment)
-    const schema = tradeSchemaFor(board.kind)
+    const schema = tradeSchemaFor(board.kind, segment)
 
     const errors: ImportRowErrorDTO[] = []
     const valid: { row: number; key: string; c: Candidate }[] = []
@@ -572,7 +593,7 @@ export class PerformanceService {
       }
       let c: Candidate
       try {
-        c = this.toCandidate(board.kind, result.data as Record<string, unknown>)
+        c = this.toCandidate(board.kind, segment, result.data as Record<string, unknown>)
       } catch (err) {
         errors.push({ row, ref, reason: err instanceof BadRequestError ? err.message : 'Invalid row' })
         return
@@ -668,8 +689,9 @@ export class PerformanceService {
 
   // ─── Admin: period cards ──────────────────────────────────────────────────
 
-  private assertPeriodBoard(board: PerformanceBoard): void {
+  private assertPeriodBoard(board: PerformanceBoard, segment: PerformanceSegment): void {
     if (board.kind === 'intraday') throw new BadRequestError('Intraday boards have no period cards', 'NOT_SWING')
+    if (isHoldingSegment(segment)) throw new BadRequestError('Long Term and US Investment have no period cards', 'NOT_SWING')
   }
 
   /** A segment cannot show the same from/to range twice; `excludeId` skips the period being edited. */
@@ -693,8 +715,8 @@ export class PerformanceService {
     input: { segment?: PerformanceSegment | undefined; fromMonth: string; toMonth: string },
   ): Promise<{ id: string }> {
     const board = await this.adminBoard(accessible, communityId)
-    this.assertPeriodBoard(board)
     const segment = resolveSegment(board.kind, input.segment)
+    this.assertPeriodBoard(board, segment)
     if (input.fromMonth > input.toMonth) throw new BadRequestError('The period cannot end before it starts', 'INVALID_PERIOD')
 
     const fromMonth = parseIsoMonth(input.fromMonth)
@@ -811,7 +833,7 @@ export class PerformanceService {
 
     const logos = await this.logosFor(page)
     const items = page.map(t => {
-      const { serialNo: _serialNo, ...row } = this.toRow(board, t, serials.get(t.id)!, logos)
+      const { serialNo: _serialNo, ...row } = this.toRow(board, segment, t, serials.get(t.id)!, logos)
       return row as MobileTradeRowDTO
     })
 

@@ -9,8 +9,10 @@ import {
   formatRupees,
   performanceApi,
   type BoardListItem,
+  type HoldingRow,
   type IntradayRow,
   type IntradaySummary,
+  isHoldingSegment,
   type PerformanceSegment,
   type Period,
   type SwingRow,
@@ -26,7 +28,7 @@ import { useToast } from "@/components/ui/Toast";
 import { KpiCard } from "./KpiCard";
 import { PeriodCards } from "./PeriodCards";
 import { VisibilityBar } from "./VisibilityBar";
-import { IntradayTable, SwingTable } from "./TradeTables";
+import { HoldingTable, IntradayTable, SwingTable } from "./TradeTables";
 import TradeModal from "./TradeModal";
 import NoteModal from "./NoteModal";
 import PeriodModal from "./PeriodModal";
@@ -108,7 +110,14 @@ export default function BoardView({
           {intraday && summary?.kind === "intraday" && (
             <IntradayStats summary={summary} noteText={overview.data.noteText} onEditNote={() => setNoteOpen(true)} />
           )}
-          {!intraday && summary && summary.kind !== "intraday" && <SwingStats summary={summary} onEditPeriod={setEditingPeriod} />}
+          {summary?.kind === "holding" && (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              <KpiCard label="Total Holdings" value={String(summary.totalTrades)} />
+            </div>
+          )}
+          {summary && summary.kind !== "intraday" && summary.kind !== "holding" && (
+            <SwingStats summary={summary} onEditPeriod={setEditingPeriod} />
+          )}
 
           <VisibilityBar
             key={`${overview.data.board.hideNewerThanDays}:${overview.data.board.maxFreeTrades}`}
@@ -161,6 +170,8 @@ export default function BoardView({
           <div className={trades.refreshing ? "opacity-60 transition-opacity" : "transition-opacity"}>
             {intraday ? (
               <IntradayTable rows={trades.data.items as IntradayRow[]} busyId={busyId} onVisibility={changeVisibility} onEdit={setEditing} />
+            ) : isHoldingSegment(segment) ? (
+              <HoldingTable rows={trades.data.items as HoldingRow[]} busyId={busyId} onVisibility={changeVisibility} onEdit={setEditing} />
             ) : (
               <SwingTable rows={trades.data.items as SwingRow[]} busyId={busyId} onVisibility={changeVisibility} onEdit={setEditing} />
             )}
