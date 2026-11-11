@@ -215,6 +215,18 @@ function subscriptionTerms(
 const activeUntilLine = (validUntil: Date | null, prefix = ''): string =>
   validUntil ? `${prefix}Active until ${formatEmailDate(validUntil)}.` : `${prefix}You now have access.`
 
+/**
+ * Whether a member has a paid subscription that is switched on and not past its valid-till date. The free community
+ * never counts (it has no expiry, so every member would look active), and only each community's current row is passed
+ * in. The same rule as the "Active subscription" / "Expired" filter, so the Status pill and the filter always agree.
+ */
+function hasRunningPaidSubscription(
+  currentSubs: { isActive: boolean; validUntil: Date | null; community: { isFree: boolean } }[],
+  today: Date,
+): boolean {
+  return currentSubs.some(s => s.isActive && !s.community.isFree && (s.validUntil === null || s.validUntil >= today))
+}
+
 export class AdminService {
   constructor(private readonly db: PrismaClient) {}
 
@@ -2134,7 +2146,7 @@ export class AdminService {
       const ap = apByPhone.get(u.phone) ?? null
       const allSubs = u.subscriptions
       const sub = allSubs[0] ?? null
-      const hasActiveSubscription = !!sub && sub.isActive && (sub.validUntil === null || sub.validUntil >= today)
+      const hasActiveSubscription = hasRunningPaidSubscription(allSubs, today)
 
       return {
         id: u.id,
@@ -2294,8 +2306,10 @@ export class AdminService {
     }
     if (hasActiveSubscription !== undefined) {
       subWhere['isActive'] = true
-      // The free community has no expiry date and counts as running.
       subWhere['OR'] = notExpired(today).OR
+      // Every member is in the free community, which never expires: it would make everyone "active" and nobody
+      // "expired". So it is ignored here, unless the admin picked a community, in which case that one is checked.
+      if (!communityId) subWhere['community'] = { isFree: false }
       hasSubFilter = true
       subscriptionMode = hasActiveSubscription ? 'some' : 'none'
     }
@@ -2462,7 +2476,7 @@ export class AdminService {
     const sub = allSubs[0] ?? null
     const today = new Date()
     today.setHours(0, 0, 0, 0)
-    const hasActiveSubscription = !!sub && sub.isActive && (sub.validUntil === null || sub.validUntil >= today)
+    const hasActiveSubscription = hasRunningPaidSubscription(allSubs, today)
 
     return {
       id: user.id,

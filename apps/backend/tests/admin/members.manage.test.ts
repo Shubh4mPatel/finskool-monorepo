@@ -315,6 +315,39 @@ describe('GET /admin/members/stats (the cards on the Members page)', () => {
     expect(named.map(m => m.id)).toEqual([gone.id])
   })
 
+  describe('the free community does not make a member "active"', () => {
+    const rowOf = async (id: string) =>
+      ((await listMembers(superAdmin, { pageSize: 100 })).body.data.members as { id: string; hasActiveSubscription: boolean }[]).find(m => m.id === id)!
+
+    it('a member with only the free community is expired, in the filter, the cards and the pill', async () => {
+      const free = await createCommunity(superAdmin.id, { name: 'Free Space', isFree: true })
+      const freeOnly = await createMobileMember({ name: 'Free Only' })
+      await prisma.subscription.create({ data: { userId: freeOnly.id, communityId: free.id, payment: 0, validUntil: null, isActive: true } })
+
+      const before = (await stats()).body.data
+      expect((await rowOf(freeOnly.id)).hasActiveSubscription).toBe(false)
+      const expiredIds = ((await listMembers(superAdmin, { hasActiveSubscription: 'false', pageSize: 100 })).body.data.members as { id: string }[]).map(m => m.id)
+      expect(expiredIds).toContain(freeOnly.id)
+      expect(before.registered).toBe(await totalOf(superAdmin, { hasActiveSubscription: 'true' }))
+    })
+
+    it('the pill follows the filter: any running paid subscription makes the member active, even if the newest one lapsed', async () => {
+      const free = await createCommunity(superAdmin.id, { name: 'Free Space', isFree: true })
+      const mixed = await createMobileMember({
+        name: 'Mixed',
+        subscriptions: [
+          { communityId: options.id, validUntil: daysFromNow(60), createdAt: new Date(Date.now() - 86_400_000) },
+          { communityId: swing.id, validUntil: daysFromNow(-5), isActive: false },
+        ],
+      })
+      await prisma.subscription.create({ data: { userId: mixed.id, communityId: free.id, payment: 0, validUntil: null, isActive: true } })
+
+      expect((await rowOf(mixed.id)).hasActiveSubscription).toBe(true)
+      const activeIds = ((await listMembers(superAdmin, { hasActiveSubscription: 'true', pageSize: 100 })).body.data.members as { id: string }[]).map(m => m.id)
+      expect(activeIds).toContain(mixed.id)
+    })
+  })
+
   it('counts only the communities a scoped admin manages, the same as their list', async () => {
     const scoped = await createAdmin({ isSuperAdmin: false, communityIds: [swing.id] })
     const res = await stats(scoped)

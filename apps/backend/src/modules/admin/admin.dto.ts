@@ -224,8 +224,8 @@ export interface MemberListFilters {
   // 'registered'. Applying this filter therefore implicitly restricts results
   // to source: 'admin' — passing `source: 'admin'` alongside it is a no-op.
   registrationStatus?: 'pending' | 'registered' | undefined
-  // Whether their current subscription (any community) is active and not
-  // past validUntil — independent of accountStatus/registrationStatus, since
+  // Whether they have a current PAID subscription (any community) that is on and
+  // not past validUntil. The free community never counts, it has no expiry — independent of accountStatus/registrationStatus, since
   // "expired" was never really an account-standing fact (see UserStatus's
   // doc comment in schema.prisma).
   hasActiveSubscription?: boolean | undefined
@@ -251,7 +251,7 @@ export type MemberExportFilters = Omit<MemberListFilters, 'page' | 'pageSize'>
 export interface MemberStatsDTO {
   /** Every member (no filter). */
   total: number
-  /** `hasActiveSubscription=true`: a current, unexpired subscription. */
+  /** `hasActiveSubscription=true`: a current, unexpired paid subscription (the free community does not count). */
   registered: number
   /** `registrationStatus=pending`: added by an admin, has not signed up yet. */
   pending: number
