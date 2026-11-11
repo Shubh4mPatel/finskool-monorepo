@@ -217,12 +217,11 @@ export interface MemberListFilters {
   communityIds?: string[] | undefined
   // The account's own standing — User.status directly. Left out, deleted members are not listed or counted.
   accountStatus?: 'active' | 'suspended' | 'deleted' | undefined
-  // Has this admin-added phone been claimed — ApprovedPhone.status directly.
-  // By construction this can only ever match admin-added members: a
-  // self-registered member has no ApprovedPhone row, so this field is always
-  // `null` for them (see MemberItemDTO) and can never equal 'pending' or
-  // 'registered'. Applying this filter therefore implicitly restricts results
-  // to source: 'admin' — passing `source: 'admin'` alongside it is a no-op.
+  // Has the member signed up in the app?
+  //  - 'pending': added by an admin and the phone has not been claimed yet (ApprovedPhone.status). Only admin-added
+  //    members can be pending, so this implicitly restricts results to source: 'admin'.
+  //  - 'registered': everyone else: self-registered members (no ApprovedPhone row, so MemberItemDTO.registrationStatus is
+  //    null for them) and admin-added members who have claimed their phone. registered + pending = every member.
   registrationStatus?: 'pending' | 'registered' | undefined
   // Whether they have a current PAID subscription (any community) that is on and
   // not past validUntil. The free community never counts, it has no expiry — independent of accountStatus/registrationStatus, since
@@ -251,7 +250,7 @@ export type MemberExportFilters = Omit<MemberListFilters, 'page' | 'pageSize'>
 export interface MemberStatsDTO {
   /** Every member (no filter). */
   total: number
-  /** `hasActiveSubscription=true`: a current, unexpired paid subscription (the free community does not count). */
+  /** `registrationStatus=registered`: has signed up in the app (self-registered, or an admin-added member who has claimed their phone). */
   registered: number
   /** `registrationStatus=pending`: added by an admin, has not signed up yet. */
   pending: number

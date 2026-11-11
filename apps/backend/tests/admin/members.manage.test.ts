@@ -215,6 +215,10 @@ describe('GET /admin/members — roster', () => {
     it('source and registrationStatus', async () => {
       expect(idsOf(await listMembers(superAdmin, { source: 'self' }))).toEqual([selfSignup.id])
       expect(idsOf(await listMembers(superAdmin, { registrationStatus: 'pending' }))).toEqual([pending.id])
+      // Registered is everyone who has signed up, self-registered members included, and never a pending one.
+      const registered = idsOf(await listMembers(superAdmin, { registrationStatus: 'registered', pageSize: 100 }))
+      expect(registered).toContain(selfSignup.id)
+      expect(registered).not.toContain(pending.id)
       // Impossible combination ANDs down to nothing rather than one filter winning.
       expect(idsOf(await listMembers(superAdmin, { source: 'self', registrationStatus: 'pending' }))).toEqual([])
     })
@@ -297,12 +301,13 @@ describe('GET /admin/members/stats (the cards on the Members page)', () => {
     const { total, registered, pending } = (await stats()).body.data
 
     expect(total).toBe(await totalOf(superAdmin))
-    expect(registered).toBe(await totalOf(superAdmin, { hasActiveSubscription: 'true' }))
+    expect(registered).toBe(await totalOf(superAdmin, { registrationStatus: 'registered' }))
     expect(pending).toBe(await totalOf(superAdmin, { registrationStatus: 'pending' }))
     // Known from the data above, so a wrong filter cannot pass by matching itself.
     expect(total).toBe(7)
-    expect(registered).toBe(4) // Active, Active Too, Pending Too and Suspended hold a running subscription
+    expect(registered).toBe(5) // everyone who has signed up: all but the two admin-added members still pending
     expect(pending).toBe(2)
+    expect(registered + pending).toBe(total)
   })
 
   it('does not count deleted members, and the list leaves them out unless asked for', async () => {
@@ -328,7 +333,8 @@ describe('GET /admin/members/stats (the cards on the Members page)', () => {
       expect((await rowOf(freeOnly.id)).hasActiveSubscription).toBe(false)
       const expiredIds = ((await listMembers(superAdmin, { hasActiveSubscription: 'false', pageSize: 100 })).body.data.members as { id: string }[]).map(m => m.id)
       expect(expiredIds).toContain(freeOnly.id)
-      expect(before.registered).toBe(await totalOf(superAdmin, { hasActiveSubscription: 'true' }))
+      // The member did sign up, so they are counted as registered even though they have no running paid plan.
+      expect(before.registered + before.pending).toBe(before.total)
     })
 
     it('the pill follows the filter: any running paid subscription makes the member active, even if the newest one lapsed', async () => {
@@ -354,7 +360,7 @@ describe('GET /admin/members/stats (the cards on the Members page)', () => {
 
     expect(res.status).toBe(200)
     expect(res.body.data.total).toBe(await totalOf(scoped))
-    expect(res.body.data.registered).toBe(await totalOf(scoped, { hasActiveSubscription: 'true' }))
+    expect(res.body.data.registered).toBe(await totalOf(scoped, { registrationStatus: 'registered' }))
     expect(res.body.data.pending).toBe(await totalOf(scoped, { registrationStatus: 'pending' }))
     expect(res.body.data.total).toBeLessThan((await stats()).body.data.total)
   })
@@ -400,7 +406,7 @@ describe('GET /admin/members/export', () => {
     expect(asha).toHaveLength(2)
     // Plain payment (no ₹, no thousands separator), YYYY-MM-DD dates.
     expect(asha.find(l => l.includes('Swing Traders'))).toContain(
-      '"Asha ""Ace"" Nair","+919811100002","12500","2026-01-15","2030-03-31","Swing Traders","asha@example.com","Registered"',
+      '"Asha ""Ace"" Nair","+919811100002","12500","2026-01-15","2030-03-31","Swing Traders","asha@example.com","Active"',
     )
     expect(res.text).not.toContain('₹')
     // A member with no subscription: blank cells, not a dash.

@@ -2083,7 +2083,7 @@ export class AdminService {
     }
     const [total, registered, pending] = await Promise.all([
       count({}),
-      count({ hasActiveSubscription: true }),
+      count({ registrationStatus: 'registered' }),
       count({ registrationStatus: 'pending' }),
     ])
     return { total, registered, pending }
@@ -2186,7 +2186,7 @@ export class AdminService {
     if (m.accountStatus === 'suspended') return 'Suspended'
     if (m.accountStatus === 'deleted') return 'Deleted'
     if (m.registrationStatus === 'pending') return 'Pending Sign'
-    return m.hasActiveSubscription ? 'Registered' : 'Expired'
+    return m.hasActiveSubscription ? 'Active' : 'Expired'
   }
 
   private membersToCsv(members: MemberItemDTO[]): string {
@@ -2327,11 +2327,16 @@ export class AdminService {
         ],
       })
     }
-    if (registrationStatus) {
-      // By construction admin-added-only — see MemberListFilters.registrationStatus's
-      // own doc comment. A self-registered member's phone can never appear in this set.
-      const matching = await this.db.approvedPhone.findMany({ where: { status: registrationStatus }, select: { phone: true } })
-      andClauses.push({ phone: { in: matching.map(a => a.phone) } })
+    if (registrationStatus === 'pending') {
+      // Admin-added members who have not signed up in the app yet. A self-registered member's phone can never
+      // appear in this set, since they have no ApprovedPhone row.
+      const pending = await this.db.approvedPhone.findMany({ where: { status: 'pending' }, select: { phone: true } })
+      andClauses.push({ phone: { in: pending.map(a => a.phone) } })
+    } else if (registrationStatus === 'registered') {
+      // Everyone who has signed up: a self-registered member by definition, an admin-added one once they have claimed
+      // their phone. So registered + pending always adds up to every member.
+      const pending = await this.db.approvedPhone.findMany({ where: { status: 'pending' }, select: { phone: true } })
+      andClauses.push({ phone: { notIn: pending.map(a => a.phone) } })
     }
     if (source) {
       // Applied independently of (not else-if'd with) registrationStatus above, so an

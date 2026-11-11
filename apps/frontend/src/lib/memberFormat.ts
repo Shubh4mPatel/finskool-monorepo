@@ -87,7 +87,7 @@ export function getDisplayStatus(m: MemberItem): { label: string; style: string 
     return { label: REGISTRATION_STATUS_LABELS.pending, style: REGISTRATION_STATUS_STYLES.pending };
   }
   return m.hasActiveSubscription
-    ? { label: REGISTRATION_STATUS_LABELS.registered, style: REGISTRATION_STATUS_STYLES.registered }
+    ? { label: "Active", style: REGISTRATION_STATUS_STYLES.registered }
     : { label: "Expired", style: "bg-red-100 text-red-500" };
 }
 

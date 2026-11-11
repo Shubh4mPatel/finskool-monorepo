@@ -312,7 +312,7 @@ function MembersContent() {
     // The tile counts cover every account status, so a tile is "on" only while the list does too.
     const others = !!(debouncedSearch || filterCommunity || filterAccountStatus !== "" || filterSource || validDate || paidDate || expiringSoon);
     if (others) return false;
-    if (key === "registered") return filterHasActiveSubscription === "true" && !filterRegistrationStatus;
+    if (key === "registered") return filterRegistrationStatus === "registered" && !filterHasActiveSubscription;
     if (key === "pending") return filterRegistrationStatus === "pending" && !filterHasActiveSubscription;
     return !filterHasActiveSubscription && !filterRegistrationStatus;
   };
@@ -320,7 +320,7 @@ function MembersContent() {
   function applyTile(key: "all" | "registered" | "pending") {
     clearFilters();
     setFilterAccountStatus(""); // the tile's number counts every account status, so the list it opens must too
-    if (key === "registered") setFilterHasActiveSubscription("true");
+    if (key === "registered") setFilterRegistrationStatus("registered");
     if (key === "pending") setFilterRegistrationStatus("pending");
   }
 
