@@ -155,8 +155,6 @@ export const listTradesQuerySchema = z.object({
   month: month.optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(50),
-  // Oldest first reads like the sheet; the all-months view is easier to use newest first.
-  order: z.enum(['asc', 'desc']).default('asc'),
 })
 
 // `month` is one month; `fromMonth` + `toMonth` is a run of months. Either one narrows the summary and the trades

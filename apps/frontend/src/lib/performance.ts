@@ -197,7 +197,7 @@ export const performanceApi = {
   linkBoard: (communityId: string, kind: PerformanceKind) => api.post<Board>(`${BASE}/boards`, { communityId, kind }),
   overview: (communityId: string, segment: PerformanceSegment) =>
     api.get<Overview>(`${BASE}/communities/${communityId}/overview${q({ segment })}`),
-  trades: (communityId: string, p: { segment: PerformanceSegment; month?: string; page: number; order: "asc" | "desc" }) =>
+  trades: (communityId: string, p: { segment: PerformanceSegment; month?: string; page: number }) =>
     api.get<TradeList>(`${BASE}/communities/${communityId}/trades${q({ ...p, pageSize: TRADES_PER_PAGE })}`),
   addTrade: (communityId: string, segment: PerformanceSegment, trade: TradeInput) =>
     api.post<{ id: string }>(`${BASE}/communities/${communityId}/trades`, { ...trade, segment }),

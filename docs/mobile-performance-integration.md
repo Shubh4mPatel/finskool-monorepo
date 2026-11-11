@@ -207,7 +207,7 @@ Every row (intraday, swing and investor) carries `logoUrl`: the stock's logo, ta
 - A logo added to the stocks table later appears on the next load of the list. Cache the image by URL, not the row.
 - Same footprint either way: a round avatar, the logo scaled to fit (`contain`) on a white background, so a wide logo is not cropped.
 
-Rows carry no serial number. Number them in the app if the design shows S.N. (the admin screen counts oldest first, the app list is newest first).
+Rows carry no serial number, but the list is in S.N. order, the same as the admin screen (oldest trade first, S.N. 1, 2, 3 …). Number them in the app if the design shows S.N.; a free member's list skips the hidden trades, so count from the first row you receive only if you do not need the admin's numbers.
 
 ## 4. REST endpoints
 
@@ -267,7 +267,7 @@ Returns:
 - `summary`: see section 3. It covers the picked months, or every trade when there is no filter.
 - `noteText` is the banner for `intraday` boards, and `null` for the others. It does not change with the filter.
 - `hiddenCount` is the number of trades in the picked months (or on the whole segment, with no filter) that this member **cannot** see. It is `null` for a paid member. Use it for a line such as "7 more trades for subscribers" with a button to the plans screen.
-- `items` is newest first by trade date. A free member's list contains only the allowed trades, so it can be short or empty.
+- `items` is in S.N. order (oldest trade first), the same order as the admin list. A free member's list contains only the allowed trades, so it can be short or empty.
 - `nextCursor` is `null` on the last page.
 
 | Error | When |
@@ -337,7 +337,7 @@ Cards: Capital Deployed `capitalDeployed`, Overall P&L `overallPnl`, Gross P&L `
 2. **Pick a range.** Once the member has chosen **both** From and To, call `GET /communities/:id?fromMonth=2026-08&toMonth=2026-09`. Then:
    - show the hit-rate card from `summary.range` (Trades Given `given`, Trades Met `met`, Met % `metPct`) instead of the `periods` cards;
    - show `summary.averageHoldingDays` and `summary.totalTrades`, which are now for those months;
-   - show `items`: **every trade dated in any of those months** (for a paid member), newest first, paged with `nextCursor`.
+   - show `items`: **every trade dated in any of those months** (for a paid member), in S.N. order, paged with `nextCursor`.
 3. **Clear the filter** (the ✕). Call with no month params: the `periods` cards come back and the list is every month again.
 
 Picker rules: do not call until both ends are set; do not let To be earlier than From (disable those months, or move To up to From); a single month is just From = To. If the member only wants one month you may send `month=` instead.
@@ -395,7 +395,7 @@ The filter works the same for a free member and the summary is identical to a pa
 - **Live prices.** CMP and the returns that depend on it are as of the admin's last upload.
 - **Push notifications** when the admin adds trades or closes one.
 - **A single-trade endpoint.** Every row you need is in the list.
-- **Other sort orders.** The list is newest first only.
+- **Other sort orders.** The list is in S.N. order (oldest first) only; there is no `order` parameter.
 - **Chart data.** Only the numbers above are provided.
 
 ## 11. Test checklist

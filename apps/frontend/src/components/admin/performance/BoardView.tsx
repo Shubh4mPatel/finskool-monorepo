@@ -62,7 +62,7 @@ export default function BoardView({
   const id = board.communityId;
   const overview = usePanel(`overview:${id}:${segment}:${reload}`, () => performanceApi.overview(id, segment));
   const trades = usePanel(`trades:${id}:${segment}:${month}:${page}:${reload}`, () =>
-    performanceApi.trades(id, { segment, ...(month === ALL ? {} : { month }), page, order: month === ALL ? "desc" : "asc" }),
+    performanceApi.trades(id, { segment, ...(month === ALL ? {} : { month }), page }),
   );
 
   // Deleting the last trade of the last page leaves the page number past the end: step back to the new last page.

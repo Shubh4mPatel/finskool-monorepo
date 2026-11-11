@@ -210,10 +210,12 @@ describe('intraday board', () => {
     expect(res.body.data.months).toEqual(['2026-11', '2026-10'])
   })
 
-  it('pages, and can list newest first', async () => {
-    const res = await api(boss).get(`/communities/${intraday.id}/trades?pageSize=2&page=2&order=desc`)
+  it('pages in S.N. order, oldest first, with no way to reverse it', async () => {
+    const first = await api(boss).get(`/communities/${intraday.id}/trades?pageSize=2&page=1&order=desc`)
+    expect(first.body.data.items.map((r: { serialNo: number }) => r.serialNo)).toEqual([1, 2])
+    const res = await api(boss).get(`/communities/${intraday.id}/trades?pageSize=2&page=2`)
     expect(res.body.data).toMatchObject({ total: 3, page: 2, pageSize: 2, totalPages: 2 })
-    expect(res.body.data.items.map((r: { name: string }) => r.name)).toEqual(['Ambuja Cement'])
+    expect(res.body.data.items.map((r: { serialNo: number; name: string }) => [r.serialNo, r.name])).toEqual([[3, 'IEX']])
   })
 
   it('needs a side and an exit price', async () => {

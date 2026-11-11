@@ -24,7 +24,7 @@ interface Item { id: string; name: string; [k: string]: unknown }
  *   1d auto (too new)   2d show   10d auto   15d hide   20d auto   30d auto   40d auto (over the quota of 3)
  *  With the default rules (hide newer than 7 days, at most 3), a free member sees 2d, 10d, 20d, 30d. */
 const AGES: [number, 'auto' | 'show' | 'hide'][] = [[1, 'auto'], [2, 'show'], [10, 'auto'], [15, 'hide'], [20, 'auto'], [30, 'auto'], [40, 'auto']]
-const FREE_SEES = ['T2', 'T10', 'T20', 'T30']
+const FREE_SEES = ['T30', 'T20', 'T10', 'T2'] // in S.N. order: oldest first
 
 async function addTrade(boardId: string, over: Record<string, unknown> = {}) {
   const date = (over['tradeDate'] as string | undefined) ?? daysFromNow(-5)
@@ -73,7 +73,7 @@ afterAll(async () => {
 describe('free versus paid', () => {
   beforeEach(seedSwingTrades)
 
-  it('a free member sees only what the rules and the admin allow, newest first', async () => {
+  it('a free member sees only what the rules and the admin allow, in S.N. order', async () => {
     const res = await get(freeMember, `/communities/${swing.id}`)
     expect(res.status).toBe(200)
     expect(res.body.data).toMatchObject({ communityId: swing.id, communityName: 'Swing Alpha', kind: 'swing', access: 'free', segment: 'main', hiddenCount: 3, nextCursor: null })
@@ -84,7 +84,7 @@ describe('free versus paid', () => {
     const res = await get(paidMember, `/communities/${swing.id}`)
     expect(res.body.data.access).toBe('paid')
     expect(res.body.data.hiddenCount).toBeNull()
-    expect((res.body.data.items as Item[]).map(i => i.name)).toEqual(['T1', 'T2', 'T10', 'T15', 'T20', 'T30', 'T40'])
+    expect((res.body.data.items as Item[]).map(i => i.name)).toEqual(['T40', 'T30', 'T20', 'T15', 'T10', 'T2', 'T1'])
   })
 
   it('the summary covers every trade for both', async () => {
@@ -97,7 +97,7 @@ describe('free versus paid', () => {
 
   it('rows carry the numbers but no admin controls and no serial number', async () => {
     const res = await get(paidMember, `/communities/${swing.id}`)
-    const item = (res.body.data.items as Item[])[0]!
+    const item = (res.body.data.items as Item[]).find(i => i.name === 'T1')!
     expect(item).toMatchObject({ name: 'T1', symbol: 'T1', entryPrice: 100, cmp: 110, returnPct: 10, targetPct: 5, targetPrice: 105, status: 'open', holdingDays: null })
     expect(item).not.toHaveProperty('visibility')
     expect(item).not.toHaveProperty('visibleToFree')
@@ -255,7 +255,7 @@ describe('paging and filtering', () => {
     return pages
   }
 
-  it('walks every trade exactly once, newest first, for a paid member', async () => {
+  it('walks every trade exactly once, in S.N. order, for a paid member', async () => {
     const pages = await walk(paidMember, 5)
     expect(pages.map(p => p.length)).toEqual([5, 5, 4])
     const ids = pages.flat()
@@ -264,7 +264,7 @@ describe('paging and filtering', () => {
     const all = (await get(paidMember, `/communities/${swing.id}?limit=50`)).body.data.items as Item[]
     expect(ids).toEqual(all.map(i => i.id))
     const dates = all.map(i => i['tradeDate'] as string)
-    expect(dates).toEqual([...dates].sort().reverse())
+    expect(dates).toEqual([...dates].sort()) // oldest first, the order S.N. counts in
   })
 
   it('a free member pages through only what they can see', async () => {
@@ -323,7 +323,7 @@ describe('month filters on a swing board', () => {
   it('a run of months narrows the summary, the hit-rate card and the trades together', async () => {
     const res = await get(paidMember, `/communities/${swing.id}?fromMonth=2025-08&toMonth=2025-09`)
     expect(res.status).toBe(200)
-    expect(names(res)).toEqual(['S3', 'S2', 'S1', 'A2', 'A1'])
+    expect(names(res)).toEqual(['A1', 'A2', 'S1', 'S2', 'S3'])
     expect(res.body.data.filter).toEqual({ fromMonth: '2025-08', toMonth: '2025-09' })
     expect(res.body.data.summary).toMatchObject({
       kind: 'swing',
@@ -336,13 +336,13 @@ describe('month filters on a swing board', () => {
   it('without a filter the summary covers every trade and there is no range card', async () => {
     const res = await get(paidMember, `/communities/${swing.id}`)
     expect(res.body.data.filter).toBeNull()
-    expect(names(res)).toEqual(['O1', 'S3', 'S2', 'S1', 'A2', 'A1', 'J1'])
+    expect(names(res)).toEqual(['J1', 'A1', 'A2', 'S1', 'S2', 'S3', 'O1'])
     expect(res.body.data.summary).toMatchObject({ totalTrades: 7, averageHoldingDays: 4.3, range: null })
   })
 
   it('one month is a run of one', async () => {
     const res = await get(paidMember, `/communities/${swing.id}?month=2025-09`)
-    expect(names(res)).toEqual(['S3', 'S2', 'S1'])
+    expect(names(res)).toEqual(['S1', 'S2', 'S3'])
     expect(res.body.data.filter).toEqual({ fromMonth: '2025-09', toMonth: '2025-09' })
     expect(res.body.data.summary).toMatchObject({
       totalTrades: 3,
@@ -379,7 +379,7 @@ describe('month filters on a swing board', () => {
       seen.push(...names(res))
       cursor = res.body.data.nextCursor as string | null
     } while (cursor)
-    expect(seen).toEqual(['S3', 'S2', 'S1', 'A2', 'A1'])
+    expect(seen).toEqual(['A1', 'A2', 'S1', 'S2', 'S3'])
   })
 
   it('a run of months can span a year end, both ends included', async () => {
@@ -387,7 +387,7 @@ describe('month filters on a swing board', () => {
     await addTrade(swingBoardId, { tradeDate: '2026-01-05', symbol: 'N1' })
     await addTrade(swingBoardId, { tradeDate: '2026-03-02', symbol: 'M1' })
     const res = await get(paidMember, `/communities/${swing.id}?fromMonth=2025-10&toMonth=2026-02`)
-    expect(names(res)).toEqual(['N1', 'D1', 'O1'])
+    expect(names(res)).toEqual(['O1', 'D1', 'N1'])
     expect(res.body.data.summary).toMatchObject({ totalTrades: 3, range: { given: 3, met: 1 } })
   })
 
@@ -412,13 +412,13 @@ describe('month filters on a swing board', () => {
 
     it('gets only the allowed trades of the months, and a hidden count for those months only', async () => {
       const all = await get(freeMember, `/communities/${swing.id}`)
-      expect(names(all)).toEqual(['O1', 'S2', 'S1', 'A1'])
+      expect(names(all)).toEqual(['A1', 'S1', 'S2', 'O1'])
       expect(all.body.data.hiddenCount).toBe(3)
       // July's only trade is held back from this member, but the month is still offered: the summary counts it.
       expect(all.body.data.months).toContain('2025-07')
 
       const run = await get(freeMember, `/communities/${swing.id}?fromMonth=2025-08&toMonth=2025-09`)
-      expect(names(run)).toEqual(['S2', 'S1', 'A1'])
+      expect(names(run)).toEqual(['A1', 'S1', 'S2'])
       expect(run.body.data.hiddenCount).toBe(2)
 
       const jul = await get(freeMember, `/communities/${swing.id}?month=2025-07`)
@@ -428,8 +428,8 @@ describe('month filters on a swing board', () => {
 
     it('the free quota still counts over the whole board, not per month', async () => {
       await prisma.performanceBoard.update({ where: { id: swingBoardId }, data: { maxFreeTrades: 2 } })
-      // Of the four allowed trades the two newest are shown: O1 and S2. Asking for August shows nothing.
-      expect(names(await get(freeMember, `/communities/${swing.id}`))).toEqual(['O1', 'S2'])
+      // Of the four allowed trades the two newest are shown, in S.N. order: S2 then O1. Asking for August shows nothing.
+      expect(names(await get(freeMember, `/communities/${swing.id}`))).toEqual(['S2', 'O1'])
       const aug = await get(freeMember, `/communities/${swing.id}?month=2025-08`)
       expect(names(aug)).toEqual([])
       expect(aug.body.data.hiddenCount).toBe(2)

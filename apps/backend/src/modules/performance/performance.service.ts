@@ -16,7 +16,6 @@ import {
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors/index.js'
 import { logger } from '../../shared/logger.js'
 import { calendarDate, istNow } from '../dashboard/dashboard.time.js'
-import { decodeCursor, encodeCursor } from '../tickets/tickets.shared.js'
 import {
   averageHoldingDays,
   holdingTrade,
@@ -108,6 +107,14 @@ interface Candidate {
 }
 
 const MAX_PERIODS_PER_SEGMENT = 20
+
+// The mobile list pages by S.N.: the cursor is the S.N. of the last row of the previous page.
+const encodeSerialCursor = (serialNo: number): string => Buffer.from(`sn:${serialNo}`).toString('base64url')
+function decodeSerialCursor(cursor: string): number {
+  const m = /^sn:(\d{1,9})$/.exec(Buffer.from(cursor, 'base64url').toString())
+  if (!m) throw new BadRequestError('Invalid cursor', 'INVALID_CURSOR')
+  return Number(m[1])
+}
 
 const num = (d: Prisma.Decimal | null): number | null => (d === null ? null : Number(d))
 
@@ -420,10 +427,10 @@ export class PerformanceService {
 
     const months = [...new Set(trades.map(t => isoMonth(t.tradeDate)))].sort().reverse()
 
-    // S.N. counts over every trade in the segment, so a month view keeps the numbers the whole list would have.
+    // Always in S.N. order (oldest first), the order the sheet reads in. S.N. counts over every trade in the
+    // segment, so a month view keeps the numbers the whole list would have.
     const numbered = trades.map((t, i) => ({ t, serialNo: i + 1 }))
     const filtered = q.month ? numbered.filter(n => isoMonth(n.t.tradeDate) === q.month) : numbered
-    if (q.order === 'desc') filtered.reverse()
 
     const total = filtered.length
     const totalPages = Math.max(1, Math.ceil(total / q.pageSize))
@@ -818,18 +825,17 @@ export class PerformanceService {
     const hiddenCount = visible === null ? null : inRange.filter(t => !visible.has(t.id)).length
 
     const serials = new Map(trades.map((t, i) => [t.id, i + 1]))
+    // S.N. order, the same as the admin: `trades` is already oldest first, and filtering keeps that order. The
+    // cursor is the S.N. of the last row sent, so the next page starts right after it.
     let list = inRange.filter(t => visible === null || visible.has(t.id))
-    // Newest first by (date, id), the exact order the cursor walks.
-    list = list.sort((a, b) => b.tradeDate.getTime() - a.tradeDate.getTime() || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0))
-
     if (q.cursor) {
-      const { at, id } = decodeCursor(q.cursor)
-      list = list.filter(t => t.tradeDate.getTime() < at.getTime() || (t.tradeDate.getTime() === at.getTime() && t.id < id))
+      const after = decodeSerialCursor(q.cursor)
+      list = list.filter(t => serials.get(t.id)! > after)
     }
 
     const page = list.slice(0, q.limit)
     const last = page[page.length - 1]
-    const nextCursor = list.length > q.limit && last ? encodeCursor(last.tradeDate, last.id) : null
+    const nextCursor = list.length > q.limit && last ? encodeSerialCursor(serials.get(last.id)!) : null
 
     const logos = await this.logosFor(page)
     const items = page.map(t => {
