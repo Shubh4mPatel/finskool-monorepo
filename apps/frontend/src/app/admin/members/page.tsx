@@ -48,6 +48,7 @@ import {
 } from "@/lib/memberFormat";
 
 const PAGE_SIZE = 8;
+const DEFAULT_ACCOUNT_STATUS = "active";
 
 interface MemberList {
   members: MemberItem[];
@@ -191,7 +192,8 @@ function MembersContent() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [filterCommunity, setFilterCommunity] = useState(() => params.get("community") ?? "");
-  const [filterAccountStatus, setFilterAccountStatus] = useState("");
+  // The list opens on Active members; "All account status" is one click away.
+  const [filterAccountStatus, setFilterAccountStatus] = useState(DEFAULT_ACCOUNT_STATUS);
   const [filterRegistrationStatus, setFilterRegistrationStatus] = useState("");
   const [filterHasActiveSubscription, setFilterHasActiveSubscription] = useState("");
   const [filterSource, setFilterSource] = useState("");
@@ -286,14 +288,16 @@ function MembersContent() {
     });
   const visibleRows = useMemo(() => rows.filter((r) => r.first || openIds.has(r.m.id)), [rows, openIds]);
 
-  const hasFilters = !!(debouncedSearch || search || filterCommunity || filterAccountStatus || filterRegistrationStatus ||
+  // Everything but the account status, which has a default of its own.
+  const hasOtherFilters = !!(debouncedSearch || search || filterCommunity || filterRegistrationStatus ||
     filterHasActiveSubscription || filterSource || validDate || paidDate || expiringSoon);
+  const hasFilters = hasOtherFilters || filterAccountStatus !== DEFAULT_ACCOUNT_STATUS;
 
   function clearFilters() {
     setSearch("");
     setDebouncedSearch("");
     setFilterCommunity("");
-    setFilterAccountStatus("");
+    setFilterAccountStatus(DEFAULT_ACCOUNT_STATUS);
     setFilterRegistrationStatus("");
     setFilterHasActiveSubscription("");
     setFilterSource("");
@@ -305,7 +309,8 @@ function MembersContent() {
 
   // The stat tiles are shortcuts into the matching filter.
   const onlyFilter = (key: "all" | "registered" | "pending"): boolean => {
-    const others = !!(debouncedSearch || filterCommunity || filterAccountStatus || filterSource || validDate || paidDate || expiringSoon);
+    // The tile counts cover every account status, so a tile is "on" only while the list does too.
+    const others = !!(debouncedSearch || filterCommunity || filterAccountStatus !== "" || filterSource || validDate || paidDate || expiringSoon);
     if (others) return false;
     if (key === "registered") return filterHasActiveSubscription === "true" && !filterRegistrationStatus;
     if (key === "pending") return filterRegistrationStatus === "pending" && !filterHasActiveSubscription;
@@ -314,6 +319,7 @@ function MembersContent() {
 
   function applyTile(key: "all" | "registered" | "pending") {
     clearFilters();
+    setFilterAccountStatus(""); // the tile's number counts every account status, so the list it opens must too
     if (key === "registered") setFilterHasActiveSubscription("true");
     if (key === "pending") setFilterRegistrationStatus("pending");
   }
@@ -350,9 +356,9 @@ function MembersContent() {
 
   async function handleBulkDelete() {
     const ok = await confirm({
-      title: `Deactivate ${selectedIds.size} Member${selectedIds.size === 1 ? "" : "s"}?`,
+      title: `Delete ${selectedIds.size} Member${selectedIds.size === 1 ? "" : "s"}?`,
       message: "They'll be logged out and won't be able to sign in again. Their posts and comments will remain visible. This can't be undone from here.",
-      confirmLabel: "Yes, Deactivate",
+      confirmLabel: "Yes, Delete",
       variant: "destructive",
     });
     if (!ok) return;
@@ -363,9 +369,9 @@ function MembersContent() {
         { userIds: Array.from(selectedIds) },
       );
       if (result.failed > 0) {
-        toast.error(`Deactivated ${result.succeeded} of ${result.total} members — ${result.failed} failed.`);
+        toast.error(`Deleted ${result.succeeded} of ${result.total} members — ${result.failed} failed.`);
       } else {
-        toast.success({ title: "Members deactivated", message: `${result.succeeded} member(s) no longer have access.` });
+        toast.success({ title: "Members deleted", message: `${result.succeeded} member${result.succeeded === 1 ? "" : "s"} deleted.` });
       }
       exitSelectMode();
       refresh();
@@ -628,7 +634,7 @@ function MembersContent() {
           iconClass="bg-gradient-to-br from-primary to-[#245a55] text-white"
           value={stats.total}
           label="Total Members"
-          active={onlyFilter("all") && !hasFilters}
+          active={onlyFilter("all") && !hasOtherFilters}
           onClick={() => applyTile("all")}
           delay={40}
         />
@@ -695,7 +701,7 @@ function MembersContent() {
               onChange={setFilter(setFilterAccountStatus)}
               ariaLabel="Account status"
               options={[allOption("All account status"), { value: "active", label: "Active" }, { value: "suspended", label: "Suspended" }, { value: "deleted", label: "Deleted" }]}
-              triggerClassName={`relative ${pillClass(!!filterAccountStatus)} focus:outline-none focus-visible:ring-4 focus-visible:ring-accent/15`}
+              triggerClassName={`relative ${pillClass(filterAccountStatus !== DEFAULT_ACCOUNT_STATUS)} focus:outline-none focus-visible:ring-4 focus-visible:ring-accent/15`}
             />
             <Select
               value={filterRegistrationStatus}
