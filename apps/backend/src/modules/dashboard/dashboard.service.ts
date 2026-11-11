@@ -56,7 +56,8 @@ export class DashboardService {
     // A member "belongs" to an admin when they have a subscription row in one of that admin's
     // communities — the same rule the member roster and every member action use.
     const memberScope = ids === null ? {} : { subscriptions: { some: subScope } }
-    const member = { role: 'member', deletedAt: null, ...memberScope } as const
+    // Deleted accounts are not members any more, so they are not counted.
+    const member = { role: 'member', deletedAt: null, status: { not: 'deleted' }, ...memberScope } as const
 
     const monthFrom = dateString(today.year, today.month, 1)
     const monthTo = dateString(today.year, today.month, today.day)

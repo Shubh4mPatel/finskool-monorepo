@@ -215,7 +215,7 @@ export type MemberStatus = 'registered' | 'pending' | 'expired' | 'suspended' | 
 export interface MemberListFilters {
   communityId?: string | undefined
   communityIds?: string[] | undefined
-  // The account's own standing — User.status directly.
+  // The account's own standing — User.status directly. Left out, deleted members are not listed or counted.
   accountStatus?: 'active' | 'suspended' | 'deleted' | undefined
   // Has this admin-added phone been claimed — ApprovedPhone.status directly.
   // By construction this can only ever match admin-added members: a

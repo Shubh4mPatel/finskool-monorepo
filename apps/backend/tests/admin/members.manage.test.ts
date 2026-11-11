@@ -305,6 +305,16 @@ describe('GET /admin/members/stats (the cards on the Members page)', () => {
     expect(pending).toBe(2)
   })
 
+  it('does not count deleted members, and the list leaves them out unless asked for', async () => {
+    const before = (await stats()).body.data
+    const gone = await createMobileMember({ name: 'Gone', status: 'deleted', subscriptions: [{ communityId: swing.id, validUntil: daysFromNow(60) }] })
+
+    expect((await stats()).body.data).toEqual(before)
+    expect(await totalOf(superAdmin)).toBe(before.total)
+    const named = (await listMembers(superAdmin, { accountStatus: 'deleted' })).body.data.members as { id: string }[]
+    expect(named.map(m => m.id)).toEqual([gone.id])
+  })
+
   it('counts only the communities a scoped admin manages, the same as their list', async () => {
     const scoped = await createAdmin({ isSuperAdmin: false, communityIds: [swing.id] })
     const res = await stats(scoped)

@@ -120,6 +120,12 @@ describe('shared dataset: KPIs and revenue', () => {
   })
 
   describe('GET /kpis', () => {
+    it('does not count a deleted member', async () => {
+      const before = (await get(superAdmin, '/kpis')).body.data.totalMembers
+      await createMobileMember({ name: 'Gone', status: 'deleted' })
+      expect((await get(superAdmin, '/kpis')).body.data.totalMembers).toEqual(before)
+    })
+
     it('shows a super admin the whole business', async () => {
       const res = await get(superAdmin, '/kpis')
 

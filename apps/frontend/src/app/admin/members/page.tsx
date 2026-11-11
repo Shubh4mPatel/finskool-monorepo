@@ -700,7 +700,7 @@ function MembersContent() {
               value={filterAccountStatus}
               onChange={setFilter(setFilterAccountStatus)}
               ariaLabel="Account status"
-              options={[allOption("All account status"), { value: "active", label: "Active" }, { value: "suspended", label: "Suspended" }, { value: "deleted", label: "Deleted" }]}
+              options={[allOption("Active & suspended"), { value: "active", label: "Active" }, { value: "suspended", label: "Suspended" }, { value: "deleted", label: "Deleted" }]}
               triggerClassName={`relative ${pillClass(filterAccountStatus !== DEFAULT_ACCOUNT_STATUS)} focus:outline-none focus-visible:ring-4 focus-visible:ring-accent/15`}
             />
             <Select

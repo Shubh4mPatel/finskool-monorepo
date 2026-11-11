@@ -2330,7 +2330,8 @@ export class AdminService {
     }
 
     const userWhere: Record<string, unknown> = { role: 'member', deletedAt: null }
-    if (accountStatus) userWhere['status'] = accountStatus
+    // Deleted members are out of the roster, the cards and the export unless asked for by name.
+    userWhere['status'] = accountStatus ?? { not: 'deleted' }
     if (hasSubFilter) userWhere['subscriptions'] = { [subscriptionMode]: subWhere }
     if (andClauses.length > 0) userWhere['AND'] = andClauses
 
