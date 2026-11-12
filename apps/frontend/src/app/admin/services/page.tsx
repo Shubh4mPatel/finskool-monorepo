@@ -466,7 +466,7 @@ function AdminServicesInbox() {
                       )}
                     </span>
                     <span className="flex items-center gap-2">
-                      <RequestStatusBadge status={r.status} closedReason={r.closedReason} />
+                      <RequestStatusBadge status={r.status} closedReason={r.closedReason} quoteExpired={r.quoteExpired} />
                       {r.invoice && <FileText size={13} className="text-muted" aria-label={`Invoice ${r.invoice.number}`} />}
                     </span>
                     <span className="text-sm font-semibold">

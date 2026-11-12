@@ -343,7 +343,7 @@ export default function AdminServiceRequestPage() {
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <h1 className="font-display text-2xl font-bold text-primary wrap-break-word">{request.service.title}</h1>
-            <RequestStatusBadge status={request.status} closedReason={request.closedReason} />
+            <RequestStatusBadge status={request.status} closedReason={request.closedReason} quoteExpired={request.quoteExpired} />
           </div>
           <p className="mt-1 text-sm text-muted">
             Requested by <span className="font-semibold text-primary">{request.user.name}</span> on {formatLongTime(request.createdAt)}
@@ -559,7 +559,7 @@ export default function AdminServiceRequestPage() {
                         <span className="block text-xs font-bold tabular-nums text-primary">#{r.label}</span>
                         <span className="block truncate text-[11px] text-muted">{r.service.title}</span>
                       </span>
-                      <RequestStatusBadge status={r.status} closedReason={r.closedReason} />
+                      <RequestStatusBadge status={r.status} closedReason={r.closedReason} quoteExpired={r.quoteExpired} />
                     </Link>
                   </li>
                 ))}

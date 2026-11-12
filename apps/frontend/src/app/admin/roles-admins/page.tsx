@@ -53,10 +53,13 @@ function CommunityPicker({
   communities,
   selected,
   onChange,
+  showError,
 }: {
   communities: Community[];
   selected: string[];
   onChange: (ids: string[]) => void;
+  /** Turn the "pick at least one" hint into an error. The Add form only does that once Create Admin has been clicked. */
+  showError: boolean;
 }) {
   const allSelected = communities.length > 0 && selected.length === communities.length;
   const toggle = (id: string) => onChange(selected.includes(id) ? selected.filter((i) => i !== id) : [...selected, id]);
@@ -92,9 +95,14 @@ function CommunityPicker({
           );
         })}
       </div>
-      <p className={`mt-2 text-[11px] font-medium ${selected.length === 0 ? "text-amber-700" : "text-muted"}`}>
+      <p
+        role={selected.length === 0 && showError ? "alert" : undefined}
+        className={`mt-2 text-[11px] font-medium ${selected.length === 0 && showError ? "text-red-600" : "text-muted"}`}
+      >
         {selected.length === 0
-          ? "Pick at least one community."
+          ? showError
+            ? "Pick at least one community."
+            : "Choose the communities this admin can manage."
           : `${selected.length} of ${communities.length} communit${communities.length === 1 ? "y" : "ies"} selected.`}
       </p>
     </div>
@@ -147,6 +155,8 @@ export default function RolesAdminsPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [addForm, setAddForm] = useState(EMPTY_ADD_FORM);
   const [addSubmitting, setAddSubmitting] = useState(false);
+  // The "pick a community" error only appears once the admin has tried to create, not as soon as the popup opens.
+  const [addAttempted, setAddAttempted] = useState(false);
   const addFormId = useId();
 
   // Edit modal
@@ -248,16 +258,20 @@ export default function RolesAdminsPage() {
   function closeAdd() {
     setAddOpen(false);
     setAddForm(EMPTY_ADD_FORM);
+    setAddAttempted(false);
   }
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
+    setAddAttempted(true);
+    if (addForm.communityIds.length === 0) return;
     setAddSubmitting(true);
     try {
       await api.post<AdminUser>("/api/v1/admin/admins", addForm);
       setReloadTick((t) => t + 1);
       setAddOpen(false);
       setAddForm(EMPTY_ADD_FORM);
+      setAddAttempted(false);
       toast.success("Admin created successfully");
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Failed to create admin");
@@ -525,7 +539,7 @@ export default function RolesAdminsPage() {
           footer={
             <>
               <button type="button" onClick={closeAdd} disabled={addSubmitting} className={secondaryBtn}>Cancel</button>
-              <button type="submit" form={addFormId} disabled={addSubmitting || addForm.communityIds.length === 0} className={primaryBtn}>
+              <button type="submit" form={addFormId} disabled={addSubmitting} className={primaryBtn}>
                 {addSubmitting ? "Creating…" : "Create Admin"}
               </button>
             </>
@@ -544,7 +558,12 @@ export default function RolesAdminsPage() {
             <FormField label="Password">
               <PasswordField value={addForm.password} onChange={(password) => setAddForm((f) => ({ ...f, password }))} />
             </FormField>
-            <CommunityPicker communities={communities} selected={addForm.communityIds} onChange={(communityIds) => setAddForm((f) => ({ ...f, communityIds }))} />
+            <CommunityPicker
+              communities={communities}
+              selected={addForm.communityIds}
+              onChange={(communityIds) => setAddForm((f) => ({ ...f, communityIds }))}
+              showError={addAttempted}
+            />
           </form>
         </Modal>
       )}
@@ -575,7 +594,7 @@ export default function RolesAdminsPage() {
               </div>
               <ShieldCheck size={16} className="ml-auto shrink-0 text-accent" aria-hidden />
             </div>
-            <CommunityPicker communities={communities} selected={editIds} onChange={setEditIds} />
+            <CommunityPicker communities={communities} selected={editIds} onChange={setEditIds} showError={editIds.length === 0} />
           </form>
         </Modal>
       )}

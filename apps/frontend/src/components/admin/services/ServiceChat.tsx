@@ -389,7 +389,7 @@ export default function ServiceChat({ request, messages, events, hasOlder, loadi
         </div>
         <div className="flex items-center gap-2">
           <span className="max-w-48 truncate rounded-full bg-background px-3 py-1 text-[11px] font-bold text-primary">{request.service.title}</span>
-          <RequestStatusBadge status={request.status} closedReason={request.closedReason} />
+          <RequestStatusBadge status={request.status} closedReason={request.closedReason} quoteExpired={request.quoteExpired} />
         </div>
       </header>
 

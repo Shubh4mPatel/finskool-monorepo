@@ -9,13 +9,22 @@ const REQUEST_STYLE = {
   closedMuted: { pill: "bg-[#f1efe6] text-muted", dot: "bg-subtle" },
 } as const;
 
-export function RequestStatusBadge({ status, closedReason }: { status: ServiceRequestStatus; closedReason: ServiceClosedReason | null }) {
-  // A request that ended without being delivered (declined / cancelled) reads neutral, not "done".
+export function RequestStatusBadge({
+  status,
+  closedReason,
+  quoteExpired = false,
+}: {
+  status: ServiceRequestStatus;
+  closedReason: ServiceClosedReason | null;
+  quoteExpired?: boolean | undefined;
+}) {
+  // A request that ended without being delivered (declined / cancelled) reads neutral, not "done". One whose quote ran
+  // out needs the admin to send a new one, so it keeps the red of "Requested".
   const style = status === "closed" && closedReason !== "completed" ? REQUEST_STYLE.closedMuted : REQUEST_STYLE[status];
   return (
     <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold ${style.pill}`}>
       <span className={`h-1.5 w-1.5 rounded-full ${style.dot}`} />
-      {statusText(status, closedReason)}
+      {statusText(status, closedReason, quoteExpired)}
     </span>
   );
 }

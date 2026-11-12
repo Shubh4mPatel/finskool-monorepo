@@ -59,6 +59,8 @@ export interface AdminServiceRequest {
   number: number;
   label: string;
   status: ServiceRequestStatus;
+  /** A quote was sent and ran out unpaid. `status` is still "requested"; every screen reads "Quote expired" for it. */
+  quoteExpired: boolean;
   closedReason: ServiceClosedReason | null;
   needs: string;
   attachments: TicketAttachment[];
@@ -194,6 +196,7 @@ export interface ServiceRequestSummary {
   serviceId: string;
   serviceTitle: string;
   status: ServiceRequestStatus;
+  quoteExpired?: boolean;
   closedReason: ServiceClosedReason | null;
   assignedAdmin: { id: string; name: string } | null;
   unreadCount: number;
@@ -253,7 +256,8 @@ export function previewQuote(base: number, ratePercent: number): { gst: number; 
   return { gst: gstPaise / 100, total: (basePaise + gstPaise) / 100 };
 }
 
-/** Closed requests read "Closed · Completed"; everything else is its stage. */
-export function statusText(status: ServiceRequestStatus, closedReason: ServiceClosedReason | null): string {
+/** Closed requests read "Closed · Completed"; a request whose quote ran out reads "Quote expired"; everything else is its stage. */
+export function statusText(status: ServiceRequestStatus, closedReason: ServiceClosedReason | null, quoteExpired = false): string {
+  if (quoteExpired && (status === "requested" || status === "quote_sent")) return "Quote expired";
   return status === "closed" && closedReason ? `Closed · ${CLOSED_REASON_LABEL[closedReason]}` : SERVICE_STATUS_LABEL[status];
 }

@@ -223,6 +223,47 @@ const activeUntilLine = (validUntil: Date | null, prefix = ''): string =>
  * never counts (it has no expiry, so every member would look active), and only each community's current row is passed
  * in. The same rule as the "Active subscription" / "Expired" filter, so the Status pill and the filter always agree.
  */
+type SubscriptionForOrder = {
+  communityId: string
+  validUntil: Date | null
+  paidOn: Date | null
+  isActive: boolean
+  community: { isFree: boolean }
+}
+
+/**
+ * The subscription the admin's filters are about, so a member's row can lead with it. A member with several communities
+ * is listed once, headed by one subscription; without this that is just the newest one, so "Expiring in 7 days" could
+ * head a row with the plan that is not expiring. Returns null when no filter is about a subscription.
+ */
+function subscriptionPreference(
+  f: Pick<MemberExportFilters, 'communityId' | 'communityIds' | 'validFrom' | 'validTo' | 'paidFrom' | 'paidTo' | 'expiringIn7Days' | 'hasActiveSubscription'>,
+  today: Date,
+): ((s: SubscriptionForOrder) => boolean) | null {
+  const checks: ((s: SubscriptionForOrder) => boolean)[] = []
+  if (f.communityId) checks.push(s => s.communityId === f.communityId)
+  else if (f.communityIds) checks.push(s => f.communityIds!.includes(s.communityId))
+  if (f.validFrom || f.validTo) {
+    const from = f.validFrom ? new Date(f.validFrom) : null
+    const to = f.validTo ? new Date(f.validTo) : null
+    checks.push(s => s.validUntil !== null && (!from || s.validUntil >= from) && (!to || s.validUntil <= to))
+  }
+  if (f.paidFrom || f.paidTo) {
+    const from = f.paidFrom ? new Date(f.paidFrom) : null
+    const to = f.paidTo ? new Date(f.paidTo) : null
+    checks.push(s => s.paidOn !== null && (!from || s.paidOn >= from) && (!to || s.paidOn <= to))
+  }
+  if (f.expiringIn7Days) {
+    const windowEnd = new Date(today)
+    windowEnd.setDate(today.getDate() + 7)
+    checks.push(s => s.isActive && s.validUntil !== null && s.validUntil >= today && s.validUntil <= windowEnd)
+  }
+  if (f.hasActiveSubscription === true) {
+    checks.push(s => s.isActive && (s.validUntil === null || s.validUntil >= today) && (f.communityId ? true : !s.community.isFree))
+  }
+  return checks.length > 0 ? s => checks.every(check => check(s)) : null
+}
+
 /** Whether a member has any current paid subscription, running or lapsed. Members with only the free community have none. */
 function hasPaidSubscription(currentSubs: { community: { isFree: boolean } }[]): boolean {
   return currentSubs.some(s => !s.community.isFree)
@@ -2083,8 +2124,8 @@ export class AdminService {
 
   async listMembers(filters: MemberListFilters): Promise<MemberListDTO> {
     const { page, pageSize, ...whereFilters } = filters
-    const { userWhere, currentSubIds } = await this.buildMemberWhere(whereFilters)
-    const { members, total } = await this.queryMembers(userWhere, currentSubIds, { skip: (page - 1) * pageSize, take: pageSize })
+    const { userWhere, currentSubIds, preferSub } = await this.buildMemberWhere(whereFilters)
+    const { members, total } = await this.queryMembers(userWhere, currentSubIds, preferSub, { skip: (page - 1) * pageSize, take: pageSize })
     return { members, total, page, pageSize, totalPages: Math.ceil(total / pageSize) }
   }
 
@@ -2108,8 +2149,8 @@ export class AdminService {
   }
 
   async exportMembersCsv(filters: MemberExportFilters): Promise<string> {
-    const { userWhere, currentSubIds } = await this.buildMemberWhere(filters)
-    const { members } = await this.queryMembers(userWhere, currentSubIds)
+    const { userWhere, currentSubIds, preferSub } = await this.buildMemberWhere(filters)
+    const { members } = await this.queryMembers(userWhere, currentSubIds, preferSub)
     return this.membersToCsv(members)
   }
 
@@ -2123,6 +2164,8 @@ export class AdminService {
   private async queryMembers(
     userWhere: Record<string, unknown>,
     currentSubIds: string[],
+    // The subscription the filters are about; it heads each member's list so the row shows the plan that matched.
+    preferSub: ((s: SubscriptionForOrder) => boolean) | null,
     pagination?: { skip: number; take: number },
   ): Promise<{ members: MemberItemDTO[]; total: number }> {
     const [total, rows] = await Promise.all([
@@ -2162,7 +2205,9 @@ export class AdminService {
 
     const members: MemberItemDTO[] = rows.map(u => {
       const ap = apByPhone.get(u.phone) ?? null
-      const allSubs = u.subscriptions
+      // Newest first, except that the subscription the filters matched leads (the sort is stable, so the rest keep
+      // their newest-first order).
+      const allSubs = preferSub ? [...u.subscriptions].sort((a, b) => Number(preferSub(b)) - Number(preferSub(a))) : u.subscriptions
       const sub = allSubs[0] ?? null
       const hasActiveSubscription = hasRunningPaidSubscription(allSubs, today)
 
@@ -2279,7 +2324,7 @@ export class AdminService {
     filters: MemberExportFilters,
     // Pass the ids when several wheres are built together, so the table is scanned once.
     knownCurrentSubIds?: string[],
-  ): Promise<{ userWhere: Record<string, unknown>; currentSubIds: string[] }> {
+  ): Promise<{ userWhere: Record<string, unknown>; currentSubIds: string[]; preferSub: ((s: SubscriptionForOrder) => boolean) | null }> {
     const {
       communityId, communityIds, accountStatus, registrationStatus, hasActiveSubscription, source,
       validFrom, validTo, paidFrom, paidTo, expiringIn7Days, search,
@@ -2378,7 +2423,7 @@ export class AdminService {
     if (hasSubFilter) userWhere['subscriptions'] = { [subscriptionMode]: subWhere }
     if (andClauses.length > 0) userWhere['AND'] = andClauses
 
-    return { userWhere, currentSubIds }
+    return { userWhere, currentSubIds, preferSub: subscriptionPreference(filters, today) }
   }
 
   // "Current" subscription per community = most recently created row, not

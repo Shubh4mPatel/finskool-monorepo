@@ -101,6 +101,16 @@ export function mapQuote(q: ServiceQuoteRow, now: Date = new Date()): ServiceQuo
   }
 }
 
+/**
+ * Whether the request is waiting on a quote the member never paid: its latest quote has run out. The sweep puts such a
+ * request back to `requested`, so without this the screens would call it "Requested" (or "Replied") and hide that a
+ * quote was sent. Every screen reads this one rule, so they all say the same thing.
+ */
+export function quoteHasExpired(r: { status: string; quotes: Pick<ServiceQuoteRow, 'status' | 'expiresAt'>[] }, now: Date = new Date()): boolean {
+  const latest = r.quotes[0]
+  return !!latest && (r.status === 'requested' || r.status === 'quote_sent') && effectiveQuoteStatus(latest, now) === 'expired'
+}
+
 /** The quote a request is currently about: the latest one, while it is payable or already paid. */
 function currentQuote(r: ServiceRequestRow): ServiceQuoteRow | null {
   const latest = r.quotes[0]
@@ -154,6 +164,7 @@ async function mapBase(r: ServiceRequestRow) {
     number: r.number,
     label: requestLabel(r.number),
     status: r.status,
+    quoteExpired: quoteHasExpired(r),
     closedReason: r.closedReason,
     needs: r.needs,
     attachments: await Promise.all(r.attachments.map(mapAttachment)),
@@ -207,6 +218,7 @@ export function requestSummary(r: ServiceRequestRow, side: 'member' | 'admin') {
     serviceId: r.service.id,
     serviceTitle: r.service.title,
     status: r.status,
+    quoteExpired: quoteHasExpired(r),
     closedReason: r.closedReason,
     assignedAdmin: r.assignedAdmin,
     unreadCount: side === 'member' ? r.userUnreadCount : r.adminUnreadCount,

@@ -2,7 +2,7 @@ import { Prisma } from '../../generated/prisma/client.js'
 import type { PrismaClient } from '../../generated/prisma/client.js'
 import { BadRequestError } from '../../shared/errors/index.js'
 import { ticketLabel } from '../tickets/tickets.shared.js'
-import { requestLabel } from '../services/services.shared.js'
+import { quoteHasExpired, requestLabel } from '../services/services.shared.js'
 import type {
   DashboardExpiringDTO,
   DashboardKpisDTO,
@@ -319,6 +319,8 @@ export class DashboardService {
           user: { select: { id: true, name: true, avatarUrl: true } },
           service: { select: { title: true } },
           messages: adminReply,
+          // The latest quote only: a request whose quote ran out reads "Quote expired", the same as on the Enquiries page.
+          quotes: { orderBy: { version: 'desc' }, take: 1, select: { status: true, expiresAt: true } },
         },
       }),
     ])
@@ -341,7 +343,7 @@ export class DashboardService {
         member: { id: r.user.id, name: r.user.name, initials: initials(r.user.name), avatarUrl: r.user.avatarUrl },
         typeLabel: 'Service enquiry',
         subject: r.service.title,
-        status: this.serviceStatus(r.status, r.messages.length > 0),
+        status: this.serviceStatus(r.status, r.messages.length > 0, quoteHasExpired(r)),
         lastUpdateAt: r.lastMessageAt,
       })),
     ]
@@ -373,7 +375,9 @@ export class DashboardService {
   private serviceStatus(
     status: 'requested' | 'quote_sent' | 'paid' | 'closed',
     hasAdminReply: boolean,
+    quoteExpired: boolean,
   ): { key: string; label: string; tone: TicketStatusTone } {
+    if (quoteExpired) return { key: 'quote_expired', label: 'Quote expired', tone: 'danger' }
     switch (status) {
       case 'closed':
         return { key: 'closed', label: 'Closed', tone: 'neutral' }

@@ -147,6 +147,9 @@ interface ServiceRequestBaseDTO {
   number: number
   label: string // SR-<number>
   status: ServiceRequestStatus
+  // True when a quote was sent and ran out unpaid. `status` stays `requested` (that is what the member can do next);
+  // every screen shows "Quote expired" for it, so they all agree.
+  quoteExpired: boolean
   closedReason: ServiceClosedReason | null
   needs: string
   attachments: ServiceAttachmentDTO[] // attached to the original request

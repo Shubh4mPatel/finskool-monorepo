@@ -207,6 +207,30 @@ describe('GET /admin/members — roster', () => {
       expect(idsOf(await listMembers(superAdmin, { hasActiveSubscription: 'false', pageSize: 100 }))).toEqual([expired.id])
     })
 
+    it('a member with several communities leads with the subscription the filter matched', async () => {
+      // Swing runs out in 4 days but was bought first; Options is newer and runs for 200 more days.
+      const multi = await createMobileMember({
+        name: 'Multi Community',
+        subscriptions: [
+          { communityId: swing.id, validUntil: daysFromNow(4), createdAt: new Date(Date.now() - 20 * 864e5) },
+          { communityId: options.id, validUntil: daysFromNow(200), createdAt: new Date(Date.now() - 2 * 864e5) },
+        ],
+      })
+      const headline = async (query: Record<string, string>) => {
+        const row = (await listMembers(superAdmin, { pageSize: 100, ...query })).body.data.members.find((m: { id: string }) => m.id === multi.id)
+        return { community: row.subscription.communityId as string, order: row.allSubscriptions.map((x: { communityId: string }) => x.communityId) as string[] }
+      }
+
+      // No filter: newest first, as before.
+      expect((await headline({})).community).toBe(options.id)
+      // Expiring in 7 days is about the Swing plan, so Swing leads and Options follows.
+      expect(await headline({ expiringIn7Days: 'true' })).toEqual({ community: swing.id, order: [swing.id, options.id] })
+      // A community filter, and a valid-till window, lead with the plan they select.
+      expect((await headline({ communityId: swing.id })).community).toBe(swing.id)
+      expect((await headline({ validTo: daysFromNow(10) })).community).toBe(swing.id)
+      expect((await headline({ validFrom: daysFromNow(100) })).community).toBe(options.id)
+    })
+
     it('expiringIn7Days', async () => {
       expect(idsOf(await listMembers(superAdmin, { expiringIn7Days: 'true' }))).toEqual([expiringSoon.id])
     })
