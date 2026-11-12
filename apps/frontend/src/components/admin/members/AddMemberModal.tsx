@@ -12,10 +12,10 @@ import Select from "@/components/ui/Select";
 import DatePicker from "@/components/ui/DatePicker";
 import { communityOptions, type MemberCommunity } from "./communities";
 import { addDays, startOfToday } from "@/lib/dates";
-import { durationPresets } from "./datePresets";
+import { durationPresets, paidOnPresets } from "./datePresets";
 import { FormField, inputCls, primaryBtn, secondaryBtn } from "./memberUi";
 
-const EMPTY_MEMBER = { name: "", phone: "", email: "", communityId: "", payment: "", validUntil: "" };
+const EMPTY_MEMBER = { name: "", phone: "", email: "", communityId: "", payment: "", paidOn: "", validUntil: "" };
 type MemberForm = typeof EMPTY_MEMBER;
 type MemberField = keyof MemberForm;
 type MemberErrors = Partial<Record<MemberField, string>>;
@@ -27,10 +27,11 @@ function validateMember(m: MemberForm, isFree: boolean): MemberErrors {
   else if (!isValidPhoneNumber(m.phone)) e.phone = "Enter a valid phone number";
   if (m.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(m.email)) e.email = "Invalid email address";
   if (!m.communityId) e.communityId = "Select a community";
-  // The free community has no price and no expiry, so neither is asked for.
+  // The free community has no price, payment date or expiry, so none of them is asked for; every other community needs all three.
   if (!isFree) {
     const amt = parseFloat(m.payment);
     if (!m.payment || isNaN(amt) || amt <= 0) e.payment = "Enter a valid payment amount";
+    if (!m.paidOn) e.paidOn = "Paid on date is required";
     if (!m.validUntil) e.validUntil = "Valid till date is required";
   }
   return e;
@@ -70,13 +71,13 @@ export default function AddMemberModal({
       name: member.name,
       email: member.email,
       communityId: member.communityId,
-      ...(isFree ? {} : { payment: parseFloat(member.payment), validUntil: member.validUntil }),
+      ...(isFree ? {} : { payment: parseFloat(member.payment), paidOn: member.paidOn, validUntil: member.validUntil }),
     };
   }
 
   async function handleAdd() {
     const errs = validateMember(member, isFree);
-    setTouched({ name: true, phone: true, email: true, communityId: true, payment: true, validUntil: true });
+    setTouched({ name: true, phone: true, email: true, communityId: true, payment: true, paidOn: true, validUntil: true });
     setErrors(errs);
     if (Object.values(errs).some(Boolean)) return;
 
@@ -160,19 +161,33 @@ export default function AddMemberModal({
           onChange={(v) => {
             setMember((m) => ({ ...m, communityId: v }));
             setTouched((t) => ({ ...t, communityId: true }));
-            // Picking the free community drops any payment / date errors, since it has neither.
-            setErrors((e) => ({ ...e, communityId: v ? undefined : "Select a community", payment: undefined, validUntil: undefined }));
+            // Picking the free community drops any payment / date errors, since it has none of them.
+            setErrors((e) => ({ ...e, communityId: v ? undefined : "Select a community", payment: undefined, paidOn: undefined, validUntil: undefined }));
           }}
         />
       </FormField>
       {isFree ? (
-        <p className="rounded-xl bg-background px-3.5 py-2.5 text-xs text-muted">The free community has no payment and no expiry.</p>
+        <p className="rounded-xl bg-background px-3.5 py-2.5 text-xs text-muted">The free community has no payment, no payment date and no expiry.</p>
       ) : (
         <div className="grid grid-cols-2 gap-4">
           <FormField label="Payment (₹)" error={errors.payment}>
             <input type="number" placeholder="4000" value={member.payment}
               onChange={(e) => changeField("payment", e.target.value)} onBlur={() => blurField("payment")}
               className={inputCls(errors.payment)} />
+          </FormField>
+          <FormField label="Paid On" error={errors.paidOn}>
+            <DatePicker
+              value={member.paidOn}
+              ariaLabel="Paid on"
+              maxDate={startOfToday()}
+              presets={paidOnPresets()}
+              triggerClassName={inputCls(errors.paidOn)}
+              onChange={(v) => {
+                setMember((m) => ({ ...m, paidOn: v }));
+                setTouched((t) => ({ ...t, paidOn: true }));
+                setErrors((e) => ({ ...e, paidOn: v ? undefined : "Paid on date is required" }));
+              }}
+            />
           </FormField>
           <FormField label="Valid Till" error={errors.validUntil}>
             <DatePicker

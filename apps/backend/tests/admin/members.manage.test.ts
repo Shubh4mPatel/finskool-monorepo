@@ -203,9 +203,8 @@ describe('GET /admin/members — roster', () => {
       expect(idsOf(await listMembers(superAdmin, { hasActiveSubscription: 'true', pageSize: 100 }))).toEqual(
         [active.id, expiringSoon.id, suspended.id].sort(),
       )
-      expect(idsOf(await listMembers(superAdmin, { hasActiveSubscription: 'false', pageSize: 100 }))).toEqual(
-        [expired.id, noSubs.id, selfSignup.id, pending.id].sort(),
-      )
+      // Expired is a paid plan that ran out: members with no paid plan at all (noSubs, selfSignup, pending) are not in it.
+      expect(idsOf(await listMembers(superAdmin, { hasActiveSubscription: 'false', pageSize: 100 }))).toEqual([expired.id])
     })
 
     it('expiringIn7Days', async () => {
@@ -334,17 +333,24 @@ describe('GET /admin/members/stats (the cards on the Members page)', () => {
 
   describe('the free community does not make a member "active"', () => {
     const rowOf = async (id: string) =>
-      ((await listMembers(superAdmin, { pageSize: 100 })).body.data.members as { id: string; hasActiveSubscription: boolean }[]).find(m => m.id === id)!
+      ((await listMembers(superAdmin, { pageSize: 100 })).body.data.members as { id: string; hasActiveSubscription: boolean; hasPaidSubscription: boolean }[]).find(m => m.id === id)!
 
-    it('a member with only the free community is expired, in the filter, the cards and the pill', async () => {
+    it('a member with only the free community is Free: never Expired, and in neither the Active nor the Expired filter', async () => {
       const free = await createCommunity(superAdmin.id, { name: 'Free Space', isFree: true })
       const freeOnly = await createMobileMember({ name: 'Free Only' })
       await prisma.subscription.create({ data: { userId: freeOnly.id, communityId: free.id, payment: 0, validUntil: null, isActive: true } })
 
       const before = (await stats()).body.data
-      expect((await rowOf(freeOnly.id)).hasActiveSubscription).toBe(false)
-      const expiredIds = ((await listMembers(superAdmin, { hasActiveSubscription: 'false', pageSize: 100 })).body.data.members as { id: string }[]).map(m => m.id)
-      expect(expiredIds).toContain(freeOnly.id)
+      const row = await rowOf(freeOnly.id)
+      expect(row.hasActiveSubscription).toBe(false)
+      expect(row.hasPaidSubscription).toBe(false)
+      const idsFor = async (flag: 'true' | 'false') =>
+        ((await listMembers(superAdmin, { hasActiveSubscription: flag, pageSize: 100 })).body.data.members as { id: string }[]).map(m => m.id)
+      expect(await idsFor('false')).not.toContain(freeOnly.id)
+      expect(await idsFor('true')).not.toContain(freeOnly.id)
+      // The CSV export says Free too, never Expired.
+      const csv = (await request(app).get('/api/v1/admin/members/export').set('Authorization', superAdmin.auth)).text
+      expect(csv.split('\n').find(l => l.startsWith('"Free Only"'))).toContain('"Free"')
       // The member did sign up, so they are counted as registered even though they have no running paid plan.
       expect(before.registered + before.pending).toBe(before.total)
     })
@@ -578,7 +584,7 @@ describe('PATCH /admin/members/:id — edit a member', () => {
           name: 'Gauri',
           phone: member.phone,
           email: 'gauri@example.com',
-          newCommunity: { communityId: options.id, payment: 1999, validUntil: daysFromNow(180) },
+          newCommunity: { communityId: options.id, payment: 1999, paidOn: daysFromNow(-1), validUntil: daysFromNow(180) },
         })
 
       expect(res.status).toBe(200)
@@ -624,7 +630,7 @@ describe('PATCH /admin/members/:id — edit a member', () => {
         .send({
           name: member.name,
           phone: member.phone,
-          newCommunity: { communityId: swing.id, payment: 100, validUntil: daysFromNow(60) },
+          newCommunity: { communityId: swing.id, payment: 100, paidOn: daysFromNow(-1), validUntil: daysFromNow(60) },
         })
       expect(res.status).toBe(409)
       expect(res.body.code).toBe('ALREADY_IN_COMMUNITY')
@@ -639,7 +645,7 @@ describe('PATCH /admin/members/:id — edit a member', () => {
         .send({
           name: member.name,
           phone: member.phone,
-          newCommunity: { communityId: options.id, payment: 100, validUntil: daysFromNow(60) },
+          newCommunity: { communityId: options.id, payment: 100, paidOn: daysFromNow(-1), validUntil: daysFromNow(60) },
         })
       expect(res.status).toBe(404)
     })
@@ -652,7 +658,7 @@ describe('PATCH /admin/members/:id — edit a member', () => {
         .send({
           name: 'After',
           phone: member.phone,
-          newCommunity: { communityId: swing.id, payment: 100, validUntil: daysFromNow(60) },
+          newCommunity: { communityId: swing.id, payment: 100, paidOn: daysFromNow(-1), validUntil: daysFromNow(60) },
         })
       const user = await prisma.user.findUniqueOrThrow({ where: { id: member.id } })
       expect(user.name).toBe('Before')

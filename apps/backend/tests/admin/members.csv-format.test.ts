@@ -37,7 +37,7 @@ const validate = (rows: Array<Record<string, unknown>>) =>
   request(app)
     .post('/api/v1/admin/validate-import')
     .set('Authorization', boss.auth)
-    .send({ rows: rows.map((r, i) => ({ rowNum: i + 1, name: 'Person', phone: nextMobile(), email: '', service: swing.name, payment: 1000, valid: daysFromNow(90), ...r })) })
+    .send({ rows: rows.map((r, i) => ({ rowNum: i + 1, name: 'Person', phone: nextMobile(), email: '', service: swing.name, payment: 1000, paidOn: daysFromNow(-5), valid: daysFromNow(90), ...r })) })
 const importJson = (rows: Array<Record<string, unknown>>) =>
   request(app).post('/api/v1/admin/import-json').set('Authorization', boss.auth).send({ strategy: 'overwrite', rows })
 const exportCsv = () => request(app).get('/api/v1/admin/members/export').set('Authorization', boss.auth)
@@ -105,9 +105,10 @@ describe('dates in an uploaded CSV are checked, never converted', () => {
     expect(reasons(res)).toEqual(['Paid on must be YYYY-MM-DD (got "5 Nov 2026")'])
   })
 
-  it('leaves Paid on optional', async () => {
+  it('requires Paid on for a paid community', async () => {
     const res = await upload([csvRow({ paidOn: '' })])
-    expect(res.body.data).toMatchObject({ created: 1, errors: [] })
+    expect(res.body.data.created).toBe(0)
+    expect(reasons(res)).toEqual(['Paid on must be YYYY-MM-DD (it is empty)'])
   })
 
   it('reads a phone written with a leading + as text', async () => {
@@ -209,7 +210,7 @@ describe('the free community in an import', () => {
 
 describe('the reviewed-rows import and the preview apply the same rules', () => {
   it('import-json refuses a date in another format', async () => {
-    const res = await importJson([{ name: 'Json Person', phone: nextMobile(), email: '', service: swing.name, payment: 1000, valid: '15 Jan 2027' }])
+    const res = await importJson([{ name: 'Json Person', phone: nextMobile(), email: '', service: swing.name, payment: 1000, paidOn: day(-1), valid: '15 Jan 2027' }])
     expect(res.body.data.created).toBe(0)
     expect(reasons(res)).toEqual(['Valid must be YYYY-MM-DD (got "15 Jan 2027")'])
   })
@@ -385,7 +386,7 @@ describe('subscriptionDatesProblem', () => {
 
 describe('the import checks the order of the dates', () => {
   it('accepts Paid on today and in the past, with Valid after it', async () => {
-    const res = await upload([csvRow({ paidOn: day(0), valid: day(60) }), csvRow({ paidOn: day(-30), valid: day(60) }), csvRow({ paidOn: '', valid: day(1) })])
+    const res = await upload([csvRow({ paidOn: day(0), valid: day(60) }), csvRow({ paidOn: day(-30), valid: day(60) }), csvRow({ paidOn: day(-1), valid: day(1) })])
     expect(res.body.data).toMatchObject({ created: 3, errors: [] })
   })
 
@@ -396,7 +397,7 @@ describe('the import checks the order of the dates', () => {
   })
 
   it('refuses a Valid that is today or already past', async () => {
-    const res = await upload([csvRow({ paidOn: '', valid: day(0) }), csvRow({ paidOn: '', valid: day(-10) })])
+    const res = await upload([csvRow({ paidOn: day(-20), valid: day(0) }), csvRow({ paidOn: day(-20), valid: day(-10) })])
     expect(res.body.data.created).toBe(0)
     expect(reasons(res)).toEqual([`Valid must be after today (got ${day(0)})`, `Valid must be after today (got ${day(-10)})`])
   })
@@ -407,14 +408,19 @@ describe('the import checks the order of the dates', () => {
     expect(reasons(res)).toEqual([`Valid must be after today (got ${day(-2)})`, `Valid must be after today (got ${day(-3)})`])
   })
 
-  it('refuses a Paid on in the future even for the free community', async () => {
-    const res = await upload([csvRow({ service: free.name, payment: '0', paidOn: day(3), valid: '' })])
-    expect(reasons(res)).toEqual([`Paid on cannot be in the future (got ${day(3)}); use today or an earlier day`])
+  it('does not ask for or check Paid on or Valid for the free community, whatever is in those cells', async () => {
+    const res = await upload([
+      csvRow({ service: free.name, payment: '0', paidOn: day(3), valid: '' }),
+      csvRow({ service: free.name, payment: '0', paidOn: 'not a date', valid: 'also not a date' }),
+      csvRow({ service: free.name, payment: '0', paidOn: '', valid: '' }),
+    ])
+    expect(res.body.data).toMatchObject({ created: 3, errors: [] })
+    expect((await prisma.subscription.findMany({ where: { communityId: free.id } })).every(s => s.paidOn === null && s.validUntil === null)).toBe(true)
   })
 
   it('applies to the reviewed-rows import too', async () => {
     const res = await importJson([
-      { name: 'A', phone: nextMobile(), email: '', service: swing.name, payment: 1000, valid: day(-1) },
+      { name: 'A', phone: nextMobile(), email: '', service: swing.name, payment: 1000, paidOn: day(-1), valid: day(-1) },
       { name: 'B', phone: nextMobile(), email: '', service: swing.name, payment: 1000, valid: day(60), paidOn: day(2) },
       { name: 'C', phone: nextMobile(), email: '', service: swing.name, payment: 1000, valid: day(60), paidOn: day(-1) },
     ])
@@ -436,13 +442,31 @@ describe('the same order of dates when an admin adds or changes one member', () 
   it('add member: Valid must be after today', async () => {
     const add = (validUntil: string) =>
       request(app).post('/api/v1/admin/members').set('Authorization', boss.auth)
-        .send({ name: 'Added Person', phone: nextMobile(), communityId: swing.id, payment: 1000, validUntil })
+        .send({ name: 'Added Person', phone: nextMobile(), communityId: swing.id, payment: 1000, paidOn: day(-1), validUntil })
 
     const past = await add(day(-1))
     expect(past.status).toBe(400)
     expect(past.body.message).toBe(`Valid must be after today (got ${day(-1)})`)
     expect((await add(day(0))).status).toBe(400)
     expect((await add(day(30))).status).toBe(201)
+  })
+
+  it('add member: Paid on is required for a paid community and ignored for the free one', async () => {
+    const post = (body: Record<string, unknown>) =>
+      request(app).post('/api/v1/admin/members').set('Authorization', boss.auth).send({ name: 'Added Person', phone: nextMobile(), payment: 1000, ...body })
+
+    const missing = await post({ communityId: swing.id, validUntil: day(30) })
+    expect(missing.status).toBe(400)
+    expect(missing.body.message).toBe('Paid on is required')
+
+    const paid = await post({ communityId: swing.id, paidOn: day(-3), validUntil: day(30) })
+    expect(paid.status).toBe(201)
+    const sub = await prisma.subscription.findFirstOrThrow({ where: { communityId: swing.id } })
+    expect(sub.paidOn?.toISOString().slice(0, 10)).toBe(day(-3))
+
+    // The free community needs neither date, and a stray one is not checked or stored.
+    expect((await post({ communityId: free.id })).status).toBe(201)
+    expect((await post({ communityId: free.id, paidOn: day(9) })).status).toBe(201)
   })
 
   it('edit member, adding a community: Paid on cannot be future, Valid must be after Paid on and today', async () => {

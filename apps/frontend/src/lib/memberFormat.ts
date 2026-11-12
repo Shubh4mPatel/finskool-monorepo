@@ -34,6 +34,8 @@ export interface MemberItem {
   accountStatus: "active" | "suspended" | "deleted";
   registrationStatus: "pending" | "registered" | null; // pending = no password set yet; null = signed up on their own (source === "self")
   hasActiveSubscription: boolean;
+  /** Holds (or held) a paid plan. False for a member who is only in the free community, who is never "Expired". */
+  hasPaidSubscription: boolean;
   createdAt: string;
   suspensionReason: string | null;
   subscription: MemberSubscription | null;
@@ -86,6 +88,8 @@ export function getDisplayStatus(m: MemberItem): { label: string; style: string 
   if (m.registrationStatus === "pending") {
     return { label: REGISTRATION_STATUS_LABELS.pending, style: REGISTRATION_STATUS_STYLES.pending };
   }
+  // Only the free community: there is no paid plan that could expire.
+  if (!m.hasPaidSubscription) return { label: "Free", style: "bg-gray-100 text-gray-500" };
   return m.hasActiveSubscription
     ? { label: "Active", style: REGISTRATION_STATUS_STYLES.registered }
     : { label: "Expired", style: "bg-red-100 text-red-500" };

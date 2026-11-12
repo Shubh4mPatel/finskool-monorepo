@@ -73,7 +73,7 @@ describe('communities', () => {
     await api(boss).del(`/communities/${options.id}`)
     const grant = await api(boss).post(`/admins/${priya.id}/communities`, { communityId: options.id })
     expect(grant.status).toBe(404)
-    const add = await api(boss).post('/members', { phone: '9811100123', name: 'Late Joiner', communityId: options.id, payment: 100, validUntil: daysFromNow(30) })
+    const add = await api(boss).post('/members', { phone: '9811100123', name: 'Late Joiner', communityId: options.id, payment: 100, paidOn: daysFromNow(-1), validUntil: daysFromNow(30) })
     expect(add.status).toBe(404)
   })
 })

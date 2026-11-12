@@ -6,8 +6,9 @@ export interface AddMemberDTO {
   name: string
   email?: string | undefined
   communityId: string
-  // Both are required for every community except the free one, which has no price and no expiry.
+  // All three are required for every community except the free one, which has no price, payment date or expiry.
   payment?: number | undefined
+  paidOn?: string | undefined       // ISO date string YYYY-MM-DD, today or earlier
   validUntil?: string | undefined   // ISO date string YYYY-MM-DD
 }
 
@@ -279,6 +280,8 @@ export interface MemberItemDTO {
   accountStatus: 'active' | 'suspended' | 'deleted'
   registrationStatus: 'pending' | 'registered' | null   // null for source === 'self'
   hasActiveSubscription: boolean
+  /** Whether they hold (or held) a paid plan. A member who is only in the free community has none, so they are never "Expired". */
+  hasPaidSubscription: boolean
   createdAt: string                 // now User.createdAt uniformly
   suspensionReason: string | null   // set only when suspended via suspendMember(); null otherwise (incl. deleted)
   subscription: MemberSubscriptionDTO | null   // most recent active subscription (for status / extend)
@@ -292,7 +295,7 @@ export interface UpdateMemberDTO {
   newCommunity?: {
     communityId: string
     payment?: number | undefined      // required unless the community is the free one
-    paidOn?: string | undefined       // YYYY-MM-DD, defaults to today
+    paidOn?: string | undefined       // YYYY-MM-DD, required unless the community is the free one
     validUntil?: string | undefined   // YYYY-MM-DD, required unless the community is the free one
   } | undefined
 }

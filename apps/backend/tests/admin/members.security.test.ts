@@ -76,9 +76,9 @@ describe('a community admin and a member of another community', () => {
   })
 
   it('cannot add anyone to, or move anyone into, a community they do not manage', async () => {
-    const add = await post(priya, '/members', { phone: nextMobile(), name: 'New Person', communityId: options.id, payment: 100, validUntil: daysFromNow(30) })
+    const add = await post(priya, '/members', { phone: nextMobile(), name: 'New Person', communityId: options.id, payment: 100, paidOn: daysFromNow(-1), validUntil: daysFromNow(30) })
     expect(add.status).toBe(403)
-    const addTo = await patch(priya, `/members/${insider.id}`, { ...validEdit(insider), newCommunity: { communityId: options.id, payment: 1, validUntil: daysFromNow(30) } })
+    const addTo = await patch(priya, `/members/${insider.id}`, { ...validEdit(insider), newCommunity: { communityId: options.id, payment: 1, paidOn: daysFromNow(-1), validUntil: daysFromNow(30) } })
     expect(addTo.status).toBe(403)
     expect(await prisma.subscription.count({ where: { userId: insider.id, communityId: options.id } })).toBe(0)
   })
@@ -92,7 +92,7 @@ describe('a community admin and a member of another community', () => {
     expect((await memberRow(insider.id)).status).toBe('deleted')
 
     await prisma.user.update({ where: { id: outsider.id }, data: { status: 'suspended' } })
-    const revive = await post(priya, '/members/revive', { phone: outsider.phone, name: 'Outsider', communityId: swing.id, payment: 1, validUntil: daysFromNow(30) })
+    const revive = await post(priya, '/members/revive', { phone: outsider.phone, name: 'Outsider', communityId: swing.id, payment: 1, paidOn: daysFromNow(-1), validUntil: daysFromNow(30) })
     expect(revive.status).toBe(403)
     expect((await memberRow(outsider.id)).status).toBe('suspended')
   })
@@ -180,7 +180,7 @@ describe('malformed ids on every admin route answer with a 4xx, never a 500', ()
 
 describe('input limits', () => {
   const add = (over: Record<string, unknown>) =>
-    post(boss, '/members', { phone: nextMobile(), name: 'Valid Person', communityId: swing.id, payment: 999, validUntil: daysFromNow(30), ...over })
+    post(boss, '/members', { phone: nextMobile(), name: 'Valid Person', communityId: swing.id, payment: 999, paidOn: daysFromNow(-1), validUntil: daysFromNow(30), ...over })
 
   it.each([
     ['a name over 100 characters', { name: 'N'.repeat(101) }],
@@ -249,7 +249,7 @@ describe('input limits', () => {
 describe('two admins at the same moment', () => {
   it('adding the same phone: one 201, the rest clean 409s, one member', async () => {
     const phone = '9811188888'
-    const body = { phone, name: 'Race Member', communityId: swing.id, payment: 100, validUntil: daysFromNow(30) }
+    const body = { phone, name: 'Race Member', communityId: swing.id, payment: 100, paidOn: daysFromNow(-1), validUntil: daysFromNow(30) }
     const results = await Promise.all(Array.from({ length: 6 }, () => post(boss, '/members', body)))
     expect(results.filter(r => r.status === 201)).toHaveLength(1)
     expect(results.some(r => r.status >= 500)).toBe(false)
@@ -257,7 +257,7 @@ describe('two admins at the same moment', () => {
   })
 
   it('adding the same email under different phones: one wins, no 500', async () => {
-    const results = await Promise.all([1, 2, 3, 4].map(() => post(boss, '/members', { phone: nextMobile(), name: 'Same Email', email: 'same@race.test', communityId: swing.id, payment: 100, validUntil: daysFromNow(30) })))
+    const results = await Promise.all([1, 2, 3, 4].map(() => post(boss, '/members', { phone: nextMobile(), name: 'Same Email', email: 'same@race.test', communityId: swing.id, payment: 100, paidOn: daysFromNow(-1), validUntil: daysFromNow(30) })))
     expect(results.filter(r => r.status === 201)).toHaveLength(1)
     expect(results.some(r => r.status >= 500)).toBe(false)
   })
@@ -317,7 +317,7 @@ describe('admin accounts are never reachable through the member endpoints', () =
     const add = await post(boss, '/members', { phone: adminRow.phone, name: 'Takeover', communityId: swing.id, payment: 1, validUntil: daysFromNow(30) })
     expect(add.status).toBeGreaterThanOrEqual(400)
     expect(await prisma.subscription.count({ where: { userId: priya.id } })).toBe(0)
-    const revive = await post(boss, '/members/revive', { phone: adminRow.phone, name: 'Takeover', communityId: swing.id, payment: 1, validUntil: daysFromNow(30) })
+    const revive = await post(boss, '/members/revive', { phone: adminRow.phone, name: 'Takeover', communityId: swing.id, payment: 1, paidOn: daysFromNow(-1), validUntil: daysFromNow(30) })
     expect(revive.status).toBeGreaterThanOrEqual(400)
     expect(await prisma.subscription.count({ where: { userId: priya.id } })).toBe(0)
   })

@@ -42,8 +42,9 @@ const addMemberSchema = z.object({
   name: nameSchema(),
   email: optionalEmailSchema,
   communityId: z.string().uuid('Invalid community'),
-  // Optional here: the free community has neither. The service requires both for any other community.
+  // Optional here: the free community has none of them. The service requires all three for any other community.
   payment: moneySchema.optional(),
+  paidOn: isoDateSchema('Paid on must be YYYY-MM-DD').optional(),
   validUntil: isoDateSchema('Valid until must be YYYY-MM-DD').optional(),
 })
 

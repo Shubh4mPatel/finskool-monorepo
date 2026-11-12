@@ -169,8 +169,9 @@ interface ImportTerms {
 
 /**
  * What a sheet row asks for, checked the same way by the file import, the reviewed-rows import and the preview.
- * Paid community: a payment above 0 and a `Valid` date. Free community: payment blank/0, no `Valid`. `Paid on` is
- * optional but must match the format when it is there. `payment` is NaN when the cell could not be read as a number.
+ * Paid community: a payment above 0, a `Paid on` date and a `Valid` date, all required. Free community: payment
+ * blank/0, and `Paid on` and `Valid` are not asked for and not checked (a free member has no payment or expiry to
+ * record, so anything typed in those cells is ignored). `payment` is NaN when the cell could not be read as a number.
  */
 function resolveImportTerms(
   isFree: boolean,
@@ -178,14 +179,13 @@ function resolveImportTerms(
   validRaw: string,
   paidOnRaw: string,
 ): { terms: ImportTerms } | { error: string } {
-  const paidOn = paidOnRaw.trim() ? parseStrictDate(paidOnRaw) : null
-  if (paidOnRaw.trim() && !paidOn) return { error: badDateReason('Paid on', paidOnRaw) }
   if (isFree) {
     if (payment > 0) return { error: FREE_COMMUNITY_PRICE_REASON }
-    const problem = subscriptionDatesProblem(paidOn, null)
-    return problem ? { error: problem } : { terms: { payment: 0, paidOn: null, validUntil: null } }
+    return { terms: { payment: 0, paidOn: null, validUntil: null } }
   }
   if (isNaN(payment) || payment <= 0 || payment > MAX_IMPORT_PAYMENT) return { error: 'Invalid payment amount' }
+  const paidOn = parseStrictDate(paidOnRaw)
+  if (!paidOn) return { error: badDateReason('Paid on', paidOnRaw) }
   const validUntil = parseStrictDate(validRaw)
   if (!validUntil) return { error: badDateReason('Valid', validRaw) }
   const problem = subscriptionDatesProblem(paidOn, validUntil)
@@ -194,21 +194,24 @@ function resolveImportTerms(
 }
 
 /**
- * The payment and expiry to store for a new subscription. The free community has no expiry and no price, so a date and
- * an amount are neither required nor stored for it; every other community needs both.
+ * The payment, paid-on day and expiry to store for a new subscription. The free community has no price, payment date or
+ * expiry, so none of them is required, checked or stored for it (whatever is sent is ignored); every other community
+ * needs all three.
  */
 function subscriptionTerms(
   community: { isFree: boolean },
   input: { payment?: number | undefined; validUntil?: string | undefined; paidOn?: string | undefined },
-): { payment: number; validUntil: Date | null } {
-  if (community.isFree) return { payment: 0, validUntil: null }
+): { payment: number; paidOn: Date | null; validUntil: Date | null } {
+  if (community.isFree) return { payment: 0, paidOn: null, validUntil: null }
   if (input.payment === undefined) throw new BadRequestError('Payment is required')
+  if (!input.paidOn) throw new BadRequestError('Paid on is required')
   if (!input.validUntil) throw new BadRequestError('Valid until is required')
+  const paidOn = new Date(input.paidOn)
   const validUntil = new Date(input.validUntil)
   // Same rule as an import: Valid is after today (and after Paid on), and Paid on is never in the future.
-  const problem = subscriptionDatesProblem(input.paidOn ? new Date(input.paidOn) : null, validUntil)
+  const problem = subscriptionDatesProblem(paidOn, validUntil)
   if (problem) throw new BadRequestError(problem)
-  return { payment: input.payment, validUntil }
+  return { payment: input.payment, paidOn, validUntil }
 }
 
 /** `Active until <date>.`, or a plain line for the free community, which never expires. */
@@ -220,6 +223,11 @@ const activeUntilLine = (validUntil: Date | null, prefix = ''): string =>
  * never counts (it has no expiry, so every member would look active), and only each community's current row is passed
  * in. The same rule as the "Active subscription" / "Expired" filter, so the Status pill and the filter always agree.
  */
+/** Whether a member has any current paid subscription, running or lapsed. Members with only the free community have none. */
+function hasPaidSubscription(currentSubs: { community: { isFree: boolean } }[]): boolean {
+  return currentSubs.some(s => !s.community.isFree)
+}
+
 function hasRunningPaidSubscription(
   currentSubs: { isActive: boolean; validUntil: Date | null; community: { isFree: boolean } }[],
   today: Date,
@@ -969,8 +977,8 @@ export class AdminService {
         }
       }
 
-      // Payment and dates: the same rules as the import itself (free: no price/expiry; paid: payment > 0 and a
-      // YYYY-MM-DD Valid date; Paid on optional but YYYY-MM-DD).
+      // Payment and dates: the same rules as the import itself (free: no price, Paid on or Valid, none of them checked;
+      // paid: payment > 0 and a YYYY-MM-DD Paid on and Valid, all required).
       const rowCommunityId = communityIdByName.get(row.service?.toLowerCase() ?? '')
       const terms = resolveImportTerms(
         rowCommunityId !== undefined && freeCommunityIds.has(rowCommunityId),
@@ -1522,7 +1530,7 @@ export class AdminService {
           userId: user.id,
           communityId: data.communityId,
           payment: terms.payment,
-          paidOn: terms.validUntil ? new Date() : null,
+          paidOn: terms.paidOn,
           validUntil: terms.validUntil,
         },
       })
@@ -1598,7 +1606,7 @@ export class AdminService {
           userId: revived.userId,
           communityId: data.communityId,
           payment: terms.payment,
-          paidOn: terms.validUntil ? new Date() : null,
+          paidOn: terms.paidOn,
           validUntil: terms.validUntil,
         },
       })
@@ -2174,6 +2182,7 @@ export class AdminService {
         accountStatus: u.status,
         registrationStatus: signUpStatus(u.passwordHash, ap),
         hasActiveSubscription,
+        hasPaidSubscription: hasPaidSubscription(allSubs),
         createdAt: u.createdAt.toISOString(),
         suspensionReason: u.status === 'suspended' ? (u.suspensionReason ?? null) : null,
         subscription: sub ? this.buildSubDTO(sub, blocks.get(`${u.id}:${sub.communityId}`) ?? null) : null,
@@ -2196,6 +2205,8 @@ export class AdminService {
     if (m.accountStatus === 'suspended') return 'Suspended'
     if (m.accountStatus === 'deleted') return 'Deleted'
     if (m.registrationStatus === 'pending') return 'Pending Sign'
+    // A member with only the free community has nothing that can expire.
+    if (!m.hasPaidSubscription) return 'Free'
     return m.hasActiveSubscription ? 'Active' : 'Expired'
   }
 
@@ -2323,6 +2334,9 @@ export class AdminService {
       hasSubFilter = true
       subscriptionMode = hasActiveSubscription ? 'some' : 'none'
     }
+    // "Expired" means a paid plan that ran out. A member with only the free community never had one, so they are in
+    // neither "Active subscription" nor "Expired" (unless the admin picked a community, which is checked on its own).
+    const mustHavePaidPlan = hasActiveSubscription === false && !communityId
 
     // Build a phone-based AND-list of conditions (registrationStatus/source are
     // ApprovedPhone-level facts, resolved to phone sets here since User is the
@@ -2344,6 +2358,9 @@ export class AdminService {
       andClauses.push({ passwordHash: null })
     } else if (registrationStatus === 'registered') {
       andClauses.push({ passwordHash: { not: null } })
+    }
+    if (mustHavePaidPlan) {
+      andClauses.push({ subscriptions: { some: { id: { in: currentSubIds }, community: { isFree: false } } } })
     }
     if (source) {
       // Applied independently of (not else-if'd with) registrationStatus above, so an
@@ -2501,6 +2518,7 @@ export class AdminService {
       accountStatus: user.status,
       registrationStatus: signUpStatus(user.passwordHash, ap),
       hasActiveSubscription,
+      hasPaidSubscription: hasPaidSubscription(allSubs),
       createdAt: user.createdAt.toISOString(),
       suspensionReason: user.status === 'suspended' ? (user.suspensionReason ?? null) : null,
       subscription: sub ? this.buildSubDTO(sub, blocks.get(`${user.id}:${sub.communityId}`) ?? null) : null,
@@ -2543,7 +2561,7 @@ export class AdminService {
     }
 
     let addedCommunityName: string | null = null
-    let newTerms: { payment: number; validUntil: Date | null } | null = null
+    let newTerms: { payment: number; paidOn: Date | null; validUntil: Date | null } | null = null
     if (data.newCommunity) {
       const community = await this.db.community.findUnique({
         where: { id: data.newCommunity.communityId, deletedAt: null },
@@ -2584,8 +2602,7 @@ export class AdminService {
             data: { phone: normalizedPhone, name: data.name, email, status: 'registered', addedBy: adminId },
           })
         }
-        const { validUntil } = newTerms
-        const paidOn = validUntil ? (data.newCommunity.paidOn ? new Date(data.newCommunity.paidOn) : new Date()) : null
+        const { validUntil, paidOn } = newTerms
         const sub = await tx.subscription.create({
           data: {
             userId: user.id,

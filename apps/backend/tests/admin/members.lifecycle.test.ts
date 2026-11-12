@@ -95,7 +95,7 @@ describe('POST /admin/members — add a mobile member', () => {
     email: 'Priya.Sharma@Example.com',
     communityId: paidCommunity.id,
     payment: 4999,
-    validUntil: daysFromNow(90),
+    paidOn: daysFromNow(-1), validUntil: daysFromNow(90),
     ...overrides,
   })
 
@@ -231,7 +231,7 @@ describe('POST /admin/members/revive — reactivate a suspended/deleted mobile m
     email: 'rahul.v@example.com',
     communityId: paidCommunity.id,
     payment: 2999,
-    validUntil: daysFromNow(60),
+    paidOn: daysFromNow(-1), validUntil: daysFromNow(60),
     ...overrides,
   })
 

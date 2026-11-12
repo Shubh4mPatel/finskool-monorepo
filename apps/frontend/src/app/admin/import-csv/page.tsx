@@ -75,7 +75,7 @@ const COLUMNS: { name: string; required: boolean; hint: string }[] = [
   { name: "Name", required: true, hint: "Full name" },
   { name: "Contact Number", required: true, hint: "Mobile number, +91 optional" },
   { name: "Payment", required: true, hint: "A plain number, e.g. 4000 (blank or 0 for the free community)" },
-  { name: "Paid on", required: false, hint: "Date the payment was made, as YYYY-MM-DD; today or earlier, not in the future" },
+  { name: "Paid on", required: true, hint: "Date the payment was made, as YYYY-MM-DD; today or earlier, not in the future (blank for the free community)" },
   { name: "Valid", required: true, hint: "Valid-till date as YYYY-MM-DD, after today and after Paid on (blank for the free community)" },
   { name: "Service", required: true, hint: "Exact community name" },
   { name: "Email", required: false, hint: "Can be left blank" },
@@ -345,13 +345,18 @@ export default function ImportCSVPage() {
             // The free community has no price; blank or 0 only.
             if (payment && parseFloat(payment) > 0) errors.push("The free community has no price: leave Payment blank or 0");
           } else if (!payment || isNaN(parseFloat(payment)) || parseFloat(payment) <= 0) errors.push("Invalid payment amount");
-          // The free community has no expiry, so Valid is only required (and checked) for a paid one.
-          if (!isFree && !isIsoDate(valid)) errors.push(dateError("Valid", valid));
-          if (paidOn && !isIsoDate(paidOn)) errors.push(dateError("Paid on", paidOn));
-          // Only once both are well-formed dates; the free community has no Valid to compare.
-          else if (isFree || isIsoDate(valid)) {
-            const problem = datesProblem(paidOn, isFree ? "" : valid);
-            if (problem) errors.push(problem);
+          // The free community has no payment date or expiry, so Paid on and Valid are neither required nor checked for
+          // it; for a paid one both are required.
+          if (!isFree) {
+            const paidOnOk = isIsoDate(paidOn);
+            const validOk = isIsoDate(valid);
+            if (!paidOnOk) errors.push(dateError("Paid on", paidOn));
+            if (!validOk) errors.push(dateError("Valid", valid));
+            // Only once both are well-formed dates.
+            if (paidOnOk && validOk) {
+              const problem = datesProblem(paidOn, valid);
+              if (problem) errors.push(problem);
+            }
           }
 
           return {

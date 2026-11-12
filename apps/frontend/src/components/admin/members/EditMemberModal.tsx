@@ -46,10 +46,11 @@ export default function EditMemberModal({
     if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) errs.email = "Invalid email address";
     if (showAddCom) {
       if (!newCom.communityId) errs.newCommunityId = "Select a community";
-      // The free community has no price and no expiry, so neither is asked for.
+      // The free community has no price, payment date or expiry, so none of them is asked for; every other community needs all three.
       if (!newIsFree) {
         const amt = parseFloat(newCom.payment);
         if (!newCom.payment || isNaN(amt) || amt <= 0) errs.newPayment = "Enter a valid payment amount";
+        if (!newCom.paidOn) errs.newPaidOn = "Paid on date is required";
         if (!newCom.validUntil) errs.newValidUntil = "Valid till date is required";
       }
     }
@@ -72,7 +73,7 @@ export default function EditMemberModal({
         body.newCommunity = {
           communityId: newCom.communityId,
           ...(newIsFree ? {} : { payment: parseFloat(newCom.payment), validUntil: newCom.validUntil }),
-          ...(!newIsFree && newCom.paidOn ? { paidOn: newCom.paidOn } : {}),
+          ...(!newIsFree ? { paidOn: newCom.paidOn } : {}),
         };
       }
       const updated = await api.patch<MemberItem>(`/api/v1/admin/members/${member.id}`, body);
@@ -89,7 +90,7 @@ export default function EditMemberModal({
   function cancelAddCom() {
     setShowAddCom(false);
     setNewCom(EMPTY_NEW_COM);
-    setErrors((e) => ({ ...e, newCommunityId: undefined, newPayment: undefined, newValidUntil: undefined }));
+    setErrors((e) => ({ ...e, newCommunityId: undefined, newPayment: undefined, newPaidOn: undefined, newValidUntil: undefined }));
   }
 
   const available = communities.filter((c) => !member.allSubscriptions.some((s) => s.communityId === c.id));
@@ -165,12 +166,12 @@ export default function EditMemberModal({
                   options={communityOptions(available)}
                   onChange={(v) => {
                     setNewCom((c) => ({ ...c, communityId: v }));
-                    setErrors((e) => ({ ...e, newCommunityId: undefined, newPayment: undefined, newValidUntil: undefined }));
+                    setErrors((e) => ({ ...e, newCommunityId: undefined, newPayment: undefined, newPaidOn: undefined, newValidUntil: undefined }));
                   }}
                 />
               </FormField>
               {newIsFree ? (
-                <p className="rounded-xl bg-white px-3 py-2 text-xs text-muted">The free community has no payment and no expiry.</p>
+                <p className="rounded-xl bg-white px-3 py-2 text-xs text-muted">The free community has no payment, no payment date and no expiry.</p>
               ) : (
                 <>
                   <div className="grid grid-cols-2 gap-3">
@@ -189,15 +190,13 @@ export default function EditMemberModal({
                       />
                     </FormField>
                   </div>
-                  <FormField small label="Paid On (optional)">
+                  <FormField small label="Paid On" error={errors.newPaidOn}>
                     <DatePicker
                       value={newCom.paidOn}
                       ariaLabel="Paid on"
-                      placeholder="Today, if left empty"
-                      clearable
                       maxDate={startOfToday()}
                       presets={paidOnPresets()}
-                      triggerClassName={inputCls()}
+                      triggerClassName={inputCls(errors.newPaidOn)}
                       onChange={(v) => setNewCom((c) => ({ ...c, paidOn: v }))}
                     />
                   </FormField>
