@@ -223,6 +223,18 @@ describe('GET /admin/members — roster', () => {
       expect(idsOf(await listMembers(superAdmin, { source: 'self', registrationStatus: 'pending' }))).toEqual([])
     })
 
+    it('registered means a password has been set, pending means it has not, whoever created the row', async () => {
+      // No admin-side phone record and no password: they have not signed up, so they are pending, not registered.
+      const noPassword = await createMobileMember({ name: 'No Password', source: 'self', password: null })
+      const registered = idsOf(await listMembers(superAdmin, { registrationStatus: 'registered', pageSize: 100 }))
+      const pendingIds = idsOf(await listMembers(superAdmin, { registrationStatus: 'pending', pageSize: 100 }))
+      expect(registered).not.toContain(noPassword.id)
+      expect(pendingIds).toEqual([noPassword.id, pending.id].sort())
+      // Every member is exactly one of the two.
+      const everyone = idsOf(await listMembers(superAdmin, { pageSize: 100 }))
+      expect([...registered, ...pendingIds].sort()).toEqual(everyone)
+    })
+
     it('validFrom/validTo and paidFrom/paidTo date ranges', async () => {
       expect(
         idsOf(await listMembers(superAdmin, { validFrom: daysFromNow(50), validTo: daysFromNow(70), pageSize: 100 })),

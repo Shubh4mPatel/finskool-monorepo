@@ -32,7 +32,7 @@ export interface MemberItem {
   email: string | null;
   avatarUrl: string | null;
   accountStatus: "active" | "suspended" | "deleted";
-  registrationStatus: "pending" | "registered" | null; // null for source === "self"
+  registrationStatus: "pending" | "registered" | null; // pending = no password set yet; null = signed up on their own (source === "self")
   hasActiveSubscription: boolean;
   createdAt: string;
   suspensionReason: string | null;

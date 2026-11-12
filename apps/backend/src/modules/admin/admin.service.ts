@@ -227,6 +227,16 @@ function hasRunningPaidSubscription(
   return currentSubs.some(s => s.isActive && !s.community.isFree && (s.validUntil === null || s.validUntil >= today))
 }
 
+/**
+ * The member's sign-up state for the admin screens: 'pending' until they have set a password in the app. Once they
+ * have, 'registered' for a member an admin added, and null for one who found the app themselves (they have no
+ * admin-side phone record, which is how the list tells the two apart).
+ */
+function signUpStatus(passwordHash: string | null, ap: { status: 'pending' | 'registered' } | null): 'pending' | 'registered' | null {
+  if (passwordHash === null) return 'pending'
+  return ap ? 'registered' : null
+}
+
 export class AdminService {
   constructor(private readonly db: PrismaClient) {}
 
@@ -2162,7 +2172,7 @@ export class AdminService {
         email: ap?.email ?? u.email,
         avatarUrl: u.avatarUrl,
         accountStatus: u.status,
-        registrationStatus: ap?.status ?? null,
+        registrationStatus: signUpStatus(u.passwordHash, ap),
         hasActiveSubscription,
         createdAt: u.createdAt.toISOString(),
         suspensionReason: u.status === 'suspended' ? (u.suspensionReason ?? null) : null,
@@ -2327,16 +2337,13 @@ export class AdminService {
         ],
       })
     }
+    // "Signed up" means the member has set a password in the app. That is what decides it, not the admin-side phone
+    // record, so every member is exactly one of registered or pending. (A password is only ever written when someone
+    // finishes sign-up in the app, whether they found the app themselves or an admin added their phone first.)
     if (registrationStatus === 'pending') {
-      // Admin-added members who have not signed up in the app yet. A self-registered member's phone can never
-      // appear in this set, since they have no ApprovedPhone row.
-      const pending = await this.db.approvedPhone.findMany({ where: { status: 'pending' }, select: { phone: true } })
-      andClauses.push({ phone: { in: pending.map(a => a.phone) } })
+      andClauses.push({ passwordHash: null })
     } else if (registrationStatus === 'registered') {
-      // Everyone who has signed up: a self-registered member by definition, an admin-added one once they have claimed
-      // their phone. So registered + pending always adds up to every member.
-      const pending = await this.db.approvedPhone.findMany({ where: { status: 'pending' }, select: { phone: true } })
-      andClauses.push({ phone: { notIn: pending.map(a => a.phone) } })
+      andClauses.push({ passwordHash: { not: null } })
     }
     if (source) {
       // Applied independently of (not else-if'd with) registrationStatus above, so an
@@ -2492,7 +2499,7 @@ export class AdminService {
       email: ap?.email ?? user.email,
       avatarUrl: user.avatarUrl,
       accountStatus: user.status,
-      registrationStatus: ap?.status ?? null,
+      registrationStatus: signUpStatus(user.passwordHash, ap),
       hasActiveSubscription,
       createdAt: user.createdAt.toISOString(),
       suspensionReason: user.status === 'suspended' ? (user.suspensionReason ?? null) : null,
