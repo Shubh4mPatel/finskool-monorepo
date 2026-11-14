@@ -99,6 +99,8 @@ export interface CommunityDTO {
   description: string | null
   tags: string[]
   type: string | null
+  /** The "What members get" points shown on the subscription screen. */
+  whatsIncluded: string[]
   coverImageUrl: string | null
   badgeUrl: string | null
   paymentLink: string | null
@@ -213,9 +215,23 @@ export interface UpdateAdminAccessDTO {
 // export's column-label vocabulary, see AdminService#memberStatusLabel.
 export type MemberStatus = 'registered' | 'pending' | 'expired' | 'suspended' | 'deleted'
 
+/**
+ * The one status an admin sees for a member, in this order of precedence:
+ *  - 'deleted':   the account was deleted (out of every community, cannot log in).
+ *  - 'suspended': the whole account is suspended, OR an admin blocked the member in a community (the one picked in the
+ *                 filter, or any community when none is picked).
+ *  - 'pending':   added by an admin but has not set a password yet.
+ *  - 'active':    signed up (self-registered or admin-added) and in good standing.
+ * Whether a paid plan is running or expired is not a status; it is shown by the subscription columns.
+ */
+export type MemberDisplayStatus = 'active' | 'pending' | 'suspended' | 'deleted'
+
 export interface MemberListFilters {
   communityId?: string | undefined
   communityIds?: string[] | undefined
+  // The status shown in the list (see MemberDisplayStatus). 'suspended' also finds members blocked from a community:
+  // from the picked community, or from any community (within the admin's scope) when none is picked.
+  status?: MemberDisplayStatus | undefined
   // The account's own standing — User.status directly. Left out, deleted members are not listed or counted.
   accountStatus?: 'active' | 'suspended' | 'deleted' | undefined
   // Has the member signed up in the app, i.e. set a password?
@@ -278,6 +294,8 @@ export interface MemberItemDTO {
   email: string | null
   avatarUrl: string | null
   accountStatus: 'active' | 'suspended' | 'deleted'
+  /** What the Status column shows. Unlike accountStatus it also counts a community block as 'suspended'. */
+  status: MemberDisplayStatus
   registrationStatus: 'pending' | 'registered' | null   // null for source === 'self'
   hasActiveSubscription: boolean
   /** Whether they hold (or held) a paid plan. A member who is only in the free community has none, so they are never "Expired". */

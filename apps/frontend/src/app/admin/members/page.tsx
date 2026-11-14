@@ -48,7 +48,8 @@ import {
 } from "@/lib/memberFormat";
 
 const PAGE_SIZE = 8;
-const DEFAULT_ACCOUNT_STATUS = "active";
+// The list opens on every member but the deleted ones; "Deleted" is one click away in the Status filter.
+const DEFAULT_STATUS = "";
 
 interface MemberList {
   members: MemberItem[];
@@ -192,8 +193,7 @@ function MembersContent() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [filterCommunity, setFilterCommunity] = useState(() => params.get("community") ?? "");
-  // The list opens on Active members; "All account status" is one click away.
-  const [filterAccountStatus, setFilterAccountStatus] = useState(DEFAULT_ACCOUNT_STATUS);
+  const [filterStatus, setFilterStatus] = useState(DEFAULT_STATUS);
   const [filterRegistrationStatus, setFilterRegistrationStatus] = useState("");
   const [filterHasActiveSubscription, setFilterHasActiveSubscription] = useState("");
   const [filterSource, setFilterSource] = useState("");
@@ -228,7 +228,7 @@ function MembersContent() {
     const params = new URLSearchParams();
     if (debouncedSearch) params.set("search", debouncedSearch);
     if (filterCommunity) params.set("communityId", filterCommunity);
-    if (filterAccountStatus) params.set("accountStatus", filterAccountStatus);
+    if (filterStatus) params.set("status", filterStatus);
     if (filterRegistrationStatus) params.set("registrationStatus", filterRegistrationStatus);
     if (filterHasActiveSubscription) params.set("hasActiveSubscription", filterHasActiveSubscription);
     if (filterSource) params.set("source", filterSource);
@@ -236,7 +236,7 @@ function MembersContent() {
     if (paidDate) { params.set("paidFrom", paidDate); params.set("paidTo", paidDate); }
     if (expiringSoon) params.set("expiringIn7Days", "true");
     return params.toString();
-  }, [debouncedSearch, filterCommunity, filterAccountStatus, filterRegistrationStatus, filterHasActiveSubscription, filterSource, validDate, paidDate, expiringSoon]);
+  }, [debouncedSearch, filterCommunity, filterStatus, filterRegistrationStatus, filterHasActiveSubscription, filterSource, validDate, paidDate, expiringSoon]);
 
   const query = `${filterParams}${filterParams ? "&" : ""}page=${page}&pageSize=${PAGE_SIZE}`;
 
@@ -291,13 +291,13 @@ function MembersContent() {
   // Everything but the account status, which has a default of its own.
   const hasOtherFilters = !!(debouncedSearch || search || filterCommunity || filterRegistrationStatus ||
     filterHasActiveSubscription || filterSource || validDate || paidDate || expiringSoon);
-  const hasFilters = hasOtherFilters || filterAccountStatus !== DEFAULT_ACCOUNT_STATUS;
+  const hasFilters = hasOtherFilters || filterStatus !== DEFAULT_STATUS;
 
   function clearFilters() {
     setSearch("");
     setDebouncedSearch("");
     setFilterCommunity("");
-    setFilterAccountStatus(DEFAULT_ACCOUNT_STATUS);
+    setFilterStatus(DEFAULT_STATUS);
     setFilterRegistrationStatus("");
     setFilterHasActiveSubscription("");
     setFilterSource("");
@@ -310,7 +310,7 @@ function MembersContent() {
   // The stat tiles are shortcuts into the matching filter.
   const onlyFilter = (key: "all" | "registered" | "pending"): boolean => {
     // The tile counts cover every account status, so a tile is "on" only while the list does too.
-    const others = !!(debouncedSearch || filterCommunity || filterAccountStatus !== "" || filterSource || validDate || paidDate || expiringSoon);
+    const others = !!(debouncedSearch || filterCommunity || filterStatus !== "" || filterSource || validDate || paidDate || expiringSoon);
     if (others) return false;
     if (key === "registered") return filterRegistrationStatus === "registered" && !filterHasActiveSubscription;
     if (key === "pending") return filterRegistrationStatus === "pending" && !filterHasActiveSubscription;
@@ -319,7 +319,7 @@ function MembersContent() {
 
   function applyTile(key: "all" | "registered" | "pending") {
     clearFilters();
-    setFilterAccountStatus(""); // the tile's number counts every account status, so the list it opens must too
+    setFilterStatus(""); // the tile's number counts every status, so the list it opens must too
     if (key === "registered") setFilterRegistrationStatus("registered");
     if (key === "pending") setFilterRegistrationStatus("pending");
   }
@@ -464,14 +464,14 @@ function MembersContent() {
     }
   }
 
-  async function exportMembersCSV() {
+  async function exportMembersExcel() {
     setExporting(true);
     try {
       const blob = await api.getBlob(`/api/v1/admin/members/export?${filterParams}`);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `members-export-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.download = `members-export-${new Date().toISOString().slice(0, 10)}.xlsx`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
@@ -687,12 +687,12 @@ function MembersContent() {
               )}
             </div>
             <button
-              onClick={exportMembersCSV}
+              onClick={exportMembersExcel}
               disabled={total === 0 || exporting}
               className="flex items-center gap-2 rounded-full border border-divider bg-white px-4 py-2.5 text-sm font-semibold text-primary transition-all hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Download size={14} />
-              {exporting ? "Exporting…" : "Export CSV"}
+              {exporting ? "Exporting…" : "Export Excel"}
             </button>
           </div>
 
@@ -705,18 +705,17 @@ function MembersContent() {
               triggerClassName={`relative ${pillClass(!!filterCommunity)} focus:outline-none focus-visible:ring-4 focus-visible:ring-accent/15`}
             />
             <Select
-              value={filterAccountStatus}
-              onChange={setFilter(setFilterAccountStatus)}
-              ariaLabel="Account status"
-              options={[allOption("Active & suspended"), { value: "active", label: "Active" }, { value: "suspended", label: "Suspended" }, { value: "deleted", label: "Deleted" }]}
-              triggerClassName={`relative ${pillClass(filterAccountStatus !== DEFAULT_ACCOUNT_STATUS)} focus:outline-none focus-visible:ring-4 focus-visible:ring-accent/15`}
-            />
-            <Select
-              value={filterRegistrationStatus}
-              onChange={setFilter(setFilterRegistrationStatus)}
-              ariaLabel="Registration"
-              options={[allOption("All registration"), { value: "registered", label: "Registered" }, { value: "pending", label: "Pending sign-up" }]}
-              triggerClassName={`relative ${pillClass(!!filterRegistrationStatus)} focus:outline-none focus-visible:ring-4 focus-visible:ring-accent/15`}
+              value={filterStatus}
+              onChange={setFilter(setFilterStatus)}
+              ariaLabel="Status"
+              options={[
+                allOption("All status"),
+                { value: "active", label: "Active" },
+                { value: "pending", label: "Pending" },
+                { value: "suspended", label: "Suspended" },
+                { value: "deleted", label: "Deleted" },
+              ]}
+              triggerClassName={`relative ${pillClass(filterStatus !== DEFAULT_STATUS)} focus:outline-none focus-visible:ring-4 focus-visible:ring-accent/15`}
             />
             <Select
               value={filterHasActiveSubscription}

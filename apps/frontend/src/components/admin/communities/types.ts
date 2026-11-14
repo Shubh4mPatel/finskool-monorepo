@@ -4,6 +4,9 @@ export interface Community {
   slug: string;
   description: string | null;
   tags: string[];
+  type: string | null;
+  // The "What members get" points shown on the subscription screen.
+  whatsIncluded: string[];
   coverImageUrl: string | null;
   badgeUrl: string | null;
   paymentLink: string | null;

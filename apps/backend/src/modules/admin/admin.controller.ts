@@ -66,12 +66,14 @@ const suspendMemberSchema = z.object({
   reason: z.string().trim().min(1, 'A reason is required').max(1000, 'Reason is too long'),
 })
 
-// Shared by listMembers and exportMembersCsv — same filters, listMembers just adds
+// Shared by listMembers and exportMembersXlsx — same filters, listMembers just adds
 // page/pageSize on top. Four independent facts, replacing the old single 5-value
 // `status` filter — see MemberListFilters' own doc comments in admin.dto.ts for
 // what each one means and how registrationStatus/source relate.
 const memberQueryFilterSchema = z.object({
   communityId: z.string().uuid().optional(),
+  // The Status filter: active, pending (no password yet), suspended (account or community block), deleted.
+  status: z.enum(['active', 'pending', 'suspended', 'deleted']).optional(),
   accountStatus: z.enum(['active', 'suspended', 'deleted']).optional(),
   registrationStatus: z.enum(['pending', 'registered']).optional(),
   hasActiveSubscription: z.enum(['true', 'false']).optional().transform(v => (v === undefined ? undefined : v === 'true')),
@@ -321,15 +323,15 @@ export class AdminController {
 
   // Deliberately no accessibleCommunityIds scoping here (unlike listMembers above) — any
   // admin, scoped or super, can export members across every community, by product decision.
-  exportMembersCsv = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  exportMembersXlsx = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const parsed = memberQueryFilterSchema.safeParse(req.query)
       if (!parsed.success) throw new BadRequestError(parsed.error.issues[0]?.message ?? 'Invalid query')
 
-      const csv = await this.service.exportMembersCsv(parsed.data)
-      res.setHeader('Content-Type', 'text/csv; charset=utf-8')
-      res.setHeader('Content-Disposition', `attachment; filename="members-export-${new Date().toISOString().slice(0, 10)}.csv"`)
-      res.status(200).send(csv)
+      const file = await this.service.exportMembersXlsx(parsed.data)
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+      res.setHeader('Content-Disposition', `attachment; filename="members-export-${new Date().toISOString().slice(0, 10)}.xlsx"`)
+      res.status(200).send(file)
     } catch (err) {
       next(err)
     }

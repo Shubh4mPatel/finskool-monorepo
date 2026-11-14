@@ -59,7 +59,7 @@ router.delete(
   controller.revokeCommunityAccess,
 )
 router.get('/members', authenticate, requireRole('admin'), controller.listMembers)
-router.get('/members/export', authenticate, requireRole('admin'), controller.exportMembersCsv)
+router.get('/members/export', authenticate, requireRole('admin'), controller.exportMembersXlsx)
 router.get('/members/stats', authenticate, requireRole('admin'), controller.memberStats)
 router.get('/members/:id', authenticate, requireRole('admin'), controller.getMember)
 router.post('/members', authenticate, requireRole('admin'), controller.addMember)

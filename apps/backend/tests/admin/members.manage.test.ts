@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
+import { createRequire } from 'node:module'
 import request from 'supertest'
 import { createApp } from '../../src/app.js'
 import redis from '../../src/lib/redis.js'
@@ -49,6 +50,24 @@ function mobileLogin(email: string, password: string) {
 
 function listMembers(admin: TestAdmin, query: Record<string, string | number> = {}) {
   return request(app).get('/api/v1/admin/members').query(query).set('Authorization', admin.auth)
+}
+
+const XLSX = createRequire(import.meta.url)('xlsx') as {
+  read(data: Buffer, opts: object): { SheetNames: string[]; Sheets: Record<string, unknown> }
+  utils: { sheet_to_json<T>(ws: unknown, opts?: object): T[] }
+}
+const binary = (res: request.Response, cb: (err: Error | null, body: Buffer) => void) => {
+  const chunks: Buffer[] = []
+  res.on('data', (c: Buffer) => chunks.push(c))
+  res.on('end', () => cb(null, Buffer.concat(chunks)))
+}
+function exportXlsx(admin: TestAdmin, query: Record<string, string> = {}) {
+  return request(app).get('/api/v1/admin/members/export').query(query).set('Authorization', admin.auth).buffer(true).parse(binary)
+}
+/** Every row of an exported workbook as text cells, header first. */
+function sheetRows(file: Buffer): string[][] {
+  const book = XLSX.read(file, { type: 'buffer' })
+  return XLSX.utils.sheet_to_json<string[]>(book.Sheets[book.SheetNames[0]!], { header: 1, raw: false, defval: '' })
 }
 
 function jobsNamed(name: string) {
@@ -359,7 +378,7 @@ describe('GET /admin/members/stats (the cards on the Members page)', () => {
     const rowOf = async (id: string) =>
       ((await listMembers(superAdmin, { pageSize: 100 })).body.data.members as { id: string; hasActiveSubscription: boolean; hasPaidSubscription: boolean }[]).find(m => m.id === id)!
 
-    it('a member with only the free community is Free: never Expired, and in neither the Active nor the Expired filter', async () => {
+    it('a member with only the free community is Active, not Free or Expired, and in neither the Active nor the Expired subscription filter', async () => {
       const free = await createCommunity(superAdmin.id, { name: 'Free Space', isFree: true })
       const freeOnly = await createMobileMember({ name: 'Free Only' })
       await prisma.subscription.create({ data: { userId: freeOnly.id, communityId: free.id, payment: 0, validUntil: null, isActive: true } })
@@ -372,9 +391,9 @@ describe('GET /admin/members/stats (the cards on the Members page)', () => {
         ((await listMembers(superAdmin, { hasActiveSubscription: flag, pageSize: 100 })).body.data.members as { id: string }[]).map(m => m.id)
       expect(await idsFor('false')).not.toContain(freeOnly.id)
       expect(await idsFor('true')).not.toContain(freeOnly.id)
-      // The CSV export says Free too, never Expired.
-      const csv = (await request(app).get('/api/v1/admin/members/export').set('Authorization', superAdmin.auth)).text
-      expect(csv.split('\n').find(l => l.startsWith('"Free Only"'))).toContain('"Free"')
+      // "Free" and "Expired" are not statuses: a member who signed up is Active, in the list and in the Excel export.
+      expect(((await listMembers(superAdmin, { pageSize: 100 })).body.data.members as { id: string; status: string }[]).find(m => m.id === freeOnly.id)!.status).toBe('active')
+      expect(sheetRows((await exportXlsx(superAdmin)).body).find(l => l[0] === 'Free Only')![7]).toBe('Active')
       // The member did sign up, so they are counted as registered even though they have no running paid plan.
       expect(before.registered + before.pending).toBe(before.total)
     })
@@ -417,7 +436,7 @@ describe('GET /admin/members/stats (the cards on the Members page)', () => {
 })
 
 describe('GET /admin/members/export', () => {
-  it('downloads a CSV with one row per subscription and human-readable statuses', async () => {
+  it('downloads an Excel file with one row per subscription, a number for the payment and one status per member', async () => {
     await createMobileMember({
       name: 'Asha "Ace" Nair', phone: '+919811100002', email: 'asha@example.com',
       subscriptions: [
@@ -426,57 +445,152 @@ describe('GET /admin/members/export', () => {
       ],
     })
     await createMobileMember({ name: 'Bhavesh Pending', password: null, email: null })
-    await createMobileMember({ name: 'Chitra Suspended', status: 'suspended' })
+    await createMobileMember({ name: 'Chitra Suspended', status: 'suspended', suspensionReason: 'Chargeback' })
     await createMobileMember({
       name: 'Dinesh Expired',
       subscriptions: [{ communityId: swing.id, validUntil: daysFromNow(-10), isActive: false }],
     })
 
-    const res = await request(app).get('/api/v1/admin/members/export').set('Authorization', superAdmin.auth)
+    const res = await exportXlsx(superAdmin)
 
     expect(res.status).toBe(200)
-    expect(res.headers['content-type']).toBe('text/csv; charset=utf-8')
-    expect(res.headers['content-disposition']).toMatch(/^attachment; filename="members-export-\d{4}-\d{2}-\d{2}\.csv"$/)
-    expect(res.text.startsWith('﻿')).toBe(true) // Excel needs the BOM for non-ASCII names
+    expect(res.headers['content-type']).toBe('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    expect(res.headers['content-disposition']).toMatch(/^attachment; filename="members-export-\d{4}-\d{2}-\d{2}\.xlsx"$/)
 
-    const lines = res.text.slice(1).split('\n')
-    // The first seven are exactly Import CSV's columns; Status and Added On are the two extras.
-    expect(lines[0]).toBe('"Name","Contact Number","Payment","Paid on","Valid","Service","Email","Status","Added On"')
-    expect(lines).toHaveLength(1 + 5)
+    const [header, ...lines] = sheetRows(res.body)
+    // The first seven are exactly Import CSV's columns; the rest are extra.
+    expect(header).toEqual(['Name', 'Contact Number', 'Payment', 'Paid on', 'Valid', 'Service', 'Email', 'Status', 'Added On', 'Suspended in', 'Suspension reason'])
+    expect(lines).toHaveLength(5)
 
-    const asha = lines.filter(l => l.startsWith('"Asha'))
+    const asha = lines.filter(l => l[0] === 'Asha "Ace" Nair')
     expect(asha).toHaveLength(2)
-    // Plain payment (no ₹, no thousands separator), YYYY-MM-DD dates.
-    expect(asha.find(l => l.includes('Swing Traders'))).toContain(
-      '"Asha ""Ace"" Nair","+919811100002","12500","2026-01-15","2030-03-31","Swing Traders","asha@example.com","Active"',
-    )
-    expect(res.text).not.toContain('₹')
+    // Plain payment, YYYY-MM-DD dates, and the phone kept as text with its +.
+    expect(asha.find(l => l[5] === 'Swing Traders')!.slice(0, 8)).toEqual(['Asha "Ace" Nair', '+919811100002', '12500', '2026-01-15', '2030-03-31', 'Swing Traders', 'asha@example.com', 'Active'])
+    // The payment is a real number in the sheet, so Excel can sum it.
+    const book = XLSX.read(res.body, { type: 'buffer' })
+    const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(book.Sheets['Members'], { raw: true })
+    expect(raw.find(r => r['Service'] === 'Swing Traders')!['Payment']).toBe(12500)
     // A member with no subscription: blank cells, not a dash.
-    expect(lines.find(l => l.startsWith('"Bhavesh'))).toContain('"","","","","","Pending Sign"')
-    expect(lines.find(l => l.startsWith('"Chitra'))).toContain('"Suspended"')
-    expect(lines.find(l => l.startsWith('"Dinesh'))).toContain('"Expired"')
+    expect(lines.find(l => l[0] === 'Bhavesh Pending')!.slice(2, 8)).toEqual(['', '', '', '', '', 'Pending'])
+    expect(lines.find(l => l[0] === 'Chitra Suspended')!.slice(7)).toEqual(['Suspended', expect.any(String), 'Entire account', 'Chargeback'])
+    // Expired is not a status: the lapsed plan shows in the Valid column.
+    expect(lines.find(l => l[0] === 'Dinesh Expired')![7]).toBe('Active')
   })
 
   it('applies the same filters as the roster', async () => {
     await createMobileMember({ name: 'Keep', status: 'suspended' })
     await createMobileMember({ name: 'Drop' })
 
-    const res = await request(app)
-      .get('/api/v1/admin/members/export')
-      .query({ accountStatus: 'suspended' })
-      .set('Authorization', superAdmin.auth)
-    const lines = res.text.slice(1).split('\n')
+    const res = await exportXlsx(superAdmin, { status: 'suspended' })
+    const lines = sheetRows(res.body)
     expect(lines).toHaveLength(2)
-    expect(lines[1]).toMatch(/^"Keep"/)
+    expect(lines[1]![0]).toBe('Keep')
   })
 
   it('is not scoped to a scoped admin\'s communities (product decision)', async () => {
     await createMobileMember({ subscriptions: [{ communityId: options.id, validUntil: daysFromNow(30) }] })
     const scoped = await createAdmin({ isSuperAdmin: false, communityIds: [swing.id] })
 
-    const res = await request(app).get('/api/v1/admin/members/export').set('Authorization', scoped.auth)
+    const res = await exportXlsx(scoped)
     expect(res.status).toBe(200)
-    expect(res.text.slice(1).split('\n')).toHaveLength(2)
+    expect(sheetRows(res.body)).toHaveLength(2)
+  })
+})
+
+describe('the Status filter and column: active, pending, suspended, deleted', () => {
+  const statusOf = async (id: string, query: Record<string, string> = {}) =>
+    ((await listMembers(superAdmin, { pageSize: 100, ...query })).body.data.members as { id: string; status: string }[]).find(m => m.id === id)?.status
+  const idsWith = async (query: Record<string, string>) =>
+    ((await listMembers(superAdmin, { pageSize: 100, ...query })).body.data.members as { id: string }[]).map(m => m.id).sort()
+  const block = (userId: string, communityId: string, reason = 'Abuse') =>
+    prisma.communityBlock.create({ data: { userId, communityId, reason, blockedBy: superAdmin.id } })
+
+  it('puts every member in exactly one status, whatever their plan, and a bad value is a 400', async () => {
+    const active = await createMobileMember({ name: 'Active', subscriptions: [{ communityId: swing.id, validUntil: daysFromNow(30) }] })
+    const lapsed = await createMobileMember({ name: 'Lapsed', subscriptions: [{ communityId: swing.id, validUntil: daysFromNow(-10), isActive: false }] })
+    const noPlan = await createMobileMember({ name: 'No plan' })
+    const pending = await createMobileMember({ name: 'Pending', password: null })
+    const suspended = await createMobileMember({ name: 'Suspended', status: 'suspended' })
+    const deleted = await createMobileMember({ name: 'Deleted', status: 'deleted' })
+
+    expect(await idsWith({ status: 'active' })).toEqual([active.id, lapsed.id, noPlan.id].sort())
+    expect(await idsWith({ status: 'pending' })).toEqual([pending.id])
+    expect(await idsWith({ status: 'suspended' })).toEqual([suspended.id])
+    expect(await idsWith({ status: 'deleted' })).toEqual([deleted.id])
+    // No status filter: everyone but the deleted.
+    expect(await idsWith({})).toEqual([active.id, lapsed.id, noPlan.id, pending.id, suspended.id].sort())
+    expect(await statusOf(lapsed.id)).toBe('active')
+    expect(await statusOf(pending.id)).toBe('pending')
+    expect(await statusOf(suspended.id)).toBe('suspended')
+    expect((await listMembers(superAdmin, { status: 'expired' })).status).toBe(400)
+  })
+
+  it('"Suspended" with no community picked finds members blocked from any community, with that subscription first', async () => {
+    const blocked = await createMobileMember({
+      name: 'Blocked in Options',
+      // Swing is the newest, so without the blocked-first rule it would head the row.
+      subscriptions: [
+        { communityId: options.id, validUntil: daysFromNow(30), createdAt: new Date(Date.now() - 5 * 864e5) },
+        { communityId: swing.id, validUntil: daysFromNow(30), createdAt: new Date(Date.now() - 1 * 864e5) },
+      ],
+    })
+    await block(blocked.id, options.id)
+    const platform = await createMobileMember({ name: 'Platform', status: 'suspended' })
+    const fine = await createMobileMember({ name: 'Fine', subscriptions: [{ communityId: swing.id, validUntil: daysFromNow(30) }] })
+
+    expect(await idsWith({ status: 'suspended' })).toEqual([blocked.id, platform.id].sort())
+    expect(await statusOf(blocked.id)).toBe('suspended')
+    // The member's account is still active; only the community is blocked.
+    const row = ((await listMembers(superAdmin, { status: 'suspended', pageSize: 100 })).body.data.members as { id: string; accountStatus: string; allSubscriptions: { communityId: string; block: unknown }[] }[]).find(m => m.id === blocked.id)!
+    expect(row.accountStatus).toBe('active')
+    expect(row.allSubscriptions.map(s => s.communityId)).toEqual([options.id, swing.id])
+    expect(row.allSubscriptions[0]!.block).toMatchObject({ reason: 'Abuse' })
+    // Active and Pending leave blocked members out.
+    expect(await idsWith({ status: 'active' })).toEqual([fine.id])
+  })
+
+  it('with a community picked, only a block in that community counts', async () => {
+    const m = await createMobileMember({
+      name: 'Two communities',
+      subscriptions: [{ communityId: swing.id, validUntil: daysFromNow(30) }, { communityId: options.id, validUntil: daysFromNow(30) }],
+    })
+    await block(m.id, options.id)
+
+    expect(await idsWith({ status: 'suspended', communityId: options.id })).toEqual([m.id])
+    expect(await idsWith({ status: 'suspended', communityId: swing.id })).toEqual([])
+    expect(await idsWith({ status: 'active', communityId: swing.id })).toEqual([m.id])
+    expect(await statusOf(m.id, { communityId: swing.id })).toBe('active')
+    expect(await statusOf(m.id, { communityId: options.id })).toBe('suspended')
+    // The community picked leads the row, so Swing comes first when it is the one filtered.
+    const swingRow = ((await listMembers(superAdmin, { communityId: swing.id, pageSize: 100 })).body.data.members as { allSubscriptions: { communityId: string }[] }[])[0]!
+    expect(swingRow.allSubscriptions[0]!.communityId).toBe(swing.id)
+  })
+
+  it('a scoped admin only sees blocks in their own communities', async () => {
+    const m = await createMobileMember({ name: 'Blocked elsewhere', subscriptions: [{ communityId: swing.id, validUntil: daysFromNow(30) }, { communityId: options.id, validUntil: daysFromNow(30) }] })
+    await block(m.id, options.id)
+    const scoped = await createAdmin({ isSuperAdmin: false, communityIds: [swing.id] })
+
+    const row = ((await listMembers(scoped, { pageSize: 100 })).body.data.members as { id: string; status: string }[]).find(x => x.id === m.id)!
+    expect(row.status).toBe('active')
+    expect(((await listMembers(scoped, { status: 'suspended' })).body.data.members as unknown[])).toHaveLength(0)
+  })
+
+  it('the Excel export lists the community a member is blocked from first, with the reason', async () => {
+    const m = await createMobileMember({
+      name: 'Blocked in Options',
+      subscriptions: [
+        { communityId: options.id, validUntil: daysFromNow(30), createdAt: new Date(Date.now() - 5 * 864e5) },
+        { communityId: swing.id, validUntil: daysFromNow(30), createdAt: new Date(Date.now() - 1 * 864e5) },
+      ],
+    })
+    await block(m.id, options.id, 'Spam')
+
+    const [, ...lines] = sheetRows((await exportXlsx(superAdmin, { status: 'suspended' })).body)
+    expect(lines.map(l => [l[5], l[7], l[9], l[10]])).toEqual([
+      ['Options Lab', 'Suspended', 'Options Lab', 'Spam'],
+      ['Swing Traders', 'Suspended', '', ''],
+    ])
   })
 })
 

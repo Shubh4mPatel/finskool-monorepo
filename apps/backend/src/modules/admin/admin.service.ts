@@ -40,6 +40,7 @@ import { routingData, RoutingModule, subscriptionRouting } from '../../lib/notif
 import { NotificationType } from '../notifications/notifications.dto.js'
 import redis from '../../lib/redis.js'
 import { notExpired } from '../../lib/subscription-expiry.js'
+import { membersToXlsx } from './members.xlsx.js'
 import type {
   DuplicateStrategy,
   ImportSummaryDTO,
@@ -73,6 +74,7 @@ import type {
   MemberItemDTO,
   MemberSubscriptionDTO,
   MemberStatus,
+  MemberDisplayStatus,
   UpdateMemberDTO,
   ValidateImportRowInput,
   ValidateImportRowResult,
@@ -284,6 +286,26 @@ function hasRunningPaidSubscription(
 function signUpStatus(passwordHash: string | null, ap: { status: 'pending' | 'registered' } | null): 'pending' | 'registered' | null {
   if (passwordHash === null) return 'pending'
   return ap ? 'registered' : null
+}
+
+/** Which community blocks count for a member's status: the picked community, else the admin's communities, else any. */
+interface BlockScope {
+  communityId?: string | undefined
+  communityIds?: string[] | undefined
+}
+
+const inBlockScope = (scope: BlockScope, communityId: string): boolean =>
+  scope.communityId ? communityId === scope.communityId : scope.communityIds ? scope.communityIds.includes(communityId) : true
+
+/** The status the Members page shows (see MemberDisplayStatus): deleted, then suspended (account or community block), then pending, else active. */
+function displayStatusOf(
+  user: { status: 'active' | 'suspended' | 'deleted'; passwordHash: string | null },
+  blockedCommunityIds: string[],
+  scope: BlockScope,
+): MemberDisplayStatus {
+  if (user.status === 'deleted') return 'deleted'
+  if (user.status === 'suspended' || blockedCommunityIds.some(id => inBlockScope(scope, id))) return 'suspended'
+  return user.passwordHash === null ? 'pending' : 'active'
 }
 
 export class AdminService {
@@ -1079,6 +1101,7 @@ export class AdminService {
         description: true,
         tags: true,
         type: true,
+        whatsIncluded: true,
         coverImageUrl: true,
         badgeUrl: true,
         paymentLink: true,
@@ -1140,6 +1163,7 @@ export class AdminService {
         description: true,
         tags: true,
         type: true,
+        whatsIncluded: true,
         coverImageUrl: true,
         badgeUrl: true,
         paymentLink: true,
@@ -1186,6 +1210,7 @@ export class AdminService {
         description: true,
         tags: true,
         type: true,
+        whatsIncluded: true,
         coverImageUrl: true,
         badgeUrl: true,
         paymentLink: true,
@@ -2125,7 +2150,7 @@ export class AdminService {
   async listMembers(filters: MemberListFilters): Promise<MemberListDTO> {
     const { page, pageSize, ...whereFilters } = filters
     const { userWhere, currentSubIds, preferSub } = await this.buildMemberWhere(whereFilters)
-    const { members, total } = await this.queryMembers(userWhere, currentSubIds, preferSub, { skip: (page - 1) * pageSize, take: pageSize })
+    const { members, total } = await this.queryMembers(userWhere, currentSubIds, preferSub, whereFilters, { skip: (page - 1) * pageSize, take: pageSize })
     return { members, total, page, pageSize, totalPages: Math.ceil(total / pageSize) }
   }
 
@@ -2148,13 +2173,13 @@ export class AdminService {
     return { total, registered, pending }
   }
 
-  async exportMembersCsv(filters: MemberExportFilters): Promise<string> {
+  async exportMembersXlsx(filters: MemberExportFilters): Promise<Buffer> {
     const { userWhere, currentSubIds, preferSub } = await this.buildMemberWhere(filters)
-    const { members } = await this.queryMembers(userWhere, currentSubIds, preferSub)
-    return this.membersToCsv(members)
+    const { members } = await this.queryMembers(userWhere, currentSubIds, preferSub, filters)
+    return membersToXlsx(members)
   }
 
-  // Shared by listMembers (paginated) and exportMembersCsv (unpaginated — omit `pagination`
+  // Shared by listMembers (paginated) and exportMembersXlsx (unpaginated — omit `pagination`
   // to fetch every matching row). When unpaginated, `total` is just `members.length` — no
   // separate count() query needed since the fetched rows already are the full result set.
   // Driving table is User (was ApprovedPhone) — see this plan's "Key architectural finding":
@@ -2166,6 +2191,8 @@ export class AdminService {
     currentSubIds: string[],
     // The subscription the filters are about; it heads each member's list so the row shows the plan that matched.
     preferSub: ((s: SubscriptionForOrder) => boolean) | null,
+    // Which community blocks make a member "Suspended" (the picked community, else the admin's, else any).
+    blockScope: BlockScope,
     pagination?: { skip: number; take: number },
   ): Promise<{ members: MemberItemDTO[]; total: number }> {
     const [total, rows] = await Promise.all([
@@ -2198,16 +2225,20 @@ export class AdminService {
     })
     const apByPhone = new Map(approvedPhones.map(a => [a.phone, a]))
 
-    const blocks = await this.loadBlocks(rows.map(u => u.id))
+    const { blocks, blockedByUser } = await this.loadBlocksByUser(rows.map(u => u.id))
 
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
     const members: MemberItemDTO[] = rows.map(u => {
       const ap = apByPhone.get(u.phone) ?? null
-      // Newest first, except that the subscription the filters matched leads (the sort is stable, so the rest keep
-      // their newest-first order).
-      const allSubs = preferSub ? [...u.subscriptions].sort((a, b) => Number(preferSub(b)) - Number(preferSub(a))) : u.subscriptions
+      const blockedIds = blockedByUser.get(u.id) ?? []
+      const isBlocked = (s: SubscriptionForOrder): boolean => blockedIds.includes(s.communityId) && inBlockScope(blockScope, s.communityId)
+      // Newest first, except that the subscription the filters matched leads, and then the ones the member is
+      // suspended from (so a suspended member's list starts with the community they are blocked in). The sort is
+      // stable, so the rest keep their newest-first order.
+      const rank = (s: SubscriptionForOrder): number => (preferSub?.(s) ? 2 : 0) + (isBlocked(s) ? 1 : 0)
+      const allSubs = [...u.subscriptions].sort((a, b) => rank(b) - rank(a))
       const sub = allSubs[0] ?? null
       const hasActiveSubscription = hasRunningPaidSubscription(allSubs, today)
 
@@ -2225,6 +2256,7 @@ export class AdminService {
         email: ap?.email ?? u.email,
         avatarUrl: u.avatarUrl,
         accountStatus: u.status,
+        status: displayStatusOf(u, blockedIds, blockScope),
         registrationStatus: signUpStatus(u.passwordHash, ap),
         hasActiveSubscription,
         hasPaidSubscription: hasPaidSubscription(allSubs),
@@ -2236,46 +2268,6 @@ export class AdminService {
     })
 
     return { members, total: total ?? members.length }
-  }
-
-  // Old admin-facing 5-value display status, kept only as the CSV export's column
-  // vocabulary — every other consumer now reads accountStatus/registrationStatus/
-  // hasActiveSubscription directly instead of a derived, conflated single value.
-  // registrationStatus === null (self-registered) falls through to the last line,
-  // same as any admin-added member whose ApprovedPhone.status is 'registered' —
-  // correct, since "registered" here just means "has a real, currently-valid
-  // subscription," which is exactly as true for a self-registered member (see
-  // this plan's §0.1 free-community auto-subscribe) as for an admin-added one.
-  private memberStatusLabel(m: MemberItemDTO): string {
-    if (m.accountStatus === 'suspended') return 'Suspended'
-    if (m.accountStatus === 'deleted') return 'Deleted'
-    if (m.registrationStatus === 'pending') return 'Pending Sign'
-    // A member with only the free community has nothing that can expire.
-    if (!m.hasPaidSubscription) return 'Free'
-    return m.hasActiveSubscription ? 'Active' : 'Expired'
-  }
-
-  private membersToCsv(members: MemberItemDTO[]): string {
-    const escape = (v: string) => `"${v.replace(/"/g, '""')}"`
-
-    // The first seven columns are exactly the ones Import CSV reads (same names, plain payment, YYYY-MM-DD dates), so an
-    // exported file can be imported again. Status and Added On are extra; the importers ignore them.
-    const header = ['Name', 'Contact Number', 'Payment', 'Paid on', 'Valid', 'Service', 'Email', 'Status', 'Added On']
-    const rows = members
-      .flatMap(m => (m.allSubscriptions.length > 0 ? m.allSubscriptions.map(sub => ({ m, sub })) : [{ m, sub: null as MemberSubscriptionDTO | null }]))
-      .map(({ m, sub }) => [
-        m.name,
-        m.phone,
-        sub ? String(sub.payment) : '',
-        sub?.paidOn ?? '',
-        sub?.validUntil ?? '',
-        sub?.communityName ?? '',
-        m.email ?? '',
-        this.memberStatusLabel(m),
-        m.createdAt.slice(0, 10),
-      ])
-
-    return '﻿' + [header, ...rows].map(r => r.map(escape).join(',')).join('\n')
   }
 
   // Brings a suspended/deleted member back to active. Branches on whether they'd
@@ -2326,7 +2318,7 @@ export class AdminService {
     knownCurrentSubIds?: string[],
   ): Promise<{ userWhere: Record<string, unknown>; currentSubIds: string[]; preferSub: ((s: SubscriptionForOrder) => boolean) | null }> {
     const {
-      communityId, communityIds, accountStatus, registrationStatus, hasActiveSubscription, source,
+      communityId, communityIds, status, accountStatus, registrationStatus, hasActiveSubscription, source,
       validFrom, validTo, paidFrom, paidTo, expiringIn7Days, search,
     } = filters
     const today = new Date()
@@ -2404,6 +2396,15 @@ export class AdminService {
     } else if (registrationStatus === 'registered') {
       andClauses.push({ passwordHash: { not: null } })
     }
+    // The Status filter. A member counts as suspended when the whole account is, or when an admin blocked them in the
+    // picked community (or, with none picked, in any community the admin can see). Active and pending leave those out,
+    // so every member has exactly one status. See MemberDisplayStatus.
+    if (status) {
+      const blocked = { communityBlocks: { some: communityId ? { communityId } : communityIds ? { communityId: { in: communityIds } } : {} } }
+      if (status === 'deleted') andClauses.push({ status: 'deleted' })
+      else if (status === 'suspended') andClauses.push({ OR: [{ status: 'suspended' }, blocked] })
+      else andClauses.push({ status: 'active' }, { passwordHash: status === 'pending' ? null : { not: null } }, { NOT: blocked })
+    }
     if (mustHavePaidPlan) {
       andClauses.push({ subscriptions: { some: { id: { in: currentSubIds }, community: { isFree: false } } } })
     }
@@ -2419,7 +2420,7 @@ export class AdminService {
 
     const userWhere: Record<string, unknown> = { role: 'member', deletedAt: null }
     // Deleted members are out of the roster, the cards and the export unless asked for by name.
-    userWhere['status'] = accountStatus ?? { not: 'deleted' }
+    userWhere['status'] = accountStatus ?? (status === 'deleted' ? 'deleted' : { not: 'deleted' })
     if (hasSubFilter) userWhere['subscriptions'] = { [subscriptionMode]: subWhere }
     if (andClauses.length > 0) userWhere['AND'] = andClauses
 
@@ -2459,9 +2460,20 @@ export class AdminService {
 
   /** Community blocks of these members, keyed `${userId}:${communityId}`. */
   private async loadBlocks(userIds: string[]): Promise<Map<string, MemberCommunityBlockDTO>> {
-    if (userIds.length === 0) return new Map()
+    return (await this.loadBlocksByUser(userIds)).blocks
+  }
+
+  /** The same blocks, plus the ids of the communities each member is blocked from. */
+  private async loadBlocksByUser(userIds: string[]): Promise<{ blocks: Map<string, MemberCommunityBlockDTO>; blockedByUser: Map<string, string[]> }> {
+    const blocks = new Map<string, MemberCommunityBlockDTO>()
+    const blockedByUser = new Map<string, string[]>()
+    if (userIds.length === 0) return { blocks, blockedByUser }
     const rows = await this.db.communityBlock.findMany({ where: { userId: { in: userIds } } })
-    return new Map(rows.map(b => [`${b.userId}:${b.communityId}`, { reason: b.reason, blockedAt: b.createdAt.toISOString() }]))
+    for (const b of rows) {
+      blocks.set(`${b.userId}:${b.communityId}`, { reason: b.reason, blockedAt: b.createdAt.toISOString() })
+      blockedByUser.set(b.userId, [...(blockedByUser.get(b.userId) ?? []), b.communityId])
+    }
+    return { blocks, blockedByUser }
   }
 
   private buildSubDTO(s: {
@@ -2545,7 +2557,7 @@ export class AdminService {
 
     // "Current" per community = most recently created row, not isActive:true — see
     // getCurrentSubscriptionIds's comment on queryMembers for why.
-    const blocks = await this.loadBlocks([user.id])
+    const { blocks, blockedByUser } = await this.loadBlocksByUser([user.id])
     const allSubs = this.latestSubscriptionPerCommunity(user.subscriptions)
     const sub = allSubs[0] ?? null
     const today = new Date()
@@ -2561,6 +2573,7 @@ export class AdminService {
       email: ap?.email ?? user.email,
       avatarUrl: user.avatarUrl,
       accountStatus: user.status,
+      status: displayStatusOf(user, blockedByUser.get(user.id) ?? [], {}),
       registrationStatus: signUpStatus(user.passwordHash, ap),
       hasActiveSubscription,
       hasPaidSubscription: hasPaidSubscription(allSubs),

@@ -23,6 +23,8 @@ export interface MemberSubscription {
   block: { reason: string; blockedAt: string } | null;
 }
 
+export type MemberDisplayStatus = "active" | "pending" | "suspended" | "deleted";
+
 export interface MemberItem {
   id: string; // User.id
   approvedPhoneId: string | null; // present only when source === "admin"
@@ -32,6 +34,11 @@ export interface MemberItem {
   email: string | null;
   avatarUrl: string | null;
   accountStatus: "active" | "suspended" | "deleted";
+  /**
+   * What the Status column shows: deleted, then suspended (the whole account, or blocked from a community), then pending
+   * (no password yet), else active. A paid plan running or lapsed is not a status; see the Valid Till column.
+   */
+  status: MemberDisplayStatus;
   registrationStatus: "pending" | "registered" | null; // pending = no password set yet; null = signed up on their own (source === "self")
   hasActiveSubscription: boolean;
   /** Holds (or held) a paid plan. False for a member who is only in the free community, who is never "Expired". */
@@ -54,6 +61,13 @@ export const ACCOUNT_STATUS_LABELS: Record<MemberItem["accountStatus"], string> 
   deleted: "Deleted",
 };
 
+const DISPLAY_STATUS: Record<MemberDisplayStatus, { label: string; style: string }> = {
+  active: { label: "Active", style: "bg-accent/10 text-accent" },
+  pending: { label: "Pending", style: "bg-amber-100 text-amber-600" },
+  suspended: { label: "Suspended", style: "bg-gray-100 text-gray-500" },
+  deleted: { label: "Deleted", style: "bg-gray-200 text-gray-600" },
+};
+
 export const REGISTRATION_STATUS_STYLES: Record<"pending" | "registered", string> = {
   pending: "bg-amber-100 text-amber-600",
   registered: "bg-accent/10 text-accent",
@@ -69,30 +83,10 @@ export const SOURCE_LABELS: Record<MemberItem["source"], string> = {
   self: "Self-registered",
 };
 
-// Single compact badge for the members table — mirrors the old backend
-// deriveMemberStatus's precedence (account standing beats registration
-// progress beats subscription validity) so the visual footprint stays close
-// to what a "status" column used to show, while the 3 real fields
-// (accountStatus/registrationStatus/hasActiveSubscription) remain available
-// independently for filters/CSV. registrationStatus === null (self-registered)
-// falls through to the last line, same as an admin-added member whose
-// ApprovedPhone.status is "registered" — correct, since "registered" here
-// just means "has a real, currently-valid subscription."
+// The badge in the members table. The status is worked out once by the server (the same value the Status filter and the
+// Excel export use), so the badge, the filter and the file always agree.
 export function getDisplayStatus(m: MemberItem): { label: string; style: string } {
-  if (m.accountStatus === "suspended") {
-    return { label: ACCOUNT_STATUS_LABELS.suspended, style: ACCOUNT_STATUS_STYLES.suspended };
-  }
-  if (m.accountStatus === "deleted") {
-    return { label: ACCOUNT_STATUS_LABELS.deleted, style: ACCOUNT_STATUS_STYLES.deleted };
-  }
-  if (m.registrationStatus === "pending") {
-    return { label: REGISTRATION_STATUS_LABELS.pending, style: REGISTRATION_STATUS_STYLES.pending };
-  }
-  // Only the free community: there is no paid plan that could expire.
-  if (!m.hasPaidSubscription) return { label: "Free", style: "bg-gray-100 text-gray-500" };
-  return m.hasActiveSubscription
-    ? { label: "Active", style: REGISTRATION_STATUS_STYLES.registered }
-    : { label: "Expired", style: "bg-red-100 text-red-500" };
+  return DISPLAY_STATUS[m.status];
 }
 
 export function getInitials(name: string): string {

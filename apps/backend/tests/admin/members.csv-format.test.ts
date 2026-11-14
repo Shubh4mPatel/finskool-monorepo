@@ -6,15 +6,21 @@ import { notificationsQueue, WELCOME_EMAIL_JOB } from '../../src/lib/queue.js'
 import { parseStrictDate, todayInIndia, subscriptionDatesProblem } from '../../src/modules/admin/admin.service.js'
 import { prisma, resetDb, createAdmin, createCommunity, createMobileMember, nextMobile, daysFromNow, type TestAdmin } from '../helpers/fixtures.js'
 
-// Members > Export CSV and Import CSV share one format: the same column names, a plain payment, YYYY-MM-DD dates.
+// Members > Export Excel and Import CSV share one format: the same column names, a plain payment, YYYY-MM-DD dates.
 // Dates are checked strictly (the exact format or the row is refused, nothing is guessed), a duplicate is a
 // (phone, community) pair, and the free community can be imported at price 0 with no valid-till date.
 
 const app = createApp()
 const queueAdd = vi.mocked(notificationsQueue.add)
 const XLSX = createRequire(import.meta.url)('xlsx') as {
-  utils: { aoa_to_sheet(rows: unknown[][], opts?: object): unknown; book_new(): unknown; book_append_sheet(wb: unknown, ws: unknown, name: string): void }
+  utils: { aoa_to_sheet(rows: unknown[][], opts?: object): unknown; book_new(): unknown; book_append_sheet(wb: unknown, ws: unknown, name: string): void; sheet_to_json<T>(ws: unknown, opts?: object): T[] }
+  read(data: Buffer, opts: object): { SheetNames: string[]; Sheets: Record<string, unknown> }
   write(wb: unknown, opts: object): Buffer
+}
+const binary = (res: request.Response, cb: (err: Error | null, body: Buffer) => void) => {
+  const chunks: Buffer[] = []
+  res.on('data', (c: Buffer) => chunks.push(c))
+  res.on('end', () => cb(null, Buffer.concat(chunks)))
 }
 
 let boss: TestAdmin
@@ -40,7 +46,12 @@ const validate = (rows: Array<Record<string, unknown>>) =>
     .send({ rows: rows.map((r, i) => ({ rowNum: i + 1, name: 'Person', phone: nextMobile(), email: '', service: swing.name, payment: 1000, paidOn: daysFromNow(-5), valid: daysFromNow(90), ...r })) })
 const importJson = (rows: Array<Record<string, unknown>>) =>
   request(app).post('/api/v1/admin/import-json').set('Authorization', boss.auth).send({ strategy: 'overwrite', rows })
-const exportCsv = () => request(app).get('/api/v1/admin/members/export').set('Authorization', boss.auth)
+const exportXlsx = () => request(app).get('/api/v1/admin/members/export').set('Authorization', boss.auth).buffer(true).parse(binary)
+/** Every row of the exported workbook as text cells, header first. */
+const sheetRows = (file: Buffer): string[][] => {
+  const book = XLSX.read(file, { type: 'buffer' })
+  return XLSX.utils.sheet_to_json<string[]>(book.Sheets[book.SheetNames[0]!], { header: 1, raw: false, defval: '' })
+}
 
 const reasons = (res: request.Response) => (res.body.data.errors as { reason: string }[]).map(e => e.reason)
 const subsOf = (userId: string, communityId: string) => prisma.subscription.findMany({ where: { userId, communityId } })
@@ -319,14 +330,17 @@ describe('export and import use the same format', () => {
       await prisma.subscription.create({ data: { userId: m.id, communityId: free.id, payment: 0, validUntil: null } })
     }
 
-    const exported = await exportCsv()
-    const [header, ...lines] = exported.text.slice(1).split('\n')
-    expect(header).toBe('"Name","Contact Number","Payment","Paid on","Valid","Service","Email","Status","Added On"')
+    const exported = await exportXlsx()
+    const [header, ...lines] = sheetRows(exported.body)
+    expect(header!.slice(0, 7)).toEqual(['Name', 'Contact Number', 'Payment', 'Paid on', 'Valid', 'Service', 'Email'])
     // The free community exports as payment 0 with no valid date.
-    expect(lines.find(l => l.includes('Free Farhan'))).toContain('"0","","","Finskool Free"')
-    expect(lines.find(l => l.includes('Swing Traders'))).toContain('"12500","2026-01-15","2030-03-31","Swing Traders"')
+    expect(lines.find(l => l[0] === 'Free Farhan')!.slice(2, 6)).toEqual(['0', '', '', 'Finskool Free'])
+    expect(lines.find(l => l[5] === 'Swing Traders')!.slice(2, 6)).toEqual(['12500', '2026-01-15', '2030-03-31', 'Swing Traders'])
 
-    const res = await uploadText(exported.text, 'overwrite')
+    const res = await request(app)
+      .post('/api/v1/admin/import-csv?duplicateStrategy=overwrite')
+      .set('Authorization', boss.auth)
+      .attach('file', exported.body, { filename: 'members.xlsx', contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
 
     expect(res.status).toBe(200)
     expect(res.body.data.errors).toEqual([])
@@ -344,9 +358,8 @@ describe('export and import use the same format', () => {
     const m = await createMobileMember({ subscriptions: [{ communityId: swing.id, validUntil: '2030-03-31', paidOn: '2026-01-15', payment: 12500 }] })
     await prisma.subscription.create({ data: { userId: m.id, communityId: free.id, payment: 0, validUntil: null } })
 
-    const exported = await exportCsv()
-    const [, ...lines] = exported.text.slice(1).split('\n')
-    const cells = lines.map(l => l.slice(1, -1).split('","'))
+    const exported = await exportXlsx()
+    const [, ...cells] = sheetRows(exported.body)
     const rows = cells.map((c, i) => ({ rowNum: i + 1, name: c[0], phone: c[1], payment: Number(c[2] || 0), paidOn: c[3] || undefined, valid: c[4], service: c[5], email: c[6] }))
     const res = await request(app).post('/api/v1/admin/validate-import').set('Authorization', boss.auth).send({ rows })
 

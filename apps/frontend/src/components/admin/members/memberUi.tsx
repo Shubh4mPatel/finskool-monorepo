@@ -32,7 +32,7 @@ export function FormField({
   );
 }
 
-/** The member's single display status (Registered / Pending / Expired / Suspended / Deleted), with a dot. */
+/** The member's single status (Active / Pending / Suspended / Deleted), with a dot. */
 export function StatusPill({ member }: { member: MemberItem }) {
   const status = getDisplayStatus(member);
   return (
