@@ -198,7 +198,8 @@ export class NotificationsService {
   async fanOutCommunityPost(payload: CommunityPostNotificationJobPayload): Promise<{ created: number }> {
     const community = await this.db.community.findUnique({ where: { id: payload.communityId }, select: { name: true, isFree: true } })
     const { subject, html } = renderEmail('new-announcement', {
-      community_name: community?.name ?? '',
+      // The free community's content is the general feed, so members see "in feed" rather than the community name.
+      community_name: community?.isFree ? 'feed' : (community?.name ?? ''),
       post_title: payload.postTitle,
       post_excerpt: payload.postExcerpt,
     })
