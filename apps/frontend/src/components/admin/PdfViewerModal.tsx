@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Download, ExternalLink, Loader2, Printer, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
+import { Download, Loader2, X, ZoomIn, ZoomOut } from "lucide-react";
 import { useEscape } from "@/components/admin/posts/useEscape";
 
 /** The last part of the URL's path as a file name ("FS-2026-27-0006.pdf"), or `fallback` if there is none. */
@@ -14,15 +15,23 @@ function fileNameOf(url: string, fallback: string): string {
   }
 }
 
-const headerBtn =
-  "inline-flex items-center gap-1.5 rounded-full border border-divider px-3.5 py-2 text-xs font-bold text-primary transition-colors hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-50";
+// A4 portrait. The invoice is one page, so the frame is cut to the page's own shape and it reads as a picture.
+const PAGE_RATIO = 210 / 297;
+// The viewer's own bars (header and padding), taken off the screen height to get the room the page has.
+const ROOM = "calc(100vh - 7rem)";
+// Hides the browser PDF viewer's toolbar, side panel and scrollbar, and fits the whole page in the frame.
+const VIEWER_PARAMS = "#toolbar=0&navpanes=0&scrollbar=0&view=Fit";
+const ZOOM = 1.7;
+
+const iconBtn = "flex h-10 w-10 items-center justify-center rounded-full text-white/85 transition-colors hover:bg-white/15 hover:text-white disabled:opacity-40";
 
 /**
- * A PDF (an invoice or receipt) shown inside the admin app, under the Finskool header, instead of in a separate tab.
- * Print, Download and Open in new tab sit in the header; the browser's own PDF toolbar (zoom, pages) is in the frame.
+ * A PDF (an invoice or receipt) opened the way a photo opens in a chat app: a dark full-screen view with the page in the
+ * middle, and only Zoom, Download and Close above it. Click the dark area, press Esc or the X to leave; click the page to
+ * zoom in and out.
  *
- * The file is fetched into a same-origin blob first, so Print and Download work whatever host the PDF is stored on.
- * If that fetch is refused (a storage host without CORS), the original address is framed instead and Print is hidden.
+ * The file is fetched into a same-origin blob first, so Download works whatever host the PDF is stored on and the file
+ * keeps its own name. If that fetch is refused (a storage host without CORS), the original address is framed instead.
  */
 export default function PdfViewerModal({
   title,
@@ -39,8 +48,7 @@ export default function PdfViewerModal({
 }) {
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "direct">("loading");
-  const frameRef = useRef<HTMLIFrameElement>(null);
-  const closeRef = useRef<HTMLButtonElement>(null);
+  const [zoomed, setZoomed] = useState(false);
   useEscape(true, onClose);
 
   useEffect(() => {
@@ -66,11 +74,10 @@ export default function PdfViewerModal({
     };
   }, [url]);
 
-  // The page behind stays put while the viewer is open, and the close button takes the keyboard focus.
+  // The page behind stays put while the viewer is open.
   useEffect(() => {
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    closeRef.current?.focus();
     return () => {
       document.body.style.overflow = previous;
     };
@@ -90,70 +97,65 @@ export default function PdfViewerModal({
     a.remove();
   }
 
-  function print() {
-    try {
-      frameRef.current?.contentWindow?.focus();
-      frameRef.current?.contentWindow?.print();
-    } catch {
-      window.open(blobUrl ?? url, "_blank", "noopener");
-    }
-  }
+  const pageHeight = zoomed ? `calc(${ROOM} * ${ZOOM})` : ROOM;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6">
-      <div className="animate-fade absolute inset-0 bg-primary/40 backdrop-blur-sm" onClick={onClose} aria-hidden />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        className="animate-rise relative flex h-full max-h-[96vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-card-hover"
-      >
-        <header className="flex flex-wrap items-center gap-3 border-b border-divider bg-white px-4 py-3 sm:px-5">
+  return createPortal(
+    <div role="dialog" aria-modal="true" aria-label={title} className="animate-fade fixed inset-0 z-100 flex flex-col bg-[#0b1412]/95 backdrop-blur-sm">
+      <header className="flex items-center gap-3 px-4 py-3 text-white sm:px-6">
+        <div className="flex shrink-0 items-center gap-2">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo.svg" alt="Finskool" className="h-10 w-10 shrink-0 rounded-full border border-divider" />
-          <div className="min-w-0 flex-1">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-accent">Finskool</p>
-            <h2 className="truncate font-display text-base font-bold text-primary">{title}</h2>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {state === "ready" && (
-              <button type="button" onClick={print} className={headerBtn}>
-                <Printer size={14} /> Print
-              </button>
-            )}
-            <button type="button" onClick={download} disabled={state === "loading"} className={headerBtn}>
-              <Download size={14} /> Download
-            </button>
-            <button
-              type="button"
-              onClick={() => window.open(blobUrl ?? url, "_blank", "noopener")}
-              disabled={state === "loading"}
-              className={headerBtn}
-            >
-              <ExternalLink size={14} /> Open in new tab
-            </button>
-            <button
-              ref={closeRef}
-              type="button"
-              onClick={onClose}
-              aria-label="Close"
-              className="flex h-9 w-9 items-center justify-center rounded-full text-muted transition-colors hover:bg-divider/60 hover:text-primary"
-            >
-              <X size={18} />
-            </button>
-          </div>
-        </header>
-
-        <div className="relative flex-1 bg-divider/30">
-          {src ? (
-            <iframe ref={frameRef} src={src} title={title} className="h-full w-full border-0" />
-          ) : (
-            <div className="flex h-full items-center justify-center gap-2 text-sm text-muted" role="status">
-              <Loader2 size={16} className="animate-spin" /> Opening {title}…
-            </div>
-          )}
+          <img src="/logo.svg" alt="Finskool" className="h-8 w-8 rounded-lg" />
+          <span className="hidden font-display text-base font-bold sm:inline">Finskool</span>
         </div>
+        <span className="mx-1 hidden h-6 w-px bg-white/20 sm:block" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold">{title}</p>
+          <p className="text-[11px] text-white/60">PDF</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setZoomed((z) => !z)}
+          disabled={!src}
+          aria-label={zoomed ? "Fit to screen" : "Zoom in"}
+          title={zoomed ? "Fit to screen" : "Zoom in"}
+          className={iconBtn}
+        >
+          {zoomed ? <ZoomOut size={19} /> : <ZoomIn size={19} />}
+        </button>
+        <button type="button" onClick={download} disabled={state === "loading"} aria-label="Download" title="Download" className={iconBtn}>
+          <Download size={19} />
+        </button>
+        <button type="button" onClick={onClose} aria-label="Close" title="Close (Esc)" autoFocus className={iconBtn}>
+          <X size={21} />
+        </button>
+      </header>
+
+      {/* Clicking the dark area around the page closes the viewer, like a lightbox. */}
+      <div
+        className={`relative flex min-h-0 flex-1 px-4 pb-6 sm:px-16 ${zoomed ? "items-start justify-center overflow-auto" : "items-center justify-center"}`}
+        onClick={(e) => e.target === e.currentTarget && onClose()}
+      >
+        {src ? (
+          <div
+            className="relative shrink-0 overflow-hidden rounded-lg bg-white shadow-2xl"
+            style={{ height: pageHeight, aspectRatio: PAGE_RATIO, maxWidth: zoomed ? undefined : "100%" }}
+          >
+            <iframe src={`${src}${VIEWER_PARAMS}`} title={title} className="h-full w-full border-0" />
+            {/* The frame would swallow clicks, so a clear layer over it lets a click on the page zoom, as an image does. */}
+            <button
+              type="button"
+              onClick={() => setZoomed((z) => !z)}
+              aria-label={zoomed ? "Fit to screen" : "Zoom in"}
+              className={`absolute inset-0 ${zoomed ? "cursor-zoom-out" : "cursor-zoom-in"}`}
+            />
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 text-sm text-white/70" role="status">
+            <Loader2 size={18} className="animate-spin" /> Opening {title}…
+          </div>
+        )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

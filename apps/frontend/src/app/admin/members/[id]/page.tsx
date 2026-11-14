@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Ban, Crown, Lock, Pencil, Trash2 } from "lucide-react";
+import { ArrowLeft, Ban, ChevronDown, Crown, Layers, Lock, Pencil, Trash2 } from "lucide-react";
 import { isValidPhoneNumber } from "libphonenumber-js";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
@@ -53,6 +53,10 @@ export default function MemberDetailPage() {
   const [blockTarget, setBlockTarget] = useState<{ communityId: string; communityName: string } | null>(null);
   const [blockReason, setBlockReason] = useState("");
   const [blockBusy, setBlockBusy] = useState(false);
+  // The Communities & documents accordion: closed until the admin opens it, except that a member who is suspended from a
+  // community opens it, so the suspension is not hidden. null = the admin has not touched it.
+  const [accordionOpen, setAccordionOpen] = useState<boolean | null>(null);
+  const [receiptCount, setReceiptCount] = useState<number | null>(null);
 
   const [extendModalOpen, setExtendModalOpen] = useState(false);
   const [extendPayment, setExtendPayment] = useState("");
@@ -434,70 +438,107 @@ export default function MemberDetailPage() {
             </div>
           </div>
 
-          {/* The free community is the default for every account, so it is not listed; it goes with the whole account.
-              (A suspension already on record for it would still show, so it can be revoked.) */}
-          {member.allSubscriptions.some((s) => !s.isFree || s.block) && (
-            <>
-              <div className="h-px w-full bg-divider" />
-              <div className="p-6">
-                <p className="text-sm font-semibold text-primary">Communities</p>
-                <p className="mt-1 text-xs text-subtle">
-                  Suspending here removes access to one community only. The member can still sign in and use their other communities.
-                </p>
-                <ul className="mt-3 divide-y divide-divider rounded-xl border border-divider">
-                  {member.allSubscriptions.filter((s) => !s.isFree || s.block).map((s) => (
-                    <li key={s.communityId} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-                      <div className="min-w-0">
-                        <p className="flex items-center gap-2 text-sm font-semibold text-primary">
-                          {s.communityName}
-                          {s.block ? (
-                            <span className="rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-bold text-red-600">Suspended</span>
-                          ) : !s.isActive ? (
-                            <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-bold text-gray-500">Inactive</span>
-                          ) : null}
-                        </p>
-                        {s.block ? (
-                          <p className="mt-0.5 text-xs text-red-600">
-                            Reason: {s.block.reason} · since {formatDate(s.block.blockedAt)}
-                          </p>
-                        ) : (
-                          <p className="mt-0.5 text-xs text-subtle">{s.validUntil ? `Valid until ${formatDate(s.validUntil)}` : "No expiry"}</p>
-                        )}
-                      </div>
-                      {member.accountStatus !== "deleted" &&
-                        (s.block ? (
-                          <button
-                            type="button"
-                            onClick={() => handleUnblockInCommunity(s.communityId, s.communityName)}
-                            disabled={blockBusy}
-                            className="rounded-full border border-accent px-4 py-1.5 text-xs font-bold text-accent transition-colors hover:bg-accent/5 disabled:opacity-60"
-                          >
-                            Revoke suspension
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setBlockReason("");
-                              setBlockTarget({ communityId: s.communityId, communityName: s.communityName });
-                            }}
-                            disabled={blockBusy}
-                            className="flex items-center gap-1.5 rounded-full border border-red-300 px-4 py-1.5 text-xs font-bold text-red-500 transition-colors hover:bg-red-50 disabled:opacity-60"
-                          >
-                            <Ban size={12} />
-                            Suspend in community
-                          </button>
-                        ))}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </>
-          )}
-
           <div className="h-px w-full bg-divider" />
 
-          <MemberReceipts userId={member.id} />
+          {/* Community options (suspend / revoke) and the member's documents, folded away until the admin opens them. */}
+          {(() => {
+            const listed = member.allSubscriptions.filter((s) => !s.isFree || s.block);
+            const suspendedCount = listed.filter((s) => s.block).length;
+            const open = accordionOpen ?? suspendedCount > 0;
+            const summary = [
+              `${listed.length} ${listed.length === 1 ? "community" : "communities"}`,
+              receiptCount === null ? null : `${receiptCount} ${receiptCount === 1 ? "receipt" : "receipts"}`,
+              suspendedCount > 0 ? `${suspendedCount} suspended` : null,
+            ].filter(Boolean).join(" · ");
+            return (
+              <section data-testid="member-documents">
+                <button
+                  type="button"
+                  onClick={() => setAccordionOpen(!open)}
+                  aria-expanded={open}
+                  aria-controls="member-documents-panel"
+                  className="flex w-full items-center gap-3 px-6 py-4 text-left transition-colors hover:bg-background/60 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-accent/15"
+                >
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent/10 text-accent">
+                    <Layers size={16} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-semibold text-primary">Communities &amp; documents</span>
+                    <span className={`block text-xs ${suspendedCount > 0 ? "text-red-600" : "text-subtle"}`}>{summary}</span>
+                  </span>
+                  <ChevronDown size={18} className={`shrink-0 text-muted transition-transform duration-300 ${open ? "rotate-180" : ""}`} aria-hidden />
+                </button>
+
+                {/* Always rendered (so the receipts load and the count shows on the closed header); a closed panel is inert. */}
+                <div
+                  id="member-documents-panel"
+                  inert={!open}
+                  className={`grid transition-[grid-template-rows] duration-300 ease-out ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
+                >
+                  <div className="min-h-0 overflow-hidden">
+                    <div className="border-t border-divider">
+                      {listed.length > 0 && (
+                    <div className="p-6">
+                      <p className="text-sm font-semibold text-primary">Communities</p>
+                      <p className="mt-1 text-xs text-subtle">
+                        Suspending here removes access to one community only. The member can still sign in and use their other communities.
+                      </p>
+                      <ul className="mt-3 divide-y divide-divider rounded-xl border border-divider">
+                        {member.allSubscriptions.filter((s) => !s.isFree || s.block).map((s) => (
+                          <li key={s.communityId} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                            <div className="min-w-0">
+                              <p className="flex items-center gap-2 text-sm font-semibold text-primary">
+                                {s.communityName}
+                                {s.block ? (
+                                  <span className="rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-bold text-red-600">Suspended</span>
+                                ) : !s.isActive ? (
+                                  <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-bold text-gray-500">Inactive</span>
+                                ) : null}
+                              </p>
+                              {s.block ? (
+                                <p className="mt-0.5 text-xs text-red-600">
+                                  Reason: {s.block.reason} · since {formatDate(s.block.blockedAt)}
+                                </p>
+                              ) : (
+                                <p className="mt-0.5 text-xs text-subtle">{s.validUntil ? `Valid until ${formatDate(s.validUntil)}` : "No expiry"}</p>
+                              )}
+                            </div>
+                            {member.accountStatus !== "deleted" &&
+                              (s.block ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleUnblockInCommunity(s.communityId, s.communityName)}
+                                  disabled={blockBusy}
+                                  className="rounded-full border border-accent px-4 py-1.5 text-xs font-bold text-accent transition-colors hover:bg-accent/5 disabled:opacity-60"
+                                >
+                                  Revoke suspension
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setBlockReason("");
+                                    setBlockTarget({ communityId: s.communityId, communityName: s.communityName });
+                                  }}
+                                  disabled={blockBusy}
+                                  className="flex items-center gap-1.5 rounded-full border border-red-300 px-4 py-1.5 text-xs font-bold text-red-500 transition-colors hover:bg-red-50 disabled:opacity-60"
+                                >
+                                  <Ban size={12} />
+                                  Suspend in community
+                                </button>
+                              ))}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                      )}
+                      <MemberReceipts userId={member.id} onCount={setReceiptCount} />
+                    </div>
+                  </div>
+                </div>
+              </section>
+            );
+          })()}
 
           <div className="h-px w-full bg-divider" />
 

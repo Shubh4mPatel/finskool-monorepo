@@ -16,8 +16,8 @@ interface ReceiptItem {
   amount: number;
 }
 
-// Plan-purchase receipts of one member. Each opens in the app's PDF viewer, which has Print and Download.
-export default function MemberReceipts({ userId }: { userId: string }) {
+// Plan-purchase receipts of one member. Each opens in the app's PDF viewer (a full-screen view with Zoom and Download).
+export default function MemberReceipts({ userId, onCount }: { userId: string; /** Told how many receipts there are, once they have loaded. */ onCount?: (count: number) => void }) {
   const toast = useToast();
   const [receipts, setReceipts] = useState<ReceiptItem[] | null>(null);
   const [opening, setOpening] = useState<string | null>(null);
@@ -26,9 +26,15 @@ export default function MemberReceipts({ userId }: { userId: string }) {
   useEffect(() => {
     api
       .get<ReceiptItem[]>(`/api/v1/admin/receipts?userId=${userId}`)
-      .then(setReceipts)
-      .catch(() => setReceipts([]));
-  }, [userId]);
+      .then((list) => {
+        setReceipts(list);
+        onCount?.(list.length);
+      })
+      .catch(() => {
+        setReceipts([]);
+        onCount?.(0);
+      });
+  }, [userId, onCount]);
 
   async function view(r: ReceiptItem) {
     setOpening(r.id);
@@ -44,7 +50,7 @@ export default function MemberReceipts({ userId }: { userId: string }) {
 
   if (receipts === null || receipts.length === 0) return null;
   return (
-    <div className="border-b border-divider p-6" data-testid="member-receipts">
+    <div className="border-t border-divider p-6 first:border-t-0" data-testid="member-receipts">
       <p className="mb-3 flex items-center gap-2 text-sm font-semibold text-primary">
         <Receipt size={15} /> Payment receipts
       </p>
