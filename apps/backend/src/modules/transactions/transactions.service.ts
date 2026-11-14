@@ -52,6 +52,37 @@ export interface TransactionListDTO {
   counts: { all: number; community: number; service: number }
 }
 
+/** One of a member's own transactions, for the mobile app. Nothing about other people or the admin side. */
+export interface MemberTransactionDTO {
+  id: string
+  kind: TransactionKind
+  /** `flagged`: the money was received but could not be applied, and the team is looking into it. */
+  status: TransactionStatus
+  occurredAt: string
+  amount: number
+  currency: string
+  /** The community or service paid for. */
+  title: string
+  planMonths: number | null
+  planName: string | null
+  /** Services: "SR-12 · Quote 1". */
+  reference: string | null
+  paymentId: string | null
+  method: string | null
+  /** Why a payment failed (from the bank / Razorpay). Null for the others. */
+  failureReason: string | null
+  /** `downloadPath` is an endpoint the app calls for a short-lived PDF link. */
+  invoice: { number: string; downloadPath: string } | null
+}
+
+export interface MemberTransactionListDTO {
+  items: MemberTransactionDTO[]
+  page: number
+  pageSize: number
+  total: number
+  totalPages: number
+}
+
 export interface TransactionStatsDTO {
   totalCollected: { amount: number; payments: number }
   thisMonth: { amount: number; payments: number; label: string }
@@ -110,9 +141,15 @@ const REASONS: Record<string, string> = {
 export class TransactionsService {
   constructor(private readonly db: PrismaClient) {}
 
-  /** The two ledgers as one set of rows. `accessible` is null for a super admin, else the communities an admin manages. */
-  private source(accessible: string[] | null): Prisma.Sql {
-    const communityScope = accessible === null ? Prisma.empty : Prisma.sql`AND po.community_id = ANY(${accessible}::uuid[])`
+  /**
+   * The two ledgers as one set of rows. `accessible` is null for a super admin, else the communities an admin manages.
+   * `userId` narrows it to one member's own payments (the mobile list).
+   */
+  private source(accessible: string[] | null, userId?: string): Prisma.Sql {
+    const communityScope = Prisma.sql`${accessible === null ? Prisma.empty : Prisma.sql`AND po.community_id = ANY(${accessible}::uuid[])`} ${
+      userId ? Prisma.sql`AND po.user_id = ${userId}::uuid` : Prisma.empty
+    }`
+    const serviceScope = userId ? Prisma.sql`AND ro.user_id = ${userId}::uuid` : Prisma.empty
     return Prisma.sql`
       SELECT
         'plan:' || po.id::text AS id,
@@ -228,7 +265,7 @@ export class TransactionsService {
         ORDER BY e.created_at DESC
         LIMIT 1
       ) ev ON true
-      WHERE rp.status IN ('captured', 'failed')`
+      WHERE rp.status IN ('captured', 'failed') ${serviceScope}`
   }
 
   private conditions(f: TransactionFilters, opts: { ignoreKind?: boolean } = {}): Prisma.Sql {
@@ -278,6 +315,21 @@ export class TransactionsService {
       totalPages: Math.max(1, Math.ceil(total / pageSize)),
       counts: { all: community + service, community, service },
     }
+  }
+
+  /** A member's own transactions, newest first, between two IST days (both optional). */
+  async listForMember(userId: string, range: { from?: string; to?: string }, page: number, pageSize: number): Promise<MemberTransactionListDTO> {
+    const source = this.source(null, userId)
+    const where = this.conditions(range)
+    const [count, rows] = await Promise.all([
+      this.db.$queryRaw<{ n: bigint }[]>`SELECT count(*) AS n FROM (${source}) t ${where}`,
+      this.db.$queryRaw<Row[]>`
+        SELECT t.* FROM (${source}) t ${where}
+        ORDER BY t.occurred_at DESC, t.id DESC
+        LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`,
+    ])
+    const total = Number(count[0]?.n ?? 0)
+    return { items: rows.map(toMemberDTO), page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) }
   }
 
   /** Every row the filters match, for the CSV (capped, so one click cannot pull the whole ledger). */
@@ -365,5 +417,32 @@ function toDTO(r: Row): TransactionDTO {
           }
         : null,
     requestId: r.request_id,
+  }
+}
+
+function toMemberDTO(r: Row): MemberTransactionDTO {
+  return {
+    id: r.id,
+    kind: r.kind,
+    status: r.status,
+    occurredAt: r.occurred_at.toISOString(),
+    amount: Number(r.amount),
+    currency: r.currency,
+    title: r.target_name,
+    planMonths: r.plan_months,
+    planName: r.plan_name,
+    reference: r.request_number === null ? null : `${requestLabel(r.request_number)} · Quote ${r.quote_version ?? 1}`,
+    paymentId: r.payment_id,
+    method: r.method,
+    // A flagged payment's reason is an internal note (amount mismatch, blocked...): the member only sees a failed one's.
+    failureReason: r.status === 'failed' ? r.reason : null,
+    invoice:
+      r.invoice_id && r.invoice_number
+        ? {
+            number: r.invoice_number,
+            // The member's own endpoints: a plan receipt, and a service request's invoice.
+            downloadPath: r.kind === 'community' ? `/api/v1/payments/receipts/${r.invoice_id}/download` : `/api/v1/mobile/services/${r.request_id}/invoice`,
+          }
+        : null,
   }
 }

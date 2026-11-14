@@ -2,7 +2,7 @@ import { Router } from 'express'
 import type { Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
 import prisma from '../../lib/prisma.js'
-import { authenticate, requireRole } from '../../middlewares/auth.middleware.js'
+import { authenticate, requireMobileAuth, requireRole } from '../../middlewares/auth.middleware.js'
 import { BadRequestError } from '../../shared/errors/index.js'
 import { TransactionsService } from './transactions.service.js'
 import type { TransactionDTO, TransactionFilters } from './transactions.service.js'
@@ -147,3 +147,40 @@ router.get('/export/xlsx', wrap(async (req, res) => {
 }))
 
 export default router
+
+// ─── Mobile: /api/v1/mobile/transactions ────────────────────────────────────
+// The member's own payments, newest first. Deliberately small: a date range and paging, nothing else.
+export const mobileTransactionsRouter = Router()
+mobileTransactionsRouter.use(authenticate, requireMobileAuth)
+
+const mobileListSchema = z.object({
+  from: day.optional(),
+  to: day.optional(),
+  page: z.coerce.number().int().min(1).max(100_000).default(1),
+  pageSize: z.coerce.number().int().min(1).max(50).default(20),
+})
+
+/**
+ * @openapi
+ * /mobile/transactions:
+ *   get:
+ *     tags: [Payments]
+ *     summary: The member's own transactions, newest first
+ *     description: >
+ *       Every payment the logged-in member made for a community plan or a service quote, and every attempt that failed,
+ *       with the invoice when there is one. `status` is `paid`, `failed`, or `flagged` (the money was received but could
+ *       not be applied; the team is looking into it). Dates are IST calendar days, both included.
+ *     parameters:
+ *       - { in: query, name: from, description: First day (IST), schema: { type: string, format: date } }
+ *       - { in: query, name: to, description: Last day (IST), schema: { type: string, format: date } }
+ *       - { in: query, name: page, schema: { type: integer, default: 1 } }
+ *       - { in: query, name: pageSize, schema: { type: integer, default: 20, maximum: 50 } }
+ *     responses:
+ *       200: { description: "{ success, data: { items, page, pageSize, total, totalPages } }" }
+ *       400: { description: Bad date, or `from` after `to`. }
+ */
+mobileTransactionsRouter.get('/', wrap(async (req, res) => {
+  const { page, pageSize, from, to } = parse(mobileListSchema, req.query)
+  if (from && to && from > to) throw new BadRequestError('"from" is after "to"')
+  res.json({ success: true, data: await service.listForMember(req.user!.id, { ...(from ? { from } : {}), ...(to ? { to } : {}) }, page, pageSize) })
+}))

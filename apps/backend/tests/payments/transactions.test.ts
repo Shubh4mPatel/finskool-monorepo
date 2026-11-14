@@ -19,7 +19,7 @@ import { createApp } from '../../src/app.js'
 import { notificationsQueue } from '../../src/lib/queue.js'
 import { PaymentsService } from '../../src/modules/payments/payments.service.js'
 import { ServicePaymentsService } from '../../src/modules/services/services.payments.js'
-import { prisma, resetDb, createAdmin, createCommunity, createMobileMember, createServiceRequest, type TestAdmin } from '../helpers/fixtures.js'
+import { prisma, resetDb, createAdmin, createCommunity, createMobileMember, createServiceRequest, mobileCookie, type TestAdmin } from '../helpers/fixtures.js'
 
 // The admin Transactions screen: every payment for communities and services, with its invoice, plus the attempts that
 // failed and the payments that reached Razorpay but could not be applied.
@@ -403,5 +403,69 @@ describe('Excel export', () => {
     const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(XLSX.read(res.body, { type: 'buffer' }).Sheets['Transactions'])
     expect(rows.map(r => r['Paid for'])).toEqual(['Swing Community'])
     expect((await get(boss, '/export/xlsx?status=refunded')).status).toBe(400)
+  })
+})
+
+describe('the member\'s own transaction list (mobile)', () => {
+  const mine = (who: Parameters<typeof mobileCookie>[0], qs = '') => request(app).get(`/api/v1/mobile/transactions${qs}`).set('Cookie', mobileCookie(who))
+
+  it('lists only the caller\'s payments, newest first, with the invoice and no one else\'s details', async () => {
+    const other = await createMobileMember({ name: 'Priya Nair' })
+    const older = await planOrder({ at: at('2026-11-01T06:00:00Z') })
+    await receiptFor(older.id, 'RCPT/2026-27/0001')
+    await planOrder({ at: at('2026-11-10T06:00:00Z'), amount: 1499, planId: yearly.id })
+    await planOrder({ userId: other.id, at: at('2026-11-05T06:00:00Z') })
+    const failedOrder = await planOrder({ status: 'created' })
+    await prisma.planPaymentFailure.create({ data: { planOrderId: failedOrder.id, razorpayPaymentId: 'pay_m_f', amount: 5999, method: 'upi', errorDescription: 'Payment declined by bank', createdAt: at('2026-11-12T06:00:00Z') } })
+
+    const res = await mine(member as never)
+    expect(res.status).toBe(200)
+    expect(res.body.data).toMatchObject({ page: 1, pageSize: 20, total: 3, totalPages: 1 })
+    const items = res.body.data.items
+    expect(items.map((i: { status: string }) => i.status)).toEqual(['failed', 'paid', 'paid'])
+    expect(items[0]).toMatchObject({ title: 'Swing Community', failureReason: 'Payment declined by bank', method: 'upi', invoice: null })
+    expect(items[2]).toMatchObject({
+      amount: 5999,
+      planMonths: 3,
+      invoice: { number: 'RCPT/2026-27/0001', downloadPath: expect.stringMatching(/^\/api\/v1\/payments\/receipts\/[0-9a-f-]+\/download$/) },
+    })
+    // Nothing about other members and nothing internal.
+    for (const i of items) expect(Object.keys(i)).not.toEqual(expect.arrayContaining(['member', 'orderId', 'reason', 'requestId']))
+    expect(JSON.stringify(res.body)).not.toContain('Priya')
+  })
+
+  it('filters by date (IST days), pages, and keeps a flagged payment\'s internal reason private', async () => {
+    for (const d of ['2026-11-01', '2026-11-03', '2026-11-05', '2026-11-08']) await planOrder({ at: at(`${d}T06:00:00Z`) })
+    await planOrder({ status: 'flagged', flagReason: 'member_blocked', at: at('2026-11-09T06:00:00Z') })
+
+    const p1 = (await mine(member as never, '?pageSize=2&page=1')).body.data
+    expect(p1).toMatchObject({ total: 5, totalPages: 3 })
+    expect(p1.items[0]).toMatchObject({ status: 'flagged', failureReason: null })
+    expect((await mine(member as never, '?pageSize=2&page=3')).body.data.items).toHaveLength(1)
+
+    const ranged = (await mine(member as never, '?from=2026-11-03&to=2026-11-05')).body.data
+    expect(ranged.total).toBe(2)
+  })
+
+  it('shows a paid service with its invoice endpoint', async () => {
+    await billing()
+    const q = await quotedRequest('Portfolio Analysis')
+    await new ServicePaymentsService(prisma).settle({ razorpayOrderId: q.orderId, razorpayPaymentId: 'pay_m_svc', amountPaise: null, source: 'verify' })
+    const [item] = (await mine(member as never)).body.data.items
+    expect(item).toMatchObject({
+      kind: 'service',
+      status: 'paid',
+      title: 'Portfolio Analysis',
+      reference: `SR-${q.req.number} · Quote 1`,
+      invoice: { downloadPath: `/api/v1/mobile/services/${q.req.id}/invoice` },
+    })
+  })
+
+  it('rejects bad input and needs a signed-in member', async () => {
+    expect((await mine(member as never, '?from=11-2026')).status).toBe(400)
+    expect((await mine(member as never, '?from=2026-11-10&to=2026-11-01')).status).toBe(400)
+    expect((await mine(member as never, '?pageSize=500')).status).toBe(400)
+    expect((await request(app).get('/api/v1/mobile/transactions')).status).toBe(401)
+    expect((await request(app).get('/api/v1/mobile/transactions').set('Authorization', boss.auth)).status).toBeGreaterThanOrEqual(401)
   })
 })

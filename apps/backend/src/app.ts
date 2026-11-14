@@ -23,7 +23,7 @@ import paymentsRoutes from './modules/payments/payments.routes.js'
 import welcomeKitsRoutes, { mobileWelcomeKitsRouter } from './modules/welcome-kits/welcome-kits.routes.js'
 import performanceRoutes, { mobilePerformanceRouter } from './modules/performance/performance.routes.js'
 import adminReceiptsRoutes from './modules/payments/admin-receipts.routes.js'
-import adminTransactionsRoutes from './modules/transactions/transactions.routes.js'
+import adminTransactionsRoutes, { mobileTransactionsRouter } from './modules/transactions/transactions.routes.js'
 import adminTicketsRoutes, { mobileTicketsRouter } from './modules/tickets/tickets.routes.js'
 import adminServicesRoutes, { mobileServicesRouter } from './modules/services/services.routes.js'
 import razorpayWebhookRoutes, { RAW_BODY_PATH_PREFIX } from './modules/services/razorpay-webhook.routes.js'
@@ -103,6 +103,7 @@ export function createApp() {
   app.use('/api/v1/mobile', mobilePushRoutes)
   app.use('/api/v1/mobile/tickets', mobileTicketsRouter)
   app.use('/api/v1/mobile/services', mobileServicesRouter)
+  app.use('/api/v1/mobile/transactions', mobileTransactionsRouter)
   app.use('/api/v1/mobile/performance', mobilePerformanceRouter)
   app.use('/api/v1/mobile', mobilePostsRouter)
   app.use('/api/v1/mobile', mobileReactionsRouter)
