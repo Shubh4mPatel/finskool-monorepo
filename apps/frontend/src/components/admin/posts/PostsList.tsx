@@ -174,6 +174,7 @@ export default function PostsList({
               body=""
               bodyHtml={post.content}
               imageUrls={post.imageUrls}
+              imageRatios={post.images ? Object.fromEntries(post.images.map(i => [i.url, i.ratio])) : undefined}
               videos={post.videos}
               reactionCounts={post.groupReactionCounts ?? post.reactionCounts ?? {}}
               reactionGroupSize={post.groupSize}

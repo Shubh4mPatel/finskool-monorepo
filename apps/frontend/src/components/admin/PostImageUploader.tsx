@@ -112,9 +112,10 @@ export default function PostImageUploader({
       <p className="flex items-start gap-1.5 rounded-lg bg-accent/5 px-3 py-2 text-xs text-muted">
         <Info size={13} className="mt-px shrink-0 text-accent" aria-hidden />
         <span>
-          <strong className="font-semibold text-primary">Note on ratio:</strong> the first image or video decides whether the post is
-          portrait or landscape. Files are shown as uploaded and are never cropped, so use the same ratio for all of them
-          (for example 4:5 portrait or 16:9 landscape). YouTube and Instagram links have no ratio of their own.
+          <strong className="font-semibold text-primary">Note on ratio:</strong> the first image or video sets the post&apos;s frame
+          (between 4:5 and 1.91:1). Files are never cropped on the server. In the app, an image close to the frame&apos;s ratio fills it
+          (a thin edge may be trimmed); one that differs a lot is shown whole on a blurred background. Use the same ratio for all files
+          (for example 4:5 portrait or 16:9 landscape) and check the preview in the last step. YouTube and Instagram links have no ratio of their own.
         </span>
       </p>
     </div>
