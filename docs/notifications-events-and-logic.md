@@ -128,7 +128,7 @@ None of these send a push; admins get the inbox row and the live event (the web 
 | `admin-service-message` | A member sends a message on a request **nobody has claimed yet** | Every admin | ➖ | `/admin/services/<id>` |
 | `admin-subscription-paid` | A member buys or renews a plan (`PaymentsService.settlePlanOrder`: the app's verify, web checkout and the Razorpay webhook all end there, once per grant). Not sent when an admin adds or extends a member. | Super admins + admins of the plan's community | ✅ (`admin-payment`) | `/admin/members/<id>` |
 | `admin-service-paid` | A member pays a quote (verify or webhook) | Every admin | ✅ (`admin-payment`) | `/admin/services/<id>` |
-| `admin-payment-flagged` | A payment could not be applied (amount mismatch, quote replaced, no invoice) | Every admin | ✅ (`admin-payment`, "needs review") | `/admin/payment-flags?request=<id>` |
+| `admin-payment-flagged` | A payment could not be applied (amount mismatch, quote replaced, no invoice) | Every admin | ✅ (`admin-payment`, "needs review") | `/admin/transactions?status=flagged&request=<id>` |
 | `new-member-registered` | A member finishes mobile registration (a member added by an admin who registers on the web still notifies the admin who added them) | Super admins + admins of a community the member is in (the free community for new sign-ups), because only they can open the profile | ✅ (web path only: `admin-new-member`) | `/admin/members/<id>` |
 | `import-complete` | Bulk member import finished | The admin who ran the import | ➖ | `/admin/import-csv` |
 
@@ -232,7 +232,7 @@ Sent through `notificationsQueue` email jobs. Subject lines come from `lib/email
 | `service` | request id | service-update; `event` is `reply`, `quote`, `paid`, `closed`, `quote-expired` |
 | `member` | user id | new-member-registered, admin-subscription-paid (admin member profile) |
 | `members` | community id | import-complete |
-| `payment-flags` | service request id | admin-payment-flagged: the admin page listing flagged payments (`/admin/payment-flags`) |
+| `payment-flags` | service request id | admin-payment-flagged: the Transactions page filtered to flagged payments (`/admin/transactions?status=flagged`; `/admin/payment-flags` still redirects there) |
 | `threads`, `subscriptions` | community id | older digest rows only (no longer sent) |
 
 Reaction and reply rows written before `data` existed have `data = null`. `GET /notifications` fills the gap on read: it looks up the reaction's / comment's post and builds post routing (a reaction or comment whose post was deleted keeps `data: null`).

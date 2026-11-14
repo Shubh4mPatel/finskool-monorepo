@@ -293,7 +293,7 @@ describe('a member pays for a service', () => {
     expect(await inboxOf(boss.id, NotificationType.AdminServicePaid)).toEqual([])
     const emails = adminEmails()
     expect(emails).toHaveLength(3)
-    expect(emails[0]).toMatchObject({ kind: 'review', path: `/admin/payment-flags?request=${request.id}`, amount: '₹2,360' })
+    expect(emails[0]).toMatchObject({ kind: 'review', path: `/admin/transactions?status=flagged&request=${request.id}`, amount: '₹2,360' })
     void quoteId
   })
 })

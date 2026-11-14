@@ -241,8 +241,11 @@ model PlanOrder {
   gstAmount         Decimal?  @map("gst_amount") @db.Decimal(10, 2)
   gstRatePercent    Decimal?  @map("gst_rate_percent") @db.Decimal(5, 2)
   currency          String    @default("INR") @db.VarChar(10)
-  status            String    @default("created") @db.VarChar(20) // created | paid | failed
+  status            String    @default("created") @db.VarChar(20) // created | paid | failed | flagged
   subscriptionId    String?   @map("subscription_id") @db.Uuid    // set once verify succeeds
+  // Set with status 'flagged': money reached Razorpay but was not applied (amount_mismatch | member_blocked). An admin
+  // refunds it or sorts it out; the Transactions screen lists it. Cleared if the order is later paid.
+  flagReason        String?   @map("flag_reason") @db.VarChar(40)
   createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
@@ -250,10 +253,31 @@ model PlanOrder {
   community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
   plan      Plan      @relation(fields: [planId], references: [id], onDelete: Cascade)
   receipt   PlanReceipt?
+  failures  PlanPaymentFailure[]
 
   @@index([userId], name: "idx_plan_orders_user")
   @@index([communityId], name: "idx_plan_orders_community")
+  @@index([status, updatedAt(sort: Desc)], name: "idx_plan_orders_status_updated")
   @@map("plan_orders")
+}
+
+// One row per payment attempt Razorpay reported as failed (payment.failed) for a plan order. Kept apart from the order
+// on purpose: a member often retries on the same order and pays, and that must not erase the failed attempt.
+model PlanPaymentFailure {
+  id                String   @id @default(uuid()) @db.Uuid
+  planOrderId       String   @map("plan_order_id") @db.Uuid
+  razorpayPaymentId String   @unique @map("razorpay_payment_id") @db.VarChar(64)
+  amount            Decimal  @db.Decimal(10, 2)
+  method            String?  @db.VarChar(30)
+  errorCode         String?  @map("error_code") @db.VarChar(100)
+  errorDescription  String?  @map("error_description") @db.VarChar(500)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  planOrder PlanOrder @relation(fields: [planOrderId], references: [id], onDelete: Cascade)
+
+  @@index([planOrderId], name: "idx_plan_payment_failures_order")
+  @@index([createdAt(sort: Desc)], name: "idx_plan_payment_failures_created")
+  @@map("plan_payment_failures")
 }
 
 model Community {
@@ -1171,6 +1195,7 @@ model RazorpayPayment {
   invoice ServiceInvoice?
 
   @@index([orderId], name: "idx_razorpay_payments_order")
+  @@index([status, createdAt(sort: Desc)], name: "idx_razorpay_payments_status_created")
   @@map("razorpay_payments")
 }
 

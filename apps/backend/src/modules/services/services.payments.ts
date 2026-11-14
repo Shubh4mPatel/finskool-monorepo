@@ -249,6 +249,11 @@ export class ServicePaymentsService {
     const paidPaise = typeof payment?.['amount'] === 'number' ? (payment['amount'] as number) : null
     if (paidPaise !== null && paidPaise !== Math.round(Number(planOrder.amount) * 100)) {
       logger.error({ razorpayOrderId, razorpayPaymentId, paidPaise }, 'services.payments.webhook: plan payment amount does not match the order')
+      // Left for an admin: the Transactions screen lists it as flagged. A paid order is never touched.
+      await this.db.planOrder.updateMany({
+        where: { id: planOrder.id, status: { in: ['created', 'failed'] } },
+        data: { status: 'flagged', flagReason: 'amount_mismatch', razorpayPaymentId },
+      })
       return true
     }
     try {
@@ -266,7 +271,10 @@ export class ServicePaymentsService {
 
   private async recordFailedAttempt(razorpayOrderId: string, razorpayPaymentId: string, payment: Record<string, any>): Promise<void> {
     const order = await this.db.razorpayOrder.findUnique({ where: { razorpayOrderId } })
-    if (!order) return // not one of ours (e.g. a plan purchase)
+    if (!order) {
+      await this.recordFailedPlanAttempt(razorpayOrderId, razorpayPaymentId, payment)
+      return
+    }
     const amount = typeof payment['amount'] === 'number' ? ((payment['amount'] as number) / 100).toFixed(2) : order.amount
     await this.db.razorpayPayment.upsert({
       where: { razorpayPaymentId },
@@ -282,6 +290,25 @@ export class ServicePaymentsService {
         errorCode: (payment['error_code'] as string | undefined) ?? null,
         errorDescription: ((payment['error_description'] as string | undefined) ?? '').slice(0, 500) || null,
         raw: payment as Prisma.InputJsonValue,
+      },
+    })
+  }
+
+  /** A failed attempt on a plan purchase. Kept per attempt: the member may retry on the same order and pay. */
+  private async recordFailedPlanAttempt(razorpayOrderId: string, razorpayPaymentId: string, payment: Record<string, any>): Promise<void> {
+    const planOrder = await this.db.planOrder.findUnique({ where: { razorpayOrderId }, select: { id: true, amount: true } })
+    if (!planOrder) return // not one of ours
+    const amount = typeof payment['amount'] === 'number' ? ((payment['amount'] as number) / 100).toFixed(2) : planOrder.amount
+    await this.db.planPaymentFailure.upsert({
+      where: { razorpayPaymentId },
+      update: {}, // a replayed event
+      create: {
+        planOrderId: planOrder.id,
+        razorpayPaymentId,
+        amount,
+        method: (payment['method'] as string | undefined) ?? null,
+        errorCode: (payment['error_code'] as string | undefined) ?? null,
+        errorDescription: ((payment['error_description'] as string | undefined) ?? '').slice(0, 500) || null,
       },
     })
   }
@@ -425,7 +452,7 @@ export class ServicePaymentsService {
 
   /**
    * Tells every admin about the payment, by inbox row and email: a normal one, or one that needs a manual look
-   * (the payment-flags page). The email goes to an admin only when the inbox row is new to them, so the same
+   * (the Transactions page, filtered to flagged). The email goes to an admin only when the inbox row is new to them, so the same
    * payment arriving twice (the app's verify and the webhook) is not mailed twice.
    */
   private async tellAdmins(requestId: string, eventId: string, ok: boolean, amountPaise: number): Promise<void> {
@@ -469,7 +496,7 @@ export class ServicePaymentsService {
             },
         ok
           ? { ...email, kind: 'paid', path: `/admin/services/${requestId}` }
-          : { ...email, kind: 'review', path: `/admin/payment-flags?request=${requestId}` },
+          : { ...email, kind: 'review', path: `/admin/transactions?status=flagged&request=${requestId}` },
       )
     } catch (err) {
       logger.error({ err, requestId }, 'services.payments: failed to notify admins')

@@ -185,6 +185,11 @@ export class PaymentsService {
         { userId, planOrderId: order.id, communityId: order.communityId, razorpayPaymentId },
         'payments.settlePlanOrder: payment received for a community the member is blocked from — not granted, needs a refund or an unblock',
       )
+      // Left for an admin to refund or sort out: the Transactions screen lists it as flagged.
+      await this.db.planOrder.updateMany({
+        where: { id: order.id, status: { in: ['created', 'failed'] } },
+        data: { status: 'flagged', flagReason: 'member_blocked', razorpayPaymentId },
+      })
       await assertNotBlocked(this.db, userId, order.communityId, 'member')
     }
 
@@ -200,9 +205,10 @@ export class PaymentsService {
       // its UPDATE runs) so it affects 0 rows and we bail instead of granting
       // a second subscription for the same payment.
       const claimed = await tx.planOrder.updateMany({
-        // 'failed' too: orders marked failed by an earlier version on a bad signature are still payable.
-        where: { id: order.id, status: { in: ['created', 'failed'] } },
-        data: { status: 'paid', razorpayPaymentId },
+        // 'failed' too: orders marked failed by an earlier version on a bad signature are still payable. 'flagged': the
+        // member was unblocked (or paid the right amount) after a payment was set aside.
+        where: { id: order.id, status: { in: ['created', 'failed', 'flagged'] } },
+        data: { status: 'paid', razorpayPaymentId, flagReason: null },
       })
       if (claimed.count === 0) {
         // Lost the race to the other path (verify vs webhook) — fall through to its result below.
