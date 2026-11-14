@@ -36,7 +36,7 @@ import type {
 } from '../../lib/queue.js'
 import { FCM_BATCH_SIZE, isPushConfigured, sendPushBatch } from '../../lib/fcm.js'
 import { queuePushFor } from '../../lib/push.js'
-import { ensureInvoicePdf, renderInvoicePdf } from '../services/services.invoice.js'
+import { ensureInvoicePdf, invoicePdfInclude, renderInvoicePdf } from '../services/services.invoice.js'
 import { ensureReceiptPdf, renderReceiptPdf } from '../../lib/plan-receipt.js'
 import { requestLabel } from '../services/services.shared.js'
 import { routingData, RoutingModule } from '../../lib/notification-routing.js'
@@ -331,7 +331,10 @@ export class NotificationsService {
   async sendServiceInvoiceEmail(payload: ServiceInvoiceEmailJobPayload): Promise<void> {
     const invoice = await this.db.serviceInvoice.findUnique({
       where: { id: payload.invoiceId },
-      include: { request: { select: { number: true, service: { select: { title: true } } } } },
+      include: {
+        ...invoicePdfInclude,
+        request: { select: { number: true, service: { select: { title: true } }, user: { select: { email: true, phone: true } } } },
+      },
     })
     if (!invoice) throw new NotFoundError('Invoice not found')
     const pdf = await renderInvoicePdf(invoice)

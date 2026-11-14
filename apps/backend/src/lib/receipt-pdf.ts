@@ -29,9 +29,28 @@ export interface ReceiptBuyer {
   /** Where the sale is taken to be made, on a tax invoice: GST state code and name. */
   stateCode?: string
   stateName?: string
+  /** A service invoice also prints where the buyer is and their GSTIN, when they gave them. */
+  address?: string | null
+  gstin?: string | null
 }
 
 export type ReceiptData = Prisma.PlanReceiptGetPayload<object>
+
+/**
+ * What the invoice needs, so that a plan receipt and a service invoice (same layout) can both be drawn by it. A plan
+ * receipt (`ReceiptData`) fits as it is; the service invoice is mapped onto it in services.invoice.ts.
+ */
+export type ReceiptInput = Pick<
+  ReceiptData,
+  | 'number' | 'issuedAt' | 'seller' | 'buyer' | 'description' | 'amount' | 'razorpayPaymentId' | 'payment'
+  | 'taxableValue' | 'gstRatePercent' | 'cgst' | 'sgst' | 'igst' | 'periodStart' | 'periodEnd'
+>
+
+/** The only wording that differs between the kinds of invoice. */
+export interface ReceiptOptions {
+  /** The grey line under the item title. */
+  subtitle?: string
+}
 
 /** One labelled cell of the payment box. */
 export interface PaymentCell {
@@ -91,7 +110,7 @@ const SEBI_DISCLAIMER =
 
 // ─── What is printed ────────────────────────────────────────────────────────
 
-export function buildReceiptView(receipt: ReceiptData): ReceiptView {
+export function buildReceiptView(receipt: ReceiptInput, options: ReceiptOptions = {}): ReceiptView {
   const seller = receipt.seller as unknown as ReceiptSeller
   const buyer = receipt.buyer as unknown as ReceiptBuyer
   const payment = (receipt.payment ?? null) as unknown as Partial<PaymentSnapshot> | null
@@ -148,7 +167,10 @@ export function buildReceiptView(receipt: ReceiptData): ReceiptView {
     tagline: registered ? `SEBI Registered Research Analyst · ${seller.sebiRegistrationNo}` : null,
     amount,
     paidOn: formatDay(paidAt),
-    billedTo: { name: buyer.name, lines: [buyer.email, buyer.phone].filter((l): l is string => Boolean(l)) },
+    billedTo: {
+      name: buyer.name,
+      lines: [buyer.email, buyer.phone, buyer.address, buyer.gstin ? `GSTIN ${buyer.gstin}` : null].filter((l): l is string => Boolean(l)),
+    },
     detailsHeading: taxed ? 'TAX INVOICE' : 'INVOICE DETAILS',
     details: [
       ['Invoice no.', receipt.number],
@@ -157,7 +179,7 @@ export function buildReceiptView(receipt: ReceiptData): ReceiptView {
     ],
     item: {
       title: receipt.description,
-      subtitle: `Research subscription with community access in the ${seller.legalName} app`,
+      subtitle: options.subtitle ?? `Research subscription with community access in the ${seller.legalName} app`,
       sac: seller.sacCode || null,
       period,
       // On a tax invoice the line is the price before GST; the GST is added below it.
@@ -198,8 +220,8 @@ const LEFT = 57
 const RIGHT = 538.28
 const WIDTH = RIGHT - LEFT
 
-export function renderReceiptPdf(receipt: ReceiptData): Promise<Buffer> {
-  const v = buildReceiptView(receipt)
+export function renderReceiptPdf(receipt: ReceiptInput, options: ReceiptOptions = {}): Promise<Buffer> {
+  const v = buildReceiptView(receipt, options)
   return new Promise<Buffer>((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 0, info: { Title: `Invoice ${receipt.number}`, Author: v.brand } })
     const chunks: Buffer[] = []
