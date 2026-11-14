@@ -71,6 +71,7 @@ export default function NoteModal({ board, onClose, onDone }: { board: Board; on
     >
       <p className="text-sm text-muted">
         Capital and margin decide how many shares each trade is sized at. Changing them recalculates every trade on the board, past ones included.
+        Charges differ from trade to trade, so each trade can carry its own; the charges below apply only to trades that have none.
       </p>
       <div className="grid gap-4 sm:grid-cols-3">
         <FormField label="Capital (INR)" error={errors["capital"]}>
@@ -79,7 +80,7 @@ export default function NoteModal({ board, onClose, onDone }: { board: Board; on
         <FormField label="Margin (x)" error={errors["margin"]}>
           <input value={margin} onChange={e => setMargin(e.target.value)} inputMode="decimal" disabled={busy} className={inputCls(errors["margin"])} />
         </FormField>
-        <FormField label="Charges per trade (INR)" error={errors["charges"]}>
+        <FormField label="Default charges per trade (INR)" error={errors["charges"]}>
           <input value={charges} onChange={e => setCharges(e.target.value)} inputMode="decimal" disabled={busy} className={inputCls(errors["charges"])} />
         </FormField>
       </div>

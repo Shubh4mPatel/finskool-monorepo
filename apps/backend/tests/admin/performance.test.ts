@@ -224,6 +224,81 @@ describe('intraday board', () => {
     expect(Object.keys(res.body.errors).sort()).toEqual(['exitPrice', 'side'])
   })
 
+  describe('charges that differ from trade to trade', () => {
+    const tradesOf = async () => (await api(boss).get(`/communities/${intraday.id}/trades`)).body.data.items as { name: string; charges: number; netPnl: number; grossPnl: number; ownCharges: number | null }[]
+
+    it('uses the charges given on a trade, and the board default for one that has none', async () => {
+      const res = await api(boss).post(`/communities/${intraday.id}/trades`, intradayRow({ tradeDate: '2026-10-08', name: 'Astral', side: 'sell', entryPrice: 1432, exitPrice: 1424.8, charges: 87.5 }))
+      expect(res.status).toBe(201)
+
+      const [ambuja, , , astral] = await tradesOf()
+      expect(ambuja).toMatchObject({ charges: 140, ownCharges: null, netPnl: -1837 })
+      expect(astral).toMatchObject({ charges: 87.5, ownCharges: 87.5, netPnl: astral!.grossPnl - 87.5 })
+    })
+
+    it('adds the trades\' own charges into the totals, and a changed default only re-prices the trades without their own', async () => {
+      await api(boss).post(`/communities/${intraday.id}/trades`, intradayRow({ tradeDate: '2026-10-08', name: 'Astral', side: 'sell', entryPrice: 1432, exitPrice: 1424.8, charges: 60 }))
+      const total = async () => (await api(boss).get(`/communities/${intraday.id}/overview`)).body.data.summary.totalCharges
+      expect(await total()).toBe(3 * 140 + 60)
+
+      await api(boss).patch(`/communities/${intraday.id}/settings`, { chargesPerTrade: 100 })
+      expect(await total()).toBe(3 * 100 + 60)
+    })
+
+    it('treats zero as a real figure, not as "use the default"', async () => {
+      await api(boss).post(`/communities/${intraday.id}/trades`, intradayRow({ tradeDate: '2026-10-08', name: 'Astral', side: 'sell', entryPrice: 1432, exitPrice: 1424.8, charges: 0 }))
+      expect((await tradesOf())[3]).toMatchObject({ charges: 0, ownCharges: 0 })
+    })
+
+    it('edits a trade\'s charges, and clearing them goes back to the default', async () => {
+      const [ambuja] = (await api(boss).get(`/communities/${intraday.id}/trades`)).body.data.items
+      const edit = (body: object) => api(boss).patch(`/communities/${intraday.id}/trades/${ambuja.id}`, body)
+
+      expect((await edit({ charges: 95.25 })).status).toBe(200)
+      expect((await tradesOf())[0]).toMatchObject({ charges: 95.25, ownCharges: 95.25, netPnl: -1697 - 95.25 })
+      // Editing something else leaves them alone.
+      await edit({ exitPrice: 365.6 })
+      expect((await tradesOf())[0]).toMatchObject({ ownCharges: 95.25 })
+      // null clears them.
+      expect((await edit({ charges: null })).status).toBe(200)
+      expect((await tradesOf())[0]).toMatchObject({ charges: 140, ownCharges: null })
+    })
+
+    it('refuses negative or non-numeric charges, and swing boards do not take them', async () => {
+      const bad = await api(boss).post(`/communities/${intraday.id}/trades`, intradayRow({ tradeDate: '2026-10-08', name: 'Astral', side: 'sell', entryPrice: 1432, exitPrice: 1424.8, charges: -5 }))
+      expect(bad.status).toBe(422)
+      expect(Object.keys(bad.body.errors)).toEqual(['charges'])
+      const nan = await api(boss).post(`/communities/${intraday.id}/trades`, intradayRow({ tradeDate: '2026-10-08', name: 'Astral', side: 'sell', entryPrice: 1432, exitPrice: 1424.8, charges: 'abc' }))
+      expect(nan.status).toBe(422)
+
+      await link(swing.id, 'swing')
+      await api(boss).post(`/communities/${swing.id}/trades`, swingRow({ charges: 50 }))
+      expect(await prisma.performanceTrade.count({ where: { charges: { not: null } } })).toBe(0)
+    })
+
+    it('reads a Charges column from a sheet, ignores a blank one, and updates a trade whose charges changed', async () => {
+      const rows = [
+        intradayRow({ tradeDate: '2026-10-09', name: 'Astral', side: 'sell', entryPrice: 1432, exitPrice: 1424.8, charges: '₹ 1,250.50' }),
+        intradayRow({ tradeDate: '2026-10-10', name: 'SBIN', entryPrice: 800, exitPrice: 804, charges: '-72.00' }),
+        intradayRow({ tradeDate: '2026-10-11', name: 'TCS', entryPrice: 4000, exitPrice: 4010, charges: '' }),
+      ]
+      const first = await api(boss).post(`/communities/${intraday.id}/import`, { rows })
+      expect(first.body.data).toMatchObject({ created: 3, errors: [] })
+      const byName = Object.fromEntries((await tradesOf()).map(t => [t.name, t]))
+      expect(byName['Astral']).toMatchObject({ ownCharges: 1250.5 })
+      expect(byName['SBIN']).toMatchObject({ ownCharges: 72 })
+      expect(byName['TCS']).toMatchObject({ ownCharges: null, charges: 140 })
+
+      // The same sheet again changes nothing; a new figure updates the trade; a blank cell leaves the stored one.
+      expect((await api(boss).post(`/communities/${intraday.id}/import`, { rows })).body.data).toMatchObject({ created: 0, updated: 0, unchanged: 3 })
+      const again = await api(boss).post(`/communities/${intraday.id}/import`, { rows: [{ ...rows[0], charges: 99 }, { ...rows[1], charges: '' }] })
+      expect(again.body.data).toMatchObject({ updated: 1, unchanged: 1 })
+      const after = Object.fromEntries((await tradesOf()).map(t => [t.name, t]))
+      expect(after['Astral']).toMatchObject({ ownCharges: 99 })
+      expect(after['SBIN']).toMatchObject({ ownCharges: 72 })
+    })
+  })
+
   it('does not take segments other than main, or settings that are not its own', async () => {
     expect((await api(boss).get(`/communities/${intraday.id}/trades?segment=long_term`)).status).toBe(400)
     await link(swing.id, 'swing')

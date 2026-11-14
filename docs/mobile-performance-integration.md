@@ -159,7 +159,7 @@ Draw **one card per entry in `periods`**, in the order given (the admin can add 
 
 - `logoUrl`: see [Stock logo](#stock-logo) below.
 - `side` is `buy` or `sell`: the **Type** column.
-- `plPerShare` is the **P/L** column, `plPct` the **P/L %** column, `grossPnl` the **P&L** column, `charges` the **Charges** column (show as `-140`) and `netPnl` the **Net P&L** column. Colour positive green and negative red.
+- `plPerShare` is the **P/L** column, `plPct` the **P/L %** column, `grossPnl` the **P&L** column, `charges` the **Charges** column (show as `-140`; it is that trade's own charges, which differ from trade to trade, or the board's default when the admin gave none, so never assume it is the same on every row) and `netPnl` the **Net P&L** column. Colour positive green and negative red.
 
 ### Trade row: swing and investor
 

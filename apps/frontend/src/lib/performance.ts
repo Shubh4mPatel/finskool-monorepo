@@ -114,7 +114,10 @@ export interface IntradayRow extends RowBase {
   plPerShare: number;
   plPct: number;
   grossPnl: number;
+  /** What was applied: this trade's own charges, or the board's default when it has none. */
   charges: number;
+  /** The charges stored on this trade itself; null while it uses the board's default. Admin lists only. */
+  ownCharges?: number | null;
   netPnl: number;
 }
 
@@ -169,6 +172,8 @@ export interface TradeInput {
   side?: "buy" | "sell";
   entryPrice?: number | string;
   exitPrice?: number | string;
+  /** Intraday: this trade's own charges. null (or left out) = the board's default. */
+  charges?: number | string | null;
   cmp?: number | string | null;
   targetPct?: number | string | null;
   analysis?: string | null;
@@ -277,7 +282,8 @@ export const MAX_SHEET_ROWS = 2000;
 
 // Header text is matched with everything but letters and digits removed, lower-cased, so "NSE Code",
 // "nse_code" and "NSE-CODE" are the same column. Columns that are not listed (Returns, Holding Days, Free users,
-// S.N., Target Price, ...) are calculated by the system and are simply ignored.
+// S.N., Target Price, P/L, Net P&L, ...) are calculated by the system and are simply ignored. An intraday sheet's
+// Charges column is read (each trade's own charges); a blank cell means "the board's default".
 const ALIASES: Record<string, string[]> = {
   tradeDate: ["date", "tradedate"],
   name: ["stock", "stockname", "name", "tradename", "company", "companyname"],
@@ -285,6 +291,7 @@ const ALIASES: Record<string, string[]> = {
   side: ["type", "side", "buysell", "action"],
   entryPrice: ["entry", "entryprice", "buyprice"],
   exitPrice: ["exit", "exitprice"],
+  charges: ["charges", "charge", "brokerage", "brokeragecharges", "totalcharges"],
   cmp: ["cmp", "currentmarketprice", "currentprice"],
   targetPct: ["target", "targetpct", "targetpercent"],
   analysis: ["analysis", "status", "remarks"],
@@ -315,7 +322,8 @@ const REQUIRED: Record<PerformanceKind, { key: string; label: string }[]> = {
 
 /** Columns each kind reads, for the template and the upload help text. */
 export const SHEET_COLUMNS: Record<PerformanceKind, string[]> = {
-  intraday: ["Date", "Stock", "Type", "Entry", "Exit"],
+  // Charges is optional: a trade with none uses the board's default per-trade charges.
+  intraday: ["Date", "Stock", "Type", "Entry", "Exit", "Charges"],
   swing: ["Date", "Trade Name", "NSE Code", "Entry", "CMP", "Target %", "Analysis", "Exit Date"],
   investor: ["Date", "Trade Name", "NSE Code", "Entry", "CMP", "Target %", "Analysis", "Exit Date"],
 };
@@ -507,8 +515,8 @@ const HOLDING_SAMPLE_ROWS: Record<string, string[][]> = {
 
 const SAMPLE_ROWS: Record<PerformanceKind, string[][]> = {
   intraday: [
-    ["2026-10-01", "Ambuja Cement", "Buy", "368.20", "365.70"],
-    ["2026-10-05", "CAMS", "Sell", "687.55", "682.10"],
+    ["2026-10-01", "Ambuja Cement", "Buy", "368.20", "365.70", "137.40"],
+    ["2026-10-05", "CAMS", "Sell", "687.55", "682.10", "151.85"],
   ],
   swing: [
     ["2026-08-12", "BLS International", "BLS", "262", "209.98", "5", "5% booked", "2026-08-14"],

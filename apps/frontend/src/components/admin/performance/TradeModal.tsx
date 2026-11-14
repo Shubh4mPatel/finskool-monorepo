@@ -32,6 +32,7 @@ interface Form {
   side: "buy" | "sell";
   entryPrice: string;
   exitPrice: string;
+  charges: string;
   cmp: string;
   targetPct: string;
   analysis: string;
@@ -51,6 +52,8 @@ function initialForm(trade: TradeRow | undefined): Form {
     side: intraday?.side ?? "buy",
     entryPrice: trade ? String(trade.entryPrice) : "",
     exitPrice: intraday?.exitPrice !== undefined ? String(intraday.exitPrice) : "",
+    // Only what is stored on the trade: empty means it follows the board's default charges.
+    charges: intraday?.ownCharges != null ? String(intraday.ownCharges) : "",
     cmp: swing?.cmp != null ? String(swing.cmp) : "",
     targetPct: swing?.targetPct != null ? String(swing.targetPct) : "",
     analysis: swing?.analysis ?? "",
@@ -101,6 +104,7 @@ export default function TradeModal({
     if (!intraday && !form.symbol.trim()) e["symbol"] = "NSE code is required";
     if (!isPositive(form.entryPrice)) e["entryPrice"] = "Enter a price above 0";
     if (intraday && !isPositive(form.exitPrice)) e["exitPrice"] = "Enter a price above 0";
+    if (intraday && form.charges.trim() && !(Number.isFinite(num(form.charges)) && num(form.charges) >= 0)) e["charges"] = "Enter an amount of 0 or more";
     if (!intraday) {
       if (form.cmp.trim() && !isPositive(form.cmp)) e["cmp"] = "Enter a price above 0";
       if (!holding) {
@@ -118,7 +122,8 @@ export default function TradeModal({
       entryPrice: num(form.entryPrice),
       visibility: form.visibility,
     };
-    if (intraday) return { ...base, side: form.side, exitPrice: num(form.exitPrice) };
+    // Charges differ from trade to trade; left empty (null) the trade uses the board's default.
+    if (intraday) return { ...base, side: form.side, exitPrice: num(form.exitPrice), charges: form.charges.trim() ? num(form.charges) : null };
     if (holding) {
       return { ...base, symbol: form.symbol.trim(), cmp: form.cmp.trim() ? num(form.cmp) : null, analysis: form.analysis.trim() || null };
     }
@@ -312,6 +317,12 @@ export default function TradeModal({
               </FormField>
             )}
           </>
+        )}
+
+        {intraday && (
+          <FormField label="Charges (blank = board default)" error={errors["charges"]}>
+            {text("charges", "Board default", "decimal")}
+          </FormField>
         )}
 
         <FormField label="Free users">

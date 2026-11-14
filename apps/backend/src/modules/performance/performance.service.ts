@@ -83,6 +83,8 @@ interface TradeRow {
   side: 'buy' | 'sell' | null
   entryPrice: number
   exitPrice: number | null
+  /** Intraday: this trade's own charges; null means the board's default. */
+  charges: number | null
   cmp: number | null
   targetPct: number | null
   analysis: string | null
@@ -98,6 +100,7 @@ interface Candidate {
   side: 'buy' | 'sell' | null
   entryPrice: number
   exitPrice: number | null
+  charges: number | null | undefined
   cmp: number | null | undefined
   targetPct: number | null | undefined
   analysis: string | null | undefined
@@ -133,6 +136,7 @@ function toTradeRow(t: PerformanceTrade): TradeRow {
     side: t.side,
     entryPrice: Number(t.entryPrice),
     exitPrice: num(t.exitPrice),
+    charges: num(t.charges),
     cmp: num(t.cmp),
     targetPct: num(t.targetPct),
     analysis: t.analysis,
@@ -243,7 +247,7 @@ export class PerformanceService {
         ...base,
         side: t.side!,
         exitPrice: t.exitPrice!,
-        ...intradayTrade({ side: t.side!, entryPrice: t.entryPrice, exitPrice: t.exitPrice! }, intradayParams(board)),
+        ...intradayTrade({ side: t.side!, entryPrice: t.entryPrice, exitPrice: t.exitPrice!, charges: t.charges }, intradayParams(board)),
       }
       return row
     }
@@ -285,7 +289,7 @@ export class PerformanceService {
 
     if (board.kind === 'intraday') {
       const params = intradayParams(board)
-      const results = scoped.map(t => intradayTrade({ side: t.side!, entryPrice: t.entryPrice, exitPrice: t.exitPrice! }, params))
+      const results = scoped.map(t => intradayTrade({ side: t.side!, entryPrice: t.entryPrice, exitPrice: t.exitPrice!, charges: t.charges }, params))
       return { kind: 'intraday', ...intradaySummary(results, params) }
     }
 
@@ -440,6 +444,7 @@ export class PerformanceService {
     const logos = await this.logosFor(pageRows.map(n => n.t))
     const items: AdminTradeRowDTO[] = pageRows.map(({ t, serialNo }) => ({
       ...this.toRow(board, segment, t, serialNo, logos),
+      ...(board.kind === 'intraday' ? { ownCharges: t.charges } : {}),
       visibility: t.visibility,
       visibleToFree: visible.has(t.id),
     }))
@@ -458,6 +463,7 @@ export class PerformanceService {
       side: kind === 'intraday' ? get<'buy' | 'sell'>('side')! : null,
       entryPrice: get<number>('entryPrice')!,
       exitPrice: kind === 'intraday' ? get<number>('exitPrice')! : null,
+      charges: kind === 'intraday' ? get<number | null>('charges') : undefined,
       cmp: kind === 'intraday' ? undefined : get<number | null>('cmp'),
       targetPct: kind === 'intraday' || holding ? undefined : get<number | null>('targetPct'),
       analysis: kind === 'intraday' ? undefined : get<string | null>('analysis'),
@@ -496,6 +502,7 @@ export class PerformanceService {
           side: c.side,
           entryPrice: c.entryPrice,
           exitPrice: c.exitPrice,
+          charges: c.charges ?? null,
           cmp: c.cmp ?? null,
           targetPct: c.targetPct ?? null,
           analysis: c.analysis ?? null,
@@ -529,6 +536,7 @@ export class PerformanceService {
       side: has('side') ? parsed['side'] : existing.side,
       entryPrice: has('entryPrice') ? parsed['entryPrice'] : Number(existing.entryPrice),
       exitPrice: has('exitPrice') ? parsed['exitPrice'] : num(existing.exitPrice),
+      charges: has('charges') ? parsed['charges'] : num(existing.charges),
       cmp: has('cmp') ? parsed['cmp'] : num(existing.cmp),
       targetPct: has('targetPct') ? parsed['targetPct'] : num(existing.targetPct),
       analysis: has('analysis') ? parsed['analysis'] : existing.analysis,
@@ -547,6 +555,7 @@ export class PerformanceService {
           side: merged.side,
           entryPrice: merged.entryPrice,
           exitPrice: merged.exitPrice,
+          charges: merged.charges ?? null,
           cmp: merged.cmp ?? null,
           targetPct: merged.targetPct ?? null,
           analysis: merged.analysis ?? null,
@@ -640,6 +649,7 @@ export class PerformanceService {
           side: c.side,
           entryPrice: c.entryPrice,
           exitPrice: c.exitPrice,
+          charges: c.charges ?? null,
           cmp: c.cmp ?? null,
           targetPct: c.targetPct ?? null,
           analysis: c.analysis ?? null,
@@ -687,6 +697,7 @@ export class PerformanceService {
     if (c.symbol !== null && c.symbol !== current.symbol) data.symbol = c.symbol
     if (round2(c.entryPrice) !== round2(Number(current.entryPrice))) data.entryPrice = c.entryPrice
     if (c.exitPrice !== null && round2(c.exitPrice) !== round2(num(current.exitPrice) ?? NaN)) data.exitPrice = c.exitPrice
+    if (c.charges != null && round2(c.charges) !== round2(num(current.charges) ?? NaN)) data.charges = c.charges
     if (c.cmp != null && round2(c.cmp) !== round2(num(current.cmp) ?? NaN)) data.cmp = c.cmp
     if (c.targetPct != null && round2(c.targetPct) !== round2(num(current.targetPct) ?? NaN)) data.targetPct = c.targetPct
     if (c.analysis != null && c.analysis !== current.analysis) data.analysis = c.analysis

@@ -25,6 +25,7 @@ export function daysBetween(from: Date, to: Date): number {
 export interface IntradayParams {
   capital: number
   margin: number
+  /** The charges of a trade that has no figure of its own. */
   chargesPerTrade: number
 }
 
@@ -32,6 +33,8 @@ export interface IntradayInput {
   side: 'buy' | 'sell'
   entryPrice: number
   exitPrice: number
+  /** This trade's own charges. Null or absent: the board's `chargesPerTrade`. */
+  charges?: number | null
 }
 
 export interface IntradayResult {
@@ -49,7 +52,8 @@ export function intradayTrade(t: IntradayInput, p: IntradayParams): IntradayResu
   const plPerShare = round2(t.side === 'buy' ? t.exitPrice - t.entryPrice : t.entryPrice - t.exitPrice)
   const plPct = round2((plPerShare / t.entryPrice) * p.margin * 100)
   const grossPnl = roundRupee(((p.capital * p.margin) / t.entryPrice) * plPerShare)
-  return { plPerShare, plPct, grossPnl, charges: p.chargesPerTrade, netPnl: grossPnl - p.chargesPerTrade }
+  const charges = t.charges ?? p.chargesPerTrade
+  return { plPerShare, plPct, grossPnl, charges, netPnl: grossPnl - charges }
 }
 
 export interface IntradaySummary {

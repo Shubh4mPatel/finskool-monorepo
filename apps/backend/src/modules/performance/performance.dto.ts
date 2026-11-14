@@ -96,6 +96,8 @@ export type TradeRowDTO = IntradayRowDTO | SwingRowDTO | HoldingRowDTO
 
 /** What an admin sees for a row: the numbers plus how free members are treated. */
 export type AdminTradeRowDTO = TradeRowDTO & {
+  /** Intraday: the charges stored on this trade, or null when it uses the board's default (`charges` is what was applied). */
+  ownCharges?: number | null
   visibility: TradeVisibility
   /** Whether a free member can see this trade right now, after the rule bar. */
   visibleToFree: boolean

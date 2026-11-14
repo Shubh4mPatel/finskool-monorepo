@@ -36,6 +36,17 @@ const price = (label: string) =>
 
 const requiredPrice = (label: string) => z.preprocess(toNumber, price(label))
 const optionalPrice = (label: string) => z.preprocess(toNumber, price(label).nullish())
+/**
+ * Charges of one trade. Zero is fine (a free trade), blank means "not given" (the board's default applies), and a
+ * sheet that shows the cost with a minus sign ("-₹140.00", the way the table does) gives the same amount.
+ */
+const optionalCharges = z.preprocess(
+  v => {
+    const n = toNumber(v)
+    return typeof v === 'string' && typeof n === 'number' && n < 0 ? Math.abs(n) : n
+  },
+  number('Charges').min(0, 'Charges cannot be negative').max(99_999_999, 'Charges are too large').nullish(),
+)
 const optionalPct = (label: string) =>
   z.preprocess(toNumber, number(label).positive(`${label} must be greater than 0`).max(MAX_PCT, `${label} is too large`).nullish())
 
@@ -78,6 +89,8 @@ export const intradayTradeSchema = z.object({
   side,
   entryPrice: requiredPrice('Entry price'),
   exitPrice: requiredPrice('Exit price'),
+  // This trade's own charges; left out or blank, the board's default per-trade charges apply.
+  charges: optionalCharges,
   visibility: visibility.optional(),
 })
 
