@@ -139,6 +139,8 @@ export interface HoldingRow extends RowBase {
   cmp: number | null;
   returnPct: number | null;
   analysis: string | null;
+  /** The sheet's "Theme / Sector / Type" (Long Term) or "Theme" (US Investment). */
+  theme: string | null;
 }
 
 export type TradeRow = IntradayRow | SwingRow | HoldingRow;
@@ -177,6 +179,8 @@ export interface TradeInput {
   cmp?: number | string | null;
   targetPct?: number | string | null;
   analysis?: string | null;
+  /** Long Term / US Investment only. */
+  theme?: string | null;
   exitDate?: string | null;
   visibility?: TradeVisibility;
 }
@@ -295,6 +299,8 @@ const ALIASES: Record<string, string[]> = {
   cmp: ["cmp", "currentmarketprice", "currentprice"],
   targetPct: ["target", "targetpct", "targetpercent"],
   analysis: ["analysis", "status", "remarks"],
+  // Long Term calls it "Theme / Sector / Type", US Investment just "Theme". Only the holding segments store it.
+  theme: ["theme", "themesectortype", "themesector", "sector"],
   exitDate: ["exitdate", "exiton", "exitedon"],
 };
 
@@ -329,7 +335,7 @@ export const SHEET_COLUMNS: Record<PerformanceKind, string[]> = {
 };
 
 /** The columns Long Term / US Investment sheets carry. */
-const HOLDING_COLUMNS = ["Date", "Company Name", "NSE Code", "Entry", "CMP", "Analysis"];
+const HOLDING_COLUMNS = ["Theme", "Date", "Company Name", "NSE Code", "Entry", "CMP", "Analysis"];
 
 /** Columns a board's segment reads, for the upload help text and the sample file. */
 export const sheetColumns = (kind: PerformanceKind, segment: PerformanceSegment): string[] =>
@@ -504,12 +510,12 @@ export async function parseSheet(file: File, kind: PerformanceKind, segment: Per
 
 const HOLDING_SAMPLE_ROWS: Record<string, string[][]> = {
   long_term: [
-    ["2023-03-09", "Adani Ports & SEZ", "ADANIPORTS", "714", "1918.70", "Hold"],
-    ["2024-02-12", "Mazagon Dock Shipbuilders", "MAZDOCK", "1437", "1887.90", "Can Add at CMP"],
+    ["Ports Monopoly", "2023-03-09", "Adani Ports & SEZ", "ADANIPORTS", "714", "1918.70", "Hold"],
+    ["Shipbuilding", "2024-02-12", "Mazagon Dock Shipbuilders", "MAZDOCK", "1437", "1887.90", "Can Add at CMP"],
   ],
   us_investment: [
-    ["2026-06-03", "Eli Lilly and Company", "LLY", "1147", "1432.29", "Hold"],
-    ["2026-06-03", "Alphabet", "GOOGL", "372", "287.38", "Hold"],
+    ["Longevity", "2026-06-03", "Eli Lilly and Company", "LLY", "1147", "1432.29", "Hold"],
+    ["Artificial Intelligence", "2026-06-03", "Alphabet", "GOOGL", "372", "287.38", "Hold"],
   ],
 };
 

@@ -156,6 +156,7 @@ export function HoldingTable({ rows, busyId, onVisibility, onEdit }: TableProps<
     <Shell
       headers={[
         { label: "S.N." },
+        { label: "Theme" },
         { label: "Date" },
         { label: "Company Name" },
         { label: "NSE Code" },
@@ -170,6 +171,7 @@ export function HoldingTable({ rows, busyId, onVisibility, onEdit }: TableProps<
       {rows.map(r => (
         <tr key={r.id} className="transition-colors hover:bg-background/60">
           <td className={`${TD} text-muted`}>{r.serialNo}</td>
+          <td className={`${TD} max-w-52 text-muted`}>{r.theme ? <span className="block truncate" title={r.theme}>{r.theme}</span> : <span className="text-subtle">-</span>}</td>
           <td className={TD}>{formatTradeDate(r.tradeDate)}</td>
           <td className={`${TD} font-bold`}>
             <span className="flex items-center gap-2">

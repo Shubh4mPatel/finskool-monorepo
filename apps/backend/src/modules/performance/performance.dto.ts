@@ -90,6 +90,8 @@ export interface HoldingRowDTO {
   cmp: number | null
   returnPct: number | null
   analysis: string | null
+  /** The sheet's "Theme / Sector / Type" (Long Term) or "Theme" (US Investment); null when none was given. */
+  theme: string | null
 }
 
 export type TradeRowDTO = IntradayRowDTO | SwingRowDTO | HoldingRowDTO

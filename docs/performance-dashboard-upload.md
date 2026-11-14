@@ -19,6 +19,7 @@ name is read.
 - `Target` stored as a percentage (`0.05` for 5%): read as 5. A column already in percent (5, 10) is left alone.
 - `Exit Date` holding `Open` (or Hold, `-`) means the trade is still running.
 - Columns the system calculates (Returns, Holding Days, Target Price, P/L, Net P&L, S.N., Month) are ignored.
+- Long Term and US Investment: the `Theme / Sector / Type` column (called `Theme` on the US sheet) is read and kept per company. A blank cell leaves a saved theme alone. The Investor segment has no such column.
 - Intraday: a `Charges` column is read, because charges differ from trade to trade. A blank cell means the trade uses the board's default charges per trade (Settings), and a cell that already carries a minus sign (`-₹140.00`) is read as the same amount. Uploading again with a changed figure updates the trade; a blank cell leaves the stored figure alone.
 - Uploading again updates by date and code (intraday: date, stock, side and entry price), so adding an exit date later works.
 

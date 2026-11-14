@@ -139,7 +139,7 @@ export default function UploadSheetModal({
           {columns.join(", ")}.
         </p>
         <p className="mt-1">
-          Other columns (returns, {holding ? "theme, " : "holding days, target price, "}free users) are calculated by the system or ignored. A trade already on the board is updated
+          Other columns (returns, {holding ? "" : "holding days, target price, "}free users) are calculated by the system or ignored. A trade already on the board is updated
           from its row, and a blank cell leaves the saved value as it is. Free-user settings are never changed by an upload.
         </p>
         <button

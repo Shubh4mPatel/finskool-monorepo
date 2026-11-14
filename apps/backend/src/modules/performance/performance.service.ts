@@ -88,6 +88,7 @@ interface TradeRow {
   cmp: number | null
   targetPct: number | null
   analysis: string | null
+  theme: string | null
   exitDate: Date | null
   visibility: TradeVisibility
 }
@@ -104,6 +105,7 @@ interface Candidate {
   cmp: number | null | undefined
   targetPct: number | null | undefined
   analysis: string | null | undefined
+  theme: string | null | undefined
   exitDate: string | null | undefined
   visibility: TradeVisibility | undefined
 }
@@ -140,6 +142,7 @@ function toTradeRow(t: PerformanceTrade): TradeRow {
     cmp: num(t.cmp),
     targetPct: num(t.targetPct),
     analysis: t.analysis,
+    theme: t.theme,
     exitDate: t.exitDate,
     visibility: t.visibility,
   }
@@ -257,6 +260,7 @@ export class PerformanceService {
         symbol: t.symbol ?? '',
         cmp: t.cmp,
         analysis: t.analysis,
+        theme: t.theme,
         ...holdingTrade({ entryPrice: t.entryPrice, cmp: t.cmp }),
       }
       return row
@@ -467,6 +471,7 @@ export class PerformanceService {
       cmp: kind === 'intraday' ? undefined : get<number | null>('cmp'),
       targetPct: kind === 'intraday' || holding ? undefined : get<number | null>('targetPct'),
       analysis: kind === 'intraday' ? undefined : get<string | null>('analysis'),
+      theme: holding ? get<string | null>('theme') : undefined,
       exitDate: kind === 'intraday' || holding ? undefined : get<string | null>('exitDate'),
       visibility: get<TradeVisibility>('visibility'),
     }
@@ -506,6 +511,7 @@ export class PerformanceService {
           cmp: c.cmp ?? null,
           targetPct: c.targetPct ?? null,
           analysis: c.analysis ?? null,
+          theme: c.theme ?? null,
           exitDate: c.exitDate ? parseIsoDate(c.exitDate) : null,
           visibility: c.visibility ?? 'auto',
         },
@@ -540,6 +546,7 @@ export class PerformanceService {
       cmp: has('cmp') ? parsed['cmp'] : num(existing.cmp),
       targetPct: has('targetPct') ? parsed['targetPct'] : num(existing.targetPct),
       analysis: has('analysis') ? parsed['analysis'] : existing.analysis,
+      theme: has('theme') ? parsed['theme'] : existing.theme,
       exitDate: has('exitDate') ? parsed['exitDate'] : existing.exitDate === null ? null : isoDate(existing.exitDate),
       visibility: has('visibility') ? parsed['visibility'] : existing.visibility,
     })
@@ -559,6 +566,7 @@ export class PerformanceService {
           cmp: merged.cmp ?? null,
           targetPct: merged.targetPct ?? null,
           analysis: merged.analysis ?? null,
+          theme: merged.theme ?? null,
           exitDate: merged.exitDate ? parseIsoDate(merged.exitDate) : null,
           visibility: merged.visibility ?? 'auto',
         },
@@ -653,6 +661,7 @@ export class PerformanceService {
           cmp: c.cmp ?? null,
           targetPct: c.targetPct ?? null,
           analysis: c.analysis ?? null,
+          theme: c.theme ?? null,
           exitDate: c.exitDate ? parseIsoDate(c.exitDate) : null,
           visibility: c.visibility ?? 'auto',
         })
@@ -701,6 +710,7 @@ export class PerformanceService {
     if (c.cmp != null && round2(c.cmp) !== round2(num(current.cmp) ?? NaN)) data.cmp = c.cmp
     if (c.targetPct != null && round2(c.targetPct) !== round2(num(current.targetPct) ?? NaN)) data.targetPct = c.targetPct
     if (c.analysis != null && c.analysis !== current.analysis) data.analysis = c.analysis
+    if (c.theme != null && c.theme !== current.theme) data.theme = c.theme
     if (c.exitDate != null && c.exitDate !== (current.exitDate === null ? null : isoDate(current.exitDate))) {
       data.exitDate = parseIsoDate(c.exitDate)
     }

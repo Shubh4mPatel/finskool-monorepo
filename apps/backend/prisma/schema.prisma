@@ -1432,6 +1432,9 @@ model PerformanceTrade {
 
   // Free text from the sheet: "HOLD", "5% booked", "Can Avg at CMP".
   analysis String?   @db.VarChar(60)
+  // Long Term / US Investment: why the company is held, the sheet's "Theme / Sector / Type" ("Ports Monopoly",
+  // "Artificial Intelligence"). Null on every other board and segment.
+  theme    String?   @db.VarChar(100)
   // Swing / investor: a trade with an exit date has met its target.
   exitDate DateTime? @map("exit_date") @db.Date
 

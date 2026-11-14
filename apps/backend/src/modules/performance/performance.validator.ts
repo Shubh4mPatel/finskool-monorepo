@@ -114,6 +114,8 @@ export const holdingTradeSchema = z.object({
   entryPrice: requiredPrice('Entry price'),
   cmp: optionalPrice('CMP'),
   analysis: optionalText('Analysis', 60),
+  // The sheet's "Theme / Sector / Type" (Long Term) or "Theme" (US Investment).
+  theme: optionalText('Theme', 100),
   visibility: visibility.optional(),
 })
 

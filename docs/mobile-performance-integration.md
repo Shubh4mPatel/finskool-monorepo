@@ -349,6 +349,7 @@ The same screen as swing, drawn three times, one for each tab: Investor (`segmen
 - Open on the first tab with `?segment=investor` (leaving `segment` out gives the same).
 - With a range on, a tab switch is `?segment=long_term&fromMonth=2026-08&toMonth=2026-09`. Keeping the member's range across tabs is fine: a tab with no trades in it simply returns an empty list and zeroed numbers. If you would rather reset the filter on a tab change, drop the month params.
 - `months` differs between tabs, so rebuild the pickers on each tab change.
+- **Long Term and US Investment rows carry a `theme`** (a string, or `null` when none was set): the sheet's "Theme / Sector / Type" on Long Term and "Theme" on US Investment (for example `Ports Monopoly`, `Artificial Intelligence`). Show it with the company, or group by it. The Investor tab rows have no `theme` field.
 
 ### Free members, on every kind
 

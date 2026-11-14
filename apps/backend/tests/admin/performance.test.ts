@@ -488,6 +488,53 @@ describe('investor board segments', () => {
   })
 })
 
+describe('theme on Long Term and US Investment', () => {
+  const holdingRow = (over: Record<string, unknown> = {}) => ({ tradeDate: '2023-03-09', name: 'Adani Ports & SEZ', symbol: 'ADANIPORTS', entryPrice: 714, cmp: 1918.7, analysis: 'Hold', ...over })
+  const listOf = async (segment: string) => (await api(boss).get(`/communities/${investor.id}/trades?segment=${segment}`)).body.data.items as { name: string; theme: string | null }[]
+
+  beforeEach(async () => {
+    await link(investor.id, 'investor')
+  })
+
+  it('stores the theme of a holding and lists it, in both segments', async () => {
+    await api(boss).post(`/communities/${investor.id}/trades`, { ...holdingRow({ theme: '  Ports Monopoly ' }), segment: 'long_term' })
+    await api(boss).post(`/communities/${investor.id}/trades`, { ...holdingRow({ name: 'Alphabet', symbol: 'GOOGL', theme: 'Artificial Intelligence' }), segment: 'us_investment' })
+    await api(boss).post(`/communities/${investor.id}/trades`, { ...holdingRow({ name: 'Eli Lilly', symbol: 'LLY' }), segment: 'us_investment' })
+
+    expect((await listOf('long_term'))[0]).toMatchObject({ name: 'Adani Ports & SEZ', theme: 'Ports Monopoly' })
+    expect((await listOf('us_investment')).map(r => [r.name, r.theme])).toEqual([['Alphabet', 'Artificial Intelligence'], ['Eli Lilly', null]])
+  })
+
+  it('edits and clears it, and refuses one that is too long', async () => {
+    await api(boss).post(`/communities/${investor.id}/trades`, { ...holdingRow({ theme: 'Ports' }), segment: 'long_term' })
+    const [row] = (await api(boss).get(`/communities/${investor.id}/trades?segment=long_term`)).body.data.items
+    const edit = (body: object) => api(boss).patch(`/communities/${investor.id}/trades/${row.id}`, body)
+
+    expect((await edit({ theme: 'Ports Monopoly' })).status).toBe(200)
+    expect((await listOf('long_term'))[0]!.theme).toBe('Ports Monopoly')
+    expect((await edit({ analysis: 'Can Add at CMP' })).status).toBe(200) // other edits leave it alone
+    expect((await listOf('long_term'))[0]!.theme).toBe('Ports Monopoly')
+    expect((await edit({ theme: null })).status).toBe(200)
+    expect((await listOf('long_term'))[0]!.theme).toBeNull()
+    expect((await edit({ theme: 'x'.repeat(101) })).status).toBe(422)
+  })
+
+  it('reads the sheet\'s theme column, and a blank cell leaves a saved theme alone', async () => {
+    const first = await api(boss).post(`/communities/${investor.id}/import`, { segment: 'long_term', rows: [holdingRow({ theme: 'Ports Monopoly' }), holdingRow({ tradeDate: '2024-02-12', name: 'BEL', symbol: 'BEL', theme: '' })] })
+    expect(first.body.data).toMatchObject({ created: 2, errors: [] })
+    expect((await listOf('long_term')).map(r => r.theme)).toEqual(['Ports Monopoly', null])
+
+    const again = await api(boss).post(`/communities/${investor.id}/import`, { segment: 'long_term', rows: [holdingRow({ theme: '' }), holdingRow({ tradeDate: '2024-02-12', name: 'BEL', symbol: 'BEL', theme: 'Aerospace & Defence' })] })
+    expect(again.body.data).toMatchObject({ created: 0, updated: 1, unchanged: 1 })
+    expect((await listOf('long_term')).map(r => r.theme)).toEqual(['Ports Monopoly', 'Aerospace & Defence'])
+  })
+
+  it('is not kept on the investor segment', async () => {
+    await api(boss).post(`/communities/${investor.id}/trades`, { ...swingRow({ theme: 'Ignored' }), segment: 'investor' })
+    expect(await prisma.performanceTrade.count({ where: { theme: { not: null } } })).toBe(0)
+  })
+})
+
 describe('sheet import', () => {
   beforeEach(async () => {
     await link(swing.id, 'swing')

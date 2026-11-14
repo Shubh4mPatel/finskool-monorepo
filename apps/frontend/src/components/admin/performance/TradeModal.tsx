@@ -7,6 +7,7 @@ import {
   performanceApi,
   type BoardRef,
   isHoldingSegment,
+  type HoldingRow,
   type IntradayRow,
   type PerformanceSegment,
   type SwingRow,
@@ -36,6 +37,7 @@ interface Form {
   cmp: string;
   targetPct: string;
   analysis: string;
+  theme: string;
   exitDate: string;
   visibility: TradeVisibility;
 }
@@ -57,6 +59,7 @@ function initialForm(trade: TradeRow | undefined): Form {
     cmp: swing?.cmp != null ? String(swing.cmp) : "",
     targetPct: swing?.targetPct != null ? String(swing.targetPct) : "",
     analysis: swing?.analysis ?? "",
+    theme: (trade as HoldingRow | undefined)?.theme ?? "",
     exitDate: swing?.exitDate ?? "",
     visibility: trade?.visibility ?? "auto",
   };
@@ -125,7 +128,13 @@ export default function TradeModal({
     // Charges differ from trade to trade; left empty (null) the trade uses the board's default.
     if (intraday) return { ...base, side: form.side, exitPrice: num(form.exitPrice), charges: form.charges.trim() ? num(form.charges) : null };
     if (holding) {
-      return { ...base, symbol: form.symbol.trim(), cmp: form.cmp.trim() ? num(form.cmp) : null, analysis: form.analysis.trim() || null };
+      return {
+        ...base,
+        symbol: form.symbol.trim(),
+        cmp: form.cmp.trim() ? num(form.cmp) : null,
+        analysis: form.analysis.trim() || null,
+        theme: form.theme.trim() || null,
+      };
     }
     return {
       ...base,
@@ -244,6 +253,19 @@ export default function TradeModal({
             text("name", "BLS International")
           )}
         </FormField>
+
+        {holding && (
+          <FormField label="Theme / Sector / Type (optional)" error={errors["theme"]}>
+            <input
+              value={form.theme}
+              onChange={e => set("theme", e.target.value)}
+              placeholder="e.g. Ports Monopoly"
+              maxLength={100}
+              disabled={busy}
+              className={inputCls(errors["theme"])}
+            />
+          </FormField>
+        )}
 
         {!intraday && (
           <FormField label="NSE code" error={errors["symbol"]}>
