@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { AlertTriangle, ArrowRight, CheckCircle2, CircleDollarSign, Download, FileText, ReceiptText, Search, SearchX, TrendingUp, X, XCircle } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, CircleDollarSign, Download, FileText, Loader2, ReceiptText, Search, SearchX, TrendingUp, X, XCircle } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 import Select, { pillClass } from "@/components/ui/Select";
@@ -11,6 +11,7 @@ import DatePicker from "@/components/ui/DatePicker";
 import Pagination from "@/components/ui/Pagination";
 import { Card, EmptyState, Pill, Skeleton, TH } from "@/components/admin/dashboard/Panel";
 import { UserAvatar } from "@/components/admin/UserAvatar";
+import PdfViewerModal from "@/components/admin/PdfViewerModal";
 import type { StatusTone } from "@/lib/dashboard";
 import {
   DATE_RANGE_OPTIONS,
@@ -86,6 +87,7 @@ function TransactionsContent() {
   const [options, setOptions] = useState<TransactionFilterOptions | null>(null);
   const [exporting, setExporting] = useState(false);
   const [openingInvoice, setOpeningInvoice] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<{ url: string; title: string; fileName: string } | null>(null);
   const tableRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -190,12 +192,13 @@ function TransactionsContent() {
     }
   }
 
+  // Shown inside the admin app, as on the member profile, not in a separate tab.
   async function openInvoice(t: Transaction) {
     if (!t.invoice) return;
     setOpeningInvoice(t.id);
     try {
-      const { url } = await api.get<{ url: string; fileName: string }>(t.invoice.downloadPath);
-      window.open(url, "_blank", "noopener,noreferrer");
+      const { url, fileName } = await api.get<{ url: string; fileName: string }>(t.invoice.downloadPath);
+      setViewing({ url, fileName, title: `${t.kind === "community" ? "Receipt" : "Invoice"} ${t.invoice.number}` });
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Could not open the invoice");
     } finally {
@@ -463,11 +466,11 @@ function TransactionsContent() {
                             type="button"
                             onClick={() => openInvoice(t)}
                             disabled={openingInvoice === t.id}
-                            aria-label={`Download invoice ${t.invoice.number}`}
-                            title="Download invoice"
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors hover:bg-divider/60 hover:text-primary disabled:opacity-40"
+                            aria-label={`View invoice ${t.invoice.number}`}
+                            title="View invoice"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors hover:bg-divider/60 hover:text-accent disabled:opacity-60"
                           >
-                            <FileText size={16} />
+                            {openingInvoice === t.id ? <Loader2 size={15} className="animate-spin" /> : <FileText size={16} />}
                           </button>
                         ) : t.status === "flagged" && t.requestId ? (
                           <Link href={`/admin/services/${t.requestId}`} className="inline-flex items-center gap-1 text-xs font-bold text-accent hover:underline">
@@ -484,6 +487,7 @@ function TransactionsContent() {
           </div>
         )}
       </section>
+      {viewing && <PdfViewerModal title={viewing.title} url={viewing.url} fileName={viewing.fileName} onClose={() => setViewing(null)} />}
     </div>
   );
 }
