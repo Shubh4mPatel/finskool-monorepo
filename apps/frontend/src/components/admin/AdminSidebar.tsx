@@ -20,7 +20,7 @@ import {
   Gift,
   Bell,
   LifeBuoy,
-  AlertTriangle,
+  ReceiptText,
   Briefcase,
   MessageSquareText,
   LogOut,
@@ -75,7 +75,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
       { href: "/admin/tickets", label: "Support Tickets", icon: LifeBuoy, badge: "tickets" },
       { href: "/admin/services", label: "Enquiries", icon: MessageSquareText, badge: "services", excludes: ["/admin/services/catalog"] },
       { href: "/admin/services/catalog", label: "Services", icon: Briefcase, superAdminOnly: true },
-      { href: "/admin/payment-flags", label: "Payment flags", icon: AlertTriangle },
+      { href: "/admin/transactions", label: "Transactions", icon: ReceiptText },
     ],
   },
   {

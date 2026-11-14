@@ -7,6 +7,7 @@ import { BadRequestError } from '../../shared/errors/index.js'
 import { TransactionsService } from './transactions.service.js'
 import type { TransactionDTO, TransactionFilters } from './transactions.service.js'
 import { transactionsToCsv } from './transactions.csv.js'
+import { transactionsToXlsx } from './transactions.xlsx.js'
 
 // /api/v1/admin/transactions: every payment made for communities and services, with its invoice, and the ones that
 // failed or could not be applied. Community payments are limited to the communities the admin manages (a super admin
@@ -118,6 +119,31 @@ router.get('/export', wrap(async (req, res) => {
   res.setHeader('Content-Type', 'text/csv; charset=utf-8')
   res.setHeader('Content-Disposition', `attachment; filename="transactions-${new Date().toISOString().slice(0, 10)}.csv"`)
   res.status(200).send(transactionsToCsv(items))
+}))
+
+/**
+ * @openapi
+ * /admin/transactions/export/xlsx:
+ *   get:
+ *     tags: [Payments]
+ *     summary: The same list as an Excel file (same filters as the list, no paging)
+ *     description: Amounts are numbers and dates are real dates, so the file can be summed, sorted and filtered in Excel. At most 20,000 rows.
+ *     parameters:
+ *       - { in: query, name: type, schema: { type: string, enum: [communities, services] } }
+ *       - { in: query, name: status, schema: { type: string, enum: [paid, failed, flagged] } }
+ *       - { in: query, name: paidFor, schema: { type: string, format: uuid } }
+ *       - { in: query, name: plan, schema: { type: integer } }
+ *       - { in: query, name: from, schema: { type: string, format: date } }
+ *       - { in: query, name: to, schema: { type: string, format: date } }
+ *       - { in: query, name: search, schema: { type: string } }
+ *     responses:
+ *       200: { description: "An .xlsx file (application/vnd.openxmlformats-officedocument.spreadsheetml.sheet)" }
+ */
+router.get('/export/xlsx', wrap(async (req, res) => {
+  const items: TransactionDTO[] = await service.listForExport(req.user!.accessibleCommunityIds, toFilters(parse(filterSchema, req.query)))
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  res.setHeader('Content-Disposition', `attachment; filename="transactions-${new Date().toISOString().slice(0, 10)}.xlsx"`)
+  res.status(200).send(transactionsToXlsx(items))
 }))
 
 export default router

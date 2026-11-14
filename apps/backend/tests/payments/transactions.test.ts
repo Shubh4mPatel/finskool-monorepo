@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import request from 'supertest'
+import { createRequire } from 'node:module'
 
 const mailer = vi.hoisted(() => ({ sendMail: vi.fn() }))
 vi.mock('../../src/lib/mailer.js', () => mailer)
@@ -353,5 +354,54 @@ describe('CSV export', () => {
     expect(lines[1]).toContain(`"'=HYPERLINK(""http://x"")"`)
     expect(lines[1]).toContain('"2026-11-13 10:24"')
     expect(lines[1]).toContain('"5999.00","Paid"')
+  })
+})
+
+describe('Excel export', () => {
+  const XLSX = createRequire(import.meta.url)('xlsx') as {
+    read(data: Buffer, opts: object): { SheetNames: string[]; Sheets: Record<string, unknown> }
+    utils: { sheet_to_json<T>(ws: unknown, opts?: object): T[] }
+  }
+  const binary = (res: request.Response, cb: (err: Error | null, body: Buffer) => void) => {
+    const chunks: Buffer[] = []
+    res.on('data', (c: Buffer) => chunks.push(c))
+    res.on('end', () => cb(null, Buffer.concat(chunks)))
+  }
+
+  it('exports the filtered rows as a workbook with numeric amounts, real dates and text that is never a formula', async () => {
+    const evil = await createMobileMember({ name: '=HYPERLINK("http://x")', email: 'evil@example.com' })
+    const o = await planOrder({ userId: evil.id, at: at('2026-11-13T04:54:00Z'), amount: 5999 })
+    await receiptFor(o.id, 'RCPT/2026-27/0007')
+    await planOrder({ at: at('2026-10-01T04:54:00Z') })
+
+    const res = await get(boss, '/export/xlsx?from=2026-11-01').buffer(true).parse(binary)
+    expect(res.status).toBe(200)
+    expect(res.headers['content-type']).toContain('spreadsheetml.sheet')
+    expect(res.headers['content-disposition']).toMatch(/attachment; filename="transactions-\d{4}-\d{2}-\d{2}\.xlsx"/)
+
+    const book = XLSX.read(res.body, { type: 'buffer', cellDates: true })
+    expect(book.SheetNames).toEqual(['Transactions'])
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(book.Sheets['Transactions'], { raw: true })
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({
+      Invoice: 'RCPT/2026-27/0007',
+      Member: '=HYPERLINK("http://x")',
+      Type: 'Community',
+      'Paid for': 'Swing Community',
+      'Amount (INR)': 5999,
+      Status: 'Paid',
+    })
+    // 10:24 IST on the 13th, as the screen shows it.
+    const when = rows[0]!['Date (IST)'] as Date
+    expect(when.toISOString().slice(0, 16)).toBe('2026-11-13T10:24')
+  })
+
+  it('applies the same filters and scoping as the list', async () => {
+    await planOrder({ communityId: swing.id })
+    await planOrder({ communityId: options.id, planId: optionsPlan.id })
+    const res = await get(swingAdmin, '/export/xlsx').buffer(true).parse(binary)
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(XLSX.read(res.body, { type: 'buffer' }).Sheets['Transactions'])
+    expect(rows.map(r => r['Paid for'])).toEqual(['Swing Community'])
+    expect((await get(boss, '/export/xlsx?status=refunded')).status).toBe(400)
   })
 })

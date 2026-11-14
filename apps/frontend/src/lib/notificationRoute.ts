@@ -15,7 +15,7 @@ const ROUTE_BY_TYPE: Record<string, string> = {
   "new-member-registered": "/admin/members",
   "import-complete": "/admin/import-csv",
   "admin-expiry-report": "/admin/members?expiring=1",
-  "admin-payment-flagged": "/admin/payment-flags",
+  "admin-payment-flagged": "/admin/transactions?status=flagged",
   "admin-new-ticket": "/admin/tickets",
   "admin-ticket-reply": "/admin/tickets",
   "admin-new-service-request": "/admin/services",
@@ -45,8 +45,8 @@ export function notificationRoute(n: RoutableNotification): string | null {
         return `/admin/tickets/${encodeURIComponent(d.id)}`;
       case "service":
         return `/admin/services/${encodeURIComponent(d.id)}`;
-      case "payment-flags": // a payment that could not be applied: the review list, with this request marked
-        return `/admin/payment-flags?request=${encodeURIComponent(d.id)}`;
+      case "payment-flags": // a payment that could not be applied: the flagged transactions, with this request marked
+        return `/admin/transactions?status=flagged&request=${encodeURIComponent(d.id)}`;
     }
   }
   return ROUTE_BY_TYPE[n.type] ?? null;
