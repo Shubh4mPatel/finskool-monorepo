@@ -48,6 +48,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
     label: "Overview",
     items: [
       { href: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { href: "/admin/transactions", label: "Transactions", icon: ReceiptText },
       { href: "/admin/notifications", label: "Notifications", icon: Bell, badge: "notifications" },
     ],
   },
@@ -75,7 +76,6 @@ const navGroups: { label: string; items: NavItem[] }[] = [
       { href: "/admin/tickets", label: "Support Tickets", icon: LifeBuoy, badge: "tickets" },
       { href: "/admin/services", label: "Enquiries", icon: MessageSquareText, badge: "services", excludes: ["/admin/services/catalog"] },
       { href: "/admin/services/catalog", label: "Services", icon: Briefcase, superAdminOnly: true },
-      { href: "/admin/transactions", label: "Transactions", icon: ReceiptText },
     ],
   },
   {
