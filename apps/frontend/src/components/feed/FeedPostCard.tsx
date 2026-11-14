@@ -27,8 +27,6 @@ type FeedPostCardProps = {
   body: string;
   bodyHtml?: string;
   imageUrls?: string[];
-  // url -> width / height from the server; images missing here are measured in the browser.
-  imageRatios?: Record<string, number | null>;
   videos?: PostVideo[];
   tags: string[];
   children?: ReactNode;
@@ -59,7 +57,6 @@ export default function FeedPostCard({
   body,
   bodyHtml,
   imageUrls,
-  imageRatios,
   videos,
   tags,
   children,
@@ -125,7 +122,7 @@ export default function FeedPostCard({
         ) : null}
 
         {/* Images and videos share one carousel */}
-        <PostMediaCarousel imageUrls={imageUrls ?? []} videos={videos ?? []} imageRatios={imageRatios} />
+        <PostMediaCarousel imageUrls={imageUrls ?? []} videos={videos ?? []} />
 
         {/* Footer: tags left | date+time right */}
         <div className="mt-4 flex items-center justify-between gap-4">
