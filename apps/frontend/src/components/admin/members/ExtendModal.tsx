@@ -6,19 +6,20 @@ import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 import Modal from "@/components/ui/Modal";
 import DatePicker from "@/components/ui/DatePicker";
-import { addDays, parseDateParam, startOfToday } from "@/lib/dates";
-import { formatDate, isReducingPlan, type MemberItem, type MemberSubscription } from "@/lib/memberFormat";
+import { parseDateParam, startOfToday } from "@/lib/dates";
+import { earliestEndDate, formatDate, isReducingPlan, REDUCTION_MESSAGE, type MemberItem, type MemberSubscription } from "@/lib/memberFormat";
 import { durationPresets } from "./datePresets";
 import { FormField, inputCls, primaryBtn, secondaryBtn } from "./memberUi";
 
 type Errors = { payment?: string; extendDate?: string };
 
-function validate(payment: string, validUntil: string): Errors {
+function validate(payment: string, validUntil: string, currentEnd: string | null): Errors {
   const errs: Errors = {};
   const amt = parseFloat(payment);
   if (!payment || isNaN(amt) || amt <= 0) errs.payment = "Enter a valid payment amount";
   if (!validUntil) errs.extendDate = "Extend date is required";
   else if (new Date(validUntil) <= new Date()) errs.extendDate = "Extend date must be in the future";
+  else if (isReducingPlan(currentEnd, validUntil)) errs.extendDate = REDUCTION_MESSAGE(currentEnd);
   return errs;
 }
 
@@ -43,24 +44,18 @@ export default function ExtendModal({
   const today = startOfToday();
   const extendFrom = currentEnd && currentEnd > today ? currentEnd : today;
 
-  const reducing = isReducingPlan(subscription.validUntil, date);
-
   async function handleExtend() {
-    const errs = validate(payment, date);
+    const errs = validate(payment, date, subscription.validUntil);
     setErrors(errs);
     if (Object.values(errs).some(Boolean)) return;
 
     setExtending(true);
     try {
-      const res = await api.post<{ reduced?: boolean }>(`/api/v1/admin/subscriptions/${subscription.id}/extend`, {
+      await api.post(`/api/v1/admin/subscriptions/${subscription.id}/extend`, {
         validUntil: date,
         payment: parseFloat(payment),
       });
-      toast.success(
-        res?.reduced
-          ? { title: "Plan reduced", message: `${member.name}'s plan now ends on ${formatDate(date)}. They've been notified.` }
-          : { title: "Subscription extended", message: `${member.name}'s subscription is now valid until ${formatDate(date)}` },
-      );
+      toast.success({ title: "Subscription extended", message: `${member.name}'s subscription is now valid until ${formatDate(date)}` });
       onDone();
       onClose();
     } catch (err) {
@@ -81,7 +76,7 @@ export default function ExtendModal({
       footer={
         <>
           <button onClick={onClose} disabled={extending} className={secondaryBtn}>Cancel</button>
-          <button onClick={handleExtend} disabled={extending} className={primaryBtn}>{extending ? "Saving…" : reducing ? "Reduce" : "Extend"}</button>
+          <button onClick={handleExtend} disabled={extending} className={primaryBtn}>{extending ? "Saving…" : "Extend"}</button>
         </>
       }
     >
@@ -101,18 +96,13 @@ export default function ExtendModal({
           value={date}
           onChange={setDate}
           ariaLabel="Extend date"
-          minDate={addDays(startOfToday(), 1)}
+          minDate={earliestEndDate(subscription.validUntil)}
           presets={durationPresets(extendFrom)}
           triggerClassName={inputCls(errors.extendDate)}
           autoFocus
         />
       </FormField>
-      {reducing && (
-        <p className="rounded-xl bg-amber-50 px-3.5 py-2.5 text-xs text-amber-700">
-          This is earlier than the current end date ({formatDate(subscription.validUntil)}). {member.name} will be notified that their{" "}
-          {subscription.communityName} plan was reduced to {formatDate(date)}.
-        </p>
-      )}
+      <p className="text-xs text-subtle">The end date can only be moved later. Time that has been added to a plan cannot be taken away.</p>
     </Modal>
   );
 }

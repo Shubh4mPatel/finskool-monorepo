@@ -11,9 +11,9 @@ import PhoneInput from "@/components/ui/PhoneInput";
 import PasswordInput from "@/components/auth/PasswordInput";
 import DatePicker from "@/components/ui/DatePicker";
 import { durationPresets } from "@/components/admin/members/datePresets";
-import { addDays, parseDateParam, startOfToday } from "@/lib/dates";
+import { parseDateParam, startOfToday } from "@/lib/dates";
 import MemberReceipts from "@/components/admin/members/MemberReceipts";
-import { type MemberItem, getInitials, formatDate, isReducingPlan, SOURCE_LABELS } from "@/lib/memberFormat";
+import { type MemberItem, getInitials, formatDate, isReducingPlan, earliestEndDate, REDUCTION_MESSAGE, SOURCE_LABELS } from "@/lib/memberFormat";
 
 type FormErrors = Partial<Record<"name" | "phone" | "email", string>>;
 
@@ -144,6 +144,7 @@ export default function MemberDetailPage() {
     if (!extendPayment || isNaN(amt) || amt <= 0) errs.payment = "Enter a valid payment amount";
     if (!extendDate) errs.extendDate = "Extend date is required";
     else if (new Date(extendDate) <= new Date()) errs.extendDate = "Extend date must be in the future";
+    else if (isReducingPlan(member?.subscription?.validUntil, extendDate)) errs.extendDate = REDUCTION_MESSAGE(member?.subscription?.validUntil);
     return errs;
   }
 
@@ -154,15 +155,11 @@ export default function MemberDetailPage() {
     if (Object.values(errs).some(Boolean)) return;
     setExtending(true);
     try {
-      const res = await api.post<{ reduced?: boolean }>(`/api/v1/admin/subscriptions/${member.subscription.id}/extend`, {
+      await api.post(`/api/v1/admin/subscriptions/${member.subscription.id}/extend`, {
         validUntil: extendDate,
         payment: parseFloat(extendPayment),
       });
-      toast.success(
-        res?.reduced
-          ? { title: "Plan reduced", message: `${member.name}'s plan now ends on ${formatDate(extendDate)}. They've been notified.` }
-          : { title: "Subscription extended", message: `${member.name}'s subscription is now valid until ${formatDate(extendDate)}` },
-      );
+      toast.success({ title: "Subscription extended", message: `${member.name}'s subscription is now valid until ${formatDate(extendDate)}` });
       setExtendModalOpen(false);
       load();
     } catch (err) {
@@ -674,19 +671,14 @@ export default function MemberDetailPage() {
                     value={extendDate}
                     onChange={setExtendDate}
                     ariaLabel="Extend date"
-                    minDate={addDays(startOfToday(), 1)}
+                    minDate={earliestEndDate(member.subscription.validUntil)}
                     presets={durationPresets(extendFrom(member.subscription.validUntil))}
                     triggerClassName="w-full rounded-xl border border-divider bg-white px-4 py-3 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-accent/40"
                     autoFocus
                   />
                 </div>
                 {extendErrors.extendDate && <p className="mt-1 text-xs text-red-500">{extendErrors.extendDate}</p>}
-                {isReducingPlan(member.subscription.validUntil, extendDate) && (
-                  <p className="mt-2 rounded-xl bg-amber-50 px-3.5 py-2.5 text-xs text-amber-700">
-                    This is earlier than the current end date ({formatDate(member.subscription.validUntil)}). {member.name} will be notified that their{" "}
-                    {member.subscription.communityName} plan was reduced to {formatDate(extendDate)}.
-                  </p>
-                )}
+                <p className="mt-2 text-xs text-subtle">The end date can only be moved later. Time that has been added to a plan cannot be taken away.</p>
               </div>
             </div>
             <div className="mt-6 flex items-center gap-3">
@@ -702,7 +694,7 @@ export default function MemberDetailPage() {
                 disabled={extending}
                 className="flex-1 rounded-full bg-primary px-5 py-2.5 text-sm font-bold text-white transition-transform hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {extending ? "Saving…" : isReducingPlan(member.subscription.validUntil, extendDate) ? "Reduce Plan" : "Extend Subscription"}
+                {extending ? "Saving…" : "Extend Subscription"}
               </button>
             </div>
           </div>

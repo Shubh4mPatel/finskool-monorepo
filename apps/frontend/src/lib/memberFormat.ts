@@ -1,12 +1,25 @@
-import { parseDateParam, startOfToday } from "@/lib/dates";
+import { addDays, parseDateParam, startOfToday } from "@/lib/dates";
 
-/** True when `newDate` would end a plan that is still running earlier than it ends now (the member is told it was reduced). */
+/**
+ * True when `newDate` would end a plan that is still running earlier than it ends now. An admin cannot do that: once a
+ * plan is added its end date can only move later (the server refuses it too).
+ */
 export function isReducingPlan(currentEnd: string | null | undefined, newDate: string): boolean {
   if (!currentEnd || !newDate) return false;
   const end = parseDateParam(currentEnd);
   const next = parseDateParam(newDate);
   return !!end && !!next && end >= startOfToday() && next < end;
 }
+
+/** The earliest end date an admin can give a plan: tomorrow, or its current end date while it is still running. */
+export function earliestEndDate(currentEnd: string | null | undefined): Date {
+  const tomorrow = addDays(startOfToday(), 1);
+  const end = currentEnd ? parseDateParam(currentEnd) : undefined;
+  return end && end > tomorrow ? end : tomorrow;
+}
+
+export const REDUCTION_MESSAGE = (currentEnd: string | null | undefined): string =>
+  `A running plan can only be moved later. It already runs until ${currentEnd ? formatDate(currentEnd) : "its current end date"}.`;
 
 export interface MemberSubscription {
   id: string;
