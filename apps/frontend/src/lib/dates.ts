@@ -13,6 +13,18 @@ export function toDateParam(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+/**
+ * The calendar day of a date cell read from a spreadsheet (SheetJS `cellDates`), as YYYY-MM-DD.
+ *
+ * SheetJS builds the Date in local time and, in some timezones, a few seconds off midnight on the wrong side of it
+ * (in India an 8 Nov cell arrives as 23:59:50 on 7 Nov). Neither toISOString (UTC) nor the plain local fields give the
+ * day the cell shows then, so the Date is nudged five minutes forward first: that lands past midnight whichever way it
+ * was off, and a cell that holds a time of day still keeps its day.
+ */
+export function sheetDay(d: Date): string {
+  return toDateParam(new Date(d.getTime() + 5 * 60 * 1000));
+}
+
 /** `YYYY-MM-DD` → a local-midnight Date, or undefined if it isn't one. */
 export function parseDateParam(value: string): Date | undefined {
   const match = DATE_PARAM.exec(value);

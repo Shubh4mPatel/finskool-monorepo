@@ -152,11 +152,22 @@ const badDateReason = (label: string, raw: string): string =>
   `${label} must be YYYY-MM-DD${raw.trim() ? ` (got "${raw.trim().slice(0, 30)}")` : ' (it is empty)'}`
 
 /**
+ * The calendar day of an .xlsx date cell. The spreadsheet library builds the Date in the server's local time, and in some
+ * timezones a few seconds before midnight (in India an 8 Nov cell arrives as 23:59:50 on 7 Nov), so neither toISOString
+ * (UTC) nor the plain local fields reliably give the day the cell shows. Nudging it five minutes forward lands past
+ * midnight whichever way it was off, and a cell that holds a time of day keeps its day.
+ */
+export function sheetDay(d: Date): string {
+  const t = new Date(d.getTime() + 5 * 60 * 1000)
+  return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`
+}
+
+/**
  * One sheet cell as text, exactly as written. The only thing converted is a cell the spreadsheet itself holds as a date
  * (an .xlsx date cell), which has no text format to misread and is written out as `YYYY-MM-DD`.
  */
 function sheetCellText(v: unknown): string {
-  if (v instanceof Date) return isNaN(v.getTime()) ? '' : v.toISOString().slice(0, 10)
+  if (v instanceof Date) return isNaN(v.getTime()) ? '' : sheetDay(v)
   return String(v ?? '').trim()
 }
 
@@ -222,6 +233,8 @@ function resolveImportTerms(
   paidOnRaw: string,
 ): { terms: ImportTerms } | { error: string } {
   if (isFree) {
+    // A minus sign reaches here as NaN (see importUsers); it is not "no price", it is a wrong cell.
+    if (isNaN(payment) || payment < 0) return { error: 'Invalid payment amount' }
     if (payment > 0) return { error: FREE_COMMUNITY_PRICE_REASON }
     return { terms: { payment: 0, paidOn: null, validUntil: null } }
   }

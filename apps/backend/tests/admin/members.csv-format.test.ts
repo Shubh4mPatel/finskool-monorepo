@@ -1,9 +1,9 @@
-import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from 'vitest'
 import { createRequire } from 'node:module'
 import request from 'supertest'
 import { createApp } from '../../src/app.js'
 import { notificationsQueue, WELCOME_EMAIL_JOB } from '../../src/lib/queue.js'
-import { parseStrictDate, todayInIndia, subscriptionDatesProblem } from '../../src/modules/admin/admin.service.js'
+import { parseStrictDate, todayInIndia, subscriptionDatesProblem, sheetDay } from '../../src/modules/admin/admin.service.js'
 import { prisma, resetDb, createAdmin, createCommunity, createMobileMember, nextMobile, daysFromNow, type TestAdmin } from '../helpers/fixtures.js'
 
 // Members > Export Excel and Import CSV share one format: the same column names, a plain payment, YYYY-MM-DD dates.
@@ -131,33 +131,52 @@ describe('dates in an uploaded CSV are checked, never converted', () => {
 })
 
 describe('dates typed as dates in an .xlsx file', () => {
-  const xlsxWith = (valid: Date) => {
-    const ws = XLSX.utils.aoa_to_sheet(
-      [
-        ['Name', 'Contact Number', 'Payment', 'Paid on', 'Valid', 'Service', 'Email'],
-        ['Xlsx Person', '+919812345678', 1500, new Date(Date.UTC(2026, 10, 5)), valid, swing.name, ''],
-      ],
-      { cellDates: true },
-    )
+  // A real Excel date cell: a whole-number serial (days since 1899-12-30) shown with a date format, as Excel saves it.
+  const dateCell = (iso: string) => ({ t: 'n', v: (Date.parse(`${iso}T00:00:00Z`) - Date.UTC(1899, 11, 30)) / 86_400_000, z: 'd mmm yyyy' })
+  const xlsxWith = (phone: string, paidOn: string, valid: string) => {
+    const ws = XLSX.utils.aoa_to_sheet([
+      ['Name', 'Contact Number', 'Payment', 'Paid on', 'Valid', 'Service', 'Email'],
+      ['Xlsx Person', phone, 1500, dateCell(paidOn), dateCell(valid), swing.name, ''],
+    ])
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Members')
-    return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx', cellDates: true })
+    return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' })
   }
+  const originalTz = process.env['TZ']
+  afterEach(() => {
+    if (originalTz === undefined) delete process.env['TZ']
+    else process.env['TZ'] = originalTz
+  })
 
-  it('are read as the same calendar day, whatever timezone the server runs in', async () => {
-    const res = await request(app)
-      .post('/api/v1/admin/import-csv?duplicateStrategy=skip')
-      .set('Authorization', boss.auth)
-      .attach('file', xlsxWith(new Date(Date.UTC(2027, 1, 8))), {
-        filename: 'members.xlsx',
-        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      })
+  // The spreadsheet library builds each date in the server's local time, a few seconds off midnight in some zones (in India
+  // an 8 Nov cell arrives as 23:59:50 on 7 Nov), which used to read as the day before.
+  it.each(['UTC', 'Asia/Kolkata', 'America/New_York', 'Pacific/Auckland', 'Europe/Amsterdam', 'Asia/Kathmandu'])(
+    'are read as the same calendar day when the server runs in %s',
+    async tz => {
+      process.env['TZ'] = tz
+      const phone = nextMobile()
+      const paidOn = daysFromNow(-10)
+      const valid = daysFromNow(90)
+      const res = await request(app)
+        .post('/api/v1/admin/import-csv?duplicateStrategy=skip')
+        .set('Authorization', boss.auth)
+        .attach('file', xlsxWith(phone, paidOn, valid), {
+          filename: 'members.xlsx',
+          contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        })
 
-    expect(res.body.data).toMatchObject({ created: 1, errors: [] })
-    const user = await prisma.user.findUniqueOrThrow({ where: { phone: '+919812345678' } })
-    const [sub] = await subsOf(user.id, swing.id)
-    expect(sub!.validUntil!.toISOString().slice(0, 10)).toBe('2027-02-08')
-    expect(sub!.paidOn!.toISOString().slice(0, 10)).toBe('2026-11-05')
+      expect(res.body.data).toMatchObject({ created: 1, errors: [] })
+      const user = await prisma.user.findUniqueOrThrow({ where: { phone } })
+      const [sub] = await subsOf(user.id, swing.id)
+      expect(sub!.validUntil!.toISOString().slice(0, 10)).toBe(valid)
+      expect(sub!.paidOn!.toISOString().slice(0, 10)).toBe(paidOn)
+    },
+  )
+
+  it('keeps the day of a date cell that also holds a time of day', () => {
+    process.env['TZ'] = 'Asia/Kolkata'
+    expect(sheetDay(new Date('2026-11-08T09:00:00Z'))).toBe('2026-11-08') // 14:30 in India
+    expect(sheetDay(new Date('2026-11-07T18:29:50Z'))).toBe('2026-11-08') // 23:59:50 on the 7th is the 8th's date cell
   })
 })
 
@@ -184,6 +203,20 @@ describe('the free community in an import', () => {
     const res = await upload([csvRow({ service: free.name, payment: '500', valid: '' })])
     expect(res.body.data.created).toBe(0)
     expect(reasons(res)).toEqual(['The free community has no price: leave Payment blank or 0'])
+  })
+
+  it('refuses a negative payment for the free community instead of reading it as "no price"', async () => {
+    const res = await upload([csvRow({ service: free.name, payment: '-5', valid: '' })])
+    expect(res.body.data.created).toBe(0)
+    expect(reasons(res)).toEqual(['Invalid payment amount'])
+  })
+
+  it('refuses a negative payment for a paid community, in the file, the reviewed rows and the preview', async () => {
+    expect(reasons(await upload([csvRow({ payment: '-5' })]))).toEqual(['Invalid payment amount'])
+    const json = await importJson([{ rowNum: 1, name: 'Neg', phone: nextMobile(), email: '', service: swing.name, payment: -5, paidOn: daysFromNow(-1), valid: daysFromNow(90) }])
+    expect(json.status).toBe(422) // the reviewed-rows import takes only valid rows, so a negative never gets that far
+    const preview = await validate([{ payment: -5 }])
+    expect((preview.body.data.results as { errors: string[] }[])[0]!.errors).toEqual(['Invalid payment amount'])
   })
 
   it('still refuses 0 or a blank payment for a paid community', async () => {

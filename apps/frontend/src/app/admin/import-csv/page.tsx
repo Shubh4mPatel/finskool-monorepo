@@ -3,6 +3,8 @@
 import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import * as XLSX from "xlsx";
+import { sheetDay } from "@/lib/dates";
+import { FREE_PRICE_MESSAGE, paymentAmount, paymentCellText, paymentProblem } from "@/lib/importPayment";
 import {
   AlertTriangle,
   ArrowRight,
@@ -92,7 +94,7 @@ function normalizePhone(raw: string): string {
  * is converted, to YYYY-MM-DD; it has no text format to misread. Everything else is judged as written.
  */
 function cellText(v: unknown): string {
-  if (v instanceof Date) return Number.isNaN(v.getTime()) ? "" : v.toISOString().slice(0, 10);
+  if (v instanceof Date) return Number.isNaN(v.getTime()) ? "" : sheetDay(v);
   return String(v ?? "").trim();
 }
 
@@ -139,7 +141,8 @@ const toValidatePayload = (rows: ParsedRow[]) =>
     phone: r.phone,
     email: r.email,
     service: r.service,
-    payment: parseFloat(r.payment) || 0,
+    // A cell that is not a plain amount goes as 0: the row is refused by its own payment check, not by the server's.
+    payment: paymentAmount(r.payment) || 0,
     valid: r.valid,
     ...(r.paidOn ? { paidOn: r.paidOn } : {}),
   }));
@@ -328,7 +331,7 @@ export default function ImportCSVPage() {
           const email = get("Email");
           const service = get("Service");
           const rawPayment = get("Payment");
-          const payment = rawPayment.replace(/[^0-9.]/g, "");
+          const payment = paymentCellText(rawPayment);
           const paidOn = get("Paid on");
           const valid = get("Valid");
           const errors: string[] = [];
@@ -340,11 +343,8 @@ export default function ImportCSVPage() {
           if (!service) errors.push("Service required");
           else if (!lower.includes(service.toLowerCase())) errors.push(`Community not found`);
           const isFree = freeNames.current.has(service.toLowerCase());
-          if (/[+\-*/]/.test(rawPayment)) errors.push(`Payment contains expression "${rawPayment}" — enter a plain number`);
-          else if (isFree) {
-            // The free community has no price; blank or 0 only.
-            if (payment && parseFloat(payment) > 0) errors.push("The free community has no price: leave Payment blank or 0");
-          } else if (!payment || isNaN(parseFloat(payment)) || parseFloat(payment) <= 0) errors.push("Invalid payment amount");
+          const paymentError = paymentProblem(payment, isFree);
+          if (paymentError) errors.push(paymentError);
           // The free community has no payment date or expiry, so Paid on and Valid are neither required nor checked for
           // it; for a paid one both are required.
           if (!isFree) {
@@ -417,6 +417,16 @@ export default function ImportCSVPage() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
+  /**
+   * The server's findings for a row plus the Payment check, which runs here on every validation: the server is sent a
+   * plain amount, so it can only judge the number, not the text that was in the cell.
+   */
+  function withPaymentCheck(r: ParsedRow, found: string[]): string[] {
+    const problem = paymentProblem(r.payment, freeNames.current.has(r.service.toLowerCase()));
+    if (!problem) return found;
+    return [problem, ...found.filter((e) => e !== problem && e !== "Invalid payment amount" && e !== FREE_PRICE_MESSAGE)];
+  }
+
   async function validateAndPreview() {
     if (!file || rows.length === 0) return;
     setValidating(true);
@@ -430,7 +440,7 @@ export default function ImportCSVPage() {
         if (!validation) return r;
         return {
           ...r,
-          errors: validation.errors.length > 0 ? validation.errors : r.errors,
+          errors: withPaymentCheck(r, validation.errors.length > 0 ? validation.errors : r.errors),
           warnings: validation.warnings,
           isDuplicate: validation.isDuplicate,
           existingStatus: validation.existingStatus,
@@ -482,11 +492,11 @@ export default function ImportCSVPage() {
           // member's status itself changed) resets it, so a stale checkbox can
           // never carry over onto a different account.
           const revive = v.existingStatus && v.existingStatus === r.existingStatus ? r.revive : false;
-          return { ...r, errors: v.errors, warnings: v.warnings, isDuplicate: v.isDuplicate, existingStatus: v.existingStatus, revive, edited: false };
+          return { ...r, errors: withPaymentCheck(r, v.errors), warnings: v.warnings, isDuplicate: v.isDuplicate, existingStatus: v.existingStatus, revive, edited: false };
         }),
       );
       setNeedsRevalidation(false);
-      if (results.some((v) => v.errors.length > 0)) setShowErrorModal(true);
+      if (results.some((v) => v.errors.length > 0) || rows.some((r) => paymentProblem(r.payment, freeNames.current.has(r.service.toLowerCase())))) setShowErrorModal(true);
     } catch {
       toast.error("Validation failed. Please try again.");
     } finally {
@@ -509,7 +519,7 @@ export default function ImportCSVPage() {
           phone: r.phone,
           email: r.email,
           service: r.service,
-          payment: parseFloat(r.payment),
+          payment: paymentAmount(r.payment) || 0,
           valid: r.valid,
           ...(r.paidOn ? { paidOn: r.paidOn } : {}),
         })),
