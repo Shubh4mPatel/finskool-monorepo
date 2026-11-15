@@ -170,6 +170,36 @@ export function planReductionProblem(previousEnd: Date | null, newEnd: Date | nu
   return `A running plan cannot be shortened: it runs until ${isoDay(previousEnd)}, and ${isoDay(newEnd)} is earlier`
 }
 
+const squashName = (name: string): string => name.trim().replace(/\s+/g, ' ').toLowerCase()
+
+/**
+ * Rows of one sheet that give the same phone number two different names, keyed by row number, with the reason to show.
+ * A phone is one member, so the sheet cannot say it is both "Asha Rao" and "Bhavna Shah": every row of such a phone is
+ * refused until the admin settles on one name. The same phone with the same name (one member in several communities)
+ * is fine, and names are compared ignoring case and extra spaces. Rows without a usable phone or name are left to their
+ * own checks.
+ */
+export function phoneNameConflicts(rows: { rowNum: number; phone: string; name: string }[]): Map<number, string> {
+  const byPhone = new Map<string, { rowNum: number; name: string }[]>()
+  for (const r of rows) {
+    const phone = normalizePhone(r.phone)
+    if (!phone || !r.name.trim()) continue
+    byPhone.set(phone, [...(byPhone.get(phone) ?? []), { rowNum: r.rowNum, name: r.name.trim() }])
+  }
+  const conflicts = new Map<number, string>()
+  for (const group of byPhone.values()) {
+    if (new Set(group.map(g => squashName(g.name))).size < 2) continue
+    for (const r of group) {
+      const other = group.find(g => squashName(g.name) !== squashName(r.name))!
+      conflicts.set(
+        r.rowNum,
+        `Same phone number as row ${other.rowNum} but a different name ("${other.name}" there, "${r.name}" here): use one name for this phone number`,
+      )
+    }
+  }
+  return conflicts
+}
+
 const FREE_COMMUNITY_PRICE_REASON = 'The free community has no price: leave Payment blank or 0'
 
 interface ImportTerms {
@@ -358,6 +388,10 @@ export class AdminService {
       select: { id: true, name: true, isFree: true },
     })
     let notifyCommunityId: string | null = null
+    // A phone given two different names is refused on every row it appears in (see phoneNameConflicts).
+    const nameConflicts = phoneNameConflicts(
+      rows.map((row, i) => ({ rowNum: i + 2, phone: row['Contact Number'] ?? '', name: row['Name'] ?? '' })),
+    )
 
     // use entries() so we get index + element without noUncheckedIndexedAccess issues
     for (const [i, row] of rows.entries()) {
@@ -402,6 +436,11 @@ export class AdminService {
       const name = row['Name'] ?? ''
       if (name.length < 1 || name.length > 100) {
         summary.errors.push({ row: rowNum, phone, reason: 'Name is required and can be at most 100 characters' })
+        continue
+      }
+      const nameConflict = nameConflicts.get(rowNum)
+      if (nameConflict) {
+        summary.errors.push({ row: rowNum, phone, reason: nameConflict })
         continue
       }
 
@@ -586,6 +625,8 @@ export class AdminService {
 
     const communities = await this.db.community.findMany({ where: { deletedAt: null }, select: { id: true, name: true, isFree: true } })
     let notifyCommunityId: string | null = null
+    // A phone given two different names is refused on every row it appears in (see phoneNameConflicts).
+    const nameConflicts = phoneNameConflicts(rows.map((row, i) => ({ rowNum: i + 1, phone: row.phone, name: row.name })))
 
     for (const [i, row] of rows.entries()) {
       const rowNum = i + 1
@@ -607,6 +648,11 @@ export class AdminService {
         continue
       }
       const { payment, paidOn, validUntil } = resolved.terms
+      const nameConflict = nameConflicts.get(rowNum)
+      if (nameConflict) {
+        summary.errors.push({ row: rowNum, phone, reason: nameConflict })
+        continue
+      }
       const email = row.email ?? null
 
       try {
@@ -1032,9 +1078,13 @@ export class AdminService {
     const memberKeys = new Set(activeSubs.map(sub => `${phoneByUserId.get(sub.userId)}|${sub.communityId}`))
     const endByKey = new Map(activeSubs.map(sub => [`${phoneByUserId.get(sub.userId)}|${sub.communityId}`, sub.validUntil]))
     const keysInFile = new Set<string>()
+    // A phone given two different names is an error on every row it appears in (see phoneNameConflicts).
+    const nameConflicts = phoneNameConflicts(rows.map(r => ({ rowNum: r.rowNum, phone: r.phone ?? '', name: r.name ?? '' })))
 
     const results: ValidateImportRowResult[] = rows.map(row => {
       const errors: string[] = []
+      const nameConflict = nameConflicts.get(row.rowNum)
+      if (nameConflict) errors.push(nameConflict)
       const warnings: string[] = []
 
       // Format validations

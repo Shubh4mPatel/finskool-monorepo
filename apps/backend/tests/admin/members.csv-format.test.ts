@@ -315,6 +315,79 @@ describe('what counts as a duplicate: the same phone in the same community', () 
   })
 })
 
+describe('the same phone number with two different names in one sheet', () => {
+  const PHONE = '+919811100077'
+  const conflict = (n: number, other: string, here: string) =>
+    `Same phone number as row ${n} but a different name ("${other}" there, "${here}" here): use one name for this phone number`
+  const previewRows = (rows: Array<Record<string, unknown>>) =>
+    validate(rows.map(r => ({ phone: PHONE, ...r })))
+
+  it('refuses every row of that phone, in a file, and creates nothing', async () => {
+    const res = await upload([
+      csvRow({ name: 'Asha Rao', phone: PHONE }),
+      csvRow({ name: 'Bhavna Shah', phone: PHONE, service: options.name }),
+      csvRow({ name: 'Someone Else' }), // a different phone is not affected
+    ])
+
+    expect(res.status).toBe(200)
+    expect(res.body.data).toMatchObject({ total: 3, created: 1, updated: 0, skipped: 0 })
+    expect(res.body.data.errors).toEqual([
+      { row: 2, phone: PHONE, reason: conflict(3, 'Bhavna Shah', 'Asha Rao') },
+      { row: 3, phone: PHONE, reason: conflict(2, 'Asha Rao', 'Bhavna Shah') },
+    ])
+    expect(await prisma.user.count({ where: { phone: PHONE } })).toBe(0)
+  })
+
+  it('refuses it whatever the duplicate strategy, and whatever format the phone is written in', async () => {
+    const rows = [csvRow({ name: 'Asha Rao', phone: '+919811100077' }), csvRow({ name: 'Bhavna Shah', phone: '9811100077' })]
+    for (const strategy of ['skip', 'overwrite'] as const) {
+      const res = await uploadText([HEADER, ...rows].join('\n'), strategy)
+      expect(res.body.data).toMatchObject({ created: 0, updated: 0 })
+      expect(reasons(res)).toHaveLength(2)
+    }
+    expect(await prisma.user.count({ where: { phone: PHONE } })).toBe(0)
+  })
+
+  it('lets the same phone with the same name through (one member in two communities), ignoring case and spaces', async () => {
+    const res = await upload([
+      csvRow({ name: 'Asha Rao', phone: PHONE }),
+      csvRow({ name: '  asha   RAO ', phone: PHONE, service: options.name }),
+    ])
+
+    expect(res.body.data).toMatchObject({ created: 2, errors: [] })
+    const user = await prisma.user.findUniqueOrThrow({ where: { phone: PHONE } })
+    expect(await subsOf(user.id, swing.id)).toHaveLength(1)
+    expect(await subsOf(user.id, options.id)).toHaveLength(1)
+  })
+
+  it('applies to the reviewed-rows import too', async () => {
+    const row = (n: number, name: string) => ({ rowNum: n, name, phone: PHONE, email: '', service: swing.name, payment: 1000, paidOn: daysFromNow(-5), valid: daysFromNow(90) })
+    const res = await importJson([row(1, 'Asha Rao'), row(2, 'Bhavna Shah')])
+
+    expect(res.body.data).toMatchObject({ created: 0, updated: 0 })
+    expect((res.body.data.errors as { row: number; reason: string }[]).map(e => [e.row, e.reason])).toEqual([
+      [1, conflict(2, 'Bhavna Shah', 'Asha Rao')],
+      [2, conflict(1, 'Asha Rao', 'Bhavna Shah')],
+    ])
+    expect(await prisma.user.count({ where: { phone: PHONE } })).toBe(0)
+  })
+
+  it('shows as an error on both rows in the preview, so it is fixed before importing', async () => {
+    const res = await previewRows([{ rowNum: 1, name: 'Asha Rao' }, { rowNum: 2, name: 'Bhavna Shah' }, { rowNum: 3, name: 'Asha Rao', phone: '+919811100078' }])
+    const results = res.body.data.results as { rowNum: number; errors: string[] }[]
+
+    expect(results.map(r => r.errors)).toEqual([[conflict(2, 'Bhavna Shah', 'Asha Rao')], [conflict(1, 'Asha Rao', 'Bhavna Shah')], []])
+  })
+
+  it('a sheet row can still correct the name of a member who is already on the system (Overwrite)', async () => {
+    await upload([csvRow({ name: 'Asha Rao', phone: PHONE })])
+    const res = await upload([csvRow({ name: 'Asha Rao-Nair', phone: PHONE })], 'overwrite')
+
+    expect(res.body.data).toMatchObject({ updated: 1, errors: [] })
+    expect((await prisma.user.findUniqueOrThrow({ where: { phone: PHONE } })).name).toBe('Asha Rao-Nair')
+  })
+})
+
 describe('export and import use the same format', () => {
   it('an exported file imports again with no errors, and adds no duplicate subscriptions', async () => {
     const paid = await createMobileMember({
