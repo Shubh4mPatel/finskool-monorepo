@@ -13,7 +13,7 @@ import {
 } from '../../lib/community-access.js'
 import { generateUploadUrl } from '../../lib/minio.js'
 import { assertNotBlocked, findCommunityBlock } from '../../lib/community-block.js'
-import { isReduction, notifySubscriptionReduced } from '../../lib/subscription-reduction.js'
+import { isReduction } from '../../lib/subscription-reduction.js'
 import { recomputeActiveSubCount } from '../../lib/community-stats.js'
 import {
   notificationsQueue,
@@ -158,6 +158,16 @@ const badDateReason = (label: string, raw: string): string =>
 function sheetCellText(v: unknown): string {
   if (v instanceof Date) return isNaN(v.getTime()) ? '' : v.toISOString().slice(0, 10)
   return String(v ?? '').trim()
+}
+
+/**
+ * Why a new end date is refused, or null when it is fine. Once a plan is running its end date can only move later (or
+ * stay): shortening the time a member has paid for is not something an admin can do. A plan that has already ended is
+ * not running, so renewing it to any future date is fine.
+ */
+export function planReductionProblem(previousEnd: Date | null, newEnd: Date | null, today: Date = todayInIndia()): string | null {
+  if (!newEnd || !isReduction(previousEnd, newEnd, today)) return null
+  return `A running plan cannot be shortened: it runs until ${isoDay(previousEnd)}, and ${isoDay(newEnd)} is earlier`
 }
 
 const FREE_COMMUNITY_PRICE_REASON = 'The free community has no price: leave Payment blank or 0'
@@ -462,6 +472,12 @@ export class AdminService {
             summary.skipped++
             continue
           }
+          // A running plan only ever moves later: a sheet cannot take time away from a member.
+          const reduction = planReductionProblem(existingSub.validUntil, validUntil)
+          if (reduction) {
+            summary.errors.push({ row: rowNum, phone, reason: reduction })
+            continue
+          }
           // overwrite: update subscription dates; update user info only if not yet registered
           await this.db.$transaction(async tx => {
             await tx.subscription.update({
@@ -475,7 +491,6 @@ export class AdminService {
               await tx.approvedPhone.update({ where: { phone }, data: { name, email, addedBy: adminId } })
             }
           })
-          if (existingUser) await this.notifyIfReduced(existingUser, community, existingSub.validUntil, validUntil)
           summary.updated++
           if (!notifyCommunityId) notifyCommunityId = community.id
         } else if (existingUser && existingUser.status === 'deleted') {
@@ -624,6 +639,12 @@ export class AdminService {
 
         if (existingSub) {
           if (strategy === 'skip') { summary.skipped++; continue }
+          // A running plan only ever moves later: a sheet cannot take time away from a member.
+          const reduction = planReductionProblem(existingSub.validUntil, validUntil)
+          if (reduction) {
+            summary.errors.push({ row: rowNum, phone, reason: reduction })
+            continue
+          }
           await this.db.$transaction(async tx => {
             await tx.subscription.update({ where: { id: existingSub.id }, data: { payment, paidOn, validUntil } })
             if (existingUser && !existingUser.passwordHash) {
@@ -633,7 +654,6 @@ export class AdminService {
               await tx.approvedPhone.update({ where: { phone }, data: { name: row.name, email, addedBy: adminId } })
             }
           })
-          if (existingUser) await this.notifyIfReduced(existingUser, community, existingSub.validUntil, validUntil)
           summary.updated++
           if (!notifyCommunityId) notifyCommunityId = community.id
         } else if (existingUser && existingUser.status !== 'active' && !reviveRowNumSet.has(rowNum)) {
@@ -1006,10 +1026,11 @@ export class AdminService {
     const activeSubs = existingUsersByPhone.length
       ? await this.db.subscription.findMany({
           where: { userId: { in: existingUsersByPhone.map(u => u.id) }, isActive: true },
-          select: { userId: true, communityId: true },
+          select: { userId: true, communityId: true, validUntil: true },
         })
       : []
     const memberKeys = new Set(activeSubs.map(sub => `${phoneByUserId.get(sub.userId)}|${sub.communityId}`))
+    const endByKey = new Map(activeSubs.map(sub => [`${phoneByUserId.get(sub.userId)}|${sub.communityId}`, sub.validUntil]))
     const keysInFile = new Set<string>()
 
     const results: ValidateImportRowResult[] = rows.map(row => {
@@ -1075,6 +1096,9 @@ export class AdminService {
       if (emailExistsDifferentPhone) {
         warnings.push(`Email already registered under a different phone (${emailMatch!.phone})`)
       }
+      // Overwriting cannot shorten a running plan: such a row is refused when the file is imported with Overwrite.
+      const reduction = duplicateInCommunity && 'terms' in terms && rowKey ? planReductionProblem(endByKey.get(rowKey) ?? null, terms.terms.validUntil) : null
+      if (reduction) warnings.push(`${reduction}: with Overwrite this row is refused`)
 
       return {
         rowNum: row.rowNum,
@@ -1735,11 +1759,11 @@ export class AdminService {
     const datesProblem = subscriptionDatesProblem(data.paidOn ? paidOn : null, validUntil)
     if (datesProblem) throw new BadRequestError(datesProblem)
 
-    const { sub: created, reducedFrom } = await this.db.$transaction(async tx => {
+    const created = await this.db.$transaction(async tx => {
       // Two admins extending at the same moment must not leave two active rows: take a per-(member, community)
       // lock, then retire every active period before the new one is written. The later request wins.
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`subscription:${current.userId}:${current.communityId}`}))`
-      // The end date of the plan that is running right now. A new date earlier than it is a reduction, not an extension.
+      // The end date of the plan that is running right now. A new date earlier than it would take time away from the member.
       const today = new Date()
       today.setHours(0, 0, 0, 0)
       const running = await tx.subscription.findMany({
@@ -1747,7 +1771,12 @@ export class AdminService {
         select: { validUntil: true },
       })
       const previousEnd = running.reduce<Date | null>((latest, r) => (r.validUntil && (!latest || r.validUntil > latest) ? r.validUntil : latest), null)
-      const reducedFrom = isReduction(previousEnd, validUntil, today) ? previousEnd : null
+      if (isReduction(previousEnd, validUntil, today)) {
+        throw new BadRequestError(
+          `This plan runs until ${isoDay(previousEnd)}. The end date can only be moved later, not to ${isoDay(validUntil)}.`,
+          'PLAN_REDUCTION_NOT_ALLOWED',
+        )
+      }
       // Keep the old period as history — only the newest row is the active subscription
       await tx.subscription.updateMany({ where: { userId: current.userId, communityId: current.communityId, isActive: true }, data: { isActive: false } })
       const sub = await tx.subscription.create({
@@ -1761,27 +1790,24 @@ export class AdminService {
           createdAt: paidOn,
         },
       })
-      // A reduction is announced as one (below) instead of as "Access extended".
-      if (!reducedFrom) {
-        await tx.notification.create({
-          data: {
-            communityId: current.communityId,
-            userId: current.userId,
-            type: NotificationType.SubscriptionExtended,
-            sourceId: sub.id,
-            pushPending: true,
-            title: 'Access extended',
-            message: `You're active until ${formatEmailDate(validUntil)}.`,
-            data: subscriptionRouting(current.communityId, 'extended'),
-          },
-        })
-      }
+      await tx.notification.create({
+        data: {
+          communityId: current.communityId,
+          userId: current.userId,
+          type: NotificationType.SubscriptionExtended,
+          sourceId: sub.id,
+          pushPending: true,
+          title: 'Access extended',
+          message: `You're active until ${formatEmailDate(validUntil)}.`,
+          data: subscriptionRouting(current.communityId, 'extended'),
+        },
+      })
       // No ApprovedPhone write needed anymore: "expired" was never really a fact
       // about ApprovedPhone, and isn't stored there at all now (see
       // AdminService#deriveMemberStatus) — the admin dashboard will show this
       // member as 'registered' again the instant this new subscription's
       // validUntil/isActive make it current, purely from reading Subscription.
-      return { sub, reducedFrom }
+      return sub
     })
 
     logger.info(
@@ -1789,19 +1815,7 @@ export class AdminService {
       'admin.extendSubscription: extended',
     )
 
-    if (reducedFrom) {
-      await notifySubscriptionReduced(this.db, {
-        userId: current.userId,
-        name: current.user.name,
-        email: current.user.email,
-        communityId: current.communityId,
-        communityName: current.community.name,
-        previousValidUntil: reducedFrom,
-        newValidUntil: validUntil,
-      })
-    }
-
-    if (!reducedFrom && current.user.email) {
+    if (current.user.email) {
       try {
         await notificationsQueue.add(
           SUBSCRIPTION_EXTENDED_EMAIL_JOB,
@@ -1820,7 +1834,7 @@ export class AdminService {
       }
     }
 
-    if (!reducedFrom) {
+    {
       try {
         await redis.publish(
           NOTIFICATIONS_PUBSUB_CHANNEL,
@@ -1837,7 +1851,7 @@ export class AdminService {
       }
     }
 
-    if (!reducedFrom) {
+    {
       await queuePushFor(this.db, { userId: current.userId, type: NotificationType.SubscriptionExtended, sourceId: created.id }, {
         userIds: [current.userId],
         title: 'Access extended',
@@ -1847,7 +1861,6 @@ export class AdminService {
     }
 
     return {
-      reduced: reducedFrom !== null,
       id: created.id,
       userId: created.userId,
       communityId: created.communityId,
@@ -1870,27 +1883,6 @@ export class AdminService {
   ): Promise<void> {
     if (!terms.validUntil) return
     await db.subscription.create({ data: { userId, communityId, payment: terms.payment, paidOn: terms.paidOn, validUntil: terms.validUntil } })
-  }
-
-  /** After an import overwrote a running plan with an earlier end date, tells the member (see notifySubscriptionReduced). */
-  private async notifyIfReduced(
-    user: { id: string; name: string; email: string | null },
-    community: { id: string; name: string },
-    previousEnd: Date | null,
-    newEnd: Date | null,
-  ): Promise<void> {
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    if (!newEnd || !isReduction(previousEnd, newEnd, today)) return
-    await notifySubscriptionReduced(this.db, {
-      userId: user.id,
-      name: user.name,
-      email: user.email,
-      communityId: community.id,
-      communityName: community.name,
-      previousValidUntil: previousEnd,
-      newValidUntil: newEnd,
-    })
   }
 
   async deleteMember(userId: string, accessibleCommunityIds: string[] | null): Promise<DeleteMemberResultDTO> {
