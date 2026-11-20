@@ -7,6 +7,7 @@ import { dashboardApi, type DashboardTicketItem } from "@/lib/dashboard";
 import { timeAgo } from "@/lib/tickets";
 import { Card, EmptyState, PanelError, Pill, SectionHeader, Skeleton, stagger, TH } from "./Panel";
 import { UserAvatar } from "@/components/admin/UserAvatar";
+import { RequestStatusBadge } from "@/components/admin/services/ServiceBadges";
 import { usePanel } from "./usePanel";
 
 const detailHref = (t: DashboardTicketItem) => (t.kind === "service" ? `/admin/services/${t.id}` : `/admin/tickets/${t.id}`);
@@ -93,9 +94,13 @@ export function RecentTickets({ className = "", delay = 0 }: { className?: strin
                     </Link>
                   </td>
                   <td className="px-3 py-3.5">
-                    <Pill tone={t.status.tone} dot>
-                      {t.status.label}
-                    </Pill>
+                    {t.service ? (
+                      <RequestStatusBadge status={t.service.status} closedReason={t.service.closedReason} quoteExpired={t.service.quoteExpired} />
+                    ) : (
+                      <Pill tone={t.status.tone} dot>
+                        {t.status.label}
+                      </Pill>
+                    )}
                   </td>
                   <td className="whitespace-nowrap px-3 py-3.5 text-right text-xs text-muted">{timeAgo(t.lastUpdateAt, now)}</td>
                 </tr>

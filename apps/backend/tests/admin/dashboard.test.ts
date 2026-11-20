@@ -485,6 +485,8 @@ describe('GET /tickets', () => {
       typeLabel: 'Service enquiry',
       subject: 'Portfolio Analysis',
       status: { key: 'new', label: 'New', tone: 'danger' },
+      // The raw enquiry status, so the dashboard shows the same badge as the Enquiries page.
+      service: { status: 'requested', closedReason: null, quoteExpired: false },
       lastUpdateAt: '2026-10-25T07:30:00.000Z',
     })
     expect(res.body.data.items[1]).toMatchObject({

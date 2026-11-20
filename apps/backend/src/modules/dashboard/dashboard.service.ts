@@ -315,6 +315,7 @@ export class DashboardService {
           id: true,
           number: true,
           status: true,
+          closedReason: true,
           lastMessageAt: true,
           user: { select: { id: true, name: true, avatarUrl: true } },
           service: { select: { title: true } },
@@ -344,6 +345,7 @@ export class DashboardService {
         typeLabel: 'Service enquiry',
         subject: r.service.title,
         status: this.serviceStatus(r.status, r.messages.length > 0, quoteHasExpired(r)),
+        service: { status: r.status, closedReason: r.closedReason, quoteExpired: quoteHasExpired(r) },
         lastUpdateAt: r.lastMessageAt,
       })),
     ]

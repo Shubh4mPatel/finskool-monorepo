@@ -91,6 +91,8 @@ export interface DashboardTicketItemDTO {
   typeLabel: string
   subject: string
   status: { key: string; label: string; tone: TicketStatusTone }
+  /** Service enquiries only: the request's own status, so the dashboard can show the same badge as the Enquiries page. */
+  service?: { status: 'requested' | 'quote_sent' | 'paid' | 'closed'; closedReason: 'completed' | 'declined' | 'cancelled_by_member' | null; quoteExpired: boolean }
   lastUpdateAt: string
 }
 

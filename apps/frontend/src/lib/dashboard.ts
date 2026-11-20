@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import type { ServiceClosedReason, ServiceRequestStatus } from "@/lib/services";
 
 // Mirrors apps/backend/src/modules/dashboard/dashboard.dto.ts — one endpoint per panel.
 
@@ -82,6 +83,8 @@ export interface DashboardTicketItem {
   typeLabel: string;
   subject: string;
   status: { key: string; label: string; tone: StatusTone };
+  /** Service enquiries only: the request's own status, shown with the same badge as the Enquiries page. */
+  service?: { status: ServiceRequestStatus; closedReason: ServiceClosedReason | null; quoteExpired: boolean };
   lastUpdateAt: string;
 }
 
