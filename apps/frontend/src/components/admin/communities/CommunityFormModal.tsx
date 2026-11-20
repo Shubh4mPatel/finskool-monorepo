@@ -72,7 +72,6 @@ export default function CommunityFormModal({
   const [points, setPoints] = useState<string[]>(community?.whatsIncluded?.length ? community.whatsIncluded : [""]);
   const [coverImageUrl, setCoverImageUrl] = useState<string | null>(community?.coverImageUrl ?? null);
   const [badgeUrl, setBadgeUrl] = useState<string | null>(community?.badgeUrl ?? null);
-  const [paymentLink, setPaymentLink] = useState(community?.paymentLink ?? "");
   const [nameError, setNameError] = useState<string | undefined>();
   const [saving, setSaving] = useState(false);
 
@@ -213,7 +212,6 @@ export default function CommunityFormModal({
           whatsIncluded: cleanPoints,
           coverImageUrl: coverImageUrl ?? undefined,
           badgeUrl: badgeUrl ?? undefined,
-          paymentLink: paymentLink.trim() || undefined,
         });
         const failedPlans = await syncPlans(community.id);
         onSaved(updated);
@@ -234,7 +232,6 @@ export default function CommunityFormModal({
           whatsIncluded: cleanPoints,
           coverImageUrl: coverImageUrl ?? undefined,
           badgeUrl: badgeUrl ?? undefined,
-          paymentLink: paymentLink.trim() || undefined,
         });
         toast.success("Community created.");
         onSaved(created);
@@ -476,16 +473,6 @@ export default function CommunityFormModal({
             )}
           </FormField>
         )}
-
-        <FormField label="Payment Link">
-          <input
-            type="url"
-            value={paymentLink}
-            onChange={(e) => setPaymentLink(e.target.value)}
-            placeholder="https://razorpay.me/@yourcommunity"
-            className={inputCls()}
-          />
-        </FormField>
       </form>
     </Modal>
   );
