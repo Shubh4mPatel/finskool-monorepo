@@ -7,6 +7,7 @@ import { api, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 import { useIsSuperAdmin } from "@/lib/session";
 import Stepper from "@/components/admin/Stepper";
+import Select from "@/components/ui/Select";
 import CommunityCoverImageUploader from "@/components/admin/CommunityCoverImageUploader";
 import CommunityBadgeUploader from "@/components/admin/CommunityBadgeUploader";
 import { FormField, inputCls } from "@/components/admin/members/memberUi";
@@ -321,18 +322,18 @@ export default function AddCommunityPage() {
                       </div>
                       <div className="grid gap-4 sm:grid-cols-2">
                         <FormField label="Duration" small>
-                          <select
-                            value={plan.durationMonths}
-                            onChange={(e) => {
-                              updatePlan(plan.key, { durationMonths: Number(e.target.value) });
+                          <Select
+                            value={String(plan.durationMonths)}
+                            onChange={(v) => {
+                              updatePlan(plan.key, { durationMonths: Number(v) });
                               setErrors((x) => ({ ...x, plans: undefined }));
                             }}
-                            className={inputCls()}
-                          >
-                            {DURATIONS.map((d) => (
-                              <option key={d} value={d}>{d} month{d === 1 ? "" : "s"}</option>
-                            ))}
-                          </select>
+                            options={DURATIONS.map((d) => ({ value: String(d), label: `${d} month${d === 1 ? "" : "s"}` }))}
+                            ariaLabel={`Duration of plan ${i + 1}`}
+                            searchable={false}
+                            className="w-full"
+                            triggerClassName={`${inputCls()} relative flex items-center text-left`}
+                          />
                         </FormField>
                         <FormField label="Price before GST" small>
                           <div className="relative">
