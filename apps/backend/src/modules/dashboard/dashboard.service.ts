@@ -335,6 +335,7 @@ export class DashboardService {
         typeLabel: 'Support',
         subject: t.subject,
         status: this.ticketStatus(t.status, t.messages.length > 0),
+        support: { status: t.status },
         lastUpdateAt: t.lastMessageAt,
       })),
       ...requests.map(r => ({

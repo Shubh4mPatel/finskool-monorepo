@@ -7,6 +7,7 @@ import { dashboardApi, type DashboardTicketItem } from "@/lib/dashboard";
 import { timeAgo } from "@/lib/tickets";
 import { Card, EmptyState, PanelError, Pill, SectionHeader, Skeleton, stagger, TH } from "./Panel";
 import { UserAvatar } from "@/components/admin/UserAvatar";
+import { StatusBadge } from "@/components/admin/tickets/TicketBadges";
 import { RequestStatusBadge } from "@/components/admin/services/ServiceBadges";
 import { usePanel } from "./usePanel";
 
@@ -94,7 +95,9 @@ export function RecentTickets({ className = "", delay = 0 }: { className?: strin
                     </Link>
                   </td>
                   <td className="px-3 py-3.5">
-                    {t.service ? (
+                    {t.support ? (
+                      <StatusBadge status={t.support.status} />
+                    ) : t.service ? (
                       <RequestStatusBadge status={t.service.status} closedReason={t.service.closedReason} quoteExpired={t.service.quoteExpired} />
                     ) : (
                       <Pill tone={t.status.tone} dot>

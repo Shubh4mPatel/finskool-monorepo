@@ -92,6 +92,8 @@ export interface DashboardTicketItemDTO {
   subject: string
   status: { key: string; label: string; tone: TicketStatusTone }
   /** Service enquiries only: the request's own status, so the dashboard can show the same badge as the Enquiries page. */
+  /** Support tickets only: the ticket's own status, so the dashboard can show the same badge as the Support Tickets page. */
+  support?: { status: 'open' | 'in_progress' | 'resolved' }
   service?: { status: 'requested' | 'quote_sent' | 'paid' | 'closed'; closedReason: 'completed' | 'declined' | 'cancelled_by_member' | null; quoteExpired: boolean }
   lastUpdateAt: string
 }
