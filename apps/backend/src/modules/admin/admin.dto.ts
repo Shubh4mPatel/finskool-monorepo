@@ -101,7 +101,6 @@ export interface CommunityDTO {
   whatsIncluded: string[]
   coverImageUrl: string | null
   badgeUrl: string | null
-  paymentLink: string | null
   isFree: boolean
   memberCount: number
 }
@@ -115,7 +114,6 @@ export interface CreateCommunityDTO {
   whatsIncluded?: string[] | undefined
   coverImageUrl?: string | undefined
   badgeUrl?: string | undefined
-  paymentLink?: string | undefined
 }
 
 export interface UpdateCommunityDTO {
@@ -126,7 +124,6 @@ export interface UpdateCommunityDTO {
   whatsIncluded?: string[] | undefined
   coverImageUrl?: string | undefined
   badgeUrl?: string | undefined
-  paymentLink?: string | undefined
 }
 
 export interface PlanDTO {

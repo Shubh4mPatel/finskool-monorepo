@@ -9,7 +9,6 @@ export interface Community {
   whatsIncluded: string[];
   coverImageUrl: string | null;
   badgeUrl: string | null;
-  paymentLink: string | null;
   memberCount: number;
   // Present when the API says so: the one open "Feed" community every member can see.
   isFree?: boolean;

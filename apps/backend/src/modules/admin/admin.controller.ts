@@ -160,7 +160,6 @@ const createCommunitySchema = z.object({
   whatsIncluded: z.array(z.string().trim().min(1, 'A point cannot be empty').max(200, 'A point is too long')).max(20, 'At most 20 points').optional(),
   coverImageUrl: z.string().url('Invalid cover image URL').optional(),
   badgeUrl: z.string().url('Invalid badge URL').optional(),
-  paymentLink: z.string().url('Invalid payment link').optional(),
 })
 
 const updateCommunitySchema = z.object({
@@ -171,7 +170,6 @@ const updateCommunitySchema = z.object({
   whatsIncluded: z.array(z.string().trim().min(1, 'A point cannot be empty').max(200, 'A point is too long')).max(20, 'At most 20 points').optional(),
   coverImageUrl: z.string().url('Invalid cover image URL').optional(),
   badgeUrl: z.string().url('Invalid badge URL').optional(),
-  paymentLink: z.string().url('Invalid payment link').optional(),
 })
 
 const communityUploadUrlQuerySchema = z.object({

@@ -1191,7 +1191,6 @@ export class AdminService {
         whatsIncluded: true,
         coverImageUrl: true,
         badgeUrl: true,
-        paymentLink: true,
         isFree: true,
         _count: { select: { subscriptions: { where: { isActive: true } } } },
       },
@@ -1241,7 +1240,6 @@ export class AdminService {
         whatsIncluded: data.whatsIncluded ?? [],
         coverImageUrl: data.coverImageUrl ?? null,
         badgeUrl: data.badgeUrl ?? null,
-        paymentLink: data.paymentLink ?? null,
       },
       select: {
         id: true,
@@ -1253,7 +1251,6 @@ export class AdminService {
         whatsIncluded: true,
         coverImageUrl: true,
         badgeUrl: true,
-        paymentLink: true,
         isFree: true,
       },
     })
@@ -1288,7 +1285,6 @@ export class AdminService {
         ...(data.whatsIncluded !== undefined && { whatsIncluded: data.whatsIncluded }),
         coverImageUrl: data.coverImageUrl ?? null,
         badgeUrl: data.badgeUrl ?? null,
-        paymentLink: data.paymentLink ?? null,
       },
       select: {
         id: true,
@@ -1300,7 +1296,6 @@ export class AdminService {
         whatsIncluded: true,
         coverImageUrl: true,
         badgeUrl: true,
-        paymentLink: true,
         isFree: true,
         _count: { select: { subscriptions: { where: { isActive: true } } } },
       },

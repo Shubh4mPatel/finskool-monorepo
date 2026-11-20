@@ -278,9 +278,6 @@ export default function CommunitiesPage() {
                           <Users size={12} aria-hidden />
                           <span className="tabular-nums">{c.memberCount.toLocaleString("en-IN")}</span> membership{c.memberCount === 1 ? "" : "s"}
                         </span>
-                        {c.paymentLink && (
-                          <span className="text-[11px] font-semibold text-muted" title={c.paymentLink}>Payment link set</span>
-                        )}
                       </div>
                     </div>
                   </div>
